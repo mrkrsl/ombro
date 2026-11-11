@@ -450,8 +450,12 @@ def record_insufficient_brief(home: Home, crew: str, limits: Limits, outcome, ta
     j.write("lead", "insufficient_brief", "; ".join(gaps), gaps=gaps)
     facts = report.gather_facts(home, run_dir, "insufficient_brief")
     report.write(run_dir, report.render(facts, None, "no roles were briefed"))
-    runs.update_run(run_dir, status="insufficient_brief", finished_at=utc_now(), spend={})
+    runs.update_run(run_dir, status="insufficient_brief", finished_at=utc_now(), spend={},
+                    brief=runs.first_line(task) or "(the task was not stated)")
     j.write("harness", "run_ended", "insufficient_brief")
+    from ombro import memory
+
+    memory.add_index_entry(home, run_dir)
     return run_dir
 
 

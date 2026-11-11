@@ -39,6 +39,30 @@ QUIT_WORDS = ("/quit", "/q")
 END_WORD = "/end"
 
 
+BLOCK = '"""'
+
+
+def read_answer(ask: Callable[[str], str], prompt: str) -> str:
+    """One answer. A line that starts with three double quotes opens a block of
+    several lines, closed by a line that ends with them, so a pasted paragraph
+    stays one answer."""
+    raw = ask(prompt) or ""
+    if not raw.strip().startswith(BLOCK):
+        return raw
+    first = raw.strip()[len(BLOCK):]
+    if first.endswith(BLOCK):
+        return first[: -len(BLOCK)]
+    lines = [first] if first.strip() else []
+    while True:
+        line = ask("... ") or ""
+        if line.rstrip().endswith(BLOCK):
+            last = line.rstrip()[: -len(BLOCK)]
+            if last.strip():
+                lines.append(last)
+            return "\n".join(lines)
+        lines.append(line)
+
+
 class ProposalError(ValueError):
     """A proposal the harness refuses. The message goes back to the Lead."""
 
@@ -237,7 +261,7 @@ class Interview:
     def _input(self, prompt: str) -> str:
         """One answer from the user, scrubbed of keys. Raises EOFError/KeyboardInterrupt to quit."""
         while True:
-            raw = self.ask(prompt)
+            raw = read_answer(self.ask, prompt)
             text, removed = keys.scrub(self.home, (raw or "").strip())
             if removed:
                 self.say(
@@ -310,6 +334,7 @@ class Interview:
         self.say(
             f"{p.title}" + (f" It is {p.typical}." if p.typical else "")
             + " Type /quit to stop; nothing is written unless you accept it."
+            + f" For several lines, start and end with {BLOCK}."
             + f" (Up to {format_tokens(self.limits.max_tokens)} tokens.)\n"
         )
         try:

@@ -48,13 +48,31 @@ def format_duration(seconds: float) -> str:
 # for runs and interviews, so nothing runs away. Any single value can still be
 # set by hand in limits.md or a spec, which wins over the level.
 ALLOWANCES: dict[str, dict[str, Any]] = {
-    "conservative": {"max_tokens": 150_000, "max_rounds": 4, "run_timeout": "15m", "interview_max_tokens": 40_000},
-    "moderate": {"max_tokens": 400_000, "max_rounds": 8, "run_timeout": "30m", "interview_max_tokens": 100_000},
-    "generous": {"max_tokens": 1_500_000, "max_rounds": 16, "run_timeout": "1h", "interview_max_tokens": 250_000},
-    "unlimited": {"max_tokens": None, "max_rounds": 50, "run_timeout": "4h", "interview_max_tokens": None},
+    "conservative": {"max_tokens": 150_000, "max_rounds": 4, "run_timeout": "15m", "interview_max_tokens": 40_000,
+                     "chat_max_tokens": 60_000},
+    "moderate": {"max_tokens": 400_000, "max_rounds": 8, "run_timeout": "30m", "interview_max_tokens": 100_000,
+                 "chat_max_tokens": 150_000},
+    "generous": {"max_tokens": 1_500_000, "max_rounds": 16, "run_timeout": "1h", "interview_max_tokens": 250_000,
+                 "chat_max_tokens": 400_000},
+    "unlimited": {"max_tokens": None, "max_rounds": 50, "run_timeout": "4h", "interview_max_tokens": None,
+                  "chat_max_tokens": None},
 }
 DEFAULT_ALLOWANCE = "moderate"
-LEVEL_KEYS = ("max_tokens", "max_rounds", "run_timeout", "interview_max_tokens")
+LEVEL_KEYS = ("max_tokens", "max_rounds", "run_timeout", "interview_max_tokens", "chat_max_tokens")
+# Memory and chat settings, in characters where they bound text. Defaults for
+# runs recorded before they existed, and for limits.md files that leave them out.
+MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
+    "memory_notes_max_chars": 10_000,
+    "memory_index_entries": 20,
+    "memory_index_entry_chars": 200,
+    "memory_search_max_chars": 4_000,
+    "chat_max_tokens": 150_000,
+    "chat_history_chars": 30_000,
+    "chat_calls_per_message": 8,
+    "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
+                            "web.fetch": 15, "default": 10},
+}
+CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
 RETIRED_LIMITS = ("budget_usd",)
 INTERVIEW_TIMEOUT = 6 * 3600.0  # interviews wait on a person; the token and turn caps bound them
@@ -80,6 +98,14 @@ class Limits:
     report_timeout: float = 120.0
     interview_max_tokens: int | None = 100_000
     interview_max_turns: int = 40
+    memory_notes_max_chars: int = 10_000
+    memory_index_entries: int = 20
+    memory_index_entry_chars: int = 200
+    memory_search_max_chars: int = 4_000
+    chat_max_tokens: int | None = 150_000
+    chat_history_chars: int = 30_000
+    chat_calls_per_message: int = 8
+    chat_tool_max_calls: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Limits":
@@ -90,6 +116,7 @@ class Limits:
             "allowance": "custom",
             "interview_max_tokens": ALLOWANCES[DEFAULT_ALLOWANCE]["interview_max_tokens"],
             "interview_max_turns": 40,
+            **copy.deepcopy(MEMORY_CHAT_DEFAULTS),
             **{k: v for k, v in d.items() if k not in RETIRED_LIMITS},
         }
         unknown = set(d) - known
@@ -123,6 +150,8 @@ class Limits:
             raise SetupError("limit report_reserve must be between 0 and 0.5")
         tool_calls = int_map("tool_max_calls", d["tool_max_calls"])
         tool_calls.setdefault("default", 20)
+        chat_calls = int_map("chat_tool_max_calls", d["chat_tool_max_calls"])
+        chat_calls.setdefault("default", 10)
         costs = d["tool_cost_per_call"]
         if not isinstance(costs, dict):
             raise SetupError("limit tool_cost_per_call must be a mapping")
@@ -144,6 +173,14 @@ class Limits:
             report_timeout=pos_num("report_timeout", parse_duration(d["report_timeout"])),
             interview_max_tokens=token_cap("interview_max_tokens", d["interview_max_tokens"]),
             interview_max_turns=pos_num("interview_max_turns", d["interview_max_turns"], integer=True),
+            memory_notes_max_chars=pos_num("memory_notes_max_chars", d["memory_notes_max_chars"], integer=True),
+            memory_index_entries=pos_num("memory_index_entries", d["memory_index_entries"], integer=True),
+            memory_index_entry_chars=pos_num("memory_index_entry_chars", d["memory_index_entry_chars"], integer=True),
+            memory_search_max_chars=pos_num("memory_search_max_chars", d["memory_search_max_chars"], integer=True),
+            chat_max_tokens=token_cap("chat_max_tokens", d["chat_max_tokens"]),
+            chat_history_chars=pos_num("chat_history_chars", d["chat_history_chars"], integer=True),
+            chat_calls_per_message=pos_num("chat_calls_per_message", d["chat_calls_per_message"], integer=True),
+            chat_tool_max_calls=chat_calls,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -165,6 +202,20 @@ class Limits:
             max_rounds=self.interview_max_turns,
             run_timeout=INTERVIEW_TIMEOUT,
             report_reserve=0.0,
+        )
+
+    def for_chat(self) -> "Limits":
+        """The limits one chat session runs under: its own token cap and tool-call caps."""
+        from dataclasses import replace
+
+        return replace(
+            self,
+            max_tokens=self.chat_max_tokens,
+            max_rounds=CHAT_MAX_MESSAGES,
+            run_timeout=INTERVIEW_TIMEOUT,
+            report_reserve=0.0,
+            tool_max_calls=dict(self.chat_tool_max_calls),
+            tool_cost_per_call=dict(self.tool_cost_per_call),
         )
 
 

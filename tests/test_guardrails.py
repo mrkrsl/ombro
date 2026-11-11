@@ -36,7 +36,7 @@ def test_completed_run(run):
             fake.brief("researcher", "Find three invented teapot makers."),
             fake.result("Found three makers.", deliverables=[{"name": "makers", "path": "Ada Pots; Brin Ware; Coll Clay"}]),
             fake.finish("All done."),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ]
     )
     assert status == "completed"
@@ -44,7 +44,7 @@ def test_completed_run(run):
     assert "Found three makers." in run.report
     assert "Ada Pots" in run.report
     assert run.meta["spend"]["rounds"] == 1
-    assert run.meta["spend"]["model_calls"] == 4
+    assert run.meta["spend"]["model_calls"] == 5  # Lead, role, Lead, notes, report
     # The report call had no tools.
     assert run.client.calls[-1]["tools"] is None
 
@@ -106,14 +106,14 @@ def test_looping_role_ends_its_brief_and_the_lead_is_told(run, home):
             fake.brief("researcher", "Look something up."),
             fake.call("test__echo", {"q": "same"}, times=4),
             fake.finish("The researcher got stuck."),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ],
         registry=echo_registry(calls),
     )
     assert status == "completed"  # the run carried on after the brief ended
     assert_reported(run, "completed")
     assert len(calls) == 3  # the fourth identical call never ran
-    lead_sees = run.client.calls[-2]["messages"][-1]
+    lead_sees = run.client.calls[-3]["messages"][-1]  # the last work call, before notes and report
     assert lead_sees["role"] == "tool" and '"status": "stopped_by_limit"' in lead_sees["content"]
     assert '"limit": "loop_detection"' in lead_sees["content"]
     assert "**researcher** (stopped_by_limit)" in run.report
@@ -124,7 +124,7 @@ def test_looping_role_ends_its_brief_and_the_lead_is_told(run, home):
 def test_looping_lead_is_stopped(run):
     status = run(
         [fake.brief("researcher", "Same task."), fake.result()] * 3
-        + [fake.brief("researcher", "Same task."), LEAD_REPORT]
+        + [fake.brief("researcher", "Same task."), fake.keep_notes(), LEAD_REPORT]
     )
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "loop_detection")
@@ -139,13 +139,14 @@ def test_over_token_limit_stops_and_reserve_pays_for_report(run):
     status = run(
         [
             fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 13000, "output": 200}),
-            LEAD_REPORT,
+            fake.result("Read it all.", usage={"input": 12800, "output": 200}),
+            LEAD_REPORT,  # no notes call: it would have left too little for the report
         ],
         limits=limits,
     )
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "max_tokens")
+    assert "The notes were not rewritten: not enough of the token limit was left" in run.report
     spend = run.meta["spend"]
     assert spend["total_tokens"] <= 20000
     # Work stopped inside the share left after the reserve; only the report used the reserve.
@@ -189,7 +190,7 @@ def test_dollars_are_an_estimate_not_a_limit(run):
 def test_unlimited_allowance_has_no_token_cap_but_keeps_rounds(run):
     status = run(
         [fake.brief("researcher", f"Task {i}.") if i % 2 == 0 else fake.result(usage={"input": 900_000, "output": 10})
-         for i in range(2 * 50)] + [fake.brief("researcher", "One more."), LEAD_REPORT],
+         for i in range(2 * 50)] + [fake.brief("researcher", "One more."), fake.keep_notes(), LEAD_REPORT],
         limits={"allowance": "unlimited"},
     )
     assert status == "stopped_by_limit"
@@ -205,7 +206,7 @@ def test_max_rounds(run):
             fake.brief("researcher", "Task one."), fake.result(),
             fake.brief("researcher", "Task two."), fake.result(),
             fake.brief("researcher", "Task three."),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ],
         limits={"max_rounds": 2},
     )
@@ -219,7 +220,7 @@ def test_timed_out_run(run):
         [
             fake.brief("researcher", "Take your time."),
             fake.result("Took ages.", advance=120),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ],
         limits={"run_timeout": "60s"},
     )
@@ -233,7 +234,7 @@ def test_timeout_during_a_model_call(run):
         [
             fake.brief("researcher", "Take your time."),
             {"error": "the model call ran out of time", "timed_out": True, "advance": 120},
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ],
         limits={"run_timeout": "60s"},
     )
@@ -268,7 +269,7 @@ def test_max_steps_ends_the_brief_and_the_lead_can_brief_again(run, home):
             fake.brief("researcher", "Just the first thing, please."),
             fake.result("Found the first thing."),
             fake.finish(),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ],
         registry=echo_registry(),
     )
@@ -299,7 +300,7 @@ def test_max_calls_per_tool_refuses_the_call_and_the_role_carries_on(run, home):
             fake.call("test__echo", {"q": "c"}),
             fake.result("Looked up two of three."),
             fake.finish(),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ],
         registry=echo_registry(calls),
         limits={"tool_max_calls": {"test.echo": 2}},
@@ -318,7 +319,7 @@ def test_unknown_tools_count_against_caps(run):
     # A role with no tools that keeps calling one anyway is still bounded.
     status = run(
         [fake.brief("researcher", "Search."), fake.call("web__search", {"q": "teapots"}, times=4),
-         fake.finish(), LEAD_REPORT]
+         fake.finish(), fake.keep_notes(), LEAD_REPORT]
     )
     assert status == "completed"
     assert_reported(run, "completed")
@@ -348,7 +349,7 @@ def test_invalid_result_is_retried_once_then_failed(run):
             fake.say("Here is what I found: lots of teapots."),
             fake.say('{"summary": "Found teapots."}'),
             fake.finish("The researcher failed."),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ]
     )
     assert status == "completed"
@@ -419,7 +420,7 @@ def test_stop_request_ends_run_with_report(run):
         run.engine.request_stop("stopped with `ombro stop`")
         return fake.result("Partly done.")
 
-    status = run([fake.brief("researcher", "Work."), stop_then_reply, LEAD_REPORT])
+    status = run([fake.brief("researcher", "Work."), stop_then_reply, fake.keep_notes(), LEAD_REPORT])
     assert status == "stopped"
     assert_reported(run, "stopped")
     assert run.meta["limit_hit"] is None

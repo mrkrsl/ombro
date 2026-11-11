@@ -11,7 +11,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import contract, mdfile, prompts, report, runs
+from ombro import contract, mdfile, memory, prompts, report, runs
+from ombro import journal as journal_mod
 from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home
@@ -160,6 +161,7 @@ class Engine:
             status = "failed"
             self.journal.write("harness", "failed", f"internal error: {type(e).__name__}: {e}")
             traceback.print_exc(file=sys.stderr)
+        self._notes(status)
         self._report(status)
         runs.update_run(
             self.run_dir,
@@ -169,6 +171,10 @@ class Engine:
             spend=self.gate.snapshot(),
         )
         self.journal.write("harness", "run_ended", status)
+        try:
+            memory.add_index_entry(self.home, self.run_dir)
+        except OSError as e:
+            print(f"ombro: could not add the run to index.md: {e}", file=sys.stderr)
         return status
 
     def _save_spend(self) -> None:
@@ -212,7 +218,13 @@ class Engine:
     def _lead_loop(self) -> None:
         assert self.lead is not None
         messages: list[dict] = [
-            {"role": "system", "content": prompts.lead_system(self.lead, self.instructions, self.roles, self.limits, self.today)},
+            {
+                "role": "system",
+                "content": prompts.lead_system(
+                    self.lead, self.instructions, self.roles, self.limits, self.today,
+                    memory=memory.lead_context(self.home, self.crew, self.limits),
+                ),
+            },
             {"role": "user", "content": self.spec_body},
         ]
         self.gate.begin_scope(self.lead.name, self.lead.max_steps)
@@ -241,8 +253,11 @@ class Engine:
                 messages.append(_tool_message(tc.id, self._lead_tool(tc)))
 
     def _lead_tool(self, tc) -> dict[str, Any]:
+        searching = tc.name == "memory__search"
+        name = "memory.search" if searching else tc.name
         try:
-            self.gate.check_tool_call("lead", tc.name, _canonical(tc.arguments, tc.raw_arguments), capped=False)
+            # The Lead's own tools are bounded by max_rounds; memory.search has a per-run cap.
+            self.gate.check_tool_call("lead", name, _canonical(tc.arguments, tc.raw_arguments), capped=searching)
         except ToolRefused as e:
             self.journal.write("lead", "tool_refused", f"{tc.name}: {e.detail}", limit=e.limit)
             return {"error": e.detail}
@@ -251,6 +266,8 @@ class Engine:
         if tc.arguments is None:
             self.journal.write("lead", "tool_refused", f"{tc.name}: arguments were not a JSON object")
             return {"error": "the arguments were not a JSON object"}
+        if searching:
+            return self._search(tc.arguments)
         if tc.name == "brief":
             return self._brief(tc.arguments)
         if tc.name == "finish":
@@ -262,7 +279,22 @@ class Engine:
             self.finished = True
             return {"ok": True}
         self.journal.write("lead", "tool_refused", f"unknown tool {tc.name!r}")
-        return {"error": f"unknown tool {tc.name!r}; use brief or finish"}
+        return {"error": f"unknown tool {tc.name!r}; use brief, memory__search or finish"}
+
+    def _search(self, args: dict) -> dict[str, Any]:
+        query = str(args.get("query") or "")
+        out = memory.search(
+            self.home,
+            [self.crew],  # runs never see another crew's memory
+            query,
+            run_id=str(args.get("run_id") or "") or None,
+            exclude=self.run_dir,
+            max_chars=self.limits.memory_search_max_chars,
+        )
+        found = ", ".join(sorted({r["run_id"] for r in out["results"]})) or "nothing"
+        self.journal.write("lead", "memory_search", f"{_short(query, 100)}: {found}", tool="memory.search",
+                           query=query, results=len(out["results"]))
+        return out
 
     def _brief(self, args: dict) -> dict[str, Any]:
         name = str(args.get("role") or "").strip()
@@ -382,6 +414,83 @@ class Engine:
         from ombro.native import CALL_TIMEOUT
 
         return max(0.5, min(CALL_TIMEOUT, self.limits.run_timeout - self.gate.elapsed()))
+
+    # -- notes -------------------------------------------------------------
+
+    NOTES_ATTEMPTS = 2
+
+    def _notes(self, status: str) -> None:
+        """The Lead rewrites its part of notes.md, in its own call before the report.
+        Recorded in the journal as one `notes` event that the report shows."""
+        def record(outcome: str, note: str, **extra: Any) -> None:
+            self.journal.write("lead" if outcome in ("changed", "kept") else "harness", "notes", note,
+                               outcome=outcome, **extra)
+
+        events = [e.get("action") for e in journal_mod.read(self.run_dir / "journal.jsonl")]
+        if self.lead is None or self.lead.model not in self.models:
+            return record("skipped", "the Lead could not be loaded")
+        if "briefed" not in events:
+            return record("skipped", "no role was briefed, so this run had nothing new to teach")
+        cap = self.limits.memory_notes_max_chars
+        self.gate.enter_report_phase("notes")
+        try:
+            current = memory.read_notes(self.home, self.crew)
+        except OSError as e:
+            return record("skipped", f"notes.md could not be read: {e}")
+        room = cap - memory.with_from_runs(current, "").size
+        facts = report.gather_facts(self.home, self.run_dir, status)
+        messages: list[dict] = [
+            {"role": "system", "content": prompts.notes_system(self.lead, self.instructions, self.today)},
+            {"role": "user", "content": prompts.notes_input(
+                current.from_you, current.from_runs, cap, room, report.narrative_input(facts))},
+        ]
+        # Keep enough of the reserve for the report: estimate its call before each notes call.
+        report_worst = estimate_tokens([{"role": "user", "content": report.narrative_input(facts)}]) + 2_000 \
+            + self.limits.report_max_output_tokens
+        max_out = min(self.limits.max_output_tokens, cap // 3 + 500)
+        refused = 0
+        for _ in range(self.NOTES_ATTEMPTS + 1):
+            worst = estimate_tokens(messages, prompts.NOTES_TOOLS) + max_out
+            if self.limits.max_tokens is not None and \
+                    self.gate.spend.total_tokens + worst + report_worst > self.limits.max_tokens:
+                note = "not enough of the token limit was left to rewrite the notes and still write the report"
+                return record("refused" if refused else "skipped", note)
+            try:
+                reply = self._model_call(self.lead, messages, prompts.NOTES_TOOLS, max_output=max_out)
+            except (LimitReached, ModelError) as e:
+                return record("refused" if refused else "skipped", f"the notes call could not be made: {e}")
+            except KeyboardInterrupt:
+                return record("skipped", "the notes call was interrupted")
+            messages.append(reply.as_message())
+            tc = reply.tool_calls[0] if reply.tool_calls else None
+            for extra in reply.tool_calls[1:]:
+                messages.append(_tool_message(extra.id, {"error": "one call at a time; ignored"}))
+            if tc is None or tc.name == "keep_notes":
+                why = str((tc.arguments or {}).get("reason") or "") if tc else "the Lead replied without a tool"
+                if tc:
+                    messages.append(_tool_message(tc.id, {"ok": True}))
+                return record("kept", _short(why or "nothing new to keep", 300))
+            if tc.name != "memory__write_notes" or tc.arguments is None:
+                messages.append(_tool_message(tc.id, {"error": "use memory__write_notes or keep_notes"}))
+                refused += 1
+                if refused >= self.NOTES_ATTEMPTS:
+                    break
+                continue
+            try:
+                old, new = memory.replace_from_runs(self.home, self.crew, tc.arguments.get("from_runs", ""), cap)
+            except memory.NotesError as e:
+                refused += 1
+                self.journal.write("lead", "notes_refused", _short(str(e), 300), attempt=refused)
+                messages.append(_tool_message(tc.id, {"error": str(e)}))
+                last_error = str(e)
+                if refused >= self.NOTES_ATTEMPTS:
+                    return record("refused", f"the Lead's rewrite was refused twice: {_short(last_error, 300)}")
+                continue
+            added, removed = memory.notes_diff(old, new)
+            messages.append(_tool_message(tc.id, {"ok": True}))
+            return record("changed", f"{len(added)} added, {len(removed)} removed; {new.size:,} of {cap:,} characters",
+                          added=added, removed=removed, size=new.size, cap=cap)
+        return record("refused", "the Lead did not write the notes in the form required")
 
     # -- report ------------------------------------------------------------
 

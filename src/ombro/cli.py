@@ -452,6 +452,16 @@ def cmd_brief(args) -> int:
     return 1
 
 
+def cmd_chat(args) -> int:
+    from ombro.chat import Chat
+
+    home = _home()
+    _reap(home)
+    _require_model(home)
+    Chat(home, crew=_crew(home, args.crew)).run()
+    return 0
+
+
 def _role_rows(home: Home, crew: str) -> list[tuple[str, str]]:
     """(folder name, problem or '') for every role folder, without stopping at a broken one."""
     from ombro.roles import RoleError, load_role
@@ -623,6 +633,9 @@ def cmd_limits(args) -> int:
     print(f"  rounds           {lim.max_rounds}")
     print(f"  run time         {format_duration(lim.run_timeout)}")
     print(f"  each interview   {format_tokens(lim.interview_max_tokens)} tokens, {lim.interview_max_turns} answers")
+    print(f"  each chat        {format_tokens(lim.chat_max_tokens)} tokens")
+    print(f"  notes.md         {lim.memory_notes_max_chars:,} characters; a run's Lead sees the last "
+          f"{lim.memory_index_entries} index entries")
     print(f"  per model call   {lim.max_output_tokens:,} output tokens")
     print(f"\nLevels: {', '.join(ALLOWANCES)}. Change with `ombro limits set <level>`; details in {home.limits}.")
     if any(k in meta for k in RETIRED_LIMITS):
@@ -652,6 +665,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("text", nargs="*", help="the task in your own words (optional)")
     s.add_argument("--crew")
     s.set_defaults(func=cmd_brief)
+
+    s = sub.add_parser("chat", help="talk with the Lead (read-only); /brief, /remember, /help inside")
+    s.add_argument("--crew", help="the crew /remember and /brief use unless another is named (default from preferences)")
+    s.set_defaults(func=cmd_chat)
 
     s = sub.add_parser("specs", help="list saved specs")
     s.add_argument("--crew")

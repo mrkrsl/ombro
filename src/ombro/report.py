@@ -50,6 +50,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     failures: list[str] = []
     brief_limits: list[dict[str, Any]] = []
     gaps: list[str] = []
+    notes: dict[str, Any] | None = None
     for ev in events:
         action = ev.get("action")
         if action == "briefed":
@@ -72,6 +73,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             failures.append(ev.get("note", ""))
         elif action == "insufficient_brief":
             gaps = list(ev.get("gaps") or [])
+        elif action == "notes":
+            notes = ev
     if failure:
         failures.append(failure)
 
@@ -85,10 +88,28 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             pass
 
     workspace = (run_dir / "workspace").resolve()
-    deliverables = []
+    scratch = (run_dir / "scratch").resolve()
+    # Only files in workspace/ are deliverables. Working files in scratch/ and
+    # inline notes are listed apart, so the list says what the run produced.
+    deliverables, working, inline, missing = [], [], [], []
+    seen: set[str] = set()
     for b in briefs:
         for d in (b.get("result") or {}).get("deliverables") or []:
-            deliverables.append({"role": b["role"], **_resolve_deliverable(run_dir, d)})
+            entry = {"role": b["role"], **_resolve_deliverable(run_dir, d)}
+            if entry.get("path"):
+                if entry["path"] in seen:
+                    continue
+                seen.add(entry["path"])
+                (working if Path(entry["path"]).is_relative_to(scratch) else deliverables).append(entry)
+            elif entry.get("missing"):
+                missing.append(entry)
+            elif str(entry.get("inline") or "").strip():
+                inline.append(entry)
+    other = []
+    if workspace.is_dir():
+        for f in sorted(workspace.rglob("*")):
+            if f.is_file() and not f.is_symlink() and str(f.resolve()) not in seen:
+                other.append(str(f.resolve()))
 
     in_progress = briefs[-1] if briefs and briefs[-1]["status"] == "in_progress" else None
     return {
@@ -112,6 +133,11 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "gaps": gaps,
         "interview_spend": meta.get("interview_spend") or {},
         "deliverables": deliverables,
+        "working_files": working,
+        "inline_notes": inline,
+        "missing_deliverables": missing,
+        "other_files": other,
+        "notes": notes,
         "workspace": str(workspace),
         "display_currency": load_preferences(home).display_currency,
     }
@@ -281,20 +307,28 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     out.append("")
 
     out += ["## Deliverables", ""]
-    if not f["deliverables"]:
+    if not f["deliverables"] and not f.get("other_files") and not f.get("missing_deliverables"):
         out.append("None.")
     for d in f["deliverables"]:
-        if d.get("path"):
-            out.append(f"- {d['name']} ({d['role']}): {d['path']}")
-        elif d.get("missing"):
-            out.append(f"- {d['name']} ({d['role']}): {d['missing']} was named but is not in the workspace")
-        else:
-            out.append(f"- {d['name']} ({d['role']}), inline:")
-            out += ["", "  " + _short(d["inline"], 3000).replace("\n", "\n  "), ""]
+        out.append(f"- {d['name']} ({d['role']}): {d['path']}")
+    for d in f.get("missing_deliverables") or []:
+        out.append(f"- {d['name']} ({d['role']}): {d['missing']} was named but is not in the workspace")
+    other = f.get("other_files") or []
+    if other:
+        out += ["", "Other files in the workspace that no role named as a deliverable:"]
+        out += [f"- {p}" for p in other[:20]]
+        if len(other) > 20:
+            out.append(f"- and {len(other) - 20} more")
+    if f.get("working_files"):
+        out += ["", "Working files (scratch/, not deliverables): "
+                + ", ".join(f"{d['path']} ({d['role']})" for d in f["working_files"])]
+    if f.get("inline_notes"):
+        out += ["", "### Notes from roles", ""]
+        out += [f"- {d['name']} ({d['role']}): {_line(d['inline'], 300)}" for d in f["inline_notes"]]
     out += ["", f"Workspace: {f['workspace']}", ""]
 
     out += ["## Outbox", "", "Nothing staged.", ""]
-    out += ["## Changes to notes.md", "", "None.", ""]
+    out += ["## Changes to notes.md", "", *notes_lines(f.get("notes")), ""]
 
     cur = f["display_currency"]
     out += ["## Cost", ""]
@@ -348,6 +382,30 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     return "\n".join(out).rstrip() + "\n"
 
 
+def notes_lines(ev: dict[str, Any] | None) -> list[str]:
+    """What the report says about notes.md, from the harness's own record."""
+    if not ev:
+        return ["None."]
+    outcome, note = ev.get("outcome"), ev.get("note", "")
+    if outcome == "changed":
+        added, removed = ev.get("added") or [], ev.get("removed") or []
+        lines = [f"The Lead rewrote its part (\"From runs\"). notes.md is now {ev.get('size', 0):,} of "
+                 f"{ev.get('cap', 0):,} characters."]
+        for label, items in (("Added", added), ("Removed", removed)):
+            if items:
+                lines += ["", f"{label}:"] + [f"- {_line(x.lstrip('-* '), 300)}" for x in items[:15]]
+                if len(items) > 15:
+                    lines.append(f"- and {len(items) - 15} more")
+        if not added and not removed:
+            lines += ["", "No lesson was added or removed; only the wording or order changed."]
+        return lines
+    if outcome == "kept":
+        return [f"None. The Lead kept the notes as they were: {note}"]
+    if outcome == "refused":
+        return [f"Not changed: {note}. The previous notes are kept."]
+    return [f"None. The notes were not rewritten: {note}."]
+
+
 def write(run_dir: Path, text: str) -> Path:
     path = Path(run_dir) / "report.md"
     mdfile.write_atomic(path, text)
@@ -360,4 +418,7 @@ def write_mechanical_report(home: Home, run_dir: Path, status: str, failure: str
     path = write(run_dir, render(facts, None, "the run's process ended before the Lead could write it"))
     Journal(Path(run_dir) / "journal.jsonl").write("harness", "report_written", "mechanical report from the journal")
     runs.update_run(run_dir, status=status, finished_at=utc_now())
+    from ombro import memory  # local import: memory depends on runs, which imports this lazily
+
+    memory.add_index_entry(home, run_dir)
     return path

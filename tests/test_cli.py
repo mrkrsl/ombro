@@ -48,6 +48,7 @@ SCRIPT = [
     fake.brief("researcher", "Name two fictional rivers."),
     fake.result("Named the Wend and the Pell."),
     fake.finish("Done."),
+    fake.keep_notes(),
     REPORT,
 ]
 
@@ -290,3 +291,16 @@ def test_run_with_tools_from_the_command_line(home, spec_file):
     s = ombro(home, "status", run_dir.name)
     assert "web.search" in s.stdout and "of it tools" in s.stdout
     assert (run_dir / "fake-calls.jsonl").is_file()
+
+
+def test_chat_from_the_command_line(home):
+    use_fake_model(home, [fake.say("CHAT-MARKER: nothing has run yet.")])
+    r = subprocess.run(
+        [sys.executable, "-m", "ombro", "chat"], input="What has run?\n/remember Keep reports short.\ny\n/quit\n",
+        capture_output=True, text=True, timeout=60, env={**os.environ, "OMBRO_HOME": str(home.root)},
+    )
+    assert r.returncode == 0, r.stderr
+    assert "[Chat] You:" in r.stdout and "CHAT-MARKER" in r.stdout
+    assert "Keep reports short." in (home.crew_dir("default") / "memory" / "notes.md").read_text()
+    (saved,) = (home.root / "chats").glob("*.md")
+    assert "What has run?" in saved.read_text()

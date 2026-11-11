@@ -234,5 +234,6 @@ def _next_steps(home: Home, say) -> None:
         "  ombro brief             describe a task; the Lead turns it into a spec\n"
         "  ombro specs             list saved specs, by name\n"
         "  ombro run               brief a task and run it straight away\n"
+        "  ombro chat              talk with the Lead about past work (read-only)\n"
         "  ombro limits            see how far runs and interviews may go"
     )

@@ -163,3 +163,12 @@ def result(summary: str = "Did the task.", **fields) -> dict:
 
 def say(text: str, **extra) -> dict:
     return {"content": text, **extra}
+
+
+def keep_notes(reason: str = "Nothing new to keep.", **extra) -> dict:
+    """The Lead's reply in the notes call at the end of a run that briefed a role."""
+    return {"tool_calls": [{"name": "keep_notes", "arguments": {"reason": reason}}], **extra}
+
+
+def write_notes(text: str, **extra) -> dict:
+    return {"tool_calls": [{"name": "memory__write_notes", "arguments": {"from_runs": text}}], **extra}

@@ -110,8 +110,10 @@ class Gate:
         self.scope_role, self.scope_steps, self.scope_max = role, 0, max_steps
         self.scope_brief = brief
 
-    def enter_report_phase(self) -> None:
-        self.phase = "report"
+    def enter_report_phase(self, phase: str = "report") -> None:
+        """Leave the work for good. `phase` is "notes" for the Lead's rewrite of
+        notes.md, then "report"; each starts its own report_timeout."""
+        self.phase = phase
         self.report_deadline = self.clock() + self.limits.report_timeout
         self.scope_role, self.scope_max = None, None
 
@@ -147,7 +149,7 @@ class Gate:
         else:
             now = self.clock()
             if now >= self.report_deadline:
-                raise LimitReached("report_timeout", "no time was left for the report call")
+                raise LimitReached("report_timeout", f"no time was left for the {self.phase} call")
             token_cap = L.max_tokens
             timeout = self.report_deadline - now
             where = "in the run"

@@ -7,11 +7,12 @@ Ombro assumes models will try to do too much, so it puts deterministic limits
 around them. You write a spec, start a run, walk away, and read a report
 later. Every run ends in a report, whether it finished, hit a limit or failed.
 
-**Status: early.** This is the headless core, native tools and interviews:
-the home directory, roles and crews, a model connection, the set-up, role
-and task interviews, the Lead loop, the guardrail gate, the result contract,
-the journal, reports, web search and fetch, workspace files and secrets.
-Memory, chat, schedules, the outbox and MCP are not built. Outward tools
+**Status: early.** This is the headless core, native tools, interviews,
+memory and chat: the home directory, roles and crews, a model connection,
+the set-up, role and task interviews, the Lead loop, the guardrail gate, the
+result contract, the journal, reports, web search and fetch, workspace files,
+secrets, the run index, standing notes, memory search and `ombro chat`.
+Schedules, the outbox and MCP are not built. Outward tools
 (anything that sends or changes something outside the run) are refused.
 
 ## Install
@@ -56,6 +57,7 @@ ombro runs                             # list runs
 ombro status [run_id]                  # limits and spend
 ombro journal [run_id]                 # the event log, readable
 ombro report [run_id]                  # the final report
+ombro chat                             # talk with the Lead about past work; /brief, /remember inside
 ombro stop <run_id>                    # stop a run; it writes its report first
 ombro open [run_id]                    # open a run's workspace folder
 ombro limits                           # what runs and interviews may use
@@ -120,16 +122,82 @@ to it as `name.previous.md`.
 
 ## How a run works
 
-1. Ombro loads the crew's roles, the limits and the spec.
+1. Ombro loads the crew's roles, the limits, the spec and the crew's memory
+   (see Memory).
 2. The Lead decides whom to brief and with what (`brief`), one role at a time.
 3. The role works within its own step limit and returns a structured result.
 4. The harness validates the result and records it in the journal. An invalid
    result is retried once with a stricter instruction, and then the brief is
    marked failed and the Lead is told.
-5. The Lead briefs again or calls `finish`.
-6. On finish, or when any limit is reached, the Lead writes the report in a
-   separate call with no tools. If even that is impossible, the harness writes
-   the report from the journal.
+5. The Lead briefs again, searches past reports (`memory.search`), or calls
+   `finish`.
+6. On finish, or when any limit is reached, delegation stops. The Lead
+   rewrites its part of the crew's notes in one call, then writes the report
+   in a separate call with no tools. If even that is impossible, the harness
+   writes the report from the journal.
+7. The harness adds one line for the run to the crew's `memory/index.md`.
+
+## Memory
+
+Each crew has its own memory, and a run never sees another crew's. What a
+run costs stays the same however many runs came before it.
+
+- **`memory/index.md`**: one line per run, written by the harness: date, run
+  ID, outcome, one-line brief and the path to its report. Every run gets
+  one, including stopped, failed and insufficient briefs.
+- **`memory/notes.md`**: standing lessons in two parts. **From you** holds
+  your own dated entries (added by hand or with `/remember` in chat); no
+  model ever changes or drops them. **From runs** is the Lead's: at the end
+  of each run that briefed a role, it rewrites this part from what the roles
+  returned, or keeps it as it is. The whole file has a cap of 10,000
+  characters. A rewrite over the cap is refused and the Lead is told how much
+  room it has; a second refusal leaves the notes as they were. The report's
+  "Changes to notes.md" lists what was added and removed, worked out by the
+  harness. The old file is kept as `notes.previous.md`.
+- **At the start of a run** the Lead is given notes.md and the 20 most recent
+  index entries, each at most 200 characters. Nothing else.
+- **`memory.search`** (the Lead only) finds passages in the crew's past
+  reports by keyword, up to 4,000 characters in all, and is capped at 8 calls
+  a run. It does not use a round.
+
+The figures are in `limits.md`, in characters, so they mean the same on
+every model: `memory_notes_max_chars`, `memory_index_entries`,
+`memory_index_entry_chars`, `memory_search_max_chars`.
+
+## Chat
+
+`ombro chat` is a conversation with the Lead, with two modes; the current one
+is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
+
+- **Chat** is read-only and sees every crew. The Lead can search and read
+  reports, specs, notes, indexes and workspace files, and use web search and
+  fetch. It cannot brief roles, start runs, approve the outbox, write files or
+  use outward tools; those calls are refused. Chat transcripts, journals,
+  keys and settings cannot be read.
+- **Brief** is the task interview. When the Lead hears a task it offers to
+  brief it, and never switches on its own. Accept, or type `/brief [@crew]
+  [text]` at any point: the interview starts from what you said in the chat
+  (your own messages, most recent first, up to 4,000 characters) and the
+  Lead's one-line summary if you accepted its offer. It saves a spec, which
+  you run with `ombro run --spec <name>`. `/chat` goes back with nothing written.
+- **`/remember [@crew] <text>`** adds a dated line to a crew's notes.md
+  ("From you"); the default crew unless you name one, or `ombro chat --crew
+  <name>` sets it for the session. The Lead can offer to remember something
+  and propose a wording. Nothing is written until you confirm the wording. If
+  it would pass the cap, you are shown the sizes and your entries and asked
+  what to trim.
+- **Bounded.** A chat has its own token cap (`chat_max_tokens`, set by the
+  allowance), per-tool call caps (`chat_tool_max_calls`) and a cap on model
+  calls for one message. Spend is shown after each reply. Once the
+  conversation passes `chat_history_chars` (30,000), the oldest turns are no
+  longer sent to the model.
+- **Saved, not remembered.** Each chat is saved in `chats/`. Transcripts are
+  never loaded into a later chat or run and never searched. Only what you
+  chose to remember carries forward.
+
+In chat and interviews, a line that starts with `"""` begins a block of
+several lines, ended by a line that ends with `"""`, so a pasted paragraph
+is one answer.
 
 ## Tools
 
@@ -140,11 +208,15 @@ A role gets only the tools its `config.md` lists:
 | `web.search` | Web search through a provider. Returns titles, URLs and snippets. |
 | `web.fetch` | Reads one page as text or Markdown through a provider. |
 | `workspace.read`, `workspace.write`, `workspace.list` | Text files in the run's `workspace/` and `scratch/` folders. |
+| `memory.search` | The Lead only: passages from this crew's past reports. |
 
 Workspace paths start with `workspace/` (deliverables) or `scratch/` (working
 notes). Absolute paths, `..`, and symlinks that lead outside those folders
 are refused, and nothing is written through a symlink. A deliverable a role
-names by path is listed in the report with its full path.
+names by path is listed in the report with its full path. Only files in
+`workspace/` are listed as deliverables; working files in `scratch/` and
+short inline notes are listed apart, and workspace files no role named are
+listed too.
 
 Roles ask for a tool by what it does, never by vendor. `tools.md` says which
 provider backs each one:
@@ -184,12 +256,12 @@ records the cost after it.
 
 One word in `limits.md` sets how far runs and interviews may go:
 
-| `allowance` | run tokens | rounds | run time | each interview |
-|---|---|---|---|---|
-| `conservative` | 150,000 | 4 | 15m | 40,000 |
-| `moderate` (default) | 400,000 | 8 | 30m | 100,000 |
-| `generous` | 1,500,000 | 16 | 1h | 250,000 |
-| `unlimited` | no cap | 50 | 4h | no cap |
+| `allowance` | run tokens | rounds | run time | each interview | each chat |
+|---|---|---|---|---|---|
+| `conservative` | 150,000 | 4 | 15m | 40,000 | 60,000 |
+| `moderate` (default) | 400,000 | 8 | 30m | 100,000 | 150,000 |
+| `generous` | 1,500,000 | 16 | 1h | 250,000 | 400,000 |
+| `unlimited` | no cap | 50 | 4h | no cap | no cap |
 
 Any of these can be set by hand in `limits.md` or a spec's `limits:` block,
 which wins over the level. Even `unlimited` keeps every other cap:
@@ -204,6 +276,7 @@ which wins over the level. Even `unlimited` keeps every other cap:
 | `max_output_tokens` | each model call |
 | `loop_threshold` | the same tool with the same arguments repeated |
 | `interview_max_tokens`, `interview_max_turns` | each interview |
+| `chat_max_tokens`, `chat_tool_max_calls`, `chat_calls_per_message` | each chat |
 
 Dollars are not a limit. If `models.md` has prices, reports and `ombro status`
 show an estimated cost.
@@ -220,7 +293,8 @@ end only what they bound, and the run goes on:
   the run.
 
 A share of the token limit (`report_reserve`) is held back so the final
-report can always be written. Limits are fixed when a run starts and recorded
+report can always be written. The Lead's rewrite of notes.md also comes out
+of the reserve, and is skipped if it would leave too little for the report. Limits are fixed when a run starts and recorded
 in its `run.md`. Interviews run under their own gate and cap, so an interview
 never uses a run's allowance.
 
@@ -236,9 +310,11 @@ matter, except the journal, which is JSON Lines:
 ~/.config/ombro/
   .env  limits.md  models.md  tools.md
   preferences/config.md  preferences/instructions.md
+  chats/<time>.md                      chat transcripts (never loaded or searched)
   crews/default/
     crew.md
     roles/<role>/config.md, soul.md
+    memory/index.md, notes.md
     specs/<name>.md
     interviews/<time>-<kind>.md
     removed/<role>/                  roles removed with `ombro role remove`

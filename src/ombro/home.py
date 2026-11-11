@@ -81,11 +81,19 @@ LIMITS_META = {
     "report_reserve": 0.10,
     "loop_threshold": 3,
     "max_steps": {"lead": 6, "specialist": 15, "helper": 8},
-    "tool_max_calls": {"default": 20},
+    "tool_max_calls": {"default": 20, "memory.search": 8},
     "tool_cost_per_call": {},
     "report_max_output_tokens": 2000,
     "report_timeout": "2m",
     "interview_max_turns": 40,
+    "memory_notes_max_chars": 10_000,
+    "memory_index_entries": 20,
+    "memory_index_entry_chars": 200,
+    "memory_search_max_chars": 4_000,
+    "chat_history_chars": 30_000,
+    "chat_calls_per_message": 8,
+    "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
+                            "web.fetch": 15, "default": 10},
 }
 
 LIMITS_BODY = """\
@@ -96,11 +104,11 @@ own run with a `limits:` block in its front matter.
 
 allowance: how far a run or interview may go before it is stopped. One of
 
-  level          run tokens   rounds   run time   each interview
-  conservative     150,000       4       15m          40,000
-  moderate         400,000       8       30m         100,000
-  generous       1,500,000      16       1h          250,000
-  unlimited        no cap       50       4h           no cap
+  level          run tokens   rounds   run time   each interview   each chat
+  conservative     150,000       4       15m          40,000          60,000
+  moderate         400,000       8       30m         100,000         150,000
+  generous       1,500,000      16       1h          250,000         400,000
+  unlimited        no cap       50       4h           no cap          no cap
 
 Even `unlimited` keeps every other cap below: rounds, each role's steps,
 loop detection and tool calls. `ombro limits` shows what is in force, and
@@ -113,6 +121,7 @@ To set one value by hand instead, add it here; it wins over the level:
 - run_timeout: wall-clock limit for a run, e.g. 90s, 30m, 2h.
 - interview_max_tokens: total tokens for one interview (set-up, role or brief).
 - interview_max_turns: how many answers an interview may take.
+- chat_max_tokens: total tokens for one `ombro chat` session.
 
 Always in force:
 
@@ -122,7 +131,23 @@ Always in force:
 - max_steps: model calls a role may make for one brief, by kind. A role's config.md can set its own.
 - tool_max_calls: calls per tool per run. `default` applies to any tool not
   named; `max_calls` in tools.md sets one tool's cap.
-- report_max_output_tokens, report_timeout: bounds on the final report call.
+- report_max_output_tokens, report_timeout: bounds on the final report call
+  (and, separately, on the Lead's rewrite of notes.md just before it).
+
+Memory, in characters so they can be checked in a text editor:
+
+- memory_notes_max_chars: the cap on a crew's memory/notes.md, both parts
+  together. A rewrite or a remember over the cap is refused.
+- memory_index_entries, memory_index_entry_chars: how many of the most
+  recent index.md entries a run's Lead is given, and how long each may be.
+- memory_search_max_chars: the most text one memory.search returns.
+
+Chat:
+
+- chat_history_chars: once a conversation is longer than this, the oldest
+  turns are no longer sent to the model (the transcript keeps them).
+- chat_calls_per_message: model calls the Lead may make for one message.
+- chat_tool_max_calls: calls per tool in one chat session.
 
 Dollars are not a limit. Where models.md has prices, reports show an estimate.
 """

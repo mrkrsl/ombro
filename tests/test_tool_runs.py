@@ -45,7 +45,7 @@ def test_a_role_searches_fetches_and_writes_a_deliverable(run, home):
                 deliverables=[{"name": "Teapot makers", "path": "workspace/makers.md"}],
             ),
             fake.finish("The list is written."),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ]
     )
     assert status == "completed"
@@ -83,7 +83,7 @@ def test_a_write_outside_the_workspace_is_refused_and_the_run_still_reports(run,
             fake.call("workspace__write", {"path": "workspace/notes.md", "content": "Kept inside."}),
             fake.result("Saved inside the workspace.", deliverables=[{"name": "notes", "path": "workspace/notes.md"}]),
             fake.finish(),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ]
     )
     assert status == "completed"
@@ -108,7 +108,7 @@ def test_tool_caps_from_tools_md_are_enforced(run, home):
             fake.call("web__search", {"query": "three"}),
             fake.result("Two searches were allowed."),
             fake.finish(),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ]
     )
     assert status == "completed"
