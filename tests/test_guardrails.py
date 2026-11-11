@@ -49,6 +49,24 @@ def test_completed_run(run):
     assert run.client.calls[-1]["tools"] is None
 
 
+def test_report_keeps_closing_note_and_brief_lines_short(run):
+    long_note = "Final text follows.\n\n" + ("An invented paragraph of guide text. " * 60)
+    run(
+        [
+            fake.brief("researcher", "Line one of the task.\n\nLine two of the task."),
+            fake.result("Summary over\ntwo lines."),
+            fake.finish(long_note),
+            LEAD_REPORT,
+        ]
+    )
+    note_line = next(l for l in run.report.splitlines() if l.startswith("- **Lead's closing note"))
+    assert len(note_line) < 520 and "full note is in the journal" in note_line
+    finish_event = next(e for e in run.events if e["action"] == "finish")
+    assert finish_event["summary"] == long_note.strip()  # nothing lost
+    assert "1. **researcher** (ok): Line one of the task. Line two of the task." in run.report
+    assert "   - Summary over two lines." in run.report
+
+
 def test_lead_and_role_prompts(run, home):
     (home.instructions).write_text("---\n---\nI am an invented user who likes short reports.\n")
     run([fake.brief("researcher", "Do the thing."), fake.result(), fake.finish(), LEAD_REPORT])

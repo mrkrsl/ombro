@@ -25,6 +25,14 @@ def _short(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+def _line(text: str, n: int) -> str:
+    """One line for a list entry: whitespace collapsed, then shortened."""
+    return _short(" ".join(str(text or "").split()), n)
+
+
+CLOSING_NOTE_CAP = 400
+
+
 def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = None) -> dict[str, Any]:
     run_dir = Path(run_dir)
     meta, _ = runs.read_run(run_dir)
@@ -212,7 +220,10 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     for fail in f["failures"]:
         out.append(f"- **Failed:** {fail}")
     if f["finish"]:
-        out.append(f"- **Lead's closing note ({f['finish']['outcome']}):** {f['finish']['summary']}")
+        note_text = _line(f["finish"]["summary"], CLOSING_NOTE_CAP)
+        if len(" ".join(str(f["finish"]["summary"] or "").split())) > CLOSING_NOTE_CAP:
+            note_text += " (shortened; the full note is in the journal)"
+        out.append(f"- **Lead's closing note ({f['finish']['outcome']}):** {note_text}")
     out += ["", "## What was asked", ""]
     out += ["> " + line if line else ">" for line in _short(f["spec"], 4000).splitlines()]
     if f["source"]:
@@ -230,11 +241,11 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     if not f["briefs"]:
         out.append("No roles were briefed.")
     for i, b in enumerate(f["briefs"], 1):
-        out.append(f"{i}. **{b['role']}** ({b['status']}): {_short(b['task'], 200)}")
+        out.append(f"{i}. **{b['role']}** ({b['status']}): {_line(b['task'], 200)}")
         if b.get("result"):
-            out.append(f"   - {_short(b['result'].get('summary', ''), 500)}")
+            out.append(f"   - {_line(b['result'].get('summary', ''), 500)}")
         if b.get("reason"):
-            out.append(f"   - {_short(b['reason'], 500)}")
+            out.append(f"   - {_line(b['reason'], 500)}")
     out.append("")
 
     out += ["## Deliverables", ""]
