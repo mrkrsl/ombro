@@ -185,18 +185,9 @@ def cmd_run(args) -> int:
         shutil.copy2(interview.transcript, run_dir / "interview.md")
         runs.update_run(run_dir, interview_spend=_interview_spend(interview))
     if args.detach:
-        log = open(run_dir / "process.log", "ab")
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "ombro", "_exec", str(run_dir)],
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=log,
-            start_new_session=True,
-            env={**os.environ, "OMBRO_HOME": str(home.root)},
-        )
-        log.close()
+        pid = runs.start_detached(home, run_dir)
         # The child records its own pid in run.md; writing it here too would race its updates.
-        print(f"Started run {run_id} in the background (pid {proc.pid}).")
+        print(f"Started run {run_id} in the background (pid {pid}).")
         print(f"Follow it with `ombro status {run_id}` or `ombro journal {run_id}`.")
         return 0
 
@@ -644,6 +635,22 @@ def cmd_limits(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# schedule, tick
+
+
+def cmd_schedule(args) -> int:
+    from ombro.schedule_cmd import cmd_schedule as run
+
+    return run(args)
+
+
+def cmd_tick(args) -> int:
+    from ombro.schedule_cmd import cmd_tick as run
+
+    return run(args)
+
+
+# ---------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -722,6 +729,25 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", nargs="?", choices=["list", "set", "remove"], help="default: list")
     s.add_argument("name", nargs="?", help="the key's name, e.g. FIRECRAWL_API_KEY")
     s.set_defaults(func=cmd_keys)
+
+    s = sub.add_parser("schedule", help="list, show, add, enable, disable or remove schedules; install the scheduler")
+    s.add_argument("action", nargs="?",
+                   choices=["list", "show", "add", "enable", "disable", "remove", "install", "uninstall"],
+                   help="default: list")
+    s.add_argument("name", nargs="?")
+    s.add_argument("--crew")
+    s.add_argument("--spec", help="for add: a spec saved in the crew (by name)")
+    s.add_argument("--cron", help='for add: when, in local time, e.g. "30 7 * * 1-5"')
+    s.add_argument("--allowance", choices=["conservative", "moderate", "generous"], help="for add: the runs' allowance")
+    s.add_argument("--max-tokens", type=int, help="for add: the runs' token cap")
+    s.add_argument("--run-timeout", help="for add: the runs' time limit, e.g. 15m")
+    s.add_argument("--grace", help="for add: how late a slot may still start, e.g. 10m")
+    s.add_argument("--disabled", action="store_true", help="for add: save it switched off")
+    s.set_defaults(func=cmd_schedule)
+
+    s = sub.add_parser("tick", help="start due scheduled runs (called each minute by the system scheduler)")
+    s.add_argument("--dry-run", action="store_true", help="show what would start or be noted, and change nothing")
+    s.set_defaults(func=cmd_tick)
 
     s = sub.add_parser("_exec")  # internal: the detached run process
     s.add_argument("run_dir")

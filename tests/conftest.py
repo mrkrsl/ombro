@@ -49,6 +49,66 @@ def no_network(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", refuse)
 
 
+@pytest.fixture(autouse=True)
+def no_system_scheduler(monkeypatch, tmp_path):
+    """No test may touch the real launchctl or crontab. Commands that would are
+    refused, and the installer the CLI uses writes into a temporary folder."""
+    import subprocess
+
+    from ombro import scheduler
+
+    real_run = subprocess.run
+
+    def guarded(cmd, *args, **kwargs):
+        name = Path(str(cmd[0] if isinstance(cmd, (list, tuple)) else str(cmd).split()[0])).name
+        if name in ("launchctl", "crontab"):
+            raise AssertionError(f"a test tried to run {name}")
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", guarded)
+    fake = FakeSystem(tmp_path / "fake-launch-agents")
+    monkeypatch.setattr(scheduler, "make_installer", lambda home: fake.installer(home))
+    return fake
+
+
+class FakeSystem:
+    """Stands in for launchctl and crontab: records commands, keeps a crontab in memory."""
+
+    def __init__(self, agents_dir: Path, platform: str = "darwin"):
+        self.agents_dir = agents_dir
+        self.platform = platform
+        self.commands: list[list[str]] = []
+        self.crontab: str | None = None
+        self.loaded = False
+
+    def run(self, cmd, input=None, **kwargs):
+        import subprocess
+
+        self.commands.append(list(cmd))
+        out, code = "", 0
+        if cmd[0] == "launchctl":
+            if cmd[1] == "bootstrap":
+                self.loaded = True
+            elif cmd[1] == "bootout":
+                code, self.loaded = (0 if self.loaded else 3), False
+            elif cmd[1] == "print":
+                code = 0 if self.loaded else 113
+        elif cmd[:2] == ["crontab", "-l"]:
+            if self.crontab is None:
+                code = 1
+            else:
+                out = self.crontab
+        elif cmd[:2] == ["crontab", "-"]:
+            self.crontab = input or ""
+        return subprocess.CompletedProcess(cmd, code, out, "")
+
+    def installer(self, home):
+        from ombro import scheduler
+
+        return scheduler.Installer(home, platform=self.platform, agents_dir=self.agents_dir, run=self.run,
+                                   python="/opt/invented/bin/python3", uid=501)
+
+
 def write_role(home: Home, name: str, *, kind: str = "specialist", soul: str | None = None, crew: str = "default", **cfg):
     folder = home.roles_dir(crew) / name
     folder.mkdir(parents=True, exist_ok=True)

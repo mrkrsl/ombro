@@ -11,8 +11,8 @@ later. Every run ends in a report, whether it finished, hit a limit or failed.
 memory and chat: the home directory, roles and crews, a model connection,
 the set-up, role and task interviews, the Lead loop, the guardrail gate, the
 result contract, the journal, reports, web search and fetch, workspace files,
-secrets, the run index, standing notes, memory search and `ombro chat`.
-Schedules, the outbox and MCP are not built. Outward tools
+secrets, the run index, standing notes, memory search, `ombro chat` and
+schedules. The outbox and MCP are not built. Outward tools
 (anything that sends or changes something outside the run) are refused.
 
 ## Install
@@ -64,6 +64,11 @@ ombro limits                           # what runs and interviews may use
 ombro limits set generous              # change the allowance level
 ombro keys                             # list keys (masked) and what uses them
 ombro keys set FIRECRAWL_API_KEY       # set one; typed into a hidden prompt
+ombro schedule                         # schedules, their next and last runs, and the scheduler entry
+ombro schedule add <name> --spec <spec> --cron "30 7 * * 1-5"
+ombro schedule show | enable | disable | remove <name>
+ombro schedule install | uninstall     # the one system scheduler entry; asks first
+ombro tick [--dry-run]                 # start what is due (the scheduler calls this each minute)
 ombro keys remove FIRECRAWL_API_KEY
 ombro role list | edit <name> | remove <name>
 ombro crew list | add <name> | use <name>
@@ -199,6 +204,56 @@ In chat and interviews, a line that starts with `"""` begins a block of
 several lines, ended by a line that ends with `"""`, so a pasted paragraph
 is one answer.
 
+## Schedules
+
+A schedule is a file in `crews/<crew>/schedules/<name>.md`:
+
+```yaml
+---
+name: morning-brief
+cron: "30 7 * * 1-5"          # local time: minute hour day month weekday
+spec: specs/morning-brief.md  # a spec saved in this crew; scheduled runs never interview
+enabled: true
+limits: {allowance: conservative, run_timeout: 15m}   # optional; tokens, never dollars
+grace: 10m                     # optional; default schedule_grace in limits.md
+---
+```
+
+The files are the source of truth. `ombro schedule install` adds one system
+scheduler entry (a launch agent on macOS, a crontab line elsewhere) that runs
+`ombro tick` every minute; nothing is installed without your confirmation,
+and `ombro schedule add` offers it when it is missing. Editing a schedule
+needs no reinstalling: the next tick reads it, and the change takes effect
+from the schedule's next slot.
+
+- **Starting.** Tick starts each due slot once, detached, exactly as
+  `ombro run --detach` does, under limits fixed at the start and recorded in
+  run.md. run.md and the report name the schedule and the slot. The limits
+  are limits.md, then the spec's `limits:`, then the schedule's. A scheduled
+  run must have a token cap, so `unlimited` is refused.
+- **Late and missed.** A slot is started if a tick sees it within its grace
+  period. A slot missed because the machine was off, asleep or logged out is
+  never started late: it is noted in the crew's `index.md`, one entry per gap:
+
+  ```
+  - 2026-11-10 · schedule:morning-brief@2026-11-10T07:30..2026-11-12T07:30 · missed · 3 slots not run: the machine was off or asleep (no tick from 09 Nov 23:00 to 12 Nov 09:14) · crews/default/schedules/morning-brief.md
+  ```
+- **Overlap.** If a schedule's previous run is still going, or
+  `schedule_max_running` scheduled runs are going, or this tick has already
+  started `schedule_max_starts`, the slot waits while it is within grace, then
+  is skipped and noted with the reason.
+- **Never twice.** Ticks take a lock, and a slot is looked up by its
+  wall-clock time in the runs and the index before it starts. When clocks go
+  back, the repeated hour's slots run once; when they go forward, a slot in
+  the skipped hour runs at the first minute after the change.
+- **Never silent.** A due slot that cannot start (a missing spec, invalid
+  limits, no model) becomes a `failed` run with a report and an index entry.
+  A schedule file with a problem is shown by `ombro schedule` and logged once.
+- **Logs.** `scheduler/tick.log` has one line per tick and one per start or
+  note. `scheduler/scheduler.log` catches anything the system scheduler sees
+  on stderr. `scheduler/tick.md` records the last tick, which is how a
+  missed slot is told from one that was not due; it is safe to delete.
+
 ## Tools
 
 A role gets only the tools its `config.md` lists:
@@ -311,13 +366,16 @@ matter, except the journal, which is JSON Lines:
   .env  limits.md  models.md  tools.md
   preferences/config.md  preferences/instructions.md
   chats/<time>.md                      chat transcripts (never loaded or searched)
+  scheduler/tick.md, tick.log, scheduler.log   the last tick and the scheduler's logs
   crews/default/
     crew.md
     roles/<role>/config.md, soul.md
     memory/index.md, notes.md
     specs/<name>.md
+    schedules/<name>.md
     interviews/<time>-<kind>.md
     removed/<role>/                  roles removed with `ombro role remove`
+    removed/schedules/<name>.md      schedules removed with `ombro schedule remove`
     runs/<run_id>/run.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/
 ```
 
@@ -331,4 +389,5 @@ or `helper`; helpers default to the `cheap` model and fewer steps.
 and `tools.md` accepts `provider: fake` for search and fetch. The test suite
 uses the same fakes, scripted answers for interviews, and mock HTTP
 transports for the real providers, so every guardrail, interview and tool is
-tested without a network connection or spend.
+tested without a network connection or spend. Schedules are tested with a fake
+clock and a fake scheduler installer; no test touches launchctl or crontab.

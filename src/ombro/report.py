@@ -412,10 +412,17 @@ def write(run_dir: Path, text: str) -> Path:
     return path
 
 
-def write_mechanical_report(home: Home, run_dir: Path, status: str, failure: str | None = None) -> Path:
-    """Report without the model, from the journal alone. Used when a process died."""
+def write_mechanical_report(
+    home: Home,
+    run_dir: Path,
+    status: str,
+    failure: str | None = None,
+    note: str = "the run's process ended before the Lead could write it",
+) -> Path:
+    """Report without the model, from the journal alone. Used when a process died
+    or a run could not start."""
     facts = gather_facts(home, run_dir, status, failure=failure)
-    path = write(run_dir, render(facts, None, "the run's process ended before the Lead could write it"))
+    path = write(run_dir, render(facts, None, note))
     Journal(Path(run_dir) / "journal.jsonl").write("harness", "report_written", "mechanical report from the journal")
     runs.update_run(run_dir, status=status, finished_at=utc_now())
     from ombro import memory  # local import: memory depends on runs, which imports this lazily

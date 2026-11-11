@@ -49,6 +49,7 @@ def create_run(
     *,
     source: str,
     tools: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> Path:
     runs_dir = home.runs_dir(crew)
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -78,9 +79,31 @@ def create_run(
         "limits": limits.to_dict(),
         "tools": tools or {},
         "spend": {},
+        **(extra or {}),
     }
     mdfile.write(run_dir / "run.md", meta, RUN_BODY)
     return run_dir
+
+
+def start_detached(home: Home, run_dir: Path) -> int:
+    """Start `python -m ombro _exec <run_dir>` in its own session, logging to process.log.
+    The child records its own pid in run.md. Returns the child's pid."""
+    import subprocess
+    import sys
+
+    log = open(Path(run_dir) / "process.log", "ab")
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "ombro", "_exec", str(run_dir)],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+            env={**os.environ, "OMBRO_HOME": str(home.root)},
+        )
+    finally:
+        log.close()
+    return proc.pid
 
 
 def read_run(run_dir: Path) -> tuple[dict[str, Any], str]:

@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -207,22 +208,95 @@ def index_entry(home: Home, run_dir: Path, max_chars: int = 200) -> str:
     return f"- {when} · {run_id} · {status} · {brief} · {report}"
 
 
+@contextmanager
+def index_lock(home: Home, crew: str):
+    """index.md is read, extended and replaced; runs and ticks may do that at once."""
+    path = index_path(home, crew)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - not POSIX
+        yield
+        return
+    with open(path.parent / ".index.lock", "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def _append_index_line(home: Home, crew: str, key: str, line: str) -> bool:
+    """Add one line unless an entry with this key (` · key · `) is already there."""
+    with index_lock(home, crew):
+        path = index_path(home, crew)
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if any(f" · {key} · " in ln for ln in text.splitlines()):
+            return False
+        if not text.strip():
+            text = "# Index\n"
+        if not text.endswith("\n"):
+            text += "\n"
+        mdfile.write_atomic(path, text + line + "\n")
+        return True
+
+
 def add_index_entry(home: Home, run_dir: Path) -> bool:
     """One entry per run, written by the harness. Returns False if it was already there."""
     meta, _ = runs.read_run(run_dir)
     crew = meta.get("crew") or Path(run_dir).parent.parent.name
     run_id = meta.get("run_id", Path(run_dir).name)
     limit = (meta.get("limits") or {}).get("memory_index_entry_chars") or 200
+    return _append_index_line(home, crew, run_id, index_entry(home, run_dir, int(limit)))
+
+
+SLOT = r"\d{4}-\d\d-\d\dT\d\d:\d\d"
+SLOT_KEY = re.compile(rf" · schedule:([a-z0-9][a-z0-9_-]*)@({SLOT})(?:\.\.({SLOT}))? · ")
+
+
+def schedule_key(name: str, first: str, last: str | None = None) -> str:
+    return f"schedule:{name}@{first}" + (f"..{last}" if last and last != first else "")
+
+
+def add_schedule_entry(
+    home: Home, crew: str, name: str, slots: list[str], status: str, reason: str, max_chars: int = 200
+) -> bool:
+    """A scheduled slot that did not run: there is no run directory, so the entry
+    names the slot (or the first and last of a gap) and the schedule file."""
+    first, last = slots[0], slots[-1]
+    if len(slots) == 1:
+        what = f"{first[11:]} not run: {reason}"
+    else:
+        what = f"{len(slots)} slots not run: {reason}"
+    what = " ".join(what.split())
+    key = schedule_key(name, first, last)
+    path = f"crews/{crew}/schedules/{name}.md"
+    fixed = f"- {first[:10]} · {key} · {status} ·  · {path}"
+    room = max(20, max_chars - len(fixed))
+    if len(what) > room:
+        what = what[: room - 1] + "…"
+    return _append_index_line(home, crew, key, f"- {first[:10]} · {key} · {status} · {what} · {path}")
+
+
+def noted_slots(home: Home, crew: str) -> list[tuple[str, str, str]]:
+    """(schedule, first slot, last slot) for every missed or skipped entry in a crew's index."""
     path = index_path(home, crew)
-    text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    if any(f" · {run_id} · " in ln for ln in text.splitlines()):
-        return False
-    if not text.strip():
-        text = "# Index\n"
-    if not text.endswith("\n"):
-        text += "\n"
-    mdfile.write_atomic(path, text + index_entry(home, run_dir, int(limit)) + "\n")
-    return True
+    if not path.is_file():
+        return []
+    out = []
+    for ln in path.read_text(encoding="utf-8").splitlines():
+        m = SLOT_KEY.search(ln)
+        if m:
+            out.append((m.group(1), m.group(2), m.group(3) or m.group(2)))
+    return out
+
+
+def schedule_entries(home: Home, crew: str, name: str) -> list[str]:
+    path = index_path(home, crew)
+    if not path.is_file():
+        return []
+    return [ln for ln in path.read_text(encoding="utf-8").splitlines()
+            if (m := SLOT_KEY.search(ln)) and m.group(1) == name]
 
 
 def recent_index(home: Home, crew: str, n: int, max_chars: int) -> list[str]:

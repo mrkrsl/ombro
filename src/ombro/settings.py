@@ -72,6 +72,9 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
                             "web.fetch": 15, "default": 10},
 }
+# Scheduler settings: how late a tick may start a slot, and how many scheduled
+# runs may start in one tick or run at once.
+SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "10m", "schedule_max_running": 2, "schedule_max_starts": 3}
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
 RETIRED_LIMITS = ("budget_usd",)
@@ -106,6 +109,9 @@ class Limits:
     chat_history_chars: int = 30_000
     chat_calls_per_message: int = 8
     chat_tool_max_calls: dict[str, int] = field(default_factory=dict)
+    schedule_grace: float = 600.0
+    schedule_max_running: int = 2
+    schedule_max_starts: int = 3
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Limits":
@@ -117,6 +123,7 @@ class Limits:
             "interview_max_tokens": ALLOWANCES[DEFAULT_ALLOWANCE]["interview_max_tokens"],
             "interview_max_turns": 40,
             **copy.deepcopy(MEMORY_CHAT_DEFAULTS),
+            **SCHEDULE_DEFAULTS,
             **{k: v for k, v in d.items() if k not in RETIRED_LIMITS},
         }
         unknown = set(d) - known
@@ -181,6 +188,9 @@ class Limits:
             chat_history_chars=pos_num("chat_history_chars", d["chat_history_chars"], integer=True),
             chat_calls_per_message=pos_num("chat_calls_per_message", d["chat_calls_per_message"], integer=True),
             chat_tool_max_calls=chat_calls,
+            schedule_grace=pos_num("schedule_grace", parse_duration(d["schedule_grace"])),
+            schedule_max_running=pos_num("schedule_max_running", d["schedule_max_running"], integer=True),
+            schedule_max_starts=pos_num("schedule_max_starts", d["schedule_max_starts"], integer=True),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -245,8 +255,14 @@ def resolve_allowance(merged: dict) -> dict:
     return {**ALLOWANCES[level], **merged, "allowance": level}
 
 
-def load_limits(home: Home, overrides: dict | None = None, tools: "ToolSettings | None" = None) -> Limits:
-    """limits.md, then per-tool caps and costs from tools.md, then a spec's overrides."""
+def load_limits(
+    home: Home,
+    overrides: dict | None = None,
+    tools: "ToolSettings | None" = None,
+    schedule: dict | None = None,
+) -> Limits:
+    """limits.md, then per-tool caps and costs from tools.md, then a spec's
+    overrides, then a schedule's."""
     meta = mdfile.read(home.limits)[0] if home.limits.is_file() else {}
     merged = _layer(copy.deepcopy(LIMITS_META), meta)
     tools = tools if tools is not None else load_tool_settings(home)
@@ -256,7 +272,7 @@ def load_limits(home: Home, overrides: dict | None = None, tools: "ToolSettings 
             per_tool["tool_max_calls"][name] = cfg["max_calls"]
         if "cost_per_call" in cfg:
             per_tool["tool_cost_per_call"][name] = cfg["cost_per_call"]
-    merged = _layer(_layer(merged, per_tool), overrides or {})
+    merged = _layer(_layer(_layer(merged, per_tool), overrides or {}), schedule or {})
     return Limits.from_dict(resolve_allowance(merged))
 
 

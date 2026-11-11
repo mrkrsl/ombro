@@ -51,6 +51,10 @@ class Home:
         return self.root / "skills"
 
     @property
+    def scheduler_dir(self) -> Path:
+        return self.root / "scheduler"
+
+    @property
     def crews_dir(self) -> Path:
         return self.root / "crews"
 
@@ -59,6 +63,9 @@ class Home:
 
     def roles_dir(self, crew: str) -> Path:
         return self.crew_dir(crew) / "roles"
+
+    def schedules_dir(self, crew: str) -> Path:
+        return self.crew_dir(crew) / "schedules"
 
     def runs_dir(self, crew: str) -> Path:
         return self.crew_dir(crew) / "runs"
@@ -94,6 +101,9 @@ LIMITS_META = {
     "chat_calls_per_message": 8,
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
                             "web.fetch": 15, "default": 10},
+    "schedule_grace": "10m",
+    "schedule_max_running": 2,
+    "schedule_max_starts": 3,
 }
 
 LIMITS_BODY = """\
@@ -148,6 +158,14 @@ Chat:
   turns are no longer sent to the model (the transcript keeps them).
 - chat_calls_per_message: model calls the Lead may make for one message.
 - chat_tool_max_calls: calls per tool in one chat session.
+
+Schedules (crews/<crew>/schedules/):
+
+- schedule_grace: how late `ombro tick` may still start a slot, e.g. 10m.
+  A slot not started by then is skipped and noted in the crew's index.md.
+  A schedule file can set its own `grace`.
+- schedule_max_running: scheduled runs that may be in progress at once.
+- schedule_max_starts: scheduled runs one tick may start.
 
 Dollars are not a limit. Where models.md has prices, reports show an estimate.
 """
