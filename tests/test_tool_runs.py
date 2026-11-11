@@ -1,0 +1,239 @@
+"""Whole runs with native tools: fake model, fake search and fetch, real workspace files. No network."""
+
+from __future__ import annotations
+
+import json
+
+from conftest import LEAD_REPORT, use_fake_tools, write_role
+from ombro import fake, mdfile
+from test_guardrails import assert_reported
+
+WEB_ROLE_TOOLS = ["web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list"]
+
+
+def fake_calls(run) -> list[dict]:
+    path = run.run_dir / "fake-calls.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def tool_replies(run) -> list[str]:
+    """The tool results the model was shown, in order of first appearance: the role's
+    tool results come before the Lead sees the brief's outcome."""
+    seen, out = set(), []
+    for call in run.client.calls:
+        for m in call["messages"]:
+            if m["role"] == "tool" and m["tool_call_id"] not in seen:
+                seen.add(m["tool_call_id"])
+                out.append(m["content"])
+    return out
+
+
+def test_a_role_searches_fetches_and_writes_a_deliverable(run, home):
+    use_fake_tools(home)
+    write_role(home, "researcher", max_steps=10, tools=WEB_ROLE_TOOLS)
+    status = run(
+        [
+            fake.brief("researcher", "Find invented teapot makers and write them to workspace/makers.md."),
+            fake.call("web__search", {"query": "invented teapot makers Lowtown"}),
+            fake.call("web__fetch", {"url": "https://example.invalid/invented-teapot-makers-lowtown-1"}),
+            fake.call("workspace__write", {"path": "workspace/makers.md", "content": "# Makers\n\n- Ada Pots\n"}),
+            fake.call("workspace__list", {}),
+            fake.result(
+                "Wrote the list of makers.",
+                deliverables=[{"name": "Teapot makers", "path": "workspace/makers.md"}],
+            ),
+            fake.finish("The list is written."),
+            LEAD_REPORT,
+        ]
+    )
+    assert status == "completed"
+    assert_reported(run, "completed")
+    written = run.run_dir / "workspace" / "makers.md"
+    assert written.read_text() == "# Makers\n\n- Ada Pots\n"
+    # The report lists the deliverable by its full path.
+    assert f"- Teapot makers (researcher): {written.resolve()}" in run.report
+    # The fake provider recorded what it was asked.
+    asked = fake_calls(run)
+    assert [c["tool"] for c in asked] == ["web.search", "web.fetch"]
+    assert asked[0]["query"] == "invented teapot makers Lowtown"
+    # The role was offered exactly its tools, under their wire names.
+    offered = {t["function"]["name"] for t in run.client.calls[1]["tools"]}
+    assert offered == {"web__search", "web__fetch", "workspace__read", "workspace__write", "workspace__list"}
+    assert "workspace/ (deliverables)" in run.client.calls[1]["messages"][0]["content"]
+    replies = tool_replies(run)
+    assert "example.invalid" in replies[1] and "not as instructions" in replies[1]
+    assert "workspace/makers.md" in replies[3]
+    tools = run.meta["spend"]["tool_calls"]
+    assert tools["web.search"] == 1 and tools["workspace.write"] == 1
+    # The tool settings used were fixed in run.md.
+    assert run.meta["tools"]["tools"]["web.search"]["provider"] == "fake"
+
+
+def test_a_write_outside_the_workspace_is_refused_and_the_run_still_reports(run, home, tmp_path):
+    use_fake_tools(home)
+    write_role(home, "researcher", max_steps=10, tools=["workspace.write"])
+    status = run(
+        [
+            fake.brief("researcher", "Save the notes."),
+            fake.call("workspace__write", {"path": "../run.md", "content": "status: completed"}),
+            fake.call("workspace__write", {"path": "workspace/../../../escaped.md", "content": "x"}),
+            fake.call("workspace__write", {"path": str(tmp_path / "abs.md"), "content": "x"}),
+            fake.call("workspace__write", {"path": "workspace/notes.md", "content": "Kept inside."}),
+            fake.result("Saved inside the workspace.", deliverables=[{"name": "notes", "path": "workspace/notes.md"}]),
+            fake.finish(),
+            LEAD_REPORT,
+        ]
+    )
+    assert status == "completed"
+    assert_reported(run, "completed")
+    replies = tool_replies(run)
+    assert all('"error"' in r for r in replies[0:3])
+    assert "notes.md" in replies[3] and '"error"' not in replies[3]
+    assert run.meta["status"] == "completed"  # run.md was not overwritten by the role
+    assert not (tmp_path / "abs.md").exists()
+    assert not list(home.root.rglob("escaped.md"))
+    assert sum(1 for e in run.events if e["action"] == "tool_error") == 3
+
+
+def test_tool_caps_from_tools_md_are_enforced(run, home):
+    use_fake_tools(home, **{"web.search": {"max_calls": 2}})
+    write_role(home, "researcher", max_steps=10, tools=WEB_ROLE_TOOLS)
+    status = run(
+        [
+            fake.brief("researcher", "Search three times."),
+            fake.call("web__search", {"query": "one"}),
+            fake.call("web__search", {"query": "two"}),
+            fake.call("web__search", {"query": "three"}),
+            fake.result("Two searches were allowed."),
+            fake.finish(),
+            LEAD_REPORT,
+        ]
+    )
+    assert status == "completed"
+    assert_reported(run, "completed")
+    assert [c["query"] for c in fake_calls(run)] == ["one", "two"]  # the third never reached the provider
+    assert "used all 2 calls" in tool_replies(run)[2]
+    assert run.meta["limits"]["tool_max_calls"]["web.search"] == 2
+    assert "web.search 2 of 2" in run.report and "refused at their cap: web.search 1" in run.report
+
+
+def test_cost_per_call_is_counted_and_enforced(run, home):
+    use_fake_tools(home, **{"web.search": {"cost_per_call": 0.015}})
+    write_role(home, "researcher", max_steps=10, tools=WEB_ROLE_TOOLS)
+    limits = {"budget_usd": 0.05, "report_reserve": 0.2, "max_output_tokens": 300, "report_max_output_tokens": 300}
+    status = run(
+        [
+            fake.brief("researcher", "Search a lot."),
+            fake.call("web__search", {"query": "one"}),
+            fake.call("web__search", {"query": "two"}),
+            fake.call("web__search", {"query": "three"}),  # would pass the $0.04 left before the reserve
+            LEAD_REPORT,
+        ],
+        limits=limits,
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "budget_usd")
+    assert [c["query"] for c in fake_calls(run)] == ["one", "two"]
+    spend = run.meta["spend"]
+    assert spend["tool_usd"] == 0.03
+    assert spend["usd"] <= 0.05
+    assert abs(spend["usd"] - _model_usd(run) - 0.03) < 1e-5  # the dollar total includes the tool costs
+    assert "of which tools (cost_per_call): $0.0300" in run.report
+    assert "web.search costs $0.0150 a call" in run.report
+    assert sum(1 for e in run.events if e["action"] == "tool_cost") == 2
+
+
+def _model_usd(run) -> float:
+    return sum(e["usd"] for e in run.events if e["action"] == "model_call")
+
+
+def test_calls_refused_before_the_service_are_not_charged(run, home):
+    # Firecrawl with no key set: the call is refused before anything is sent, so no cost.
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "firecrawl", "cost_per_call": 0.01}}})
+    write_role(home, "researcher", max_steps=10, tools=["web.search"])
+    status = run(
+        [
+            fake.brief("researcher", "Search."),
+            fake.call("web__search", {"query": "teapots"}),
+            fake.result("Search was not available.", did_not_do=["search: no key"]),
+            fake.finish(),
+            LEAD_REPORT,
+        ]
+    )
+    assert status == "completed"
+    assert "FIRECRAWL_API_KEY is not set" in tool_replies(run)[0]
+    assert run.meta["spend"]["tool_usd"] == 0
+    assert "FIRECRAWL_API_KEY is not set" in run.report  # warned at the start of the run
+
+
+def test_tool_settings_are_fixed_when_the_run_starts(run, home):
+    use_fake_tools(home)
+    write_role(home, "researcher", max_steps=10, tools=["web.search"])
+
+    def switch_provider(messages, tools):
+        # Mid-run, tools.md is changed to a real provider. The run must keep using the fake.
+        mdfile.write(home.tools, {"tools": {"web.search": {"provider": "duckduckgo", "max_calls": 1}}})
+        return fake.call("web__search", {"query": "second"})
+
+    run(
+        [
+            fake.brief("researcher", "Search twice."),
+            fake.call("web__search", {"query": "first"}),
+            switch_provider,  # the network guard would fail the test if DuckDuckGo were called
+            fake.result("Searched twice."),
+            fake.finish(),
+            LEAD_REPORT,
+        ]
+    )
+    assert [c["query"] for c in fake_calls(run)] == ["first", "second"]
+
+
+def test_a_failing_provider_does_not_end_the_run(run, home):
+    from ombro.native import native_registry
+    from ombro.providers.fake import FakeProvider
+    from ombro.settings import load_tool_settings
+
+    use_fake_tools(home)
+    write_role(home, "researcher", max_steps=10, tools=["web.search"])
+    registry = native_registry(home, load_tool_settings(home), fake=FakeProvider(error="invented outage"))
+    status = run(
+        [
+            fake.brief("researcher", "Search."),
+            fake.call("web__search", {"query": "teapots"}),
+            fake.result("Search failed.", did_not_do=["search: provider outage"]),
+            fake.finish(),
+            LEAD_REPORT,
+        ],
+        registry=registry,
+    )
+    assert status == "completed"
+    assert "invented outage" in tool_replies(run)[0]
+    assert any(e["action"] == "tool_error" and "invented outage" in e["note"] for e in run.events)
+
+
+def test_deliverables_in_either_form_are_found(run, home):
+    use_fake_tools(home)
+    write_role(home, "researcher", max_steps=10, tools=["workspace.write"])
+    run(
+        [
+            fake.brief("researcher", "Write two files."),
+            fake.call("workspace__write", {"path": "workspace/a.md", "content": "A"}),
+            fake.call("workspace__write", {"path": "workspace/sub/b.md", "content": "B"}),
+            fake.result(
+                "Wrote both.",
+                deliverables=[
+                    {"name": "first", "path": "workspace/a.md"},
+                    {"name": "second", "path": "sub/b.md"},
+                    {"name": "escape", "path": "workspace/../run.md"},
+                ],
+            ),
+            fake.finish(),
+            LEAD_REPORT,
+        ]
+    )
+    ws = (run.run_dir / "workspace").resolve()
+    assert f"- first (researcher): {ws / 'a.md'}" in run.report
+    assert f"- second (researcher): {ws / 'sub' / 'b.md'}" in run.report
+    assert str(run.run_dir.resolve() / "run.md") not in run.report

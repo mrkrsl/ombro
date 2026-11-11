@@ -55,12 +55,14 @@ class Limits:
     loop_threshold: int
     max_steps: dict[str, int] = field(default_factory=dict)
     tool_max_calls: dict[str, int] = field(default_factory=dict)
+    tool_cost_per_call: dict[str, float] = field(default_factory=dict)
     report_max_output_tokens: int = 2000
     report_timeout: float = 120.0
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Limits":
         known = set(cls.__dataclass_fields__)
+        d = {"tool_cost_per_call": {}, **d}  # absent from runs made before it existed
         unknown = set(d) - known
         if unknown:
             raise SetupError(f"unknown limit(s): {', '.join(sorted(unknown))}")
@@ -87,6 +89,12 @@ class Limits:
             raise SetupError("limit report_reserve must be between 0 and 0.5")
         tool_calls = int_map("tool_max_calls", d["tool_max_calls"])
         tool_calls.setdefault("default", 20)
+        costs = d["tool_cost_per_call"]
+        if not isinstance(costs, dict):
+            raise SetupError("limit tool_cost_per_call must be a mapping")
+        for k, v in costs.items():
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+                raise SetupError(f"cost_per_call for {k} must be zero or a positive number of dollars, not {v!r}")
         return cls(
             budget_usd=pos_num("budget_usd", d["budget_usd"]),
             max_tokens=pos_num("max_tokens", d["max_tokens"], integer=True),
@@ -97,6 +105,7 @@ class Limits:
             loop_threshold=pos_num("loop_threshold", d["loop_threshold"], integer=True),
             max_steps=int_map("max_steps", d["max_steps"]),
             tool_max_calls=tool_calls,
+            tool_cost_per_call={str(k): float(v) for k, v in costs.items()},
             report_max_output_tokens=pos_num("report_max_output_tokens", d["report_max_output_tokens"], integer=True),
             report_timeout=pos_num("report_timeout", parse_duration(d["report_timeout"])),
         )
@@ -106,6 +115,9 @@ class Limits:
 
     def max_calls_for(self, tool: str) -> int:
         return self.tool_max_calls.get(tool, self.tool_max_calls["default"])
+
+    def cost_for(self, tool: str) -> float:
+        return self.tool_cost_per_call.get(tool, 0.0)
 
 
 def _deep_merge(base: dict, extra: dict) -> dict:
@@ -118,10 +130,102 @@ def _deep_merge(base: dict, extra: dict) -> dict:
     return out
 
 
-def load_limits(home: Home, overrides: dict | None = None) -> Limits:
+def load_limits(home: Home, overrides: dict | None = None, tools: "ToolSettings | None" = None) -> Limits:
+    """limits.md, then per-tool caps and costs from tools.md, then a spec's overrides."""
     meta = mdfile.read(home.limits)[0] if home.limits.is_file() else {}
-    merged = _deep_merge(_deep_merge(LIMITS_META, meta), overrides or {})
+    merged = _deep_merge(LIMITS_META, meta)
+    tools = tools if tools is not None else load_tool_settings(home)
+    per_tool: dict[str, dict] = {"tool_max_calls": {}, "tool_cost_per_call": {}}
+    for name, cfg in tools.tools.items():
+        if "max_calls" in cfg:
+            per_tool["tool_max_calls"][name] = cfg["max_calls"]
+        if "cost_per_call" in cfg:
+            per_tool["tool_cost_per_call"][name] = cfg["cost_per_call"]
+    merged = _deep_merge(_deep_merge(merged, per_tool), overrides or {})
     return Limits.from_dict(merged)
+
+
+# ---------------------------------------------------------------------------
+# Tools (tools.md)
+
+# The native tools that use a provider, the providers each may use, and the default.
+PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
+    "web.search": (("firecrawl", "duckduckgo", "fake"), "duckduckgo"),
+    "web.fetch": (("firecrawl", "direct", "fake"), "direct"),
+}
+PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
+_TOOL_FIELDS = {"provider", "max_calls", "cost_per_call"}
+
+
+@dataclass(frozen=True)
+class ToolSettings:
+    """Per-tool settings from tools.md. `tools` maps a tool name to its settings;
+    `providers` maps a provider name to its own settings (such as which key it uses)."""
+
+    tools: dict[str, dict[str, Any]] = field(default_factory=dict)
+    providers: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any] | None, where: str = "tools.md") -> "ToolSettings":
+        d = d or {}
+        unknown = set(d) - {"tools", "providers"}
+        if unknown:
+            raise SetupError(f"{where}: unknown setting(s): {', '.join(sorted(unknown))} (use tools: and providers:)")
+        raw_tools = d.get("tools") or {}
+        raw_providers = d.get("providers") or {}
+        if not isinstance(raw_tools, dict) or not isinstance(raw_providers, dict):
+            raise SetupError(f"{where}: `tools` and `providers` must be mappings")
+        tools: dict[str, dict[str, Any]] = {}
+        for name, cfg in raw_tools.items():
+            name = str(name)
+            cfg = cfg or {}
+            if not isinstance(cfg, dict):
+                raise SetupError(f"{where}: settings for {name} must be a mapping, e.g. {{provider: fake, max_calls: 10}}")
+            bad = set(cfg) - _TOOL_FIELDS
+            if bad:
+                raise SetupError(f"{where}: {name} has unknown setting(s): {', '.join(sorted(bad))}")
+            out: dict[str, Any] = {}
+            if "provider" in cfg:
+                provider = str(cfg["provider"])
+                allowed = PROVIDER_TOOLS.get(name, ((), ""))[0]
+                if provider not in allowed:
+                    choices = ", ".join(allowed) if allowed else "none (this tool has no providers)"
+                    raise SetupError(f"{where}: {name} cannot use provider {provider!r}; choose from {choices}")
+                out["provider"] = provider
+            if "max_calls" in cfg:
+                v = cfg["max_calls"]
+                if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
+                    raise SetupError(f"{where}: max_calls for {name} must be a positive whole number")
+                out["max_calls"] = v
+            if "cost_per_call" in cfg:
+                v = cfg["cost_per_call"]
+                if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+                    raise SetupError(f"{where}: cost_per_call for {name} must be zero or more US dollars")
+                out["cost_per_call"] = float(v)
+            tools[name] = out
+        providers: dict[str, dict[str, Any]] = {}
+        for name, cfg in raw_providers.items():
+            if not isinstance(cfg, dict):
+                raise SetupError(f"{where}: settings for provider {name} must be a mapping")
+            providers[str(name)] = dict(cfg)
+        return cls(tools=tools, providers=providers)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"tools": copy.deepcopy(self.tools), "providers": copy.deepcopy(self.providers)}
+
+    def provider_for(self, tool: str) -> str:
+        return self.tools.get(tool, {}).get("provider") or PROVIDER_TOOLS[tool][1]
+
+    def key_name(self, provider: str) -> str | None:
+        name = self.providers.get(provider, {}).get("key") or PROVIDER_KEYS.get(provider)
+        return str(name) if name else None
+
+
+def load_tool_settings(home: Home) -> ToolSettings:
+    if not home.tools.is_file():
+        return ToolSettings()
+    meta, _ = mdfile.read(home.tools)
+    return ToolSettings.from_dict(meta, str(home.tools))
 
 
 # ---------------------------------------------------------------------------

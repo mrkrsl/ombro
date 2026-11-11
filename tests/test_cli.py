@@ -198,3 +198,101 @@ def test_init_other_endpoint_without_key(tmp_path):
     spec = connected_model(home)
     assert spec.endpoint == "http://localhost:11434/v1" and spec.key is None and not spec.priced
     assert any("no price" in s for s in said)
+
+
+def test_init_offers_firecrawl_when_a_search_key_is_saved(tmp_path):
+    home = Home(tmp_path / "fresh")
+
+    class Client:
+        def complete(self, *a, **k):
+            return ModelReply(content="OK")
+
+    said = []
+    ask = ScriptedPrompts(["1", "deepseek-chat", "y"])
+    secret = ScriptedPrompts(["sk-test-INVENTED-model", "fc-test-INVENTED-search"])
+    assert run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
+    assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-test-INVENTED-search"
+    from ombro.settings import load_tool_settings
+
+    tools = load_tool_settings(home)
+    assert tools.provider_for("web.search") == "firecrawl" and tools.provider_for("web.fetch") == "firecrawl"
+    meta, body = mdfile.read(home.tools)
+    assert meta["tools"]["web.search"]["max_calls"] == 20  # other settings kept
+    assert "Which provider backs each tool" in body
+    assert "INVENTED" not in "\n".join(said)
+
+
+# -- keys and open ------------------------------------------------------------------
+
+
+def test_keys_lists_masked_values_and_what_uses_them(home, capsys, monkeypatch):
+    from ombro import cli
+
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    keys.set_key(home, "TEST_MODEL_KEY", "invented-model-key-0123456789")
+    assert cli.main(["keys"]) == 0
+    out = capsys.readouterr().out
+    assert "invented-model-key-0123456789" not in out
+    assert "inv…6789" in out and "model default" in out
+    assert "FIRECRAWL_API_KEY" in out and "(not set)" in out
+
+
+def test_keys_set_and_remove(home, capsys, monkeypatch):
+    from ombro import cli
+
+    prompts = []
+    monkeypatch.setattr(cli.getpass, "getpass", lambda p: prompts.append(p) or "fc-invented-value-987654321")
+    assert cli.main(["keys", "set", "FIRECRAWL_API_KEY"]) == 0
+    out = capsys.readouterr().out
+    assert "fc-invented-value-987654321" not in out and "hidden" in prompts[0]
+    assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-invented-value-987654321"
+    assert stat.S_IMODE(os.stat(home.env).st_mode) == 0o600
+    assert cli.main(["keys", "remove", "FIRECRAWL_API_KEY"]) == 0
+    assert "FIRECRAWL_API_KEY" not in home.env.read_text()
+    assert cli.main(["keys", "remove", "FIRECRAWL_API_KEY"]) == 1
+    assert cli.main(["keys", "set", "not-a-valid-name"]) == 2
+
+
+def test_keys_set_with_nothing_typed_changes_nothing(home, monkeypatch):
+    from ombro import cli
+
+    keys.set_key(home, "FIRECRAWL_API_KEY", "fc-invented-kept")
+    monkeypatch.setattr(cli.getpass, "getpass", lambda p: "")
+    assert cli.main(["keys", "set", "FIRECRAWL_API_KEY"]) == 1
+    assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-invented-kept"
+
+
+def test_open_opens_the_workspace_of_a_run(home, run, capsys, monkeypatch):
+    from ombro import cli
+    from conftest import LEAD_REPORT
+
+    run([fake.finish(), LEAD_REPORT])
+    opened = []
+    monkeypatch.setattr(cli, "_launch", lambda folder: opened.append(folder) or True)
+    assert cli.main(["open", run.run_dir.name]) == 0
+    assert opened == [run.run_dir / "workspace"]
+    assert str(run.run_dir / "workspace") in capsys.readouterr().out
+    assert cli.main(["open"]) == 0  # latest run
+    assert cli.main(["open", "--print"]) == 0 and len(opened) == 2
+
+
+def test_run_with_tools_from_the_command_line(home, spec_file):
+    from conftest import use_fake_tools
+
+    use_fake_tools(home, **{"web.search": {"cost_per_call": 0.001}})
+    write_role(home, "researcher", max_steps=8, tools=["web.search", "workspace.write"])
+    use_fake_model(home, [
+        fake.brief("researcher", "Find two invented rivers and save them."),
+        fake.call("web__search", {"query": "invented rivers Lowtown"}),
+        fake.call("workspace__write", {"path": "workspace/rivers.md", "content": "- Wend\n- Pell\n"}),
+        fake.result("Saved two rivers.", deliverables=[{"name": "Rivers", "path": "workspace/rivers.md"}]),
+        fake.finish("Done."),
+        REPORT,
+    ])
+    r = ombro(home, "run", "--spec", str(spec_file))
+    assert r.returncode == 0, r.stderr
+    run_dir = runs.latest_run(home, "default")
+    assert f"Rivers (researcher): {(run_dir / 'workspace' / 'rivers.md').resolve()}" in r.stdout
+    s = ombro(home, "status", run_dir.name)
+    assert "web.search" in s.stdout and "of it tools" in s.stdout
+    assert (run_dir / "fake-calls.jsonl").is_file()

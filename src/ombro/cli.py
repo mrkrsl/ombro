@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from ombro import __version__, journal, mdfile, runs
+from ombro import __version__, journal, keys, mdfile, runs
 from ombro.home import Home
-from ombro.settings import SetupError, format_duration, load_limits, load_preferences
+from ombro.settings import SetupError, format_duration, load_limits, load_preferences, load_tool_settings
 
 
 class CliError(Exception):
@@ -109,14 +111,15 @@ def cmd_run(args) -> int:
     overrides = spec_meta.get("limits") or {}
     if not isinstance(overrides, dict):
         raise CliError("`limits` in a spec must be a mapping, e.g. limits: {budget_usd: 0.5}")
-    limits = load_limits(home, overrides)
+    tool_settings = load_tool_settings(home)
+    limits = load_limits(home, overrides, tool_settings)
 
     from ombro.init_cmd import connected_model
 
     if connected_model(home) is None:
         raise CliError("No model is connected. Run `ombro init`.")
 
-    run_dir = runs.create_run(home, crew, spec_meta, spec_body, limits, source=source)
+    run_dir = runs.create_run(home, crew, spec_meta, spec_body, limits, source=source, tools=tool_settings.to_dict())
     run_id = run_dir.name
     if args.detach:
         log = open(run_dir / "process.log", "ab")
@@ -199,11 +202,16 @@ def cmd_status(args) -> int:
         f"{'Time':<14}{format_duration(sp.get('elapsed_seconds', 0)):>16}  "
         f"{format_duration(lim.get('run_timeout', 0)):>14}"
     )
+    if sp.get("tool_usd"):
+        print(f"{'  of it tools':<14}{'$' + format(sp['tool_usd'], '.4f'):>16}")
     print(f"{'Model calls':<14}{sp.get('model_calls', 0):>16}")
     tools = sp.get("tool_calls") or {}
+    caps = lim.get("tool_max_calls") or {}
+    refused = sp.get("tool_refused") or {}
     for name, n in sorted(tools.items()):
-        cap = (lim.get("tool_max_calls") or {}).get(name, (lim.get("tool_max_calls") or {}).get("default", "-"))
-        print(f"{'  ' + name:<14}{n:>16}  {cap:>14}")
+        cap = caps.get(name, caps.get("default", "-"))
+        extra = f"  ({refused[name]} refused at the cap)" if refused.get(name) else ""
+        print(f"{'  ' + name:<14}{n:>16}  {cap:>14}{extra}")
     print(f"\n{int(reserve * 100)}% of the dollar and token limits is held back for the report.")
     return 0
 
@@ -264,6 +272,86 @@ def cmd_stop(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# open, keys
+
+
+def _launch(folder: Path) -> bool:
+    """Open a folder in the file manager. Returns False where there is no way to."""
+    if sys.platform == "darwin":
+        cmd = ["open", str(folder)]
+    elif sys.platform.startswith("win"):
+        os.startfile(str(folder))  # type: ignore[attr-defined]
+        return True
+    elif shutil.which("xdg-open"):
+        cmd = ["xdg-open", str(folder)]
+    else:
+        return False
+    try:
+        subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
+def cmd_open(args) -> int:
+    home = _home()
+    run_dir = _resolve_run(home, args.run_id, args.crew)
+    folder = run_dir / "workspace"
+    folder.mkdir(exist_ok=True)
+    print(folder)
+    if not args.print_only and not _launch(folder):
+        print("(No file manager could be opened here; the path is above.)")
+    return 0
+
+
+def cmd_keys(args) -> int:
+    home = _home()
+    action = args.action or "list"
+    if action == "list":
+        stored = keys.read_env(home)
+        uses = keys.key_uses(home)
+        names = sorted(set(stored) | set(uses))
+        if not names:
+            print("No keys are set or needed yet.")
+            return 0
+        print(f"{'KEY':<26} {'VALUE':<14} USED BY")
+        for name in names:
+            if stored.get(name):
+                value = keys.mask(stored[name])
+            elif os.environ.get(name):
+                value = keys.mask(os.environ[name]) + " (env)"
+            else:
+                value = "(not set)"
+            print(f"{name:<26} {value:<14} {', '.join(uses.get(name, [])) or '-'}")
+        print(f"\nKeys live in {home.env}. Set one with `ombro keys set NAME`.")
+        return 0
+    if not args.name:
+        raise CliError(f"Give the key's name, e.g. `ombro keys {action} FIRECRAWL_API_KEY`.")
+    name = args.name.strip()
+    if not keys.valid_name(name):
+        raise CliError("Key names use capitals, digits and underscores, starting with a letter.")
+    if action == "set":
+        try:
+            value = getpass.getpass(f"Value for {name} (hidden; Enter to cancel): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nCancelled.")
+            return 1
+        if not value:
+            print("Cancelled; nothing changed.")
+            return 1
+        keys.set_key(home, name, value)
+        print(f"Saved {name} ({keys.mask(value)}). It is used from the next call, even in a run already going.")
+        return 0
+    if action == "remove":
+        removed = keys.remove_key(home, name)
+        print(f"Removed {name} from .env." if removed else f"{name} was not in .env.")
+        if os.environ.get(name):
+            print(f"Note: {name} is also set in your shell environment, and Ombro will still use that.")
+        return 0 if removed else 1
+    raise CliError(f"Unknown keys action {action!r}; use set or remove.")
+
+
+# ---------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -301,6 +389,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("run_id")
     s.add_argument("--wait", type=float, default=15.0, help=argparse.SUPPRESS)
     s.set_defaults(func=cmd_stop)
+
+    s = sub.add_parser("open", help="open a run's workspace folder")
+    s.add_argument("run_id", nargs="?", help="run ID or a unique prefix (default: latest)")
+    s.add_argument("--crew")
+    s.add_argument("--print", dest="print_only", action="store_true", help="only print the folder's path")
+    s.set_defaults(func=cmd_open)
+
+    s = sub.add_parser("keys", help="list keys (masked), or set or remove one")
+    s.add_argument("action", nargs="?", choices=["list", "set", "remove"], help="default: list")
+    s.add_argument("name", nargs="?", help="the key's name, e.g. FIRECRAWL_API_KEY")
+    s.set_defaults(func=cmd_keys)
 
     s = sub.add_parser("_exec")  # internal: the detached run process
     s.add_argument("run_dir")

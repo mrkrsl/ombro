@@ -11,7 +11,7 @@ from typing import Callable
 from ombro import keys, mdfile
 from ombro.client import ModelError, make_client
 from ombro.home import Home, ensure_home
-from ombro.settings import ModelSpec, SetupError, load_models
+from ombro.settings import ModelSpec, SetupError, load_models, load_tool_settings
 
 ENDPOINTS = [
     {
@@ -75,7 +75,7 @@ def run_init(
         if ok:
             say(f"A model is already connected: {spec.model} ({detail}).")
             if ask("Connect a different model? [y/N] ").strip().lower() not in ("y", "yes"):
-                _offer_search_key(home, ask_secret, say)
+                _offer_search_key(home, ask, ask_secret, say)
                 _next_steps(home, say)
                 return True
         else:
@@ -141,19 +141,42 @@ def run_init(
             break
         say(f"The test call failed: {detail}\nLet's try again (Ctrl-C to give up).\n")
 
-    _offer_search_key(home, ask_secret, say)
+    _offer_search_key(home, ask, ask_secret, say)
     _next_steps(home, say)
     return True
 
 
-def _offer_search_key(home: Home, ask_secret, say) -> None:
+def _offer_search_key(home: Home, ask, ask_secret, say) -> None:
     if keys.get_key(home, SEARCH_KEY):
         say(f"Search key {SEARCH_KEY} is set.")
-        return
-    value = ask_secret(f"Search key for Firecrawl, {SEARCH_KEY} (hidden; Enter to skip): ").strip()
-    if value:
+    else:
+        value = ask_secret(f"Search key for Firecrawl, {SEARCH_KEY} (hidden; Enter to skip): ").strip()
+        if not value:
+            say("No search key: web.search uses DuckDuckGo (best effort) and web.fetch downloads pages directly.")
+            return
         keys.set_key(home, SEARCH_KEY, value)
         say("Search key saved.")
+    try:
+        tools = load_tool_settings(home)
+    except (SetupError, mdfile.FrontMatterError):
+        return
+    if all(tools.provider_for(t) == "firecrawl" for t in ("web.search", "web.fetch")):
+        return
+    if ask("Use Firecrawl for web.search and web.fetch? (tools.md) [Y/n] ").strip().lower() in ("", "y", "yes"):
+        set_tool_providers(home, {"web.search": "firecrawl", "web.fetch": "firecrawl"})
+        say(f"tools.md now uses Firecrawl for web search and fetch. Edit {home.tools} to change it.")
+
+
+def set_tool_providers(home: Home, providers: dict[str, str]) -> None:
+    """Set the provider for some tools in tools.md, keeping everything else in it."""
+    meta, body = mdfile.read(home.tools) if home.tools.is_file() else ({}, "")
+    tools = meta.get("tools") if isinstance(meta.get("tools"), dict) else {}
+    for tool, provider in providers.items():
+        entry = tools.get(tool) if isinstance(tools.get(tool), dict) else {}
+        entry["provider"] = provider
+        tools[tool] = entry
+    meta["tools"] = tools
+    mdfile.write(home.tools, meta, body)
 
 
 def _next_steps(home: Home, say) -> None:

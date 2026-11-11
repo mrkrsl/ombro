@@ -128,7 +128,7 @@ def test_spec_overrides_merge_with_defaults(home):
     limits = load_limits(home, {"budget_usd": 0.5, "tool_max_calls": {"web.search": 3}})
     assert limits.budget_usd == 0.5
     assert limits.max_calls_for("web.search") == 3
-    assert limits.max_calls_for("web.fetch") == limits.tool_max_calls["default"]
+    assert limits.max_calls_for("workspace.list") == limits.tool_max_calls["default"]
 
 
 # -- result contract ---------------------------------------------------------------

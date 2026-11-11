@@ -2,6 +2,14 @@
 
 Checks happen before a call; cost is recorded after it. Limits are fixed when
 the gate is built and nothing in a run can change them.
+
+Three outcomes when a check fails:
+- LimitReached: the run stops and goes to its report (money, tokens, rounds,
+  time, a stop request, and the Lead's own step and loop limits).
+- BriefLimit: only the current brief ends, and the Lead is told (a role's
+  max_steps or loop detection).
+- ToolRefused: only this call is refused, and the caller is told (a tool that
+  has used its max_calls for the run).
 """
 
 from __future__ import annotations
@@ -22,6 +30,21 @@ class LimitReached(Exception):
         self.detail = detail
 
 
+class BriefLimit(LimitReached):
+    """A limit ended one brief. The run goes on and the Lead is told.
+
+    A subclass of LimitReached, so if one is ever not caught it still stops the run."""
+
+
+class ToolRefused(Exception):
+    """One tool call was refused by a cap. Nothing else stops."""
+
+    def __init__(self, limit: str, detail: str):
+        super().__init__(f"{limit}: {detail}")
+        self.limit = limit
+        self.detail = detail
+
+
 @dataclass
 class Spend:
     input_tokens: int = 0
@@ -29,6 +52,8 @@ class Spend:
     usd: float = 0.0
     model_calls: int = 0
     tool_calls: dict[str, int] = field(default_factory=dict)
+    tool_refused: dict[str, int] = field(default_factory=dict)
+    tool_usd: float = 0.0
     rounds: int = 0
     unpriced_calls: int = 0
     estimated_calls: int = 0
@@ -56,6 +81,7 @@ class Gate:
         self.scope_role: str | None = None
         self.scope_steps = 0
         self.scope_max: int | None = None
+        self.scope_brief = False
 
     # -- state -------------------------------------------------------------
 
@@ -81,9 +107,10 @@ class Gate:
     def stop_requested(self) -> bool:
         return self._stop is not None
 
-    def begin_scope(self, role: str, max_steps: int) -> None:
-        """Start counting model calls for one brief (or one Lead decision)."""
+    def begin_scope(self, role: str, max_steps: int, brief: bool = False) -> None:
+        """Start counting model calls for one brief (brief=True) or one Lead decision."""
         self.scope_role, self.scope_steps, self.scope_max = role, 0, max_steps
+        self.scope_brief = brief
 
     def enter_report_phase(self) -> None:
         self.phase = "report"
@@ -112,7 +139,7 @@ class Gate:
         if self.phase == "work":
             self._work_checks()
             if self.scope_max is not None and self.scope_steps >= self.scope_max:
-                raise LimitReached(
+                raise (BriefLimit if self.scope_brief else LimitReached)(
                     "max_steps",
                     f"{self.scope_role} used all {self.scope_max} model calls allowed for one brief",
                 )
@@ -171,31 +198,50 @@ class Gate:
         self.spend.rounds += 1
         return self.spend.rounds
 
-    def check_tool_call(self, role: str, tool: str, args_key: str) -> None:
+    def check_tool_call(self, role: str, tool: str, args_key: str, brief: bool = False) -> None:
+        """Check one tool call. brief=True for a role's call inside a brief, where
+        loop detection ends the brief rather than the run."""
         if self.phase != "work":
             raise LimitReached("tools_disabled", "tools are disabled while the report is written")
         self._work_checks()
-        cap = self.limits.max_calls_for(tool)
-        used = self.spend.tool_calls.get(tool, 0)
-        if used >= cap:
-            raise LimitReached("max_calls", f"{tool} has been called {used} times, its limit for a run")
+        # Loop detection counts every attempt, refused or not, so retrying a
+        # refused call with the same arguments is still caught.
         key = (role, tool, args_key)
         if self._seen[key] >= self.limits.loop_threshold:
-            raise LimitReached(
+            raise (BriefLimit if brief else LimitReached)(
                 "loop_detection",
                 f"{role} called {tool} with the same arguments {self._seen[key] + 1} times "
                 f"(the threshold is {self.limits.loop_threshold})",
             )
         self._seen[key] += 1
+        cap = self.limits.max_calls_for(tool)
+        used = self.spend.tool_calls.get(tool, 0)
+        if used >= cap:
+            self.spend.tool_refused[tool] = self.spend.tool_refused.get(tool, 0) + 1
+            raise ToolRefused("max_calls", f"{tool} has used all {cap} calls allowed in this run")
         self.spend.tool_calls[tool] = used + 1
+
+    def check_tool_cost(self, tool: str, usd: float) -> None:
+        """Before a tool that bills per call: refuse it if it would pass the budget."""
+        if usd <= 0:
+            return
+        cap = self.work_budget_cap
+        if self.spend.usd + usd > cap:
+            raise LimitReached(
+                "budget_usd",
+                f"{tool} costs ${usd:.4f} a call; ${self.spend.usd:.4f} of ${cap:.4f} "
+                "available before the report reserve is already spent",
+            )
 
     def record_tool_cost(self, usd: float) -> None:
         """For tools that bill per call (cost_per_call in tools.md)."""
         self.spend.usd += usd
+        self.spend.tool_usd += usd
 
     def snapshot(self) -> dict:
         self.spend.elapsed_seconds = round(self.elapsed(), 3)
         d = asdict(self.spend)
         d["usd"] = round(d["usd"], 6)
+        d["tool_usd"] = round(d["tool_usd"], 6)
         d["total_tokens"] = self.spend.total_tokens
         return d

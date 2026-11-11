@@ -55,6 +55,46 @@ def set_key(home: Home, name: str, value: str) -> None:
     mdfile.write_atomic(home.env, "\n".join(kept) + "\n", mode=0o600)
 
 
+def remove_key(home: Home, name: str) -> bool:
+    """Remove a key from .env. Returns whether it was there."""
+    if not home.env.exists():
+        return False
+    lines = home.env.read_text(encoding="utf-8").splitlines()
+    pattern = re.compile(rf"^\s*(export\s+)?{re.escape(name)}\s*=")
+    kept = [ln for ln in lines if not pattern.match(ln)]
+    if len(kept) == len(lines):
+        return False
+    mdfile.write_atomic(home.env, "\n".join(kept) + ("\n" if kept else ""), mode=0o600)
+    return True
+
+
+def key_uses(home: Home) -> dict[str, list[str]]:
+    """Key names the settings files refer to, and what uses each."""
+    from ombro.settings import PROVIDER_TOOLS, SetupError, load_models, load_tool_settings
+
+    uses: dict[str, list[str]] = {}
+    try:
+        for spec in load_models(home).values():
+            if spec.api == "openai" and spec.key:
+                uses.setdefault(spec.key, []).append(f"model {spec.name}")
+    except (SetupError, mdfile.FrontMatterError):
+        pass
+    try:
+        tools = load_tool_settings(home)
+    except (SetupError, mdfile.FrontMatterError):
+        tools = None
+    if tools is not None:
+        for tool in PROVIDER_TOOLS:
+            provider = tools.provider_for(tool)
+            name = tools.key_name(provider)
+            if name:
+                uses.setdefault(name, []).append(f"{tool} ({provider})")
+        firecrawl = tools.key_name("firecrawl")
+        if firecrawl:
+            uses.setdefault(firecrawl, [])
+    return uses
+
+
 def mask(value: str | None) -> str:
     if not value:
         return "(not set)"

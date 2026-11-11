@@ -48,6 +48,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     finish = None
     warnings: list[str] = []
     failures: list[str] = []
+    brief_limits: list[dict[str, Any]] = []
     for ev in events:
         action = ev.get("action")
         if action == "briefed":
@@ -57,6 +58,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             current["status"] = ev.get("status", "?")
             current["result"] = ev.get("result")
             current["reason"] = ev.get("reason")
+            if ev.get("status") == "stopped_by_limit":
+                brief_limits.append({"role": current["role"], "limit": ev.get("limit"), "reason": ev.get("reason")})
             current = None
         elif action == "limit_reached":
             limit = {"limit": ev.get("limit"), "detail": ev.get("note", "")}
@@ -82,7 +85,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     deliverables = []
     for b in briefs:
         for d in (b.get("result") or {}).get("deliverables") or []:
-            deliverables.append({"role": b["role"], **_resolve_deliverable(workspace, d)})
+            deliverables.append({"role": b["role"], **_resolve_deliverable(run_dir, d)})
 
     in_progress = briefs[-1] if briefs and briefs[-1]["status"] == "in_progress" else None
     return {
@@ -102,19 +105,26 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "finish": finish,
         "warnings": warnings,
         "failures": failures,
+        "brief_limits": brief_limits,
         "deliverables": deliverables,
         "workspace": str(workspace),
         "display_currency": load_preferences(home).display_currency,
     }
 
 
-def _resolve_deliverable(workspace: Path, d: dict) -> dict[str, Any]:
+def _resolve_deliverable(run_dir: Path, d: dict) -> dict[str, Any]:
+    """A deliverable's path may be `workspace/x`, `scratch/x` or plain `x` (in the
+    workspace). Anything that leads outside those folders is treated as inline text."""
     name, path = str(d.get("name", "")), str(d.get("path", ""))
-    if path and "\n" not in path and len(path) < 300:
-        candidate = (workspace / path).resolve()
-        if candidate.is_relative_to(workspace) and candidate.is_file():
+    if path and "\n" not in path and len(path) < 300 and not path.startswith(("/", "~")):
+        first = path.split("/", 1)[0]
+        area = first if first in ("workspace", "scratch") and "/" in path else "workspace"
+        rel = path.split("/", 1)[1] if area == first and "/" in path else path
+        root = (run_dir / area).resolve()
+        candidate = (root / rel).resolve()
+        if candidate.is_relative_to(root) and candidate.is_file():
             return {"name": name, "path": str(candidate), "inline": None}
-        if candidate.is_relative_to(workspace) and ("/" in path or "." in path.rsplit("/", 1)[-1]) and " " not in path:
+        if candidate.is_relative_to(root) and ("/" in path or "." in path.rsplit("/", 1)[-1]) and " " not in path:
             return {"name": name, "path": None, "inline": None, "missing": path}
     return {"name": name, "path": None, "inline": path}
 
@@ -143,7 +153,8 @@ def narrative_input(facts: dict[str, Any]) -> str:
                 if res.get(key):
                     entry.append(f"{key}: {res[key]}")
         if b.get("reason"):
-            entry.append(f"Failure: {b['reason']}")
+            label = "Stopped" if b["status"] == "stopped_by_limit" else "Failure"
+            entry.append(f"{label}: {b['reason']}")
         if b["status"] == "in_progress":
             entry.append("This brief was still in progress when the run stopped.")
         lines.append(_short("\n".join(entry), PER_BRIEF_CAP))
@@ -165,6 +176,8 @@ def mechanical_narrative(facts: dict[str, Any]) -> str:
             ]
         elif b["status"] == "failed":
             not_done.append(f"- {b['role']} failed its brief: {b.get('reason') or 'no reason recorded'}")
+        elif b["status"] == "stopped_by_limit":
+            not_done.append(f"- {b['role']}'s brief was {b.get('reason') or 'stopped by a limit'}")
         elif b["status"] == "in_progress":
             not_done.append(f"- {b['role']} was working on this when the run stopped: {_short(b['task'], 300)}")
     if facts["limit"]:
@@ -276,13 +289,30 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     if sp.get("estimated_calls"):
         out.append(f"  - {sp['estimated_calls']} model call(s) reported no token counts; estimates were used")
     out.append(f"- Model calls: {sp.get('model_calls', 0)}")
+    if sp.get("tool_usd"):
+        out.append(f"  - of which tools (cost_per_call): {_money(sp['tool_usd'], cur)}")
     tools = sp.get("tool_calls") or {}
-    out.append("- Tool calls: " + (", ".join(f"{k} {v}" for k, v in sorted(tools.items())) or "none"))
+    caps = lim.get("tool_max_calls") or {}
+
+    def cap(name: str) -> Any:
+        return caps.get(name, caps.get("default", "?"))
+
+    out.append("- Tool calls: " + (", ".join(f"{k} {v} of {cap(k)}" for k, v in sorted(tools.items())) or "none"))
+    refused = sp.get("tool_refused") or {}
+    if refused:
+        out.append(
+            "  - refused at their cap: " + ", ".join(f"{k} {v}" for k, v in sorted(refused.items()))
+        )
     out.append(f"- Rounds: {sp.get('rounds', 0)} of {lim.get('max_rounds', 0)}")
     out.append(
         f"- Time: {format_duration(sp.get('elapsed_seconds', 0.0))} of {format_duration(lim.get('run_timeout', 0))}"
     )
     out.append(f"- Limit that stopped the run: {('`' + f['limit']['limit'] + '`') if f['limit'] else 'none'}")
+    if f.get("brief_limits"):
+        out.append(
+            "- Limits that ended a brief: "
+            + ", ".join(f"`{x['limit']}` ({x['role']})" for x in f["brief_limits"])
+        )
     if f["warnings"]:
         out += ["", "## Warnings", ""] + [f"- {w}" for w in f["warnings"]]
     return "\n".join(out).rstrip() + "\n"

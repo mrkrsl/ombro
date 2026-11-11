@@ -36,7 +36,7 @@ def first_line(text: str, limit: int = 120) -> str:
 
 RUN_BODY = """\
 This file is written by Ombro while the run is in progress. Edits are overwritten.
-Limits above were fixed when the run started and cannot change during it.
+Limits and tool settings above were fixed when the run started and cannot change during it.
 """
 
 
@@ -48,6 +48,7 @@ def create_run(
     limits: Limits,
     *,
     source: str,
+    tools: dict[str, Any] | None = None,
 ) -> Path:
     runs_dir = home.runs_dir(crew)
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +76,7 @@ def create_run(
         "finished_at": None,
         "limit_hit": None,
         "limits": limits.to_dict(),
+        "tools": tools or {},
         "spend": {},
     }
     mdfile.write(run_dir / "run.md", meta, RUN_BODY)

@@ -83,24 +83,42 @@ def test_lead_and_role_prompts(run, home):
 SPEC_TITLE = "Survey of invented teapot makers"
 
 
+def test_every_prompt_gives_todays_date(run):
+    from datetime import date
+
+    run([fake.brief("researcher", "Do the thing."), fake.result(), fake.finish(), LEAD_REPORT],
+        today=date(2031, 3, 4))
+    lead, role, report = (run.client.calls[i]["messages"][0]["content"] for i in (0, 1, -1))
+    for system in (lead, role, report):
+        assert "Today's date is Tuesday 4 March 2031." in system
+        assert system.index("fixed rules") < system.index("Today's date")  # after the rules, before the soul
+        assert system.index("Today's date") < system.index("=== Your soul")
+
+
 # -- loop detection -------------------------------------------------------------
 
 
-def test_looping_role_is_stopped(run, home):
+def test_looping_role_ends_its_brief_and_the_lead_is_told(run, home):
     write_role(home, "researcher", max_steps=20, tools=["test.echo"])
     calls = []
     status = run(
         [
             fake.brief("researcher", "Look something up."),
             fake.call("test__echo", {"q": "same"}, times=4),
+            fake.finish("The researcher got stuck."),
             LEAD_REPORT,
         ],
         registry=echo_registry(calls),
     )
-    assert status == "stopped_by_limit"
-    assert_reported(run, "stopped_by_limit", "loop_detection")
+    assert status == "completed"  # the run carried on after the brief ended
+    assert_reported(run, "completed")
     assert len(calls) == 3  # the fourth identical call never ran
-    assert "researcher" in run.report and "in_progress" in run.report
+    lead_sees = run.client.calls[-2]["messages"][-1]
+    assert lead_sees["role"] == "tool" and '"status": "stopped_by_limit"' in lead_sees["content"]
+    assert '"limit": "loop_detection"' in lead_sees["content"]
+    assert "**researcher** (stopped_by_limit)" in run.report
+    assert "Limits that ended a brief: `loop_detection` (researcher)" in run.report
+    assert "Limit that stopped the run: none" in run.report
 
 
 def test_looping_lead_is_stopped(run):
@@ -235,7 +253,7 @@ def test_model_calls_get_the_remaining_time_as_timeout(run):
 # -- per-brief and per-tool limits -----------------------------------------------------
 
 
-def test_max_steps_per_brief(run, home):
+def test_max_steps_ends_the_brief_and_the_lead_can_brief_again(run, home):
     write_role(home, "researcher", max_steps=3, tools=["test.echo"])
     status = run(
         [
@@ -243,15 +261,31 @@ def test_max_steps_per_brief(run, home):
             fake.call("test__echo", {"q": "a"}),
             fake.call("test__echo", {"q": "b"}),
             fake.call("test__echo", {"q": "c"}),
+            # the fourth model call is refused by the gate before it happens
+            fake.brief("researcher", "Just the first thing, please."),
+            fake.result("Found the first thing."),
+            fake.finish(),
             LEAD_REPORT,
         ],
         registry=echo_registry(),
     )
+    assert status == "completed"
+    assert_reported(run, "completed")
+    assert "Limits that ended a brief: `max_steps` (researcher)" in run.report
+    assert "1. **researcher** (stopped_by_limit)" in run.report
+    assert "2. **researcher** (ok)" in run.report
+    assert run.meta["spend"]["rounds"] == 2
+
+
+def test_lead_steps_still_stop_the_run(run, home):
+    write_role(home, "lead", kind="lead", max_steps=2, soul="You are an invented Lead.")
+    status = run([fake.call("brief", {"role": "nobody", "task": "x"}), fake.call("brief", {"role": "nobody", "task": "y"}),
+                  LEAD_REPORT])
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "max_steps")
 
 
-def test_max_calls_per_tool(run, home):
+def test_max_calls_per_tool_refuses_the_call_and_the_role_carries_on(run, home):
     write_role(home, "researcher", max_steps=20, tools=["test.echo"])
     calls = []
     status = run(
@@ -260,24 +294,33 @@ def test_max_calls_per_tool(run, home):
             fake.call("test__echo", {"q": "a"}),
             fake.call("test__echo", {"q": "b"}),
             fake.call("test__echo", {"q": "c"}),
+            fake.result("Looked up two of three."),
+            fake.finish(),
             LEAD_REPORT,
         ],
         registry=echo_registry(calls),
         limits={"tool_max_calls": {"test.echo": 2}},
     )
-    assert status == "stopped_by_limit"
-    assert_reported(run, "stopped_by_limit", "max_calls")
-    assert len(calls) == 2
+    assert status == "completed"
+    assert_reported(run, "completed")
+    assert len(calls) == 2  # the third call never ran
+    refused = run.client.calls[4]["messages"][-1]
+    assert refused["role"] == "tool" and "used all 2 calls" in refused["content"]
+    assert "test.echo 2 of 2" in run.report
+    assert "refused at their cap: test.echo 1" in run.report
+    assert run.meta["spend"]["tool_refused"] == {"test.echo": 1}
 
 
 def test_unknown_tools_count_against_caps(run):
     # A role with no tools that keeps calling one anyway is still bounded.
     status = run(
-        [fake.brief("researcher", "Search."), fake.call("web__search", {"q": "teapots"}, times=4), LEAD_REPORT]
+        [fake.brief("researcher", "Search."), fake.call("web__search", {"q": "teapots"}, times=4),
+         fake.finish(), LEAD_REPORT]
     )
-    assert status == "stopped_by_limit"
-    assert_reported(run, "stopped_by_limit", "loop_detection")
-    assert "tool_refused" in run.actions()
+    assert status == "completed"
+    assert_reported(run, "completed")
+    assert "Limits that ended a brief: `loop_detection` (researcher)" in run.report
+    assert run.actions().count("tool_refused") == 3
 
 
 def test_max_output_tokens_bounds_every_call(run, home):

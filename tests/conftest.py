@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ from ombro import fake, mdfile, runs
 from ombro.engine import Engine
 from ombro.fake import FakeClock, ScriptedClient
 from ombro.home import Home, ensure_home
-from ombro.settings import load_limits
+from ombro.settings import load_limits, load_tool_settings
 from ombro.tools import Tool, ToolRegistry
 
 # One dollar per million tokens in and out, so dollar limits are easy to reason about.
@@ -34,6 +35,18 @@ LEAD_REPORT = fake.say(
 )
 
 SPEC = "# Survey of invented teapot makers\n\nList three fictional teapot makers in Lowtown with one fact each."
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Any attempt to resolve a name or open a connection fails the test."""
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a test tried to use the network")
+
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
 
 
 def write_role(home: Home, name: str, *, kind: str = "specialist", soul: str | None = None, crew: str = "default", **cfg):
@@ -77,6 +90,14 @@ def echo_registry(calls: list | None = None) -> ToolRegistry:
     )
 
 
+def use_fake_tools(home: Home, **tool_settings) -> None:
+    """Point both web tools at the fake provider in tools.md, plus any extra settings."""
+    tools = {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}}
+    for name, cfg in tool_settings.items():
+        tools.setdefault(name.replace("__", "."), {}).update(cfg)
+    mdfile.write(home.tools, {"tools": tools}, "Test tool settings.")
+
+
 class Runner:
     """Builds a run, executes it with a scripted model, and exposes the results."""
 
@@ -87,9 +108,10 @@ class Runner:
         self.engine: Engine | None = None
         self.run_dir: Path | None = None
 
-    def __call__(self, script, *, limits=None, registry=None, spec=SPEC, crew="default") -> str:
-        lim = load_limits(self.home, limits)
-        self.run_dir = runs.create_run(self.home, crew, {}, spec, lim, source="test")
+    def __call__(self, script, *, limits=None, registry=None, spec=SPEC, crew="default", today=None) -> str:
+        tools = load_tool_settings(self.home)
+        lim = load_limits(self.home, limits, tools)
+        self.run_dir = runs.create_run(self.home, crew, {}, spec, lim, source="test", tools=tools.to_dict())
         self.client = ScriptedClient(script, clock=self.clock)
         self.engine = Engine(
             self.home,
@@ -97,6 +119,7 @@ class Runner:
             client_factory=lambda spec: self.client,
             registry=registry,
             clock=self.clock,
+            today=today,
         )
         return self.engine.execute()
 

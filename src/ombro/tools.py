@@ -1,7 +1,7 @@
 """Tool registry. Roles name tools by what they do; the registry supplies them.
 
-No role tools are built in yet. The registry is the seam where native tools,
-providers and MCP tools are added; every call still passes through the gate.
+Native tools are built in ombro.native from tools.md; MCP tools will be added
+here later. Every call passes through the gate first.
 """
 
 from __future__ import annotations
@@ -11,10 +11,26 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+class ToolError(Exception):
+    """A tool could not do what was asked. The message is shown to the role.
+
+    `billable` says whether the service was actually called, and so whether a
+    cost_per_call is charged for the attempt."""
+
+    billable = True
+
+
+class ToolInputError(ToolError):
+    """The arguments were refused before anything was called. Never charged."""
+
+    billable = False
+
+
 @dataclass
 class ToolContext:
     run_dir: Path
     role: str
+    timeout: float = 60.0  # seconds this call may take: the lesser of a per-call cap and the run's time left
 
     @property
     def workspace(self) -> Path:
@@ -64,6 +80,3 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
-
-def default_registry() -> ToolRegistry:
-    return ToolRegistry()

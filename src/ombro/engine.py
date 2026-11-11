@@ -7,17 +7,18 @@ import os
 import sys
 import time
 import traceback
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
 from ombro import contract, mdfile, prompts, report, runs
 from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, make_client
-from ombro.gate import Gate, LimitReached
+from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
 from ombro.roles import Role, load_crew, skill_texts
-from ombro.settings import Limits, ModelSpec, SetupError, load_models, load_preferences
-from ombro.tools import Tool, ToolContext, ToolRegistry, default_registry, wire_name
+from ombro.settings import Limits, ModelSpec, SetupError, ToolSettings, load_models, load_preferences
+from ombro.tools import Tool, ToolContext, ToolError, ToolRegistry
 
 TOOL_RESULT_CAP = 20_000
 
@@ -50,6 +51,7 @@ class Engine:
         registry: ToolRegistry | None = None,
         clock: Callable[[], float] = time.time,
         echo: Callable[[dict], None] | None = None,
+        today: date | None = None,
     ):
         self.home = home
         self.run_dir = Path(run_dir)
@@ -59,7 +61,13 @@ class Engine:
         self.limits = Limits.from_dict(meta["limits"])  # fixed at run creation
         self.clock = clock
         self.journal = Journal(self.run_dir / "journal.jsonl", echo=echo)
-        self.registry = registry or default_registry()
+        # Tool settings, like limits, were fixed when the run was created.
+        self.tool_settings = ToolSettings.from_dict(meta.get("tools"), "run.md tools")
+        if registry is None:
+            from ombro.native import native_registry
+
+            registry = native_registry(home, self.tool_settings)
+        self.registry = registry
         self._client_factory = client_factory or (lambda spec: make_client(spec, home))
         self._clients: dict[str, ChatClient] = {}
         self.models: dict[str, ModelSpec] = {}
@@ -68,6 +76,8 @@ class Engine:
         self.roles: dict[str, Role] = {}
         self.instructions = ""
         self.finished = False
+        # The local date, fixed for the run, so roles do not guess it.
+        self.today = prompts.format_date(today or date.today())
 
     # -- set-up ------------------------------------------------------------
 
@@ -103,6 +113,7 @@ class Engine:
                     "warning",
                     f"{role.name} lists tools that are not available and will not be offered: {', '.join(missing_tools)}",
                 )
+            self._warn_missing_keys(role)
             _, missing_skills = skill_texts(self.home, role.skills)
             if missing_skills:
                 self.journal.write(
@@ -112,6 +123,23 @@ class Engine:
         self.spec_body = spec_body.strip()
         if not self.spec_body:
             raise SetupError("the spec is empty")
+
+    def _warn_missing_keys(self, role: Role) -> None:
+        from ombro import keys
+        from ombro.settings import PROVIDER_TOOLS
+
+        for tool in role.tools:
+            if tool not in PROVIDER_TOOLS or self.registry.get(tool) is None:
+                continue
+            provider = self.tool_settings.provider_for(tool)
+            key_name = self.tool_settings.key_name(provider) if provider == "firecrawl" else None
+            if key_name and not keys.get_key(self.home, key_name):
+                self.journal.write(
+                    "harness",
+                    "warning",
+                    f"{tool} uses {provider}, but {key_name} is not set; its calls will fail until it is "
+                    f"(`ombro keys set {key_name}`)",
+                )
 
     def request_stop(self, reason: str) -> None:
         self.gate.request_stop(reason)
@@ -191,7 +219,7 @@ class Engine:
     def _lead_loop(self) -> None:
         assert self.lead is not None
         messages: list[dict] = [
-            {"role": "system", "content": prompts.lead_system(self.lead, self.instructions, self.roles, self.limits)},
+            {"role": "system", "content": prompts.lead_system(self.lead, self.instructions, self.roles, self.limits, self.today)},
             {"role": "user", "content": self.spec_body},
         ]
         self.gate.begin_scope(self.lead.name, self.lead.max_steps)
@@ -220,8 +248,13 @@ class Engine:
                 messages.append(_tool_message(tc.id, self._lead_tool(tc)))
 
     def _lead_tool(self, tc) -> dict[str, Any]:
-        self.gate.check_tool_call("lead", tc.name, _canonical(tc.arguments, tc.raw_arguments))
-        self._save_spend()
+        try:
+            self.gate.check_tool_call("lead", tc.name, _canonical(tc.arguments, tc.raw_arguments))
+        except ToolRefused as e:
+            self.journal.write("lead", "tool_refused", f"{tc.name}: {e.detail}", limit=e.limit)
+            return {"error": e.detail}
+        finally:
+            self._save_spend()
         if tc.arguments is None:
             self.journal.write("lead", "tool_refused", f"{tc.name}: arguments were not a JSON object")
             return {"error": "the arguments were not a JSON object"}
@@ -267,10 +300,27 @@ class Engine:
         schemas, by_wire = self._role_tools(role)
         skills, _ = skill_texts(self.home, role.skills)
         messages: list[dict] = [
-            {"role": "system", "content": prompts.role_system(role, skills, [t.name for t in by_wire.values()])},
+            {"role": "system", "content": prompts.role_system(role, skills, [t.name for t in by_wire.values()], self.today)},
             {"role": "user", "content": prompts.role_task(task)},
         ]
-        self.gate.begin_scope(role.name, role.max_steps)
+        self.gate.begin_scope(role.name, role.max_steps, brief=True)
+        try:
+            return self._role_loop(role, messages, schemas, by_wire)
+        except BriefLimit as e:
+            # The brief ends; the run goes on and the Lead decides what to do.
+            reason = f"stopped by {e.limit}: {e.detail}"
+            self.journal.write(role.name, "returned", reason, status="stopped_by_limit", limit=e.limit, reason=reason)
+            self._save_spend()
+            return {
+                "status": "stopped_by_limit",
+                "role": role.name,
+                "limit": e.limit,
+                "reason": e.detail,
+                "note": "The role did not return a result. Files it wrote before it stopped are still in the "
+                "workspace. Brief again more narrowly, or finish.",
+            }
+
+    def _role_loop(self, role: Role, messages: list[dict], schemas: list[dict], by_wire: dict[str, Tool]) -> dict:
         invalid = 0
         while True:
             reply = self._model_call(role, messages, schemas or None)
@@ -296,8 +346,13 @@ class Engine:
     def _role_tool(self, role: Role, tc, by_wire: dict[str, Tool]) -> Any:
         tool = by_wire.get(tc.name)
         name = tool.name if tool else tc.name
-        self.gate.check_tool_call(role.name, name, _canonical(tc.arguments, tc.raw_arguments))
-        self._save_spend()
+        try:
+            self.gate.check_tool_call(role.name, name, _canonical(tc.arguments, tc.raw_arguments), brief=True)
+        except ToolRefused as e:
+            self.journal.write(role.name, "tool_refused", f"{name}: {e.detail}", limit=e.limit, tool=name)
+            return {"error": f"{e.detail}. Carry on without it, or return what you have."}
+        finally:
+            self._save_spend()
         if tool is None:
             self.journal.write(role.name, "tool_refused", f"{name}: not one of this role's tools")
             return {"error": f"{name} is not one of your tools"}
@@ -307,13 +362,34 @@ class Engine:
         if tc.arguments is None:
             self.journal.write(role.name, "tool_refused", f"{name}: arguments were not a JSON object")
             return {"error": "the arguments were not a JSON object"}
+        cost = self.limits.cost_for(name)
+        self.gate.check_tool_cost(name, cost)  # a run-level budget stop if it cannot be afforded
+        ctx = ToolContext(self.run_dir, role.name, timeout=self._tool_timeout())
+        args_note = _short(_canonical(tc.arguments, ""), 120)
         try:
-            out = tool.handler(tc.arguments, ToolContext(self.run_dir, role.name)) if tool.handler else None
+            out = tool.handler(tc.arguments, ctx) if tool.handler else None
+        except ToolError as e:
+            self._charge(name, cost, billed=e.billable)
+            self.journal.write(role.name, "tool_error", f"{name} {args_note}: {_short(str(e))}", tool=name)
+            return {"error": str(e)}
         except Exception as e:
-            self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}")
+            self._charge(name, cost, billed=True)
+            self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
             return {"error": f"{type(e).__name__}: {e}"}
-        self.journal.write(role.name, "tool_call", f"{name} {_short(_canonical(tc.arguments, ''), 120)}", tool=name)
+        self._charge(name, cost, billed=True)
+        self.journal.write(role.name, "tool_call", f"{name} {args_note}", tool=name)
         return out if out is not None else {"ok": True}
+
+    def _charge(self, name: str, cost: float, billed: bool) -> None:
+        if cost and billed:
+            self.gate.record_tool_cost(cost)
+            self.journal.write("harness", "tool_cost", f"{name}: ${cost:.4f}", tool=name, usd=round(cost, 6))
+            self._save_spend()
+
+    def _tool_timeout(self) -> float:
+        from ombro.native import CALL_TIMEOUT
+
+        return max(0.5, min(CALL_TIMEOUT, self.limits.run_timeout - self.gate.elapsed()))
 
     # -- report ------------------------------------------------------------
 
@@ -323,7 +399,7 @@ class Engine:
         if self.lead is not None and self.lead.model in self.models:
             facts = report.gather_facts(self.home, self.run_dir, status)
             messages = [
-                {"role": "system", "content": prompts.report_system(self.lead, self.instructions)},
+                {"role": "system", "content": prompts.report_system(self.lead, self.instructions, self.today)},
                 {"role": "user", "content": report.narrative_input(facts)},
             ]
             try:

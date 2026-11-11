@@ -7,10 +7,12 @@ Ombro assumes models will try to do too much, so it puts deterministic limits
 around them. You write a spec, start a run, walk away, and read a report
 later. Every run ends in a report, whether it finished, hit a limit or failed.
 
-**Status: early.** This is the headless core: the home directory, roles, a
-model connection, the Lead loop, the guardrail gate, the result contract, the
-journal and reports. Roles have no tools yet. Interviews, memory, chat,
-schedules, the outbox and MCP are not built.
+**Status: early.** This is the headless core plus native tools: the home
+directory, roles, a model connection, the Lead loop, the guardrail gate, the
+result contract, the journal, reports, web search and fetch, workspace files
+and secrets. Interviews, memory, chat, schedules, the outbox and MCP are not
+built. Outward tools (anything that sends or changes something outside the
+run) are refused.
 
 ## Install
 
@@ -50,6 +52,10 @@ ombro status [run_id]                  # limits and spend
 ombro journal [run_id]                 # the event log, readable
 ombro report [run_id]                  # the final report
 ombro stop <run_id>                    # stop a run; it writes its report first
+ombro open [run_id]                    # open a run's workspace folder
+ombro keys                             # list keys (masked) and what uses them
+ombro keys set FIRECRAWL_API_KEY       # set one; typed into a hidden prompt
+ombro keys remove FIRECRAWL_API_KEY
 ```
 
 Set `OMBRO_HOME` to use a home directory other than `~/.config/ombro`.
@@ -67,6 +73,51 @@ Set `OMBRO_HOME` to use a home directory other than `~/.config/ombro`.
    separate call with no tools. If even that is impossible, the harness writes
    the report from the journal.
 
+## Tools
+
+A role gets only the tools its `config.md` lists:
+
+| Tool | Does |
+|---|---|
+| `web.search` | Web search through a provider. Returns titles, URLs and snippets. |
+| `web.fetch` | Reads one page as text or Markdown through a provider. |
+| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the run's `workspace/` and `scratch/` folders. |
+
+Workspace paths start with `workspace/` (deliverables) or `scratch/` (working
+notes). Absolute paths, `..`, and symlinks that lead outside those folders
+are refused, and nothing is written through a symlink. A deliverable a role
+names by path is listed in the report with its full path.
+
+Roles ask for a tool by what it does, never by vendor. `tools.md` says which
+provider backs each one:
+
+| Provider | Tools | Notes |
+|---|---|---|
+| `firecrawl` | search, fetch | Needs `FIRECRAWL_API_KEY`. |
+| `duckduckgo` | search | No key. Unofficial and rate-limited, so best effort. |
+| `direct` | fetch | No key. A plain download. Local and private network addresses are refused. |
+| `fake` | search, fetch | Invented results. Records every request in the run's `fake-calls.jsonl`. |
+
+```yaml
+---
+tools:
+  web.search: {provider: firecrawl, max_calls: 20, cost_per_call: 0.002}
+  web.fetch: {provider: firecrawl, max_calls: 30}
+  workspace.write: {max_calls: 40}
+providers:
+  firecrawl: {key: FIRECRAWL_API_KEY}
+---
+```
+
+`max_calls` caps a tool's calls per run. `cost_per_call` is optional: dollars
+per call for services that bill in their own units, such as Firecrawl credits.
+It is added to the run's dollar total and checked against `budget_usd`. Like
+limits, tool settings are fixed when a run starts and recorded in `run.md`.
+
+Keys live in `.env` (owner-only) and are read at the moment of use, so a key
+set with `ombro keys set` is picked up on the next call, even in a run already
+going. Keys never reach a model, a journal or a report.
+
 ## Guardrails
 
 Limits are enforced by code, never by asking the model. Every model call and
@@ -80,9 +131,21 @@ records the cost after it.
 | `max_rounds` | run; Lead delegation rounds |
 | `max_steps` | each brief; model calls a role may make |
 | `run_timeout` | run; wall clock |
-| `tool_max_calls` | each tool, per run |
+| `tool_max_calls` | each tool, per run (`max_calls` in `tools.md`) |
+| `tool_cost_per_call` | each tool's dollars per call (`cost_per_call` in `tools.md`) |
 | `max_output_tokens` | each model call |
-| `loop_threshold` | run; the same tool with the same arguments repeated |
+| `loop_threshold` | the same tool with the same arguments repeated |
+
+Money, tokens, rounds, time and a stop request end the whole run. Narrower
+limits end only what they bound, and the run goes on:
+
+- A role's `max_steps` or loop detection ends that brief. The Lead is told and
+  can brief again more narrowly or finish. The report records which limit
+  ended which brief.
+- A tool that has used its `max_calls` refuses further calls for the rest of
+  the run. The role is told and carries on without it.
+- The Lead's own step limit, and the Lead repeating the same call, still stop
+  the run.
 
 A share of the budget and token limit (`report_reserve`) is held back so the
 final report can always be paid for. Limits are fixed when a run starts and
@@ -113,6 +176,7 @@ or `helper`; helpers default to the `cheap` model and fewer steps.
 
 ## Testing without a model
 
-`models.md` accepts `api: fake` with a `script:` JSON file of canned replies.
-The test suite uses the same scripted client, so every guardrail is tested
-without a network connection or spend.
+`models.md` accepts `api: fake` with a `script:` JSON file of canned replies,
+and `tools.md` accepts `provider: fake` for search and fetch. The test suite
+uses the same fakes, and mock HTTP transports for the real providers, so
+every guardrail and tool is tested without a network connection or spend.

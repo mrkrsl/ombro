@@ -85,6 +85,7 @@ LIMITS_META = {
     "loop_threshold": 3,
     "max_steps": {"lead": 6, "specialist": 15, "helper": 8},
     "tool_max_calls": {"default": 20},
+    "tool_cost_per_call": {},
     "report_max_output_tokens": 2000,
     "report_timeout": "2m",
 }
@@ -103,7 +104,10 @@ changes a run already in progress.
 - report_reserve: share of budget_usd and max_tokens held back so the final report can always be paid for.
 - loop_threshold: how many times a role may make the same tool call with the same arguments.
 - max_steps: model calls a role may make for one brief, by kind. A role's config.md can set its own.
-- tool_max_calls: calls per tool per run. `default` applies to any tool not named.
+- tool_max_calls: calls per tool per run. `default` applies to any tool not
+  named; `max_calls` in tools.md sets one tool's cap.
+- tool_cost_per_call: dollars per call for tools that bill per call. Usually
+  set as `cost_per_call` in tools.md.
 - report_max_output_tokens, report_timeout: bounds on the final report call.
 """
 
@@ -133,9 +137,39 @@ prices. Any OpenAI-compatible chat endpoint with tool calling works.
 - A name can point at another name, as `cheap: default` does.
 """
 
+TOOLS_META = {
+    "tools": {
+        "web.search": {"provider": "duckduckgo", "max_calls": 20},
+        "web.fetch": {"provider": "direct", "max_calls": 30},
+        "workspace.write": {"max_calls": 40},
+    },
+    "providers": {"firecrawl": {"key": "FIRECRAWL_API_KEY"}},
+}
+
 TOOLS_BODY = """\
-Which provider backs each tool, MCP servers, and per-tool settings.
-No tools are configured yet.
+Which provider backs each tool, and per-tool settings. Roles name tools by
+what they do (`web.search`), never by provider, so changing provider here is
+a one-line edit and no role changes. Settings are fixed when a run starts and
+recorded in its run.md.
+
+Tools:
+- web.search: providers `firecrawl` (needs a key), `duckduckgo` (no key;
+  unofficial and rate-limited, so best effort) or `fake`.
+- web.fetch: providers `firecrawl` (needs a key), `direct` (no key; a plain
+  page download that refuses local and private network addresses) or `fake`.
+- workspace.read, workspace.write, workspace.list: files in the run's
+  workspace/ and scratch/ folders only. No provider.
+
+Settings for any tool:
+- provider: which provider backs it.
+- max_calls: calls allowed per run. Tools not named use `default` in limits.md.
+- cost_per_call: optional US dollars per call, added to the run's dollar
+  total and checked against budget_usd. For services that bill in their own
+  units, such as Firecrawl credits.
+
+providers: settings for each provider. `key` names the variable in .env that
+holds its key (set it with `ombro keys set NAME`). `fake` returns invented
+results and records every request in the run's fake-calls.jsonl.
 """
 
 PREFERENCES_META = {"default_crew": DEFAULT_CREW, "editor": "", "display_currency": None}
@@ -212,7 +246,7 @@ def ensure_home(home: Home) -> list[Path]:
     _write_if_missing(home.env, "", created, mode=0o600)
     _write_if_missing(home.limits, mdfile.dump(LIMITS_META, LIMITS_BODY), created)
     _write_if_missing(home.models, mdfile.dump(MODELS_META, MODELS_BODY), created)
-    _write_if_missing(home.tools, mdfile.dump({}, TOOLS_BODY), created)
+    _write_if_missing(home.tools, mdfile.dump(TOOLS_META, TOOLS_BODY), created)
     _write_if_missing(home.preferences_config, mdfile.dump(PREFERENCES_META, PREFERENCES_BODY), created)
     _write_if_missing(home.instructions, mdfile.dump({}, INSTRUCTIONS_BODY), created)
     created += ensure_crew(home, DEFAULT_CREW, "The default crew.")
