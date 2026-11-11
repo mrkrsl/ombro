@@ -1,0 +1,121 @@
+"""Roles: a folder with config.md and soul.md. One mechanism for every kind."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from ombro import mdfile
+from ombro.home import Home
+from ombro.settings import Limits, SetupError
+
+KINDS = ("lead", "specialist", "helper")
+NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
+DEFAULT_MODEL = {"lead": "default", "specialist": "default", "helper": "cheap"}
+FALLBACK_STEPS = {"lead": 6, "specialist": 15, "helper": 8}
+
+
+class RoleError(SetupError):
+    pass
+
+
+@dataclass
+class Role:
+    name: str
+    kind: str
+    description: str
+    model: str
+    soul: str
+    path: Path
+    max_steps: int
+    tools: list[str] = field(default_factory=list)
+    skills: list[str] = field(default_factory=list)
+
+
+def _str_list(value, label: str, where: Path) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+        raise RoleError(f"{where}: `{label}` must be a list of names, like [a, b]")
+    return [v.strip() for v in value]
+
+
+def load_role(folder: Path, limits: Limits) -> Role:
+    cfg = folder / "config.md"
+    soul_path = folder / "soul.md"
+    if not cfg.is_file():
+        raise RoleError(f"{folder}: missing config.md")
+    if not soul_path.is_file():
+        raise RoleError(f"{folder}: missing soul.md")
+    try:
+        meta, _ = mdfile.read(cfg)
+        _, soul_body = mdfile.read(soul_path)
+    except mdfile.FrontMatterError as e:
+        raise RoleError(str(e)) from None
+
+    name = str(meta.get("name") or folder.name)
+    if name != folder.name:
+        raise RoleError(f"{cfg}: name {name!r} does not match its folder {folder.name!r}")
+    if not NAME.match(name):
+        raise RoleError(f"{cfg}: role names use lower-case letters, digits, - and _")
+    kind = str(meta.get("kind") or "specialist")
+    if kind not in KINDS:
+        raise RoleError(f"{cfg}: kind must be one of {', '.join(KINDS)}, not {kind!r}")
+    description = str(meta.get("description") or "").strip()
+    if not description and kind != "lead":
+        raise RoleError(f"{cfg}: a description is required; it is what the Lead sees when choosing whom to brief")
+    steps = meta.get("max_steps", limits.max_steps.get(kind, FALLBACK_STEPS[kind]))
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
+        raise RoleError(f"{cfg}: max_steps must be a positive whole number")
+    soul = mdfile.prompt_text(soul_body)
+    if not soul:
+        raise RoleError(f"{soul_path}: soul.md is empty")
+    return Role(
+        name=name,
+        kind=kind,
+        description=description,
+        model=str(meta.get("model") or DEFAULT_MODEL[kind]),
+        soul=soul,
+        path=folder,
+        max_steps=steps,
+        tools=_str_list(meta.get("tools"), "tools", cfg),
+        skills=_str_list(meta.get("skills"), "skills", cfg),
+    )
+
+
+def load_crew(home: Home, crew: str, limits: Limits) -> tuple[Role, dict[str, Role]]:
+    """Return (lead, other roles by name)."""
+    rdir = home.roles_dir(crew)
+    if not home.crew_dir(crew).is_dir():
+        raise RoleError(f"no crew named {crew!r} in {home.crews_dir}")
+    if not rdir.is_dir():
+        raise RoleError(f"{rdir} is missing")
+    lead: Role | None = None
+    roles: dict[str, Role] = {}
+    for folder in sorted(p for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        role = load_role(folder, limits)
+        if role.kind == "lead":
+            if folder.name != "lead":
+                raise RoleError(f"{folder}: only the role in roles/lead can be the Lead")
+            lead = role
+        else:
+            if folder.name == "lead":
+                raise RoleError(f"{folder}: the role in roles/lead must have kind: lead")
+            roles[role.name] = role
+    if lead is None:
+        raise RoleError(f"crew {crew!r} has no Lead (roles/lead with kind: lead)")
+    return lead, roles
+
+
+def skill_texts(home: Home, skills: list[str]) -> tuple[list[tuple[str, str]], list[str]]:
+    """Return ([(skill, text)], [missing skill names])."""
+    found, missing = [], []
+    for s in skills:
+        path = home.skills_dir / s / "skill.md"
+        if not path.is_file():
+            missing.append(s)
+            continue
+        _, body = mdfile.read(path)
+        found.append((s, mdfile.prompt_text(body)))
+    return found, missing

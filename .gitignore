@@ -1,0 +1,44 @@
+# Secrets: never commit keys, wherever they end up.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Ombro home directories and run output must never be committed.
+# (A real home lives in ~/.config/ombro or $OMBRO_HOME, outside the repo,
+# but guard against one being created inside it by accident.)
+.ombro/
+ombro-home/
+runs/
+chats/
+journal.jsonl
+report.md
+run.md
+
+# Notes and specifications belong outside the repository.
+*specification*.md
+notes/
+planning/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

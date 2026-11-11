@@ -1,0 +1,399 @@
+"""Acceptance tests for the guardrails: each limit stops a run, and a report is always written."""
+
+from __future__ import annotations
+
+import pytest
+
+from conftest import LEAD_REPORT, echo_registry, write_role
+from ombro import fake
+
+
+def assert_reported(run, status: str, limit: str | None = None, by_lead: bool = True):
+    report = run.report
+    assert run.meta["status"] == status
+    assert f"**Status:** {status}" in report
+    for section in ("## What was asked", "## What was done", "## What was not done and why",
+                    "## Decisions for you", "## Deliverables", "## Outbox", "## Changes to notes.md", "## Cost"):
+        assert section in report, section
+    if limit:
+        assert run.meta["limit_hit"] == limit
+        assert f"**Stopped by:** `{limit}`" in report
+        assert f"Limit that stopped the run: `{limit}`" in report
+    if by_lead:
+        assert "LEAD-REPORT-MARKER" in report
+        assert run.client.remaining == 0, "the Lead's report reply was not the last call"
+    else:
+        assert "written by the harness" in report
+    assert run.actions()[-1] == "run_ended"
+
+
+# -- the ordinary path --------------------------------------------------------
+
+
+def test_completed_run(run):
+    status = run(
+        [
+            fake.brief("researcher", "Find three invented teapot makers."),
+            fake.result("Found three makers.", deliverables=[{"name": "makers", "path": "Ada Pots; Brin Ware; Coll Clay"}]),
+            fake.finish("All done."),
+            LEAD_REPORT,
+        ]
+    )
+    assert status == "completed"
+    assert_reported(run, "completed")
+    assert "Found three makers." in run.report
+    assert "Ada Pots" in run.report
+    assert run.meta["spend"]["rounds"] == 1
+    assert run.meta["spend"]["model_calls"] == 4
+    # The report call had no tools.
+    assert run.client.calls[-1]["tools"] is None
+
+
+def test_lead_and_role_prompts(run, home):
+    (home.instructions).write_text("---\n---\nI am an invented user who likes short reports.\n")
+    run([fake.brief("researcher", "Do the thing."), fake.result(), fake.finish(), LEAD_REPORT])
+    lead_system = run.client.calls[0]["messages"][0]["content"]
+    assert "researcher (specialist)" in lead_system
+    assert "invented user who likes short reports" in lead_system
+    assert lead_system.index("fixed rules") < lead_system.index("Your soul")
+    role_call = run.client.calls[1]
+    assert role_call["tools"] is None  # stage 1 roles have no tools
+    assert role_call["messages"][1]["content"].endswith("Do the thing.")
+    assert SPEC_TITLE not in role_call["messages"][1]["content"]  # roles see the brief, not the spec
+
+
+SPEC_TITLE = "Survey of invented teapot makers"
+
+
+# -- loop detection -------------------------------------------------------------
+
+
+def test_looping_role_is_stopped(run, home):
+    write_role(home, "researcher", max_steps=20, tools=["test.echo"])
+    calls = []
+    status = run(
+        [
+            fake.brief("researcher", "Look something up."),
+            fake.call("test__echo", {"q": "same"}, times=4),
+            LEAD_REPORT,
+        ],
+        registry=echo_registry(calls),
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "loop_detection")
+    assert len(calls) == 3  # the fourth identical call never ran
+    assert "researcher" in run.report and "in_progress" in run.report
+
+
+def test_looping_lead_is_stopped(run):
+    status = run(
+        [fake.brief("researcher", "Same task."), fake.result()] * 3
+        + [fake.brief("researcher", "Same task."), LEAD_REPORT]
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "loop_detection")
+    assert run.meta["spend"]["rounds"] == 3
+
+
+# -- run-level limits ---------------------------------------------------------------
+
+
+def test_over_budget_run_stops_and_reserve_pays_for_report(run):
+    limits = {"budget_usd": 0.02, "report_reserve": 0.25, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
+    status = run(
+        [
+            fake.brief("researcher", "Read a great deal."),
+            fake.result("Read it all.", usage={"input": 13000, "output": 200}),
+            LEAD_REPORT,
+        ],
+        limits=limits,
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "budget_usd")
+    spend = run.meta["spend"]
+    assert spend["usd"] <= 0.02
+    # Work stopped inside the share left after the reserve; only the report used the reserve.
+    work_usd = spend["usd"] - _report_cost(run)
+    assert work_usd <= 0.015
+
+
+def _report_cost(run) -> float:
+    last = [e for e in run.events if e["action"] == "model_call"][-1]
+    return last["usd"]
+
+
+def test_without_a_reserve_the_report_falls_back_to_the_journal(run):
+    limits = {"budget_usd": 0.02, "report_reserve": 0.0, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
+    status = run(
+        [
+            fake.brief("researcher", "Read a great deal."),
+            fake.result("Read it all.", usage={"input": 18500, "output": 200}),
+            LEAD_REPORT,
+        ],
+        limits=limits,
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "budget_usd", by_lead=False)
+    assert run.meta["spend"]["usd"] <= 0.02
+    assert "Read it all." in run.report  # the harness still reports what was done
+
+
+def test_over_token_limit(run, home):
+    # Unpriced model: the budget cannot bind, so max_tokens must.
+    from ombro import mdfile
+
+    meta, body = mdfile.read(home.models)
+    del meta["models"]["default"]["price_per_mtok"]
+    mdfile.write(home.models, meta, body)
+    limits = {"max_tokens": 20000, "report_reserve": 0.25, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
+    status = run(
+        [
+            fake.brief("researcher", "Read a great deal."),
+            fake.result("Read it all.", usage={"input": 13000, "output": 200}),
+            LEAD_REPORT,
+        ],
+        limits=limits,
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "max_tokens")
+    assert run.meta["spend"]["total_tokens"] <= 20000
+    assert "no price" in run.report  # warned that budget_usd could not bind
+
+
+def test_max_rounds(run):
+    status = run(
+        [
+            fake.brief("researcher", "Task one."), fake.result(),
+            fake.brief("researcher", "Task two."), fake.result(),
+            fake.brief("researcher", "Task three."),
+            LEAD_REPORT,
+        ],
+        limits={"max_rounds": 2},
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "max_rounds")
+    assert run.meta["spend"]["rounds"] == 2
+
+
+def test_timed_out_run(run):
+    status = run(
+        [
+            fake.brief("researcher", "Take your time."),
+            fake.result("Took ages.", advance=120),
+            LEAD_REPORT,
+        ],
+        limits={"run_timeout": "60s"},
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "run_timeout")
+    assert "Took ages." in run.report
+
+
+def test_timeout_during_a_model_call(run):
+    status = run(
+        [
+            fake.brief("researcher", "Take your time."),
+            {"error": "the model call ran out of time", "timed_out": True, "advance": 120},
+            LEAD_REPORT,
+        ],
+        limits={"run_timeout": "60s"},
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "run_timeout")
+    assert "in_progress" in run.report
+
+
+def test_model_calls_get_the_remaining_time_as_timeout(run):
+    run(
+        [fake.brief("researcher", "Quick.", advance=40), fake.result(), fake.finish(), LEAD_REPORT],
+        limits={"run_timeout": "60s", "report_timeout": "30s"},
+    )
+    timeouts = [c["timeout"] for c in run.client.calls]
+    assert timeouts[0] == 60
+    assert timeouts[1] == 20  # 40 seconds were used by the first call
+    assert timeouts[-1] == 30  # the report call has its own bound
+
+
+# -- per-brief and per-tool limits -----------------------------------------------------
+
+
+def test_max_steps_per_brief(run, home):
+    write_role(home, "researcher", max_steps=3, tools=["test.echo"])
+    status = run(
+        [
+            fake.brief("researcher", "Look things up."),
+            fake.call("test__echo", {"q": "a"}),
+            fake.call("test__echo", {"q": "b"}),
+            fake.call("test__echo", {"q": "c"}),
+            LEAD_REPORT,
+        ],
+        registry=echo_registry(),
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "max_steps")
+
+
+def test_max_calls_per_tool(run, home):
+    write_role(home, "researcher", max_steps=20, tools=["test.echo"])
+    calls = []
+    status = run(
+        [
+            fake.brief("researcher", "Look things up."),
+            fake.call("test__echo", {"q": "a"}),
+            fake.call("test__echo", {"q": "b"}),
+            fake.call("test__echo", {"q": "c"}),
+            LEAD_REPORT,
+        ],
+        registry=echo_registry(calls),
+        limits={"tool_max_calls": {"test.echo": 2}},
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "max_calls")
+    assert len(calls) == 2
+
+
+def test_unknown_tools_count_against_caps(run):
+    # A role with no tools that keeps calling one anyway is still bounded.
+    status = run(
+        [fake.brief("researcher", "Search."), fake.call("web__search", {"q": "teapots"}, times=4), LEAD_REPORT]
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "loop_detection")
+    assert "tool_refused" in run.actions()
+
+
+def test_max_output_tokens_bounds_every_call(run, home):
+    write_role(home, "researcher", max_steps=5)
+    run(
+        [fake.brief("researcher", "Write."), fake.result(usage={"input": 50, "output": 99999}), fake.finish(), LEAD_REPORT],
+        limits={"max_output_tokens": 500, "report_max_output_tokens": 2000},
+    )
+    assert all(c["max_output_tokens"] <= 500 for c in run.client.calls)
+    assert run.client.calls[-1]["max_output_tokens"] == 500  # the report call is bounded too
+    out = [e["output_tokens"] for e in run.events if e["action"] == "model_call"]
+    assert max(out) <= 500
+
+
+# -- the result contract ----------------------------------------------------------
+
+
+def test_invalid_result_is_retried_once_then_failed(run):
+    status = run(
+        [
+            fake.brief("researcher", "Report back."),
+            fake.say("Here is what I found: lots of teapots."),
+            fake.say('{"summary": "Found teapots."}'),
+            fake.finish("The researcher failed."),
+            LEAD_REPORT,
+        ]
+    )
+    assert status == "completed"
+    assert_reported(run, "completed")
+    retry = run.client.calls[2]["messages"][-1]
+    assert retry["role"] == "user" and "rejected" in retry["content"] and "last attempt" in retry["content"]
+    lead_sees = run.client.calls[3]["messages"][-1]
+    assert lead_sees["role"] == "tool" and '"status": "failed"' in lead_sees["content"]
+    assert run.actions().count("result_invalid") == 2
+    assert "**researcher** (failed)" in run.report
+
+
+def test_invalid_result_then_valid_is_accepted(run):
+    status = run(
+        [
+            fake.brief("researcher", "Report back."),
+            fake.say("```json\n{\"summary\": 1}\n```"),
+            fake.result("Second time lucky."),
+            fake.finish(),
+            LEAD_REPORT,
+        ]
+    )
+    assert status == "completed"
+    assert "Second time lucky." in run.report
+    assert run.actions().count("result_invalid") == 1
+
+
+# -- failures still end in a report -----------------------------------------------------
+
+
+def test_report_call_failure_falls_back_to_journal(run):
+    status = run(
+        [fake.brief("researcher", "Do it."), fake.result("Did it."), fake.finish(), {"error": "service unavailable"}]
+    )
+    assert status == "completed"
+    assert_reported(run, "completed", by_lead=False)
+    assert "Did it." in run.report
+
+
+def test_model_error_fails_the_run_with_a_report(run):
+    status = run([{"error": "HTTP 401: invalid key"}, LEAD_REPORT])
+    assert status == "failed"
+    assert_reported(run, "failed")
+    assert "invalid key" in run.report
+
+
+def test_setup_error_in_a_role_is_reported_by_the_lead(run, home):
+    write_role(home, "researcher", model="no-such-model")
+    status = run([LEAD_REPORT])
+    assert status == "failed"
+    assert_reported(run, "failed")
+    assert "no-such-model" in run.report
+
+
+def test_setup_error_in_the_lead_still_writes_a_report(run, home):
+    from ombro import mdfile
+
+    mdfile.write(home.roles_dir("default") / "lead" / "config.md", {"name": "lead", "kind": "lead", "model": "nope"})
+    status = run([LEAD_REPORT])
+    assert status == "failed"
+    assert_reported(run, "failed", by_lead=False)
+    assert "nope" in run.report
+    assert run.client.calls == []
+
+
+def test_stop_request_ends_run_with_report(run):
+    def stop_then_reply(messages, tools):
+        run.engine.request_stop("stopped with `ombro stop`")
+        return fake.result("Partly done.")
+
+    status = run([fake.brief("researcher", "Work."), stop_then_reply, LEAD_REPORT])
+    assert status == "stopped"
+    assert_reported(run, "stopped")
+    assert run.meta["limit_hit"] is None
+    assert "Partly done." in run.report
+
+
+def test_cannot_proceed_is_a_successful_run(run):
+    status = run([fake.finish("No role can do this honestly.", outcome="cannot_proceed"), LEAD_REPORT])
+    assert status == "completed"
+    assert "cannot_proceed" in run.report
+
+
+def test_lead_that_never_calls_a_tool_is_finished(run):
+    status = run([fake.say("I think we're done."), fake.say("Really."), LEAD_REPORT])
+    assert status == "completed"
+    assert_reported(run, "completed")
+
+
+def test_limits_are_fixed_at_start(run, home):
+    from ombro import mdfile
+
+    def edit_limits(messages, tools):
+        meta, body = mdfile.read(home.limits)
+        meta["max_rounds"] = 50
+        mdfile.write(home.limits, meta, body)
+        return fake.result()
+
+    run(
+        [fake.brief("researcher", "One."), edit_limits, fake.brief("researcher", "Two."), LEAD_REPORT],
+        limits={"max_rounds": 1},
+    )
+    assert run.meta["limit_hit"] == "max_rounds"
+    assert run.meta["limits"]["max_rounds"] == 1
+
+
+@pytest.mark.parametrize("bad", [{"budget_usd": -1}, {"report_reserve": 0.9}, {"nonsense": 1}, {"run_timeout": "soon"}])
+def test_bad_limits_are_refused(home, bad):
+    from ombro.settings import SetupError, load_limits
+
+    with pytest.raises(SetupError):
+        load_limits(home, bad)
