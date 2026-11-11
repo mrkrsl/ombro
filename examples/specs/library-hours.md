@@ -1,7 +1,6 @@
 ---
 name: library-hours
 limits:
-  budget_usd: 0.15
   max_rounds: 3
   run_timeout: 10m
 ---

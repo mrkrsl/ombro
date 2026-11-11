@@ -101,3 +101,38 @@ def mask(value: str | None) -> str:
     if len(value) <= 8:
         return "****"
     return f"{value[:3]}…{value[-4:]}"
+
+
+# Shapes of common API keys and tokens, so one pasted into an interview is
+# removed even when it is not in .env.
+_SECRET_SHAPES = [
+    re.compile(r"\b(?:sk|fc|pk|rk|sess)[-_][A-Za-z0-9_\-]{16,}"),
+    re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{16,}"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}\b"),
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9\-]{10,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_\-]{30,}"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{16,}"),
+]
+REMOVED = "[key removed]"
+
+
+def scrub(home: Home, text: str) -> tuple[str, int]:
+    """Remove every key value in .env (and the environment variables settings
+    refer to), and anything shaped like a common API key. Returns (text, count)."""
+    if not text:
+        return text, 0
+    values = {v for v in read_env(home).values() if len(v) >= 8}
+    for name in key_uses(home):
+        v = os.environ.get(name)
+        if v and len(v) >= 8:
+            values.add(v)
+    count = 0
+    for v in sorted(values, key=len, reverse=True):
+        if v in text:
+            count += text.count(v)
+            text = text.replace(v, REMOVED)
+    for pattern in _SECRET_SHAPES:
+        text, n = pattern.subn(REMOVED, text)
+        count += n
+    return text, count

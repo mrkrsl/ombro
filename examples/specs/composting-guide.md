@@ -1,7 +1,6 @@
 ---
 name: composting-guide
 limits:
-  budget_usd: 0.10
   max_rounds: 3
   run_timeout: 5m
 ---

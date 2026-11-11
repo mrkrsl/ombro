@@ -44,25 +44,54 @@ def format_duration(seconds: float) -> str:
     return f"{s}s"
 
 
+# Allowance levels. One word in limits.md sets the token, round and time caps
+# for runs and interviews, so nothing runs away. Any single value can still be
+# set by hand in limits.md or a spec, which wins over the level.
+ALLOWANCES: dict[str, dict[str, Any]] = {
+    "conservative": {"max_tokens": 150_000, "max_rounds": 4, "run_timeout": "15m", "interview_max_tokens": 40_000},
+    "moderate": {"max_tokens": 400_000, "max_rounds": 8, "run_timeout": "30m", "interview_max_tokens": 100_000},
+    "generous": {"max_tokens": 1_500_000, "max_rounds": 16, "run_timeout": "1h", "interview_max_tokens": 250_000},
+    "unlimited": {"max_tokens": None, "max_rounds": 50, "run_timeout": "4h", "interview_max_tokens": None},
+}
+DEFAULT_ALLOWANCE = "moderate"
+LEVEL_KEYS = ("max_tokens", "max_rounds", "run_timeout", "interview_max_tokens")
+# Settings from earlier versions that are accepted and ignored.
+RETIRED_LIMITS = ("budget_usd",)
+INTERVIEW_TIMEOUT = 6 * 3600.0  # interviews wait on a person; the token and turn caps bound them
+
+
+def format_tokens(n: int | None) -> str:
+    return "no cap" if n is None else f"{n:,}"
+
+
 @dataclass(frozen=True)
 class Limits:
-    budget_usd: float
-    max_tokens: int
+    max_tokens: int | None
     max_rounds: int
     run_timeout: float
     max_output_tokens: int
     report_reserve: float
     loop_threshold: int
+    allowance: str = DEFAULT_ALLOWANCE
     max_steps: dict[str, int] = field(default_factory=dict)
     tool_max_calls: dict[str, int] = field(default_factory=dict)
     tool_cost_per_call: dict[str, float] = field(default_factory=dict)
     report_max_output_tokens: int = 2000
     report_timeout: float = 120.0
+    interview_max_tokens: int | None = 100_000
+    interview_max_turns: int = 40
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Limits":
         known = set(cls.__dataclass_fields__)
-        d = {"tool_cost_per_call": {}, **d}  # absent from runs made before it existed
+        # Absent from runs made before they existed.
+        d = {
+            "tool_cost_per_call": {},
+            "allowance": "custom",
+            "interview_max_tokens": ALLOWANCES[DEFAULT_ALLOWANCE]["interview_max_tokens"],
+            "interview_max_turns": 40,
+            **{k: v for k, v in d.items() if k not in RETIRED_LIMITS},
+        }
         unknown = set(d) - known
         if unknown:
             raise SetupError(f"unknown limit(s): {', '.join(sorted(unknown))}")
@@ -78,6 +107,11 @@ class Limits:
                     raise SetupError(f"limit {name} must be a whole number, not {v!r}")
                 return int(v)
             return float(v)
+
+        def token_cap(name: str, v: Any) -> int | None:
+            if v is None or (isinstance(v, str) and v.strip().lower() in ("unlimited", "none")):
+                return None
+            return pos_num(name, v, integer=True)
 
         def int_map(name: str, v: Any) -> dict[str, int]:
             if not isinstance(v, dict):
@@ -96,8 +130,8 @@ class Limits:
             if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
                 raise SetupError(f"cost_per_call for {k} must be zero or a positive number of dollars, not {v!r}")
         return cls(
-            budget_usd=pos_num("budget_usd", d["budget_usd"]),
-            max_tokens=pos_num("max_tokens", d["max_tokens"], integer=True),
+            allowance=str(d["allowance"]),
+            max_tokens=token_cap("max_tokens", d["max_tokens"]),
             max_rounds=pos_num("max_rounds", d["max_rounds"], integer=True),
             run_timeout=pos_num("run_timeout", parse_duration(d["run_timeout"])),
             max_output_tokens=pos_num("max_output_tokens", d["max_output_tokens"], integer=True),
@@ -108,6 +142,8 @@ class Limits:
             tool_cost_per_call={str(k): float(v) for k, v in costs.items()},
             report_max_output_tokens=pos_num("report_max_output_tokens", d["report_max_output_tokens"], integer=True),
             report_timeout=pos_num("report_timeout", parse_duration(d["report_timeout"])),
+            interview_max_tokens=token_cap("interview_max_tokens", d["interview_max_tokens"]),
+            interview_max_turns=pos_num("interview_max_turns", d["interview_max_turns"], integer=True),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -118,6 +154,18 @@ class Limits:
 
     def cost_for(self, tool: str) -> float:
         return self.tool_cost_per_call.get(tool, 0.0)
+
+    def for_interview(self) -> "Limits":
+        """The limits one interview runs under: its own token cap, a turn cap, no reserve."""
+        from dataclasses import replace
+
+        return replace(
+            self,
+            max_tokens=self.interview_max_tokens,
+            max_rounds=self.interview_max_turns,
+            run_timeout=INTERVIEW_TIMEOUT,
+            report_reserve=0.0,
+        )
 
 
 def _deep_merge(base: dict, extra: dict) -> dict:
@@ -130,10 +178,26 @@ def _deep_merge(base: dict, extra: dict) -> dict:
     return out
 
 
+def _layer(acc: dict, layer: dict) -> dict:
+    """Merge one layer of settings. A layer that names an allowance replaces the
+    level-set values from earlier layers; values it sets by hand still win."""
+    layer = layer or {}
+    if "allowance" in layer:
+        acc = {k: v for k, v in acc.items() if k not in LEVEL_KEYS}
+    return _deep_merge(acc, layer)
+
+
+def resolve_allowance(merged: dict) -> dict:
+    level = str(merged.get("allowance") or DEFAULT_ALLOWANCE).strip().lower()
+    if level not in ALLOWANCES:
+        raise SetupError(f"allowance must be one of {', '.join(ALLOWANCES)}, not {merged.get('allowance')!r}")
+    return {**ALLOWANCES[level], **merged, "allowance": level}
+
+
 def load_limits(home: Home, overrides: dict | None = None, tools: "ToolSettings | None" = None) -> Limits:
     """limits.md, then per-tool caps and costs from tools.md, then a spec's overrides."""
     meta = mdfile.read(home.limits)[0] if home.limits.is_file() else {}
-    merged = _deep_merge(LIMITS_META, meta)
+    merged = _layer(copy.deepcopy(LIMITS_META), meta)
     tools = tools if tools is not None else load_tool_settings(home)
     per_tool: dict[str, dict] = {"tool_max_calls": {}, "tool_cost_per_call": {}}
     for name, cfg in tools.tools.items():
@@ -141,8 +205,8 @@ def load_limits(home: Home, overrides: dict | None = None, tools: "ToolSettings 
             per_tool["tool_max_calls"][name] = cfg["max_calls"]
         if "cost_per_call" in cfg:
             per_tool["tool_cost_per_call"][name] = cfg["cost_per_call"]
-    merged = _deep_merge(_deep_merge(merged, per_tool), overrides or {})
-    return Limits.from_dict(merged)
+    merged = _layer(_layer(merged, per_tool), overrides or {})
+    return Limits.from_dict(resolve_allowance(merged))
 
 
 # ---------------------------------------------------------------------------

@@ -14,7 +14,7 @@ from ombro import journal as journal_mod
 from ombro import mdfile, runs
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
-from ombro.settings import format_duration, load_preferences
+from ombro.settings import format_duration, format_tokens, load_preferences
 
 NARRATIVE_INPUT_CAP = 24_000
 PER_BRIEF_CAP = 2_000
@@ -49,6 +49,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     warnings: list[str] = []
     failures: list[str] = []
     brief_limits: list[dict[str, Any]] = []
+    gaps: list[str] = []
     for ev in events:
         action = ev.get("action")
         if action == "briefed":
@@ -69,6 +70,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             warnings.append(ev.get("note", ""))
         elif action == "failed":
             failures.append(ev.get("note", ""))
+        elif action == "insufficient_brief":
+            gaps = list(ev.get("gaps") or [])
     if failure:
         failures.append(failure)
 
@@ -106,6 +109,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "warnings": warnings,
         "failures": failures,
         "brief_limits": brief_limits,
+        "gaps": gaps,
+        "interview_spend": meta.get("interview_spend") or {},
         "deliverables": deliverables,
         "workspace": str(workspace),
         "display_currency": load_preferences(home).display_currency,
@@ -163,6 +168,20 @@ def narrative_input(facts: dict[str, Any]) -> str:
 
 
 def mechanical_narrative(facts: dict[str, Any]) -> str:
+    if facts.get("gaps"):
+        return "\n".join(
+            [
+                "## What was done",
+                "No roles were briefed. The task interview ended without a confirmed spec.",
+                "",
+                "## What was not done and why",
+                "The brief was insufficient. These answers were missing or contradicted each other:",
+                *[f"- {g}" for g in facts["gaps"]],
+                "",
+                "## Decisions for you",
+                "- Settle the gaps above, then brief the task again with `ombro brief` or `ombro run`.",
+            ]
+        )
     done, not_done, decisions = [], [], []
     for b in facts["briefs"]:
         res = b.get("result")
@@ -279,16 +298,27 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
 
     cur = f["display_currency"]
     out += ["## Cost", ""]
+    cap_tokens = lim.get("max_tokens")
+    allowance = lim.get("allowance")
     out.append(
         f"- Tokens: {sp.get('total_tokens', 0):,} ({sp.get('input_tokens', 0):,} in, "
-        f"{sp.get('output_tokens', 0):,} out) of {lim.get('max_tokens', 0):,}"
+        f"{sp.get('output_tokens', 0):,} out) of {format_tokens(cap_tokens)}"
+        + (f" (allowance: {allowance})" if allowance and allowance != "custom" else "")
     )
-    out.append(f"- Dollars: {_money(sp.get('usd', 0.0), cur)} of ${lim.get('budget_usd', 0):.2f}")
-    if sp.get("unpriced_calls"):
-        out.append(f"  - {sp['unpriced_calls']} model call(s) had no price in models.md and are not in the dollar total")
+    if sp.get("usd"):
+        line = f"- Estimated cost: {_money(sp.get('usd', 0.0), cur)}, from the prices in models.md (not a limit)"
+        out.append(line)
+        if sp.get("unpriced_calls"):
+            out.append(f"  - {sp['unpriced_calls']} model call(s) had no price in models.md and are not in the estimate")
     if sp.get("estimated_calls"):
         out.append(f"  - {sp['estimated_calls']} model call(s) reported no token counts; estimates were used")
     out.append(f"- Model calls: {sp.get('model_calls', 0)}")
+    isp = f.get("interview_spend") or {}
+    if isp:
+        out.append(
+            f"- Task interview (separate from the run's limits): {isp.get('total_tokens', 0):,} tokens, "
+            f"{isp.get('model_calls', 0)} model calls"
+        )
     if sp.get("tool_usd"):
         out.append(f"  - of which tools (cost_per_call): {_money(sp['tool_usd'], cur)}")
     tools = sp.get("tool_calls") or {}

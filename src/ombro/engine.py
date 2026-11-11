@@ -99,13 +99,6 @@ class Engine:
         for role in [self.lead, *self.roles.values()]:
             if role.model not in self.models:
                 raise SetupError(f"role {role.name} uses model {role.model!r}, which is not in models.md")
-            spec = self.models[role.model]
-            if not spec.priced:
-                self.journal.write(
-                    "harness",
-                    "warning",
-                    f"model {spec.name!r} has no price in models.md, so budget_usd cannot bound it; max_tokens still does",
-                )
             missing_tools = [t for t in role.tools if self.registry.get(t) is None]
             if missing_tools:
                 self.journal.write(
@@ -249,7 +242,7 @@ class Engine:
 
     def _lead_tool(self, tc) -> dict[str, Any]:
         try:
-            self.gate.check_tool_call("lead", tc.name, _canonical(tc.arguments, tc.raw_arguments))
+            self.gate.check_tool_call("lead", tc.name, _canonical(tc.arguments, tc.raw_arguments), capped=False)
         except ToolRefused as e:
             self.journal.write("lead", "tool_refused", f"{tc.name}: {e.detail}", limit=e.limit)
             return {"error": e.detail}
@@ -363,7 +356,6 @@ class Engine:
             self.journal.write(role.name, "tool_refused", f"{name}: arguments were not a JSON object")
             return {"error": "the arguments were not a JSON object"}
         cost = self.limits.cost_for(name)
-        self.gate.check_tool_cost(name, cost)  # a run-level budget stop if it cannot be afforded
         ctx = ToolContext(self.run_dir, role.name, timeout=self._tool_timeout())
         args_note = _short(_canonical(tc.arguments, ""), 120)
         try:

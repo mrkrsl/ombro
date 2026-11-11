@@ -36,6 +36,8 @@ class FakeClock:
         self.now += seconds
 
 
+_SHARED: dict[tuple[str, bytes], "ScriptedClient"] = {}
+
 Entry = dict[str, Any] | Callable[[list, list | None], dict[str, Any]]
 
 
@@ -60,6 +62,22 @@ class ScriptedClient:
         if not isinstance(script, list):
             raise ModelError(f"fake model script {p} must be a JSON list")
         return cls(script)
+
+    @classmethod
+    def shared(cls, path: str, base: Path | None = None) -> "ScriptedClient":
+        """One client per script file per process, so an interview and the run it
+        starts read one script in order. A script file that changes starts afresh."""
+        p = Path(path).expanduser()
+        if not p.is_absolute() and base is not None:
+            p = base / p
+        try:
+            key = (str(p.resolve()), p.read_bytes())
+        except OSError:
+            return cls.from_file(path, base)
+        if key not in _SHARED:
+            _SHARED.clear()
+            _SHARED[key] = cls.from_file(path, base)
+        return _SHARED[key]
 
     @property
     def remaining(self) -> int:

@@ -40,9 +40,9 @@ def test_fresh_home_layout(tmp_path):
 def test_ensure_home_never_overwrites(tmp_path):
     h = Home(tmp_path / "h")
     ensure_home(h)
-    h.limits.write_text("---\nbudget_usd: 0.25\n---\nMine.\n")
+    h.limits.write_text("---\nmax_rounds: 3\n---\nMine.\n")
     assert ensure_home(h) == []
-    assert load_limits(h).budget_usd == 0.25
+    assert load_limits(h).max_rounds == 3
 
 
 def test_default_install_loads(tmp_path):
@@ -125,8 +125,8 @@ def test_durations():
 
 
 def test_spec_overrides_merge_with_defaults(home):
-    limits = load_limits(home, {"budget_usd": 0.5, "tool_max_calls": {"web.search": 3}})
-    assert limits.budget_usd == 0.5
+    limits = load_limits(home, {"max_rounds": 2, "tool_max_calls": {"web.search": 3}})
+    assert limits.max_rounds == 2
     assert limits.max_calls_for("web.search") == 3
     assert limits.max_calls_for("workspace.list") == limits.tool_max_calls["default"]
 
@@ -175,3 +175,38 @@ def test_journal_reads_past_a_torn_line(tmp_path):
     events = journal.read(tmp_path / "journal.jsonl")
     assert len(events) == 1
     assert set(events[0]) >= {"ts", "role", "action", "note"}
+
+
+# -- allowance levels ----------------------------------------------------------------
+
+
+def test_default_allowance_is_moderate(home):
+    lim = load_limits(home)
+    assert lim.allowance == "moderate"
+    assert (lim.max_tokens, lim.max_rounds, lim.run_timeout, lim.interview_max_tokens) == (400_000, 8, 1800, 100_000)
+
+
+def test_allowance_sets_the_level_values_and_hand_values_win(home):
+    from ombro import mdfile
+
+    mdfile.write(home.limits, {"allowance": "conservative", "max_rounds": 6})
+    lim = load_limits(home)
+    assert (lim.max_tokens, lim.max_rounds, lim.interview_max_tokens) == (150_000, 6, 40_000)
+    # A spec naming a level replaces the level values below it, and its own hand values win.
+    lim = load_limits(home, {"allowance": "generous"})
+    assert (lim.max_tokens, lim.max_rounds) == (1_500_000, 16)
+    lim = load_limits(home, {"allowance": "generous", "max_tokens": 900_000})
+    assert lim.max_tokens == 900_000
+
+
+def test_old_limits_files_still_load(home):
+    from ombro import mdfile
+
+    mdfile.write(home.limits, {"budget_usd": 1.0, "max_tokens": 400000, "max_rounds": 8, "run_timeout": "30m"})
+    lim = load_limits(home)
+    assert lim.max_tokens == 400_000 and "budget_usd" not in lim.to_dict()
+
+
+def test_interview_limits_use_their_own_cap(home):
+    lim = load_limits(home).for_interview()
+    assert lim.max_tokens == 100_000 and lim.max_rounds == 40 and lim.report_reserve == 0

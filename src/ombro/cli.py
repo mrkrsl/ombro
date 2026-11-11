@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ombro import __version__, journal, keys, mdfile, runs
 from ombro.home import Home
-from ombro.settings import SetupError, format_duration, load_limits, load_preferences, load_tool_settings
+from ombro.settings import SetupError, format_duration, format_tokens, load_limits, load_preferences, load_tool_settings
 
 
 class CliError(Exception):
@@ -88,39 +88,102 @@ def _install_stop_handlers(engine) -> None:
     signal.signal(signal.SIGINT, on_int)
 
 
+def _spec_path(home: Home, value: str, crew: str | None) -> Path:
+    """A spec file, or the name of a spec saved in the crew's specs/ folder."""
+    path = Path(value).expanduser()
+    if path.is_file():
+        return path
+    saved = home.crew_dir(_crew(home, crew)) / "specs" / (value if value.endswith(".md") else f"{value}.md")
+    if "/" not in value and saved.is_file():
+        return saved
+    names = [n for n, _ in saved_specs(home, _crew(home, crew))]
+    listed = f" Saved specs: {', '.join(names)}." if names else " No specs are saved yet; make one with `ombro brief`."
+    raise CliError(f"No spec file at {path}, and no saved spec named {value!r}.{listed}")
+
+
+def saved_specs(home: Home, crew: str) -> list[tuple[str, Path]]:
+    folder = home.crew_dir(crew) / "specs"
+    if not folder.is_dir():
+        return []
+    files = [f for f in folder.glob("*.md") if not f.name.endswith(".previous.md")]
+    return [(f.stem, f) for f in sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)]
+
+
+def cmd_specs(args) -> int:
+    home = _home()
+    crew = _crew(home, args.crew)
+    rows = saved_specs(home, crew)
+    if not rows:
+        print(f"No specs saved in crew {crew}. Make one with `ombro brief`.")
+        return 0
+    print(f"Specs in crew {crew}, newest first:\n")
+    for name, path in rows:
+        _, body = mdfile.read(path)
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(path.stat().st_mtime))
+        print(f"  {name:<28} {when}  {runs.first_line(body, 70)}")
+    print("\nRun one with `ombro run --spec <name>`.")
+    return 0
+
+
+def _require_model(home: Home) -> None:
+    from ombro.init_cmd import connected_model
+
+    if connected_model(home) is None:
+        raise CliError("No model is connected. Run `ombro init`.")
+
+
 def cmd_run(args) -> int:
     home = _home()
     _reap(home)
     if args.spec and args.skip_interview:
         raise CliError("Give either --spec or --skip-interview, not both.")
+    interview = None
     if args.spec:
-        path = Path(args.spec).expanduser()
-        if not path.is_file():
-            raise CliError(f"No spec file at {path}")
+        path = _spec_path(home, args.spec, args.crew)
         spec_meta, spec_body = mdfile.read(path)
         source = f"spec file {path.resolve()}"
     elif args.skip_interview:
         spec_meta, spec_body = {}, args.skip_interview
         source = "--skip-interview (no interview was held)"
     else:
-        raise CliError("The task interview is not built yet. Use --spec <file> or --skip-interview \"<brief>\".")
+        _require_model(home)
+        crew = _crew(home, args.crew)
+        outcome = _brief_interview(home, crew, "", then_run=True)
+        if outcome.status == "insufficient" or outcome.status == "limit":
+            from ombro.interviews import record_insufficient_brief
+
+            tool_settings = load_tool_settings(home)
+            run_dir = record_insufficient_brief(
+                home, crew, load_limits(home, None, tool_settings), outcome, _first_answer(outcome),
+                tools=tool_settings.to_dict(),
+            )
+            print(f"\nRun {run_dir.name} ended: insufficient_brief\n")
+            print((run_dir / "report.md").read_text(encoding="utf-8"))
+            return 1
+        if not outcome.confirmed:
+            return 1
+        path = outcome.proposal.files[0].path
+        spec_meta, spec_body = mdfile.read(path)
+        source = f"interview; spec saved at {path}"
+        interview = outcome
     if not spec_body.strip():
         raise CliError("The spec is empty.")
 
     crew = _crew(home, args.crew or spec_meta.get("crew"))
     overrides = spec_meta.get("limits") or {}
     if not isinstance(overrides, dict):
-        raise CliError("`limits` in a spec must be a mapping, e.g. limits: {budget_usd: 0.5}")
+        raise CliError("`limits` in a spec must be a mapping, e.g. limits: {allowance: generous}")
     tool_settings = load_tool_settings(home)
     limits = load_limits(home, overrides, tool_settings)
-
-    from ombro.init_cmd import connected_model
-
-    if connected_model(home) is None:
-        raise CliError("No model is connected. Run `ombro init`.")
+    _require_model(home)
 
     run_dir = runs.create_run(home, crew, spec_meta, spec_body, limits, source=source, tools=tool_settings.to_dict())
     run_id = run_dir.name
+    if interview is not None:
+        from ombro.interviews import _interview_spend
+
+        shutil.copy2(interview.transcript, run_dir / "interview.md")
+        runs.update_run(run_dir, interview_spend=_interview_spend(interview))
     if args.detach:
         log = open(run_dir / "process.log", "ab")
         proc = subprocess.Popen(
@@ -169,11 +232,11 @@ def cmd_runs(args) -> int:
     if not rows:
         print("No runs yet.")
         return 0
-    print(f"{'RUN':<24} {'CREW':<12} {'STATUS':<18} {'COST':>9}  BRIEF")
+    print(f"{'RUN':<24} {'CREW':<12} {'STATUS':<18} {'TOKENS':>9}  BRIEF")
     for crew, run_dir in rows:
         meta, _ = runs.read_run(run_dir)
-        usd = (meta.get("spend") or {}).get("usd", 0.0)
-        print(f"{run_dir.name:<24} {crew:<12} {meta.get('status', '?'):<18} ${usd:>8.4f}  {meta.get('brief', '')[:60]}")
+        tokens = (meta.get("spend") or {}).get("total_tokens", 0)
+        print(f"{run_dir.name:<24} {crew:<12} {meta.get('status', '?'):<18} {tokens:>9,}  {meta.get('brief', '')[:60]}")
     return 0
 
 
@@ -194,14 +257,17 @@ def cmd_status(args) -> int:
     if meta.get("status") == "running":
         print(f"Process   {meta.get('pid')}")
     print()
+    print(f"Allowance {lim.get('allowance', 'custom')}")
+    print()
     print(f"{'':<14}{'used':>16}  {'limit':>14}")
-    print(f"{'Dollars':<14}{money:>16}  {'$' + format(lim.get('budget_usd', 0), '.2f'):>14}")
-    print(f"{'Tokens':<14}{sp.get('total_tokens', 0):>16,}  {lim.get('max_tokens', 0):>14,}")
+    print(f"{'Tokens':<14}{sp.get('total_tokens', 0):>16,}  {format_tokens(lim.get('max_tokens')):>14}")
     print(f"{'Rounds':<14}{sp.get('rounds', 0):>16}  {lim.get('max_rounds', 0):>14}")
     print(
         f"{'Time':<14}{format_duration(sp.get('elapsed_seconds', 0)):>16}  "
         f"{format_duration(lim.get('run_timeout', 0)):>14}"
     )
+    if usd:
+        print(f"{'Est. cost':<14}{money:>16}  {'(not a limit)':>14}")
     if sp.get("tool_usd"):
         print(f"{'  of it tools':<14}{'$' + format(sp['tool_usd'], '.4f'):>16}")
     print(f"{'Model calls':<14}{sp.get('model_calls', 0):>16}")
@@ -212,7 +278,7 @@ def cmd_status(args) -> int:
         cap = caps.get(name, caps.get("default", "-"))
         extra = f"  ({refused[name]} refused at the cap)" if refused.get(name) else ""
         print(f"{'  ' + name:<14}{n:>16}  {cap:>14}{extra}")
-    print(f"\n{int(reserve * 100)}% of the dollar and token limits is held back for the report.")
+    print(f"\n{int(reserve * 100)}% of the token limit is held back for the report.")
     return 0
 
 
@@ -352,6 +418,219 @@ def cmd_keys(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# brief, role, crew, limits
+
+
+def _first_answer(outcome) -> str:
+    return outcome.answers[0] if outcome.answers else ""
+
+
+def _brief_interview(home: Home, crew: str, task: str, *, then_run: bool):
+    from ombro.interviews import BriefPurpose, start
+
+    limits = load_limits(home)
+    return start(home, BriefPurpose(home, crew, limits, task, then_run=then_run), crew, limits)
+
+
+def cmd_brief(args) -> int:
+    home = _home()
+    _require_model(home)
+    crew = _crew(home, args.crew)
+    outcome = _brief_interview(home, crew, " ".join(args.text or []), then_run=False)
+    if outcome.confirmed:
+        name = outcome.proposal.data["name"]
+        crew_flag = f" --crew {crew}" if args.crew else ""
+        print(f"\nSpec saved as {name!r} ({outcome.proposal.files[0].path}).")
+        print(f"Run it with:   ombro run --spec {name}{crew_flag}")
+        print("List saved specs with `ombro specs`.")
+        return 0
+    if outcome.status in ("insufficient", "limit"):
+        print("\nThe brief is insufficient, so no spec was saved. The gaps:")
+        for g in outcome.gaps or ["No spec was confirmed."]:
+            print(f"  - {g}")
+    print(f"Transcript: {outcome.transcript}")
+    return 1
+
+
+def _role_rows(home: Home, crew: str) -> list[tuple[str, str]]:
+    """(folder name, problem or '') for every role folder, without stopping at a broken one."""
+    from ombro.roles import RoleError, load_role
+
+    rows = []
+    rdir = home.roles_dir(crew)
+    limits = load_limits(home)
+    for folder in sorted(p for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        try:
+            rows.append((folder.name, load_role(folder, limits)))
+        except RoleError as e:
+            rows.append((folder.name, str(e)))
+    return rows
+
+
+def cmd_role(args) -> int:
+    home = _home()
+    crew = _crew(home, args.crew)
+    action = args.action
+    if action == "list":
+        rows = _role_rows(home, crew)
+        print(f"Roles in crew {crew}:\n")
+        print(f"{'NAME':<20} {'KIND':<11} {'MODEL':<9} TOOLS")
+        for name, role in rows:
+            if isinstance(role, str):
+                print(f"{name:<20} {'(broken)':<11} {'':<9} {role}")
+                continue
+            print(f"{name:<20} {role.kind:<11} {role.model:<9} {', '.join(role.tools) or 'none'}")
+            if role.description:
+                print(f"{'':<20} {role.description}")
+        return 0
+    if action == "add":
+        from ombro.interviews import RolePurpose, start
+        from ombro.roles import NAME
+
+        _require_model(home)
+        name = (args.name or "").strip().lower() or None
+        if name and not NAME.match(name):
+            raise CliError("Role names use lower-case letters, digits, - and _.")
+        if name and home.roles_dir(crew).joinpath(name).exists():
+            raise CliError(f"Crew {crew} already has a role named {name}. Change it with `ombro role edit {name}`.")
+        limits = load_limits(home)
+        outcome = start(home, RolePurpose(home, crew, limits, name), crew, limits)
+        if outcome.confirmed:
+            print(f"\nAdded {outcome.proposal.data['name']} to crew {crew}.")
+            return 0
+        return 1
+    if not args.name:
+        raise CliError(f"Give the role's name, e.g. `ombro role {action} writer`.")
+    folder = home.roles_dir(crew) / args.name
+    if not folder.is_dir():
+        raise CliError(f"Crew {crew} has no role named {args.name!r}.")
+    if action == "edit":
+        from ombro.interview import editor_command
+        from ombro.roles import RoleError, load_role
+
+        files = [folder / "config.md", folder / "soul.md"]
+        cmd = editor_command(home)
+        if not cmd:
+            print("No editor is set (`editor` in preferences/config.md, or $EDITOR). The role's files:")
+            for f in files:
+                print(f"  {f}")
+            return 0
+        try:
+            subprocess.run([*cmd, *map(str, files)], check=False)
+        except OSError as e:
+            raise CliError(f"Could not start the editor {cmd[0]!r}: {e}") from None
+        try:
+            load_role(folder, load_limits(home))
+        except RoleError as e:
+            print(f"The role has a problem, and runs will refuse to start until it is fixed:\n  {e}")
+            return 1
+        print(f"{args.name} is valid.")
+        return 0
+    if action == "remove":
+        if args.name == "lead":
+            raise CliError("The Lead cannot be removed; every crew has one. Edit it with `ombro role edit lead`.")
+        answer = _confirm(f"Remove {args.name} from crew {crew}? Its folder is moved to the crew's removed/ folder. [y/N] ")
+        if not answer:
+            print("Nothing changed.")
+            return 1
+        removed = home.crew_dir(crew) / "removed"
+        removed.mkdir(exist_ok=True)
+        target = removed / args.name
+        if target.exists():
+            target = removed / f"{args.name}-{time.strftime('%Y%m%d-%H%M%S')}"
+        shutil.move(str(folder), str(target))
+        print(f"Moved {args.name} to {target}.")
+        return 0
+    raise CliError(f"Unknown role action {action!r}.")
+
+
+def _confirm(prompt: str) -> bool:
+    try:
+        return input(prompt).strip().lower() in ("y", "yes")
+    except (KeyboardInterrupt, EOFError):
+        print()
+        return False
+
+
+def _set_default_crew(home: Home, crew: str) -> None:
+    from ombro.home import PREFERENCES_BODY
+
+    meta, body = mdfile.read(home.preferences_config) if home.preferences_config.is_file() else ({}, PREFERENCES_BODY)
+    meta["default_crew"] = crew
+    mdfile.write(home.preferences_config, meta, body)
+
+
+def cmd_crew(args) -> int:
+    from ombro.home import ensure_crew
+    from ombro.roles import NAME
+
+    home = _home()
+    action = args.action or "list"
+    default = load_preferences(home).default_crew
+    if action == "list":
+        for crew in home.crews():
+            meta = {}
+            if (home.crew_dir(crew) / "crew.md").is_file():
+                meta, _ = mdfile.read(home.crew_dir(crew) / "crew.md")
+            rdir = home.roles_dir(crew)
+            n = len([p for p in rdir.iterdir() if p.is_dir() and p.name != "lead" and not p.name.startswith(".")]) if rdir.is_dir() else 0
+            mark = "*" if crew == default else " "
+            print(f"{mark} {crew:<16} {n} role(s)  {meta.get('description', '')}")
+        print("\n* the default crew")
+        return 0
+    if not args.name:
+        raise CliError(f"Give the crew's name, e.g. `ombro crew {action} podcast`.")
+    name = args.name.strip()
+    if not NAME.match(name):
+        raise CliError("Crew names use lower-case letters, digits, - and _.")
+    if action == "add":
+        if home.crew_dir(name).exists():
+            raise CliError(f"A crew named {name} already exists.")
+        ensure_crew(home, name, args.description or "")
+        print(f"Created crew {name} with a Lead. Add roles with `ombro role add --crew {name}`.")
+        return 0
+    if action == "use":
+        if not home.crew_dir(name).is_dir():
+            raise CliError(f"No crew named {name!r}. Crews: {', '.join(home.crews())}")
+        _set_default_crew(home, name)
+        print(f"The default crew is now {name}.")
+        return 0
+    raise CliError(f"Unknown crew action {action!r}.")
+
+
+def cmd_limits(args) -> int:
+    from ombro.settings import ALLOWANCES, LEVEL_KEYS, RETIRED_LIMITS
+
+    home = _home()
+    if args.action == "set":
+        level = (args.level or "").strip().lower()
+        if level not in ALLOWANCES:
+            raise CliError(f"Choose one of: {', '.join(ALLOWANCES)}.")
+        meta, body = mdfile.read(home.limits)
+        dropped = [k for k in (*LEVEL_KEYS, *RETIRED_LIMITS) if k in meta]
+        for k in dropped:
+            del meta[k]
+        meta = {"allowance": level, **{k: v for k, v in meta.items() if k != "allowance"}}
+        mdfile.write(home.limits, meta, body)
+        print(f"Allowance set to {level} in {home.limits}.")
+        if dropped:
+            print(f"Removed values set by hand, so the level applies: {', '.join(dropped)}.")
+    lim = load_limits(home)
+    meta, _ = mdfile.read(home.limits)
+    by_hand = [k for k in LEVEL_KEYS if k in meta]
+    print(f"Allowance: {lim.allowance}" + (f" (set by hand: {', '.join(by_hand)})" if by_hand else ""))
+    print(f"  run tokens       {format_tokens(lim.max_tokens)}")
+    print(f"  rounds           {lim.max_rounds}")
+    print(f"  run time         {format_duration(lim.run_timeout)}")
+    print(f"  each interview   {format_tokens(lim.interview_max_tokens)} tokens, {lim.interview_max_turns} answers")
+    print(f"  per model call   {lim.max_output_tokens:,} output tokens")
+    print(f"\nLevels: {', '.join(ALLOWANCES)}. Change with `ombro limits set <level>`; details in {home.limits}.")
+    if any(k in meta for k in RETIRED_LIMITS):
+        print("Note: budget_usd in limits.md is no longer used; dollars are only an estimate now.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -363,11 +642,37 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_init)
 
     s = sub.add_parser("run", help="start a run")
-    s.add_argument("--spec", help="a confirmed spec file")
+    s.add_argument("--spec", help="a confirmed spec: a file, or the name of one saved with `ombro brief`")
     s.add_argument("--skip-interview", metavar="BRIEF", help="run from a one-line brief with no interview (recorded)")
     s.add_argument("--detach", action="store_true", help="keep running after the terminal closes")
     s.add_argument("--crew", help="crew to use (default from preferences)")
     s.set_defaults(func=cmd_run)
+
+    s = sub.add_parser("brief", help="interview about a task and save a confirmed spec")
+    s.add_argument("text", nargs="*", help="the task in your own words (optional)")
+    s.add_argument("--crew")
+    s.set_defaults(func=cmd_brief)
+
+    s = sub.add_parser("specs", help="list saved specs")
+    s.add_argument("--crew")
+    s.set_defaults(func=cmd_specs)
+
+    s = sub.add_parser("role", help="list, add, edit or remove roles")
+    s.add_argument("action", choices=["list", "add", "edit", "remove"])
+    s.add_argument("name", nargs="?")
+    s.add_argument("--crew")
+    s.set_defaults(func=cmd_role)
+
+    s = sub.add_parser("crew", help="list or add crews, or set the default")
+    s.add_argument("action", nargs="?", choices=["list", "add", "use"], help="default: list")
+    s.add_argument("name", nargs="?")
+    s.add_argument("--description", help="for crew add")
+    s.set_defaults(func=cmd_crew)
+
+    s = sub.add_parser("limits", help="show the limits in force, or set the allowance level")
+    s.add_argument("action", nargs="?", choices=["show", "set"], default="show")
+    s.add_argument("level", nargs="?", help="conservative, moderate, generous or unlimited")
+    s.set_defaults(func=cmd_limits)
 
     s = sub.add_parser("runs", help="list runs and their status")
     s.add_argument("--crew")

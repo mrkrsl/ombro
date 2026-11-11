@@ -4,8 +4,8 @@ Checks happen before a call; cost is recorded after it. Limits are fixed when
 the gate is built and nothing in a run can change them.
 
 Three outcomes when a check fails:
-- LimitReached: the run stops and goes to its report (money, tokens, rounds,
-  time, a stop request, and the Lead's own step and loop limits).
+- LimitReached: the run stops and goes to its report (tokens, rounds, time,
+  a stop request, and the Lead's own step and loop limits).
 - BriefLimit: only the current brief ends, and the Lead is told (a role's
   max_steps or loop detection).
 - ToolRefused: only this call is refused, and the caller is told (a tool that
@@ -86,12 +86,10 @@ class Gate:
     # -- state -------------------------------------------------------------
 
     @property
-    def work_token_cap(self) -> int:
+    def work_token_cap(self) -> int | None:
+        if self.limits.max_tokens is None:
+            return None
         return int(self.limits.max_tokens * (1 - self.limits.report_reserve))
-
-    @property
-    def work_budget_cap(self) -> float:
-        return self.limits.budget_usd * (1 - self.limits.report_reserve)
 
     def elapsed(self) -> float:
         return self.clock() - self.started
@@ -143,33 +141,24 @@ class Gate:
                     "max_steps",
                     f"{self.scope_role} used all {self.scope_max} model calls allowed for one brief",
                 )
-            token_cap, usd_cap = self.work_token_cap, self.work_budget_cap
+            token_cap = self.work_token_cap
             timeout = L.run_timeout - self.elapsed()
             where = "available before the report reserve"
         else:
             now = self.clock()
             if now >= self.report_deadline:
                 raise LimitReached("report_timeout", "no time was left for the report call")
-            token_cap, usd_cap = L.max_tokens, L.budget_usd
+            token_cap = L.max_tokens
             timeout = self.report_deadline - now
             where = "in the run"
 
         worst_tokens = est_input + max_out
-        if self.spend.total_tokens + worst_tokens > token_cap:
+        if token_cap is not None and self.spend.total_tokens + worst_tokens > token_cap:
             raise LimitReached(
                 "max_tokens",
                 f"the next call could use up to {worst_tokens:,} tokens; "
                 f"{self.spend.total_tokens:,} of {token_cap:,} tokens {where} are already used",
             )
-        price = self.prices(model)
-        if price is not None:
-            worst_usd = (est_input * price[0] + max_out * price[1]) / 1_000_000
-            if self.spend.usd + worst_usd > usd_cap:
-                raise LimitReached(
-                    "budget_usd",
-                    f"the next call could cost up to ${worst_usd:.4f}; "
-                    f"${self.spend.usd:.4f} of ${usd_cap:.4f} {where} is already spent",
-                )
         if self.phase == "work":
             self.scope_steps += 1
         return max_out, max(timeout, 0.001)
@@ -198,9 +187,10 @@ class Gate:
         self.spend.rounds += 1
         return self.spend.rounds
 
-    def check_tool_call(self, role: str, tool: str, args_key: str, brief: bool = False) -> None:
+    def check_tool_call(self, role: str, tool: str, args_key: str, brief: bool = False, capped: bool = True) -> None:
         """Check one tool call. brief=True for a role's call inside a brief, where
-        loop detection ends the brief rather than the run."""
+        loop detection ends the brief rather than the run. capped=False for the
+        Lead's own tools, which max_rounds bounds instead of a per-tool cap."""
         if self.phase != "work":
             raise LimitReached("tools_disabled", "tools are disabled while the report is written")
         self._work_checks()
@@ -214,6 +204,8 @@ class Gate:
                 f"(the threshold is {self.limits.loop_threshold})",
             )
         self._seen[key] += 1
+        if not capped:
+            return
         cap = self.limits.max_calls_for(tool)
         used = self.spend.tool_calls.get(tool, 0)
         if used >= cap:
@@ -221,20 +213,8 @@ class Gate:
             raise ToolRefused("max_calls", f"{tool} has used all {cap} calls allowed in this run")
         self.spend.tool_calls[tool] = used + 1
 
-    def check_tool_cost(self, tool: str, usd: float) -> None:
-        """Before a tool that bills per call: refuse it if it would pass the budget."""
-        if usd <= 0:
-            return
-        cap = self.work_budget_cap
-        if self.spend.usd + usd > cap:
-            raise LimitReached(
-                "budget_usd",
-                f"{tool} costs ${usd:.4f} a call; ${self.spend.usd:.4f} of ${cap:.4f} "
-                "available before the report reserve is already spent",
-            )
-
     def record_tool_cost(self, usd: float) -> None:
-        """For tools that bill per call (cost_per_call in tools.md)."""
+        """For tools that bill per call (cost_per_call in tools.md). An estimate, never a limit."""
         self.spend.usd += usd
         self.spend.tool_usd += usd
 

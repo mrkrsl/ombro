@@ -76,10 +76,7 @@ class Home:
 # Default contents of a fresh install. Written only when a file is missing.
 
 LIMITS_META = {
-    "budget_usd": 1.00,
-    "max_tokens": 400000,
-    "max_rounds": 8,
-    "run_timeout": "30m",
+    "allowance": "moderate",
     "max_output_tokens": 4000,
     "report_reserve": 0.10,
     "loop_threshold": 3,
@@ -88,27 +85,46 @@ LIMITS_META = {
     "tool_cost_per_call": {},
     "report_max_output_tokens": 2000,
     "report_timeout": "2m",
+    "interview_max_turns": 40,
 }
 
 LIMITS_BODY = """\
-Default caps for every run in this home. A spec can override any of them for
-its own run by adding a `limits:` block to its front matter. Limits are fixed
-when a run starts and recorded in that run's run.md; editing this file never
-changes a run already in progress.
+Default caps for every run and interview in this home. Limits are fixed when
+a run starts and recorded in that run's run.md; editing this file never
+changes a run already in progress. A spec can override any of them for its
+own run with a `limits:` block in its front matter.
 
-- budget_usd: spend cap for a run, worked out from token counts and the prices in models.md.
-- max_tokens: total tokens for a run. The hard limit that still holds if a price is wrong.
+allowance: how far a run or interview may go before it is stopped. One of
+
+  level          run tokens   rounds   run time   each interview
+  conservative     150,000       4       15m          40,000
+  moderate         400,000       8       30m         100,000
+  generous       1,500,000      16       1h          250,000
+  unlimited        no cap       50       4h           no cap
+
+Even `unlimited` keeps every other cap below: rounds, each role's steps,
+loop detection and tool calls. `ombro limits` shows what is in force, and
+`ombro limits set <level>` changes the level.
+
+To set one value by hand instead, add it here; it wins over the level:
+
+- max_tokens: total tokens for a run (`unlimited` for no cap).
 - max_rounds: how many times the Lead may brief a role in one run.
 - run_timeout: wall-clock limit for a run, e.g. 90s, 30m, 2h.
+- interview_max_tokens: total tokens for one interview (set-up, role or brief).
+- interview_max_turns: how many answers an interview may take.
+
+Always in force:
+
 - max_output_tokens: the most any single model call may produce.
-- report_reserve: share of budget_usd and max_tokens held back so the final report can always be paid for.
+- report_reserve: share of max_tokens held back so the final report can always be written.
 - loop_threshold: how many times a role may make the same tool call with the same arguments.
 - max_steps: model calls a role may make for one brief, by kind. A role's config.md can set its own.
 - tool_max_calls: calls per tool per run. `default` applies to any tool not
   named; `max_calls` in tools.md sets one tool's cap.
-- tool_cost_per_call: dollars per call for tools that bill per call. Usually
-  set as `cost_per_call` in tools.md.
 - report_max_output_tokens, report_timeout: bounds on the final report call.
+
+Dollars are not a limit. Where models.md has prices, reports show an estimate.
 """
 
 MODELS_META = {
@@ -118,7 +134,7 @@ MODELS_META = {
             "endpoint": "https://api.deepseek.com",
             "model": "deepseek-chat",
             "key": "DEEPSEEK_API_KEY",
-            "price_per_mtok": {"input": 0.28, "output": 0.42},
+            "price_per_mtok": {"input": 0.30, "output": 1.20},
         },
         "cheap": "default",
     }
@@ -131,9 +147,8 @@ prices. Any OpenAI-compatible chat endpoint with tool calling works.
 - api: `openai` for an OpenAI-compatible endpoint, or `fake` for a scripted
   model used in tests and dry runs (`script:` names a JSON file of replies).
 - key: the name of the variable in .env that holds the API key. Keys never go in this file.
-- price_per_mtok: US dollars per million input and output tokens. Budgets are
-  enforced from these figures, so check them against the provider's current
-  prices. A model without prices is still bounded by max_tokens.
+- price_per_mtok: optional US dollars per million input and output tokens,
+  used only to show an estimated cost in reports. Limits are in tokens.
 - A name can point at another name, as `cheap: default` does.
 """
 
@@ -163,9 +178,9 @@ Tools:
 Settings for any tool:
 - provider: which provider backs it.
 - max_calls: calls allowed per run. Tools not named use `default` in limits.md.
-- cost_per_call: optional US dollars per call, added to the run's dollar
-  total and checked against budget_usd. For services that bill in their own
-  units, such as Firecrawl credits.
+- cost_per_call: optional US dollars per call, added to the estimated cost
+  shown in reports. For services that bill in their own units, such as
+  Firecrawl credits. Tools are limited by max_calls, not by cost.
 
 providers: settings for each provider. `key` names the variable in .env that
 holds its key (set it with `ombro keys set NAME`). `fake` returns invented
@@ -219,7 +234,7 @@ def _write_if_missing(path: Path, text: str, created: list[Path], mode: int | No
 def ensure_crew(home: Home, crew: str, description: str = "") -> list[Path]:
     created: list[Path] = []
     cdir = home.crew_dir(crew)
-    for sub in ("roles/lead", "memory", "schedules", "specs", "runs"):
+    for sub in ("roles/lead", "memory", "schedules", "specs", "runs", "interviews"):
         (cdir / sub).mkdir(parents=True, exist_ok=True)
     _write_if_missing(
         cdir / "crew.md",

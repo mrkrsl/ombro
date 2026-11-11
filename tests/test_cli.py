@@ -81,12 +81,6 @@ def test_run_with_skip_interview_is_recorded(home):
     assert "skip-interview" in meta["source"]
 
 
-def test_run_without_a_spec_explains(home):
-    use_fake_model(home, SCRIPT)
-    r = ombro(home, "run")
-    assert r.returncode == 2 and "--spec" in r.stderr
-
-
 def test_commands_without_a_home_say_run_init(tmp_path):
     r = ombro(Home(tmp_path / "nothing"), "runs")
     assert r.returncode == 2 and "ombro init" in r.stderr
@@ -170,7 +164,7 @@ def test_init_connects_after_a_failed_test_call(tmp_path):
             return r
 
     said = []
-    ask = ScriptedPrompts(["1", "", "1", "deepseek-chat"])
+    ask = ScriptedPrompts(["1", "", "1", "deepseek-chat", "n"])
     secret = ScriptedPrompts(["sk-test-INVENTED-wrong", "sk-test-INVENTED-right", ""])
     assert run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
     out = "\n".join(said)
@@ -192,12 +186,12 @@ def test_init_other_endpoint_without_key(tmp_path):
             return ModelReply(content="OK")
 
     said = []
-    ask = ScriptedPrompts(["2", "http://localhost:11434/v1", "invented-local-model", ""])
+    ask = ScriptedPrompts(["2", "http://localhost:11434/v1", "invented-local-model", "", "n"])
     secret = ScriptedPrompts([""])
     run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
     spec = connected_model(home)
     assert spec.endpoint == "http://localhost:11434/v1" and spec.key is None and not spec.priced
-    assert any("no price" in s for s in said)
+    assert not any("Prices in models.md" in s for s in said)
 
 
 def test_init_offers_firecrawl_when_a_search_key_is_saved(tmp_path):
@@ -208,7 +202,7 @@ def test_init_offers_firecrawl_when_a_search_key_is_saved(tmp_path):
             return ModelReply(content="OK")
 
     said = []
-    ask = ScriptedPrompts(["1", "deepseek-chat", "y"])
+    ask = ScriptedPrompts(["1", "deepseek-chat", "y", "n"])
     secret = ScriptedPrompts(["sk-test-INVENTED-model", "fc-test-INVENTED-search"])
     assert run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
     assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-test-INVENTED-search"

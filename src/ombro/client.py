@@ -207,7 +207,7 @@ def make_client(spec, home) -> ChatClient:
     from ombro.fake import ScriptedClient
 
     if spec.api == "fake":
-        return ScriptedClient.from_file(spec.script, base=home.root)
+        return ScriptedClient.shared(spec.script, base=home.root)
     key_name = spec.key
     return OpenAICompatibleClient(
         spec.endpoint,

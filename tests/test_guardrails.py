@@ -134,53 +134,7 @@ def test_looping_lead_is_stopped(run):
 # -- run-level limits ---------------------------------------------------------------
 
 
-def test_over_budget_run_stops_and_reserve_pays_for_report(run):
-    limits = {"budget_usd": 0.02, "report_reserve": 0.25, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
-    status = run(
-        [
-            fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 13000, "output": 200}),
-            LEAD_REPORT,
-        ],
-        limits=limits,
-    )
-    assert status == "stopped_by_limit"
-    assert_reported(run, "stopped_by_limit", "budget_usd")
-    spend = run.meta["spend"]
-    assert spend["usd"] <= 0.02
-    # Work stopped inside the share left after the reserve; only the report used the reserve.
-    work_usd = spend["usd"] - _report_cost(run)
-    assert work_usd <= 0.015
-
-
-def _report_cost(run) -> float:
-    last = [e for e in run.events if e["action"] == "model_call"][-1]
-    return last["usd"]
-
-
-def test_without_a_reserve_the_report_falls_back_to_the_journal(run):
-    limits = {"budget_usd": 0.02, "report_reserve": 0.0, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
-    status = run(
-        [
-            fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 18500, "output": 200}),
-            LEAD_REPORT,
-        ],
-        limits=limits,
-    )
-    assert status == "stopped_by_limit"
-    assert_reported(run, "stopped_by_limit", "budget_usd", by_lead=False)
-    assert run.meta["spend"]["usd"] <= 0.02
-    assert "Read it all." in run.report  # the harness still reports what was done
-
-
-def test_over_token_limit(run, home):
-    # Unpriced model: the budget cannot bind, so max_tokens must.
-    from ombro import mdfile
-
-    meta, body = mdfile.read(home.models)
-    del meta["models"]["default"]["price_per_mtok"]
-    mdfile.write(home.models, meta, body)
+def test_over_token_limit_stops_and_reserve_pays_for_report(run):
     limits = {"max_tokens": 20000, "report_reserve": 0.25, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
     status = run(
         [
@@ -192,8 +146,57 @@ def test_over_token_limit(run, home):
     )
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "max_tokens")
+    spend = run.meta["spend"]
+    assert spend["total_tokens"] <= 20000
+    # Work stopped inside the share left after the reserve; only the report used the reserve.
+    report_call = [e for e in run.events if e["action"] == "model_call"][-1]
+    work_tokens = spend["total_tokens"] - report_call["input_tokens"] - report_call["output_tokens"]
+    assert work_tokens <= 15000
+
+
+def test_without_a_reserve_the_report_falls_back_to_the_journal(run):
+    limits = {"max_tokens": 20000, "report_reserve": 0.0, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
+    status = run(
+        [
+            fake.brief("researcher", "Read a great deal."),
+            fake.result("Read it all.", usage={"input": 17500, "output": 200}),
+            LEAD_REPORT,
+        ],
+        limits=limits,
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "max_tokens", by_lead=False)
     assert run.meta["spend"]["total_tokens"] <= 20000
-    assert "no price" in run.report  # warned that budget_usd could not bind
+    assert "Read it all." in run.report  # the harness still reports what was done
+
+
+def test_dollars_are_an_estimate_not_a_limit(run):
+    # A run that would have passed the old $1 budget many times over is not stopped for it.
+    status = run(
+        [
+            fake.brief("researcher", "Read a great deal."),
+            fake.result("Read it all.", usage={"input": 60000, "output": 500}),
+            fake.finish(),
+            LEAD_REPORT,
+        ],
+        limits={"max_tokens": 1_000_000, "budget_usd": 0.0001},  # a retired setting is ignored
+    )
+    assert status == "completed"
+    assert "Estimated cost: $0.06" in run.report and "not a limit" in run.report
+    assert "budget_usd" not in run.meta["limits"]
+
+
+def test_unlimited_allowance_has_no_token_cap_but_keeps_rounds(run):
+    status = run(
+        [fake.brief("researcher", f"Task {i}.") if i % 2 == 0 else fake.result(usage={"input": 900_000, "output": 10})
+         for i in range(2 * 50)] + [fake.brief("researcher", "One more."), LEAD_REPORT],
+        limits={"allowance": "unlimited"},
+    )
+    assert status == "stopped_by_limit"
+    assert_reported(run, "stopped_by_limit", "max_rounds")
+    assert run.meta["limits"]["max_tokens"] is None
+    assert run.meta["spend"]["total_tokens"] > 40_000_000
+    assert "of no cap (allowance: unlimited)" in run.report
 
 
 def test_max_rounds(run):
@@ -452,7 +455,7 @@ def test_limits_are_fixed_at_start(run, home):
     assert run.meta["limits"]["max_rounds"] == 1
 
 
-@pytest.mark.parametrize("bad", [{"budget_usd": -1}, {"report_reserve": 0.9}, {"nonsense": 1}, {"run_timeout": "soon"}])
+@pytest.mark.parametrize("bad", [{"max_tokens": -1}, {"report_reserve": 0.9}, {"nonsense": 1}, {"run_timeout": "soon"}, {"allowance": "lavish"}])
 def test_bad_limits_are_refused(home, bad):
     from ombro.settings import SetupError, load_limits
 

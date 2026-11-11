@@ -119,30 +119,27 @@ def test_tool_caps_from_tools_md_are_enforced(run, home):
     assert "web.search 2 of 2" in run.report and "refused at their cap: web.search 1" in run.report
 
 
-def test_cost_per_call_is_counted_and_enforced(run, home):
+def test_cost_per_call_is_counted_but_not_a_limit(run, home):
     use_fake_tools(home, **{"web.search": {"cost_per_call": 0.015}})
     write_role(home, "researcher", max_steps=10, tools=WEB_ROLE_TOOLS)
-    limits = {"budget_usd": 0.05, "report_reserve": 0.2, "max_output_tokens": 300, "report_max_output_tokens": 300}
     status = run(
         [
             fake.brief("researcher", "Search a lot."),
             fake.call("web__search", {"query": "one"}),
             fake.call("web__search", {"query": "two"}),
-            fake.call("web__search", {"query": "three"}),  # would pass the $0.04 left before the reserve
+            fake.call("web__search", {"query": "three"}),
+            fake.result("Searched."),
+            fake.finish(),
             LEAD_REPORT,
         ],
-        limits=limits,
     )
-    assert status == "stopped_by_limit"
-    assert_reported(run, "stopped_by_limit", "budget_usd")
-    assert [c["query"] for c in fake_calls(run)] == ["one", "two"]
+    assert status == "completed"
+    assert [c["query"] for c in fake_calls(run)] == ["one", "two", "three"]
     spend = run.meta["spend"]
-    assert spend["tool_usd"] == 0.03
-    assert spend["usd"] <= 0.05
-    assert abs(spend["usd"] - _model_usd(run) - 0.03) < 1e-5  # the dollar total includes the tool costs
-    assert "of which tools (cost_per_call): $0.0300" in run.report
-    assert "web.search costs $0.0150 a call" in run.report
-    assert sum(1 for e in run.events if e["action"] == "tool_cost") == 2
+    assert abs(spend["tool_usd"] - 0.045) < 1e-9
+    assert abs(spend["usd"] - _model_usd(run) - 0.045) < 1e-5  # the estimate includes the tool costs
+    assert "of which tools (cost_per_call): $0.0450" in run.report
+    assert sum(1 for e in run.events if e["action"] == "tool_cost") == 3
 
 
 def _model_usd(run) -> float:
