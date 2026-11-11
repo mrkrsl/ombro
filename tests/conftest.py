@@ -168,10 +168,12 @@ class Runner:
         self.engine: Engine | None = None
         self.run_dir: Path | None = None
 
-    def __call__(self, script, *, limits=None, registry=None, spec=SPEC, crew="default", today=None) -> str:
+    def __call__(self, script, *, limits=None, registry=None, spec=SPEC, crew="default", today=None,
+                 spec_meta=None) -> str:
         tools = load_tool_settings(self.home)
         lim = load_limits(self.home, limits, tools)
-        self.run_dir = runs.create_run(self.home, crew, {}, spec, lim, source="test", tools=tools.to_dict())
+        self.run_dir = runs.create_run(self.home, crew, spec_meta or {}, spec, lim, source="test",
+                                       tools=tools.to_dict())
         self.client = ScriptedClient(script, clock=self.clock)
         self.engine = Engine(
             self.home,
@@ -202,3 +204,23 @@ class Runner:
 @pytest.fixture
 def run(home) -> Runner:
     return Runner(home)
+
+
+def use_fake_mcp(home: Home, record: Path, *, server: str = "fake", tools: dict | None = None,
+                 server_settings: dict | None = None, **env) -> None:
+    """Point both web tools at the fake provider and add Ombro's fake MCP server
+    to tools.md. Everything the fake server would have done goes to `record`."""
+    import sys
+
+    cfg = {"command": sys.executable, "args": ["-m", "ombro.fake_mcp"],
+           "env": {"OMBRO_FAKE_MCP_RECORD": str(record), **{k: str(v) for k, v in env.items()}},
+           **(server_settings or {})}
+    all_tools = {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}, **(tools or {})}
+    mdfile.write(home.tools, {"tools": all_tools, "servers": {server: cfg}}, "Test tool settings.")
+
+
+def fake_sent(record: Path) -> list[dict]:
+    """What the fake MCP server would have done, in order."""
+    if not record.is_file():
+        return []
+    return [json.loads(line) for line in record.read_text().splitlines() if line.strip()]

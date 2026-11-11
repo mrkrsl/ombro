@@ -92,6 +92,11 @@ def key_uses(home: Home) -> dict[str, list[str]]:
         firecrawl = tools.key_name("firecrawl")
         if firecrawl:
             uses.setdefault(firecrawl, [])
+        from ombro.mcp import ServerConfig
+
+        for server, cfg in tools.servers.items():
+            for name in ServerConfig.from_dict(server, cfg).key_refs():
+                uses.setdefault(name, []).append(f"MCP server {server}")
     return uses
 
 

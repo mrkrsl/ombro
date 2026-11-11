@@ -285,27 +285,34 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
     "web.fetch": (("firecrawl", "direct", "fake"), "direct"),
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
-_TOOL_FIELDS = {"provider", "max_calls", "cost_per_call"}
+_TOOL_FIELDS = {"provider", "max_calls", "cost_per_call", "class", "permission"}
+_SERVER_FIELDS = {"command", "args", "env", "url", "headers", "timeout", "start_timeout"}
+TOOL_CLASSES = ("read", "change", "send")
+SERVER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,30}$")
 
 
 @dataclass(frozen=True)
 class ToolSettings:
     """Per-tool settings from tools.md. `tools` maps a tool name to its settings;
-    `providers` maps a provider name to its own settings (such as which key it uses)."""
+    `providers` maps a provider name to its own settings (such as which key it uses);
+    `servers` maps an MCP server's name to how to start or reach it."""
 
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    servers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any] | None, where: str = "tools.md") -> "ToolSettings":
         d = d or {}
-        unknown = set(d) - {"tools", "providers"}
+        unknown = set(d) - {"tools", "providers", "servers"}
         if unknown:
-            raise SetupError(f"{where}: unknown setting(s): {', '.join(sorted(unknown))} (use tools: and providers:)")
+            raise SetupError(f"{where}: unknown setting(s): {', '.join(sorted(unknown))} "
+                             "(use tools:, providers: and servers:)")
         raw_tools = d.get("tools") or {}
         raw_providers = d.get("providers") or {}
-        if not isinstance(raw_tools, dict) or not isinstance(raw_providers, dict):
-            raise SetupError(f"{where}: `tools` and `providers` must be mappings")
+        raw_servers = d.get("servers") or {}
+        if not all(isinstance(x, dict) for x in (raw_tools, raw_providers, raw_servers)):
+            raise SetupError(f"{where}: `tools`, `providers` and `servers` must be mappings")
         tools: dict[str, dict[str, Any]] = {}
         for name, cfg in raw_tools.items():
             name = str(name)
@@ -333,16 +340,62 @@ class ToolSettings:
                 if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
                     raise SetupError(f"{where}: cost_per_call for {name} must be zero or more US dollars")
                 out["cost_per_call"] = float(v)
+            if "class" in cfg or "permission" in cfg:
+                if not name.startswith("mcp."):
+                    raise SetupError(f"{where}: class and permission apply only to MCP tools (mcp.<server>.<tool>), "
+                                     f"not {name}")
+            if "class" in cfg:
+                if cfg["class"] not in TOOL_CLASSES:
+                    raise SetupError(f"{where}: class for {name} must be one of {', '.join(TOOL_CLASSES)}")
+                out["class"] = cfg["class"]
+            if "permission" in cfg:
+                if cfg["permission"] != "refuse":
+                    raise SetupError(f"{where}: permission for {name} can only be `refuse` here; whether a tool "
+                                     "runs or is staged is set by `outward:` in preferences or a spec")
+                out["permission"] = "refuse"
             tools[name] = out
         providers: dict[str, dict[str, Any]] = {}
         for name, cfg in raw_providers.items():
             if not isinstance(cfg, dict):
                 raise SetupError(f"{where}: settings for provider {name} must be a mapping")
             providers[str(name)] = dict(cfg)
-        return cls(tools=tools, providers=providers)
+        servers: dict[str, dict[str, Any]] = {}
+        for name, cfg in raw_servers.items():
+            name = str(name)
+            if not SERVER_NAME.match(name):
+                raise SetupError(f"{where}: server name {name!r} must use lower-case letters, digits, - and _")
+            if not isinstance(cfg, dict):
+                raise SetupError(f"{where}: settings for server {name} must be a mapping")
+            bad = set(cfg) - _SERVER_FIELDS
+            if bad:
+                raise SetupError(f"{where}: server {name} has unknown setting(s): {', '.join(sorted(bad))}")
+            if bool(cfg.get("command")) == bool(cfg.get("url")):
+                raise SetupError(f"{where}: server {name} needs either `command` (a local server) or `url` "
+                                 "(a remote one), not both")
+            if cfg.get("url") and not str(cfg["url"]).startswith(("https://", "http://")):
+                raise SetupError(f"{where}: the url for server {name} must start with https://")
+            for key in ("env", "headers"):
+                if key in cfg and not isinstance(cfg[key] or {}, dict):
+                    raise SetupError(f"{where}: `{key}` for server {name} must be a mapping")
+            if "args" in cfg and not isinstance(cfg["args"] or [], list):
+                raise SetupError(f"{where}: `args` for server {name} must be a list")
+            for key in ("timeout", "start_timeout"):
+                if key in cfg:
+                    try:
+                        cfg = {**cfg, key: parse_duration(cfg[key])}
+                    except SetupError:
+                        raise SetupError(f"{where}: {key} for server {name} must be a duration, e.g. 60s") from None
+            servers[name] = dict(cfg)
+        for name in tools:
+            if name.startswith("mcp."):
+                parts = name.split(".", 2)
+                if len(parts) != 3 or not parts[2]:
+                    raise SetupError(f"{where}: {name} should be mcp.<server>.<tool>")
+        return cls(tools=tools, providers=providers, servers=servers)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"tools": copy.deepcopy(self.tools), "providers": copy.deepcopy(self.providers)}
+        return {"tools": copy.deepcopy(self.tools), "providers": copy.deepcopy(self.providers),
+                "servers": copy.deepcopy(self.servers)}
 
     def provider_for(self, tool: str) -> str:
         return self.tools.get(tool, {}).get("provider") or PROVIDER_TOOLS[tool][1]
@@ -434,6 +487,7 @@ class Preferences:
     editor: str = ""
     display_currency: dict | None = None
     instructions: str = ""
+    outward: Any = None
 
 
 def load_preferences(home: Home) -> Preferences:
@@ -445,6 +499,7 @@ def load_preferences(home: Home) -> Preferences:
         cur = meta.get("display_currency")
         if isinstance(cur, dict) and cur.get("code") and isinstance(cur.get("rate"), (int, float)):
             prefs.display_currency = {"code": str(cur["code"]), "rate": float(cur["rate"])}
+        prefs.outward = meta.get("outward")
     if home.instructions.is_file():
         _, body = mdfile.read(home.instructions)
         prefs.instructions = mdfile.prompt_text(body)

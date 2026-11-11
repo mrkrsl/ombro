@@ -223,11 +223,18 @@ def cmd_runs(args) -> int:
     if not rows:
         print("No runs yet.")
         return 0
-    print(f"{'RUN':<24} {'CREW':<12} {'STATUS':<18} {'TOKENS':>9}  BRIEF")
+    from ombro import outbox
+
+    print(f"{'RUN':<24} {'CREW':<12} {'STATUS':<18} {'TOKENS':>9}  {'OUTBOX':<10} BRIEF")
     for crew, run_dir in rows:
         meta, _ = runs.read_run(run_dir)
         tokens = (meta.get("spend") or {}).get("total_tokens", 0)
-        print(f"{run_dir.name:<24} {crew:<12} {meta.get('status', '?'):<18} {tokens:>9,}  {meta.get('brief', '')[:60]}")
+        n = outbox.waiting_count(run_dir)
+        box = f"{n} waiting" if n else "-"
+        print(f"{run_dir.name:<24} {crew:<12} {meta.get('status', '?'):<18} {tokens:>9,}  {box:<10} "
+              f"{meta.get('brief', '')[:60]}")
+    if any(outbox.waiting_count(d) for _, d in rows):
+        print("\nSee waiting actions with `ombro outbox`.")
     return 0
 
 
@@ -269,6 +276,13 @@ def cmd_status(args) -> int:
         cap = caps.get(name, caps.get("default", "-"))
         extra = f"  ({refused[name]} refused at the cap)" if refused.get(name) else ""
         print(f"{'  ' + name:<14}{n:>16}  {cap:>14}{extra}")
+    from ombro import outbox, outward
+
+    c = outbox.counts(run_dir)
+    print(f"\nOutbox    {outbox.describe_counts(c)}"
+          + (" (see them with `ombro outbox`)" if outbox.waiting_count(run_dir) else ""))
+    if meta.get("outward"):
+        print(f"Outward   {outward.describe(meta['outward'])}")
     print(f"\n{int(reserve * 100)}% of the token limit is held back for the report.")
     return 0
 
@@ -644,6 +658,18 @@ def cmd_schedule(args) -> int:
     return run(args)
 
 
+def cmd_outbox(args) -> int:
+    from ombro.outbox_cmd import cmd_outbox as run
+
+    return run(args)
+
+
+def cmd_tools(args) -> int:
+    from ombro.outbox_cmd import cmd_tools as run
+
+    return run(args)
+
+
 def cmd_tick(args) -> int:
     from ombro.schedule_cmd import cmd_tick as run
 
@@ -744,6 +770,23 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--grace", help="for add: how late a slot may still start, e.g. 10m")
     s.add_argument("--disabled", action="store_true", help="for add: save it switched off")
     s.set_defaults(func=cmd_schedule)
+
+    s = sub.add_parser("outbox", help="staged outward actions: list, show, approve, decline, edit, resolve")
+    s.add_argument("action", nargs="?", choices=["list", "show", "approve", "decline", "edit", "resolve"],
+                   help="default: list")
+    s.add_argument("refs", nargs="*", help="action references, e.g. ab12-3 (see `ombro outbox`)")
+    s.add_argument("--crew", help="for list: only this crew")
+    s.add_argument("--all", action="store_true", help="for list: include actions already decided")
+    s.add_argument("--yes", action="store_true", help="for approve and decline: do not ask (an interface "
+                   "that has shown the actions passes this)")
+    s.add_argument("--arguments", help="for edit: the new arguments as a JSON object, instead of the editor")
+    s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
+    s.set_defaults(func=cmd_outbox)
+
+    s = sub.add_parser("tools", help="native tools and MCP servers; with a server, its tools, class and permission")
+    s.add_argument("server", nargs="?", help="an MCP server named in tools.md")
+    s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
+    s.set_defaults(func=cmd_tools)
 
     s = sub.add_parser("tick", help="start due scheduled runs (called each minute by the system scheduler)")
     s.add_argument("--dry-run", action="store_true", help="show what would start or be noted, and change nothing")

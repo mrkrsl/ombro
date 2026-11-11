@@ -51,6 +51,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     brief_limits: list[dict[str, Any]] = []
     gaps: list[str] = []
     notes: dict[str, Any] | None = None
+    outward: dict[str, list[dict[str, Any]]] = {"staged": [], "done": [], "errors": [], "refused": [],
+                                                 "duplicates": []}
     for ev in events:
         action = ev.get("action")
         if action == "briefed":
@@ -75,6 +77,16 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             gaps = list(ev.get("gaps") or [])
         elif action == "notes":
             notes = ev
+        elif action == "staged":
+            outward["staged"].append(ev)
+        elif action == "staged_duplicate":
+            outward["duplicates"].append(ev)
+        elif action == "outward_done":
+            outward["done"].append(ev)
+        elif action == "outward_error":
+            outward["errors"].append(ev)
+        elif action == "tool_refused" and ev.get("permission") == "refuse":
+            outward["refused"].append(ev)
     if failure:
         failures.append(failure)
 
@@ -138,6 +150,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "missing_deliverables": missing,
         "other_files": other,
         "notes": notes,
+        "outward": outward,
+        "outward_setting": meta.get("outward") or {},
         "workspace": str(workspace),
         "display_currency": load_preferences(home).display_currency,
     }
@@ -172,6 +186,10 @@ def narrative_input(facts: dict[str, Any]) -> str:
         lines.append(f"Failure: {f}")
     if facts["finish"]:
         lines.append(f"You called finish ({facts['finish']['outcome']}): {facts['finish']['summary']}")
+    ow = facts.get("outward") or {}
+    if ow.get("staged") or ow.get("done"):
+        lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the run, "
+                     f"{len(ow.get('staged') or [])} staged and waiting for the user's approval.")
     lines.append("")
     if not facts["briefs"]:
         lines.append("No roles were briefed.")
@@ -327,7 +345,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         out += [f"- {d['name']} ({d['role']}): {_line(d['inline'], 300)}" for d in f["inline_notes"]]
     out += ["", f"Workspace: {f['workspace']}", ""]
 
-    out += ["## Outbox", "", "Nothing staged.", ""]
+    out += ["## Outbox", "", *outbox_lines(f), ""]
     out += ["## Changes to notes.md", "", *notes_lines(f.get("notes")), ""]
 
     cur = f["display_currency"]
@@ -380,6 +398,53 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     if f["warnings"]:
         out += ["", "## Warnings", ""] + [f"- {w}" for w in f["warnings"]]
     return "\n".join(out).rstrip() + "\n"
+
+
+def _args_line(ev: dict[str, Any], n: int = 200) -> str:
+    args = ev.get("arguments")
+    if isinstance(args, dict) and args:
+        return _line("; ".join(f"{k}: {v}" for k, v in args.items()), n)
+    return "(no arguments)"
+
+
+def outbox_lines(f: dict[str, Any]) -> list[str]:
+    """Outward actions, from the harness's own record (the journal), never from the Lead."""
+    ow = f.get("outward") or {}
+    staged, done = ow.get("staged") or [], ow.get("done") or []
+    errors, refused, dups = ow.get("errors") or [], ow.get("refused") or [], ow.get("duplicates") or []
+    if not any((staged, done, errors, refused)):
+        return ["Nothing staged."]
+    lines: list[str] = []
+    setting = f.get("outward_setting") or {}
+    if setting:
+        from ombro.outward import describe
+
+        lines += [f"Permissions for this run: {describe(setting)}.", ""]
+    if staged:
+        lines.append(f"Staged, waiting for you ({len(staged)}). Nothing here has happened:")
+        for ev in staged:
+            lines.append(f"- **{ev.get('ref')}** `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}")
+            if ev.get("reason"):
+                lines.append(f"  - Reason: {_line(ev['reason'], 200)}")
+        if dups:
+            lines.append(f"- ({len(dups)} identical repeat(s) were not staged again.)")
+        lines += ["", "See them with `ombro outbox`; approve or decline each by its reference, e.g. "
+                  f"`ombro outbox show {staged[0].get('ref')}`.", ""]
+    if done:
+        lines.append(f"Done during the run, as your permissions allow ({len(done)}):")
+        lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in done]
+        lines.append("")
+    if errors:
+        lines.append(f"Tried during the run, but the service reported an error ({len(errors)}):")
+        lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_line(ev.get('note', ''), 200)}" for ev in errors]
+        lines.append("")
+    if refused:
+        lines.append(f"Refused by tools.md ({len(refused)}):")
+        lines += [f"- `{ev.get('tool')}` ({ev.get('role')})" for ev in refused]
+        lines.append("")
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines
 
 
 def notes_lines(ev: dict[str, Any] | None) -> list[str]:

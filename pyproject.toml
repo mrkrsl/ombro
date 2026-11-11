@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 ombro = "ombro.cli:main"
+ombro-fake-mcp = "ombro.fake_mcp:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

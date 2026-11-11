@@ -212,6 +212,9 @@ def prepare(home: Home, s: Schedule) -> Prepared:
     if not isinstance(over, dict):
         raise SetupError(f"`limits` in the spec {s.spec} must be a mapping")
     tools = load_tool_settings(home)
+    from ombro import outward
+
+    outward.resolve(home, meta)  # raises SetupError if the spec's outward setting is wrong
     lim = load_limits(home, over, tools, s.limits)
     if lim.max_tokens is None:
         raise SetupError(

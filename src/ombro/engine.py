@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import contract, mdfile, memory, prompts, report, runs
+from ombro import contract, mdfile, memory, outbox, outward, prompts, report, runs
 from ombro import journal as journal_mod
 from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
@@ -64,6 +64,9 @@ class Engine:
         self.journal = Journal(self.run_dir / "journal.jsonl", echo=echo)
         # Tool settings, like limits, were fixed when the run was created.
         self.tool_settings = ToolSettings.from_dict(meta.get("tools"), "run.md tools")
+        # So are the permissions for outward (MCP) tools.
+        self.outward = meta.get("outward") or {"preset": outward.DEFAULT_PRESET, "source": "default"}
+        self.pool: outward.McpPool | None = None
         if registry is None:
             from ombro.native import native_registry
 
@@ -97,6 +100,7 @@ class Engine:
         self.models = load_models(self.home)
         self.lead, self.roles = load_crew(self.home, self.crew, self.limits)
         self.instructions = load_preferences(self.home).instructions
+        self._load_mcp()
         for role in [self.lead, *self.roles.values()]:
             if role.model not in self.models:
                 raise SetupError(f"role {role.name} uses model {role.model!r}, which is not in models.md")
@@ -117,6 +121,28 @@ class Engine:
         self.spec_body = spec_body.strip()
         if not self.spec_body:
             raise SetupError("the spec is empty")
+
+    def _load_mcp(self) -> None:
+        """Start the MCP servers whose tools the roles name, and offer those tools."""
+        names = sorted({t for r in self.roles.values() for t in r.tools
+                        if t.startswith("mcp.") and self.registry.get(t) is None})
+        if not names:
+            return
+        self.pool = outward.McpPool(self.home, self.tool_settings, log_dir=self.run_dir)
+        tools, warnings = self.pool.tools(names)
+        for t in tools:
+            self.registry.register(t)
+        for w in warnings:
+            self.journal.write("harness", "warning", w)
+        if tools:
+            self.journal.write("harness", "mcp_ready", f"{len(tools)} MCP tool(s): " + ", ".join(
+                f"{t.name} ({t.effect}: {outward.decide(self.outward, t.name, t.effect, self.tool_settings)})"
+                for t in tools), outward=self.outward)
+
+    def _close_mcp(self) -> None:
+        if self.pool is not None:
+            self.pool.close()
+            self.pool = None
 
     def _warn_missing_keys(self, role: Role) -> None:
         from ombro import keys
@@ -161,6 +187,7 @@ class Engine:
             status = "failed"
             self.journal.write("harness", "failed", f"internal error: {type(e).__name__}: {e}")
             traceback.print_exc(file=sys.stderr)
+        self._close_mcp()
         self._notes(status)
         self._report(status)
         runs.update_run(
@@ -381,12 +408,11 @@ class Engine:
         if tool is None:
             self.journal.write(role.name, "tool_refused", f"{name}: not one of this role's tools")
             return {"error": f"{name} is not one of your tools"}
-        if tool.outward:
-            self.journal.write(role.name, "tool_refused", f"{name}: outward tools are not available")
-            return {"error": f"{name} sends something outside the run; outward tools are not available"}
         if tc.arguments is None:
             self.journal.write(role.name, "tool_refused", f"{name}: arguments were not a JSON object")
             return {"error": "the arguments were not a JSON object"}
+        if tool.outward and tool.effect != "read":
+            return self._outward_call(role, tool, tc.arguments)
         cost = self.limits.cost_for(name)
         ctx = ToolContext(self.run_dir, role.name, timeout=self._tool_timeout())
         args_note = _short(_canonical(tc.arguments, ""), 120)
@@ -403,6 +429,55 @@ class Engine:
         self._charge(name, cost, billed=True)
         self.journal.write(role.name, "tool_call", f"{name} {args_note}", tool=name)
         return out if out is not None else {"ok": True}
+
+    def _outward_call(self, role: Role, tool: Tool, arguments: dict) -> dict[str, Any]:
+        """A call that changes or sends something outside: allowed, staged or refused,
+        as the run's permissions say. Read calls go the ordinary way."""
+        name = tool.name
+        args = dict(arguments)
+        reason = str(args.pop(tool.reason_key, "") or "").strip() if tool.reason_key else ""
+        decision = outward.decide(self.outward, name, tool.effect or "send", self.tool_settings)
+        if decision == "refuse":
+            self.journal.write(role.name, "tool_refused", f"{name}: refused by tools.md", tool=name,
+                               permission="refuse")
+            return {"error": f"{name} is refused by the user's settings. Carry on without it, and say so in "
+                    "did_not_do."}
+        if not reason:
+            self.journal.write(role.name, "tool_refused", f"{name}: no reason given", tool=name)
+            return {"error": f"give `{tool.reason_key}`: one sentence on why this action is needed"}
+        problem = outward.validation_error(tool.input_schema, args)
+        if problem:
+            self.journal.write(role.name, "tool_refused", f"{name}: {problem}", tool=name)
+            return {"error": problem}
+        args_note = _short(_canonical(args, ""), 120)
+        if decision == "stage":
+            action, duplicate = outbox.stage(self.run_dir, tool=name, effect=tool.effect or "send", arguments=args,
+                                             reason=reason, role=role.name, input_schema=tool.input_schema)
+            rel = f"outbox/{action.path.name}"
+            if duplicate:
+                self.journal.write(role.name, "staged_duplicate", f"{name}: same as {action.ref}", tool=name,
+                                   ref=action.ref)
+                return {"status": "already_staged", "outbox": rel,
+                        "note": "An identical action is already staged. Do not stage it again."}
+            self.journal.write(role.name, "staged", f"{action.ref} {name} {args_note}", tool=name, ref=action.ref,
+                               path=rel, effect=tool.effect, reason=reason, arguments=args)
+            return {"status": "staged", "outbox": rel,
+                    "note": "Not done yet. It waits for the user to approve after the run. Do not stage it "
+                    "again; mention it in your summary as staged, not done."}
+        # allowed: it runs now
+        cost = self.limits.cost_for(name)
+        ctx = ToolContext(self.run_dir, role.name, timeout=self._tool_timeout())
+        try:
+            out = tool.handler(args, ctx) if tool.handler else {"ok": True}
+        except ToolError as e:
+            self._charge(name, cost, billed=e.billable)
+            self.journal.write(role.name, "outward_error", f"{name} {args_note}: {_short(str(e))}", tool=name,
+                               reason=reason, arguments=args)
+            return {"error": str(e)}
+        self._charge(name, cost, billed=True)
+        self.journal.write(role.name, "outward_done", f"{name} {args_note}", tool=name, effect=tool.effect,
+                           reason=reason, arguments=args)
+        return {"status": "done", **(out if isinstance(out, dict) else {"result": out})}
 
     def _charge(self, name: str, cost: float, billed: bool) -> None:
         if cost and billed:

@@ -10,6 +10,11 @@ Generic roles and specs for trying Ombro.
 - `specs/library-hours.md`: a small research spec for the researcher. It
   searches, reads pages and writes `workspace/libraries.md`.
 
+- `roles/publisher`: a helper that posts finished text through an outward
+  tool, `mcp.fake.post_message`, from Ombro's fake MCP server.
+- `specs/post-update.md`: the writer drafts two posts and the publisher
+  posts them. Under `outward: balanced` the posts are staged for you.
+
 - `schedules/library-hours-weekly.md`: runs the research spec every Monday
   morning, unattended, under a conservative allowance. Saved disabled.
 
@@ -29,3 +34,17 @@ To schedule the research spec, copy `specs/library-hours.md` into the crew's
 
     ombro schedule enable library-hours-weekly
     ombro schedule install        # once; asks before installing anything
+
+To try the outbox without any account, add Ombro's fake MCP server to
+`tools.md`. It writes what it would have done to `fake-mcp-sent.jsonl` in
+your Ombro home, and reaches nothing:
+
+    servers:
+      fake:
+        command: ombro-fake-mcp
+
+Copy `roles/writer` and `roles/publisher` into the crew, then:
+
+    ombro run --spec examples/specs/post-update.md
+    ombro outbox                       # the two staged posts
+    ombro outbox approve <ref>         # only the ones you name reach the fake file

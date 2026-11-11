@@ -131,6 +131,11 @@ def _row(home: Home, s: schedules.Schedule, recent: list[tuple[Path, dict]], now
     if recent:
         rd, m = recent[-1]
         last = f"{str(m.get('due', ''))[:16].replace('T', ' ')} {m.get('status', '?')}"
+        from ombro import outbox
+
+        n = outbox.waiting_count(rd)
+        if n:
+            last += f" ({n} in outbox)"
     out = [f"{s.crew + '/' + s.name:<30} {'on' if s.enabled else 'off':<4} {s.cron_text or '?':<18} "
            f"{nxt:<17} {last}"]
     if s.error:

@@ -11,9 +11,8 @@ later. Every run ends in a report, whether it finished, hit a limit or failed.
 memory and chat: the home directory, roles and crews, a model connection,
 the set-up, role and task interviews, the Lead loop, the guardrail gate, the
 result contract, the journal, reports, web search and fetch, workspace files,
-secrets, the run index, standing notes, memory search, `ombro chat` and
-schedules. The outbox and MCP are not built. Outward tools
-(anything that sends or changes something outside the run) are refused.
+secrets, the run index, standing notes, memory search, `ombro chat`,
+schedules, and outside services through MCP with permissions and an outbox.
 
 ## Install
 
@@ -69,6 +68,12 @@ ombro schedule add <name> --spec <spec> --cron "30 7 * * 1-5"
 ombro schedule show | enable | disable | remove <name>
 ombro schedule install | uninstall     # the one system scheduler entry; asks first
 ombro tick [--dry-run]                 # start what is due (the scheduler calls this each minute)
+ombro outbox                           # outward actions waiting for you, across runs
+ombro outbox show ab12-3               # one in full: tool, arguments, role, reason
+ombro outbox approve ab12-1 ab12-3     # run the named ones (each at most once); asks first
+ombro outbox decline ab12-2            # drop it for good
+ombro outbox edit ab12-3               # change its arguments; it waits for approval again
+ombro tools [server]                   # tools and MCP servers; a server's tools and their permission
 ombro keys remove FIRECRAWL_API_KEY
 ombro role list | edit <name> | remove <name>
 ombro crew list | add <name> | use <name>
@@ -303,6 +308,92 @@ Keys live in `.env` (owner-only) and are read at the moment of use, so a key
 set with `ombro keys set` is picked up on the next call, even in a run already
 going. Keys never reach a model, a journal or a report.
 
+## Outside services: MCP, permissions and the outbox
+
+Ombro builds no integrations of its own. Every tool that reaches an outside
+service (a sheet, a calendar, a social account, a CRM, a design tool, Zapier)
+comes from an MCP server listed in `tools.md`:
+
+```yaml
+---
+servers:
+  sheets:
+    command: uvx                          # a local server, which handles its own sign-in
+    args: [mcp-google-sheets@latest]
+    env: {SERVICE_ACCOUNT_PATH: "${SHEETS_KEY_FILE}"}
+  remote:
+    url: https://mcp.example.invalid/mcp  # a remote server
+    headers: {Authorization: "Bearer ${REMOTE_TOKEN}"}
+tools:
+  mcp.sheets.add_rows: {max_calls: 10}
+  mcp.sheets.delete_sheet: {permission: refuse}
+---
+```
+
+`${NAME}` is read from `.env` when the server starts and is never logged.
+A server's tools are named `mcp.<server>.<tool>`; `ombro tools <server>`
+lists them. A role can use only the ones its `tools:` list names, so a large
+server costs only what a role uses. Remote servers that need an OAuth
+sign-in are not supported yet. Ombro speaks MCP itself (tools only), rather
+than through the SDK.
+
+**Classes.** Each tool is `read` (the server marks it read-only), `change`
+(it changes something but, by the server's marking, destroys nothing) or
+`send` (anything else, including unmarked tools). The markings are the
+server's own claims: `class:` in `tools.md` overrides them, and `ombro tools
+<server>` shows what each tool is.
+
+**Permissions.** Every outward call is allowed (it runs, and is recorded),
+staged (it waits in the outbox) or refused:
+
+| `outward` | read | change | send |
+|---|---|---|---|
+| `manual` | allow | stage | stage |
+| `balanced` (default) | allow | allow | stage |
+| `auto` | allow | allow | allow |
+
+Set your default with `outward:` in `preferences/config.md`. A spec
+overrides it, with a preset and, if wanted, particular tools:
+
+```yaml
+outward: {preset: balanced, allow: [mcp.sheets.add_rows], stage: [mcp.social.post]}
+```
+
+The task interview asks what may happen without you whenever the crew has
+outward tools, and writes the answer into the spec. `permission: refuse` in
+`tools.md` beats everything. Permissions are fixed when a run starts and
+recorded in `run.md`; scheduled runs follow them like any other.
+
+**The outbox.** A staged call does not happen. The harness writes it to the
+run's `outbox/` as one file (tool, arguments, the role and its reason, the
+time, a status), tells the role it was staged, and never stages an identical
+call twice in a run. Staging counts towards the tool's `max_calls`. The
+report's Outbox section lists everything done and staged, from the harness's
+own record.
+
+You decide on named actions only; there is no "approve all":
+
+- `ombro outbox` lists what is waiting, across runs, by reference (`ab12-3`).
+- `ombro outbox approve ab12-1 ab12-3` shows each in full, asks once, and
+  runs them. `decline` drops them for good. `edit` changes an action's
+  arguments (in your editor, or `--arguments '<json>'`); they are checked
+  against the tool's rules and the action waits for approval again. You may
+  also edit `arguments` in the file by hand; it is shown as edited and
+  checked before it runs.
+- An action runs at most once. Its status is written before and after the
+  call, under a lock. If Ombro stops mid-call, or the server does not
+  answer, the action becomes `uncertain`: it may or may not have happened,
+  and it is never retried. Settle it with `ombro outbox resolve <ref> sent`
+  or `not-sent`.
+- Outcomes are recorded in the action's file, the run's journal, run.md and
+  an "Outbox decisions" section added to the report.
+- Every outbox command takes `--json`, and `approve` and `decline` take
+  `--yes`, for an interface that has already shown and selected the actions.
+
+`ombro-fake-mcp` is a fake MCP server, with one tool of each class, that
+writes what it would have done to a file. The tests use it, and so can a dry
+run (see `examples/`).
+
 ## Guardrails
 
 Limits are enforced by code, never by asking the model. Every model call and
@@ -329,6 +420,7 @@ which wins over the level. Even `unlimited` keeps every other cap:
 | `max_steps` | each brief; model calls a role may make |
 | `tool_max_calls` | each tool, per run (`max_calls` in `tools.md`) |
 | `max_output_tokens` | each model call |
+| `outward` | each outward call: allowed, staged or refused (see above) |
 | `loop_threshold` | the same tool with the same arguments repeated |
 | `interview_max_tokens`, `interview_max_turns` | each interview |
 | `chat_max_tokens`, `chat_tool_max_calls`, `chat_calls_per_message` | each chat |
@@ -386,8 +478,8 @@ or `helper`; helpers default to the `cheap` model and fewer steps.
 ## Testing without a model
 
 `models.md` accepts `api: fake` with a `script:` JSON file of canned replies,
-and `tools.md` accepts `provider: fake` for search and fetch. The test suite
-uses the same fakes, scripted answers for interviews, and mock HTTP
+and `tools.md` accepts `provider: fake` for search and fetch, and the fake
+MCP server for outward tools. The test suite uses the same fakes, scripted answers for interviews, and mock HTTP
 transports for the real providers, so every guardrail, interview and tool is
 tested without a network connection or spend. Schedules are tested with a fake
 clock and a fake scheduler installer; no test touches launchctl or crontab.

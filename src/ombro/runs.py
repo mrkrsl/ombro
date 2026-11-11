@@ -36,7 +36,7 @@ def first_line(text: str, limit: int = 120) -> str:
 
 RUN_BODY = """\
 This file is written by Ombro while the run is in progress. Edits are overwritten.
-Limits and tool settings above were fixed when the run started and cannot change during it.
+Limits, tool settings and outward permissions above were fixed when the run started and cannot change during it.
 """
 
 
@@ -50,7 +50,14 @@ def create_run(
     source: str,
     tools: dict[str, Any] | None = None,
     extra: dict[str, Any] | None = None,
+    outward: dict[str, Any] | None = None,
 ) -> Path:
+    """A new run folder and run.md. `outward`, the permission for outward tools,
+    comes from preferences and the spec unless given; it is fixed from here on."""
+    if outward is None:
+        from ombro import outward as outward_mod
+
+        outward = outward_mod.resolve(home, spec_meta)
     runs_dir = home.runs_dir(crew)
     runs_dir.mkdir(parents=True, exist_ok=True)
     while True:
@@ -78,6 +85,7 @@ def create_run(
         "limit_hit": None,
         "limits": limits.to_dict(),
         "tools": tools or {},
+        "outward": outward,
         "spend": {},
         **(extra or {}),
     }

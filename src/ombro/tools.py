@@ -1,7 +1,7 @@
 """Tool registry. Roles name tools by what they do; the registry supplies them.
 
-Native tools are built in ombro.native from tools.md; MCP tools will be added
-here later. Every call passes through the gate first.
+Native tools are built in ombro.native from tools.md; MCP tools come from the
+servers tools.md lists (ombro.outward). Every call passes through the gate first.
 """
 
 from __future__ import annotations
@@ -47,7 +47,10 @@ class Tool:
     description: str
     parameters: dict[str, Any] = field(default_factory=lambda: {"type": "object", "properties": {}})
     handler: Callable[[dict, ToolContext], Any] | None = None
-    outward: bool = False  # sends, posts or changes something outside the run
+    outward: bool = False  # reaches a service outside the run (every MCP tool)
+    effect: str | None = None  # for outward tools: read, change or send
+    input_schema: dict[str, Any] | None = None  # the arguments the service takes, without `reason`
+    reason_key: str | None = None  # the argument the harness adds for the role's reason, if any
 
     @property
     def wire_name(self) -> str:
@@ -61,8 +64,10 @@ class Tool:
 
 
 def wire_name(name: str) -> str:
-    """Model APIs allow only [A-Za-z0-9_-] in function names."""
-    return name.replace(".", "__")
+    """Model APIs allow only [A-Za-z0-9_-] in function names, up to 64 characters."""
+    import re
+
+    return re.sub(r"[^A-Za-z0-9_-]", "_", name.replace(".", "__"))[:64]
 
 
 class ToolRegistry:

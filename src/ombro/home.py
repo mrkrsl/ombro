@@ -228,15 +228,41 @@ Settings for any tool:
 providers: settings for each provider. `key` names the variable in .env that
 holds its key (set it with `ombro keys set NAME`). `fake` returns invented
 results and records every request in the run's fake-calls.jsonl.
+
+servers: MCP servers, which supply every tool that reaches an outside
+service. Each has either `command` and `args` (a server Ombro starts, which
+handles its own sign-in) or `url` and optional `headers` (a remote server).
+`env` sets variables for a started server. Write a secret as ${NAME}: it is
+read from .env when the server starts and never logged. Optional `timeout`
+for each call, e.g. 60s. For example:
+
+  servers:
+    sheets:
+      command: uvx
+      args: [mcp-google-sheets@latest]
+      env: {SERVICE_ACCOUNT_PATH: "${SHEETS_KEY_FILE}"}
+
+A server's tools are named mcp.<server>.<tool>; `ombro tools <server>` lists
+them. A role uses only the ones its `tools:` list names. Per-tool settings
+for MCP tools, as well as max_calls and cost_per_call:
+- class: read, change or send, when the server's own marking is wrong.
+- permission: refuse, a hard limit that no preference or spec can lift.
+Whether other calls run or wait in the outbox is set by `outward:` in
+preferences/config.md and in each spec.
 """
 
-PREFERENCES_META = {"default_crew": DEFAULT_CREW, "editor": "", "display_currency": None}
+PREFERENCES_META = {"default_crew": DEFAULT_CREW, "editor": "", "display_currency": None, "outward": "balanced"}
 
 PREFERENCES_BODY = """\
 - default_crew: the crew commands use when --crew is not given.
 - editor: command used to open files for editing. Empty means $EDITOR.
 - display_currency: optional, e.g. `{code: GBP, rate: 0.79}`. Shown alongside
   US dollars; never used for enforcement.
+- outward: what outward (MCP) tools may do without you, unless a spec says
+  otherwise. manual: only reading runs; everything else waits in the outbox.
+  balanced: reading, and changes the service marks as not destructive, run;
+  the rest waits. auto: everything runs. Waiting actions are reviewed with
+  `ombro outbox`.
 """
 
 INSTRUCTIONS_BODY = """\

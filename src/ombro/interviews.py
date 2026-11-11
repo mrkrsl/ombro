@@ -36,8 +36,25 @@ def available_tools(home: Home) -> dict[str, str]:
     """Every tool a role can be given, with a one-line description."""
     from ombro.native import native_registry
 
-    reg = native_registry(home, load_tool_settings(home))
-    return {name: _first_sentence(reg.get(name).description) for name in reg.names()}
+    settings = load_tool_settings(home)
+    reg = native_registry(home, settings)
+    out = {name: _first_sentence(reg.get(name).description) for name in reg.names()}
+    # MCP tools: each server in tools.md is asked for its tools. A server that
+    # cannot be reached is left out; `ombro tools <server>` says why.
+    from ombro.mcp import McpClient, McpError, ServerConfig
+    from ombro.outward import classify
+
+    for server, cfg in settings.servers.items():
+        try:
+            with McpClient(home, ServerConfig.from_dict(server, cfg)) as c:
+                listed = c.list_tools()
+        except McpError:
+            continue
+        for t in listed:
+            name = f"mcp.{server}.{t.name}"
+            effect = classify(t.annotations, settings.tools.get(name, {}).get("class"))
+            out[name] = f"({effect}; reaches {server}) " + _first_sentence(t.description)
+    return out
 
 
 def available_skills(home: Home) -> dict[str, str]:
@@ -335,14 +352,33 @@ class BriefPurpose(Purpose):
         return ("The user has a task for the crew. Begin by asking them to describe it in their own words: "
                 "what it is and why.")
 
+    def outward_tools(self) -> list[str]:
+        try:
+            _, roles = load_crew(self.home, self.crew, self.limits)
+        except (RoleError, SetupError):
+            return []
+        return sorted({t for r in roles.values() for t in r.tools if t.startswith("mcp.")})
+
     def context(self) -> list[tuple[str, str]]:
         L = self.limits
-        return [
+        out = [
             ("Roles in the crew", roster(self.home, self.crew, L)),
             ("Limits a run will have",
              f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.run_timeout)}\n"
              f"- tokens: {format_tokens(L.max_tokens)}"),
         ]
+        tools = self.outward_tools()
+        if tools:
+            from ombro import outward
+
+            try:
+                default = outward.resolve(self.home, {})["preset"]
+            except SetupError:
+                default = outward.DEFAULT_PRESET
+            out.append(("Outward tools in the crew (they reach outside services)",
+                        "\n".join(f"- {t}" for t in tools)
+                        + f"\nThe user's default permission is {default}. Ask what may happen without them."))
+        return out
 
     def tool(self) -> dict:
         props: dict[str, Any] = {
@@ -353,6 +389,12 @@ class BriefPurpose(Purpose):
         }
         for key, label in SPEC_FIELDS:
             props[key] = {"type": "string", "description": label}
+        if self.outward_tools():
+            props["outward_preset"] = {"type": "string", "enum": ["manual", "balanced", "auto"],
+                                       "description": "What may happen without the user, from their answer."}
+            for key, what in (("outward_allow", "run without asking"), ("outward_stage", "always wait for the user")):
+                props[key] = {"type": "array", "items": {"type": "string"},
+                              "description": f"Optional: mcp.* tools the user said may {what}."}
         return prompts.propose_tool(
             "Propose the spec. The harness refuses it if any of the five required answers is empty, shows it, "
             "and saves it only if the user accepts.",
@@ -379,7 +421,22 @@ class BriefPurpose(Purpose):
             lines += [_text(args, "details"), ""]
         for key, label in SPEC_FIELDS:
             lines += [f"{label}: {_text(args, key)}", ""]
-        text = mdfile.dump({"name": name, "crew": self.crew}, "\n".join(lines))
+        meta: dict[str, Any] = {"name": name, "crew": self.crew}
+        if args.get("outward_preset") or args.get("outward_allow") or args.get("outward_stage"):
+            from ombro import outward
+
+            setting = {"preset": args.get("outward_preset") or None,
+                       "allow": list(args.get("outward_allow") or []), "stage": list(args.get("outward_stage") or [])}
+            setting = {k: v for k, v in setting.items() if v}
+            try:
+                outward.parse_setting(setting, "the proposed spec")
+            except SetupError as e:
+                raise ProposalError(str(e)) from None
+            meta["outward"] = setting
+        elif self.outward_tools():
+            raise ProposalError("the crew has outward tools: ask the user what may happen without them, "
+                                "and give outward_preset")
+        text = mdfile.dump(meta, "\n".join(lines))
         return Proposal([FileDraft(f"crews/{self.crew}/specs/{name}.md", self.path(name), text)], data={"name": name})
 
     def check(self, proposal: Proposal) -> Proposal:
@@ -394,6 +451,14 @@ class BriefPurpose(Purpose):
         if limits is not None and not isinstance(limits, dict):
             raise ProposalError("`limits` in a spec must be a mapping, e.g. limits: {allowance: generous}")
         warnings = []
+        if meta.get("outward") is not None:
+            from ombro import outward
+
+            try:
+                setting = outward.resolve(self.home, meta)
+            except SetupError as e:
+                raise ProposalError(str(e)) from None
+            warnings.append(f"outward tools: {outward.describe(setting)}.")
         if spec.path.is_file():
             warnings.append(f"a spec named {proposal.data['name']!r} already exists and will be replaced "
                             "(its old text is kept as .previous.md).")
