@@ -1151,6 +1151,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
+    if argv is None and len(sys.argv) == 1 and sys.stdin.isatty() and sys.stdout.isatty():
+        # `ombro` alone, in a terminal: the terminal interface (specification 13, 14.1)
+        from ombro.tui import main as tui_main
+
+        return tui_main()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):
         parser.print_help()

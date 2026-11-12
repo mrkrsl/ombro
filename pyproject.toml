@@ -12,6 +12,7 @@ dependencies = [
     "h11>=0.16.0",  # CVE-2025-43859 is fixed from 0.16.0
     "PyYAML>=6.0.3",
     "jsonschema>=4.26.0",
+    "textual>=8.2.8",
 ]
 
 [project.scripts]

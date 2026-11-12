@@ -108,6 +108,23 @@ Set `OMBRO_HOME` to use a home directory other than `~/.config/ombro`.
 Example roles and specs are in [`examples/`](examples); a spec can also be
 any Markdown file you write yourself.
 
+## The terminal interface
+
+`ombro` on its own, in a terminal, opens the terminal interface: a chat with
+the Lead, full screen, with the shell restored when you leave. It opens with
+a header (your crew as a tree, what is running, scheduled and waiting) that
+scrolls away as the conversation grows. Type to chat; `/` lists the
+commands; `/brief` starts a task interview and `/chat` goes back; `/theme`
+switches between light and dark. Ctrl+C stops what is in progress; with
+nothing in progress and nothing typed, press it twice to leave, or type
+`/quit`. `theme: auto | light | dark` in `preferences/config.md` sets the
+colours; `auto` asks the terminal for its background, then the system.
+
+The interface is a layer over the commands and files: everything it does,
+the command line does too. Some commands in its `/` list (runs, the outbox,
+schedules and settings) are still to come in it; until then it says which
+`ombro` command to use.
+
 ## Interviews
 
 The Lead interviews you in three places: set-up (`ombro init`), adding a role
