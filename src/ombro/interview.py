@@ -291,7 +291,13 @@ class Interview:
         max_out, timeout = self.gate.check_model_call(self.spec.name, est, None)
         if self._client is None:
             self._client = self._client_factory(self.spec)
-        reply = self._client.complete(messages, tools=tools, max_output_tokens=max_out, timeout=min(timeout, 300))
+        try:
+            reply = self._client.complete(messages, tools=tools, max_output_tokens=max_out,
+                                          timeout=min(timeout, 300))
+        except ModelError as e:
+            self.gate.record_lost_calls(self.spec.name, e.lost_attempts, est, max_out)
+            raise
+        self.gate.record_lost_calls(self.spec.name, reply.lost_attempts, est, max_out)
         u = reply.usage
         in_tokens = u.input_tokens if u.input_tokens or not u.estimated else est
         out_tokens = min(u.output_tokens, max_out) if u.estimated else u.output_tokens

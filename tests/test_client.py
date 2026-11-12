@@ -138,3 +138,37 @@ def test_keys_never_reach_run_files(home):
             assert KEY_A not in path.read_text(), path
     for body in sent:
         assert KEY_A not in body  # the key goes in a header, never in what the model reads
+
+
+def test_attempts_that_timed_out_are_reported_so_they_can_be_counted():
+    attempts = []
+
+    def handler(request):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise httpx.ReadTimeout("invented timeout", request=request)
+        return chat_response("ok")
+
+    c = OpenAICompatibleClient("https://models.invalid", "m", lambda: KEY_A,
+                               transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    reply = c.complete([], max_output_tokens=5, timeout=30)
+    assert reply.content == "ok" and reply.lost_attempts == 1
+
+    def always(request):
+        raise httpx.ReadTimeout("invented timeout", request=request)
+
+    c = OpenAICompatibleClient("https://models.invalid", "m", lambda: KEY_A,
+                               transport=httpx.MockTransport(always), sleep=lambda s: None)
+    with pytest.raises(ModelError) as caught:
+        c.complete([], max_output_tokens=5, timeout=30)
+    assert caught.value.lost_attempts == c.retries + 1
+
+
+def test_a_run_counts_lost_attempts_at_their_worst_case():
+    from ombro.gate import Gate
+    from ombro.settings import Limits, resolve_allowance
+    from ombro.home import LIMITS_META
+
+    g = Gate(Limits.from_dict(resolve_allowance(dict(LIMITS_META))), lambda m: None, lambda: 0.0)
+    assert g.record_lost_calls("m", 2, 1_000, 500) == 3_000
+    assert g.spend.total_tokens == 3_000 and g.spend.estimated_calls == 2

@@ -180,6 +180,14 @@ class Gate:
             self.spend.usd += cost
         return cost
 
+    def record_lost_calls(self, model: str, n: int, est_input: int, max_output: int) -> int:
+        """Attempts that timed out and were tried again: the provider may have done and
+        billed them, with no usage to show. Each counts at its worst case, as estimated.
+        Returns the tokens counted."""
+        for _ in range(n):
+            self.record_model_call(model, est_input, max_output, estimated=True)
+        return n * (est_input + max_output)
+
     def check_round(self) -> None:
         self._work_checks()
         if self.spend.rounds >= self.limits.max_rounds:

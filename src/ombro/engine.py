@@ -316,10 +316,12 @@ class Engine:
         try:
             reply = self._client(spec).complete(messages, tools=tools, max_output_tokens=max_out, timeout=timeout)
         except ModelError as e:
+            self._count_lost(role, spec.name, e.lost_attempts, est, max_out)
             self.journal.write(role.name, "model_error", str(e))
             if self.gate.timed_out():
                 raise LimitReached("run_timeout", "the run reached its time limit during a model call") from None
             raise
+        self._count_lost(role, spec.name, reply.lost_attempts, est, max_out)
         usage = reply.usage
         in_tokens = usage.input_tokens if usage.input_tokens or not usage.estimated else est
         out_tokens = min(usage.output_tokens, max_out) if usage.estimated else usage.output_tokens
@@ -335,6 +337,14 @@ class Engine:
         )
         self._save_spend()
         return reply
+
+    def _count_lost(self, role: Role, model: str, n: int, est: int, max_out: int) -> None:
+        if n:
+            tokens = self.gate.record_lost_calls(model, n, est, max_out)
+            self.journal.write(role.name, "model_call_lost",
+                               f"{model}: {n} attempt(s) timed out and were tried again; counted at their worst "
+                               f"case, {tokens:,} tokens (estimated)", model=model, attempts=n, tokens=tokens)
+            self._save_spend()
 
     # -- Lead --------------------------------------------------------------
 

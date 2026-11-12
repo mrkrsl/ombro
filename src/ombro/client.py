@@ -16,6 +16,7 @@ class ModelError(Exception):
         super().__init__(message)
         self.timed_out = timed_out
         self.status = status
+        self.lost_attempts = 0  # attempts that timed out: the provider may have done (and billed) them
 
 
 @dataclass
@@ -39,6 +40,7 @@ class ModelReply:
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: Usage = field(default_factory=lambda: Usage(0, 0, True))
     finish_reason: str | None = None
+    lost_attempts: int = 0  # earlier attempts at this call that timed out and were tried again
 
     def as_message(self) -> dict[str, Any]:
         msg: dict[str, Any] = {"role": "assistant", "content": self.content if self.content is not None else ""}
@@ -124,10 +126,13 @@ class OpenAICompatibleClient:
 
         deadline = time.monotonic() + timeout
         attempt = 0
+        lost = 0
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise ModelError("the model call ran out of time", timed_out=True)
+                err = ModelError("the model call ran out of time", timed_out=True)
+                err.lost_attempts = lost
+                raise err
             retryable = False
             try:
                 with httpx.Client(
@@ -138,18 +143,22 @@ class OpenAICompatibleClient:
             except httpx.TimeoutException:
                 err = ModelError("the model call ran out of time", timed_out=True)
                 retryable = True
+                lost += 1  # it may have reached the model and been billed, with no usage to show
             except httpx.HTTPError as e:
                 err = ModelError(f"could not reach {self.host}: {type(e).__name__}")
                 retryable = True
             else:
                 if resp.status_code == 200:
-                    return self._parse(resp, key)
+                    reply = self._parse(resp, key)
+                    reply.lost_attempts = lost
+                    return reply
                 err = ModelError(
                     f"{self.host} returned HTTP {resp.status_code}: {self._error_text(resp, key)}",
                     status=resp.status_code,
                 )
                 retryable = resp.status_code in RETRYABLE
             if not retryable or attempt >= self.retries:
+                err.lost_attempts = lost
                 raise err
             attempt += 1
             pause = min(2.0**attempt, max(0.0, deadline - time.monotonic() - 1))
