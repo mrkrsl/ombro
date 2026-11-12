@@ -64,6 +64,11 @@ class Home:
         return self.root / "tools.md"
 
     @property
+    def folders(self) -> Path:
+        """Folders the user has shared with runs, and folders they declined to share."""
+        return self.root / "folders.md"
+
+    @property
     def preferences_config(self) -> Path:
         return self.root / "preferences" / "config.md"
 
@@ -129,6 +134,9 @@ LIMITS_META = {
     "schedule_grace": "10m",
     "schedule_max_running": 2,
     "schedule_max_starts": 3,
+    "code_timeout": "60s",
+    "code_max_memory": "1GB",
+    "code_output_chars": 8_000,
 }
 
 LIMITS_BODY = """\
@@ -192,6 +200,15 @@ Schedules (crews/<crew>/schedules/):
 - schedule_max_running: scheduled runs that may be in progress at once.
 - schedule_max_starts: scheduled runs one tick may start.
 
+Code (the code.run tool), for each script a role runs:
+
+- code_timeout: wall-clock time, e.g. 60s; never more than the run has left.
+  CPU time is capped at the same.
+- code_max_memory: memory, e.g. 1GB or 512MB.
+- code_output_chars: how much of a script's output the role sees; the start
+  and the end are kept and the middle cut. The run's code/ folder keeps more.
+- code.run has its own max_calls (10 unless tool_max_calls or tools.md says).
+
 Dollars are not a limit. Where models.md has prices, reports show an estimate.
 """
 
@@ -241,7 +258,13 @@ Tools:
 - web.fetch: providers `firecrawl` (needs a key), `direct` (no key; a plain
   page download that refuses local and private network addresses) or `fake`.
 - workspace.read, workspace.write, workspace.list: files in the run's
-  workspace/ and scratch/ folders only. No provider.
+  workspace/ and scratch/ folders, and in shared folders the run was given
+  (folders.md). No provider.
+- workspace.place: copies a workspace file to a shared folder, or stages the
+  copy in the outbox when the destination is not shared for writing.
+- code.run: runs a Python script a role writes, in the operating system's
+  sandbox: standard library only, no network, nothing outside the run's
+  folders and its shared folders. Limits are in limits.md.
 
 Settings for any tool:
 - provider: which provider backs it.

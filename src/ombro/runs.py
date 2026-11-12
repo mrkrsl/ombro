@@ -12,7 +12,7 @@ from typing import Any
 from ombro import mdfile
 from ombro.home import Home
 from ombro.journal import utc_now
-from ombro.settings import Limits
+from ombro.settings import Limits, SetupError
 
 STATUSES = ("running", "completed", "stopped", "stopped_by_limit", "insufficient_brief", "failed")
 ORPHAN_GRACE_SECONDS = 120
@@ -36,7 +36,7 @@ def first_line(text: str, limit: int = 120) -> str:
 
 RUN_BODY = """\
 This file is written by Ombro while the run is in progress. Edits are overwritten.
-Limits, tool settings and outward permissions above were fixed when the run started and cannot change during it.
+Limits, tool settings, outward permissions and shared folders above were fixed when the run started and cannot change during it.
 """
 
 
@@ -58,6 +58,12 @@ def create_run(
         from ombro import outward as outward_mod
 
         outward = outward_mod.resolve(home, spec_meta)
+    from ombro import folders as folders_mod
+
+    try:
+        shared, left_out = folders_mod.for_run(home, spec_meta)
+    except SetupError as e:
+        shared, left_out = [], [f"no shared folder was given: {e}"]
     runs_dir = home.runs_dir(crew)
     runs_dir.mkdir(parents=True, exist_ok=True)
     while True:
@@ -86,6 +92,8 @@ def create_run(
         "limits": limits.to_dict(),
         "tools": tools or {},
         "outward": outward,
+        "folders": shared,
+        **({"folders_left_out": left_out} if left_out else {}),
         "spend": {},
         **(extra or {}),
     }

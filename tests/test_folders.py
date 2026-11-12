@@ -1,0 +1,315 @@
+"""Shared folders, grants and placements. Invented files in temporary folders; no network.
+
+HOME is pointed at a temporary folder, so "inside your home folder" means
+inside it, and nothing outside the test's own folders is ever touched.
+"""
+
+from __future__ import annotations
+
+import argparse
+import platform
+
+import pytest
+
+from conftest import LEAD_REPORT, write_role
+from ombro import fake, folders, mdfile, outbox, runs
+from ombro.folders_cmd import cmd_folders, offer_start_folder
+from ombro.native import native_registry
+from ombro.settings import SetupError, load_limits
+from ombro.tools import NotGranted, SharedFolder, ToolContext, ToolInputError
+from test_guardrails import assert_reported
+from test_interviews import SPEC, Session
+
+
+@pytest.fixture
+def user(tmp_path, monkeypatch):
+    """The user's home folder, with an invented documents folder and photos."""
+    me = tmp_path / "user"
+    (me / "Documents" / "Brand").mkdir(parents=True)
+    (me / "Documents" / "Brand" / "guide.md").write_text("Invented brand guide: teal, never orange.\n")
+    (me / "Pictures" / "Trip").mkdir(parents=True)
+    for i in range(3):
+        (me / "Pictures" / "Trip" / f"IMG_{i:04d}.jpg").write_text(f"invented photo {i}")
+    (me / "Library" / "Mail").mkdir(parents=True)
+    (me / ".ssh").mkdir()
+    monkeypatch.setenv("HOME", str(me))
+    return me.resolve()
+
+
+# ---------------------------------------------------------------------------
+# What can be granted
+
+
+def test_only_ordinary_folders_can_be_shared(home, user, tmp_path):
+    assert folders.check_place(user / "Documents" / "Brand", home) == user / "Documents" / "Brand"
+    assert folders.check_place("~/Pictures/Trip", home) == user / "Pictures" / "Trip"
+    refused = {
+        "/": "root folder",
+        str(user): "whole home folder",
+        str(user / ".ssh"): "hidden",
+        str(user / "Library" / "Mail"): "Library",
+        str(home.root): "Ombro's own home",
+        str(home.root / "crews"): "Ombro's own home",
+        str(tmp_path): "contains Ombro's own home",
+        "/usr/lib": "not in your home folder",
+        "Documents": "not a full path",
+        str(user / "Nowhere"): "does not exist",
+    }
+    for path, why in refused.items():
+        with pytest.raises(folders.FolderError, match=why):
+            folders.check_place(path, home)
+
+
+def test_a_symlink_into_a_hidden_folder_is_refused(home, user):
+    (user / "keys-link").symlink_to(user / ".ssh")
+    with pytest.raises(folders.FolderError, match="hidden"):
+        folders.check_place(user / "keys-link", home)
+
+
+def test_mounted_drives_can_be_shared(home, user, tmp_path, monkeypatch):
+    volumes = tmp_path / "Volumes"
+    (volumes / "Studio" / "Brand").mkdir(parents=True)
+    monkeypatch.setattr(folders, "mount_roots", lambda: [volumes])
+    assert folders.check_place(volumes / "Studio" / "Brand", home) == (volumes / "Studio" / "Brand").resolve()
+    with pytest.raises(folders.FolderError):
+        folders.check_place(volumes, home)
+
+
+# ---------------------------------------------------------------------------
+# folders.md and the command line
+
+
+def folders_args(action=None, target=None, **kw):
+    return argparse.Namespace(action=action, target=target, name=kw.get("name"), access=kw.get("access"),
+                              yes=kw.get("yes", True))
+
+
+def test_grants_are_added_listed_and_removed(home, user, capsys):
+    assert cmd_folders(folders_args("add", str(user / "Documents" / "Brand"))) == 0
+    assert cmd_folders(folders_args("add", "~/Pictures/Trip", name="photos", access="write")) == 0
+    grants, declined = folders.load(home)
+    assert {n: (g.path, g.access) for n, g in grants.items()} == {
+        "brand": ("~/Documents/Brand", "read"), "photos": ("~/Pictures/Trip", "write")}
+    cmd_folders(folders_args())
+    out = capsys.readouterr().out
+    assert "brand" in out and "photos" in out and "backup:" in out
+    with pytest.raises(Exception, match="already shared"):
+        cmd_folders(folders_args("add", str(user / "Pictures" / "Trip"), name="trip"))
+    assert cmd_folders(folders_args("remove", "brand")) == 0
+    assert set(folders.load(home)[0]) == {"photos"}
+    assert "Folders on this machine" in home.folders.read_text()
+
+
+def test_a_bad_folders_file_is_reported(home):
+    mdfile.write(home.folders, {"folders": {"Bad Name": {"path": "~/x"}}})
+    with pytest.raises(SetupError, match="lower-case"):
+        folders.load(home)
+    mdfile.write(home.folders, {"folders": {"x": {"path": "~/x", "access": "everything"}}})
+    with pytest.raises(SetupError, match="read or write"):
+        folders.load(home)
+
+
+def test_the_start_folder_is_offered_once_and_a_no_is_remembered(home, user):
+    said: list[str] = []
+    here = user / "Documents" / "Brand"
+    offer_start_folder(home, here, ask=lambda p: "n", say=said.append)
+    assert "Not shared" in said[-1]
+    assert folders.load(home)[1] == ["~/Documents/Brand"]
+    asked = []
+    offer_start_folder(home, here, ask=lambda p: asked.append(p) or "r", say=said.append)
+    assert asked == []  # declined folders are not asked about again
+    offer_start_folder(home, user / "Pictures" / "Trip", ask=lambda p: "w", say=said.append)
+    assert folders.load(home)[0]["trip"].access == "write"
+    offer_start_folder(home, user, ask=lambda p: asked.append(p) or "r", say=said.append)
+    assert asked == []  # the home folder itself is never offered
+
+
+# ---------------------------------------------------------------------------
+# A run's folders
+
+
+def test_a_spec_names_grants_and_may_lower_write_to_read(home, user):
+    folders.add(home, user / "Documents" / "Brand", "brand", "read")
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    got, left = folders.for_run(home, {"folders": {"brand": "write", "photos": "read", "secret": None}})
+    assert [(f["name"], f["access"]) for f in got] == [("brand", "read"), ("photos", "read")]
+    assert "not shared" in left[0] and "secret" in left[0]
+    got, _ = folders.for_run(home, {"folders": ["photos"]})
+    assert got[0]["access"] == "write" and got[0]["path"] == str(user / "Pictures" / "Trip")
+    assert folders.for_run(home, {}) == ([], [])
+
+
+def ctx_for(run_dir, user, access="read"):
+    shared = {"brand": SharedFolder("brand", user / "Documents" / "Brand", "read"),
+              "photos": SharedFolder("photos", user / "Pictures" / "Trip", access)}
+    return ToolContext(run_dir, "researcher", shared=shared)
+
+
+def test_workspace_tools_reach_shared_folders_as_granted(home, user):
+    run_dir = runs.create_run(home, "default", {}, "# x", load_limits(home), source="test")
+    reg = native_registry(home)
+    ctx = ctx_for(run_dir, user, access="write")
+    read = reg.get("workspace.read").handler
+    write = reg.get("workspace.write").handler
+    listing = reg.get("workspace.list").handler
+    assert "teal" in read({"path": "shared/brand/guide.md"}, ctx)["content"]
+    assert "teal" in read({"path": str(user / "Documents" / "Brand" / "guide.md")}, ctx)["content"]
+    assert write({"path": "shared/photos/notes.md", "content": "invented"}, ctx)["path"] == "shared/photos/notes.md"
+    with pytest.raises(ToolInputError, match="read-only"):
+        write({"path": "shared/brand/new.md", "content": "x"}, ctx)
+    with pytest.raises(NotGranted):
+        read({"path": "shared/other/x.md"}, ctx)
+    with pytest.raises(NotGranted):
+        read({"path": str(user / "Library" / "Mail")}, ctx)
+    with pytest.raises(ToolInputError, match=r"\.\."):
+        read({"path": "shared/brand/../../x"}, ctx)
+    (user / "Documents" / "Brand" / "out").symlink_to(user / ".ssh")
+    with pytest.raises(ToolInputError, match="symlink"):
+        listing({"path": "shared/brand/out"}, ctx)
+    names = listing({"path": "shared"}, ctx)["entries"]
+    assert {e["path"] for e in names} == {"shared/brand", "shared/photos"}
+    assert "shared/brand (read)" in listing({}, ctx)["shared"]
+
+
+def test_a_run_backs_up_and_lists_changes_in_a_writable_folder(run, home, user):
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    folders.add(home, user / "Documents" / "Brand", "brand", "read")
+    write_role(home, "researcher", max_steps=10, tools=["workspace.read", "workspace.write", "workspace.list"])
+    status = run([
+        fake.brief("researcher", "Note the brand colour in the photos folder."),
+        fake.call("workspace__read", {"path": "shared/brand/guide.md"}),
+        fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
+        fake.call("workspace__write", {"path": "shared/photos/IMG_0000.jpg", "content": "changed"}),
+        fake.call("workspace__read", {"path": str(user / "Library" / "Mail" / "x")}),
+        fake.result("Noted the colour.", did_not_do=["Could not read the mail folder."]),
+        fake.finish(), fake.keep_notes(), LEAD_REPORT,
+    ], spec_meta={"folders": ["photos", "brand", "missing"]})
+    assert status == "completed"
+    assert_reported(run, "completed")
+    meta = run.meta
+    by_name = {f["name"]: f for f in meta["folders"]}
+    assert by_name["brand"]["access"] == "read" and "backup" not in by_name["brand"]
+    backup = by_name["photos"].get("backup")
+    if platform.system() == "Darwin":
+        # The clone holds the folder as it was before the run.
+        assert backup and (run.run_dir / "backup" / "photos" / "IMG_0000.jpg").read_text() == "invented photo 0"
+        assert not (run.run_dir / "backup" / "photos" / "colour.md").exists()
+    else:
+        assert backup or "no backup" in by_name["photos"]["backup_note"]
+    report = run.report
+    assert "## Shared folders" in report
+    assert "**shared/photos** (read and write)" in report and "**shared/brand** (read only)" in report
+    assert "Created (1):" in report and "- colour.md" in report
+    assert "Changed (1):" in report and "- IMG_0000.jpg" in report
+    assert "missing" in report and "not shared" in report
+    assert str(user / "Library" / "Mail" / "x") in report.split("Refused because")[1]
+    system = run.client.calls[1]["messages"][0]["content"]
+    assert "shared/photos (read and write)" in system and "shared/brand (read only)" in system
+    lead = run.client.calls[0]["messages"][0]["content"]
+    assert "Folders the user shared with this run" in lead and "shared/photos (read and write)" in lead
+
+
+# ---------------------------------------------------------------------------
+# Placements
+
+
+def place_run(run, home, user, to, **kw):
+    write_role(home, "researcher", max_steps=10, tools=["workspace.write", "workspace.place"])
+    return run([
+        fake.brief("researcher", "Write the summary and save it in the reports folder."),
+        fake.call("workspace__write", {"path": "workspace/summary.md", "content": "Invented summary.\n"}),
+        fake.call("workspace__place", {"from": "workspace/summary.md", "to": to,
+                                       "reason": "The user keeps reports there.", **kw}),
+        fake.call("workspace__place", {"from": "workspace/summary.md", "to": to,
+                                       "reason": "The user keeps reports there.", **kw}),
+        fake.result("Wrote the summary."),
+        fake.finish(), fake.keep_notes(), LEAD_REPORT,
+    ], spec_meta={"folders": ["photos"]} if folders.load(home)[0] else None)
+
+
+def test_a_placement_outside_the_shared_folders_waits_for_approval(run, home, user):
+    (user / "Documents" / "Reports").mkdir()
+    status = place_run(run, home, user, "~/Documents/Reports/")
+    assert status == "completed"
+    dest = user / "Documents" / "Reports" / "summary.md"
+    assert not dest.exists()
+    (a,) = outbox.actions(run.run_dir)
+    assert a.tool == "workspace.place" and a.status == "pending"
+    assert a.arguments == {"to": "~/Documents/Reports/summary.md", "overwrite": False}
+    assert "Staged, waiting for you (1)" in run.report
+    assert any(e["action"] == "staged_duplicate" for e in run.events)
+    # Changing the workspace after staging does not change what is approved.
+    (run.run_dir / "workspace" / "summary.md").write_text("changed later")
+    outbox.approve(home, a)
+    assert dest.read_text() == "Invented summary.\n"
+    assert outbox.load(a.path).status == "executed"
+    assert not folders.find(folders.load(home)[0], dest.parent)  # approving does not share the folder
+
+
+def test_a_placement_never_replaces_a_file_unless_asked(run, home, user):
+    (user / "Documents" / "Reports").mkdir()
+    (user / "Documents" / "Reports" / "summary.md").write_text("the user's own file")
+    place_run(run, home, user, "~/Documents/Reports/summary.md")
+    (a,) = outbox.actions(run.run_dir)
+    with pytest.raises(outbox.OutboxError, match="would replace"):
+        outbox.approve(home, a)
+    assert (user / "Documents" / "Reports" / "summary.md").read_text() == "the user's own file"
+    outbox.edit(home, a, {"to": "~/Documents/Reports/summary.md", "overwrite": True})
+    outbox.approve(home, outbox.load(a.path))
+    assert (user / "Documents" / "Reports" / "summary.md").read_text() == "Invented summary.\n"
+
+
+def test_a_placement_into_a_writable_shared_folder_happens_at_once(run, home, user):
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    place_run(run, home, user, "shared/photos/summary.md")
+    assert (user / "Pictures" / "Trip" / "summary.md").read_text() == "Invented summary.\n"
+    assert outbox.actions(run.run_dir) == []
+    assert "Copied into shared folders with workspace.place (1)" in run.report
+    # The second, identical placement was refused rather than replacing the file.
+    assert any("already exists" in e.get("note", "") for e in run.events if e["action"] == "tool_error")
+
+
+def test_a_placement_to_a_place_that_can_never_be_shared_is_refused(run, home, user):
+    place_run(run, home, user, str(user / ".ssh" / "summary.md"))
+    assert outbox.actions(run.run_dir) == []
+    assert not (user / ".ssh" / "summary.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# The brief interview
+
+
+def test_the_brief_asks_before_sharing_a_folder_the_spec_needs(home, user):
+    from ombro.interviews import BriefPurpose
+
+    talk = Session(home)
+    out = talk(
+        BriefPurpose(home, "default", load_limits(home), "Use the brand guide.", start_dir=user),
+        [fake.call("propose", {**SPEC, "folders": [
+            {"folder": str(user / "Documents" / "Brand"), "access": "read", "why": "the brand guide is there"},
+            {"folder": "~/Pictures/Trip", "access": "write", "why": "photos to rename"}]})],
+        ["a", "r", "n"],
+    )
+    assert out.status == "confirmed"
+    meta, _ = mdfile.read(home.crew_dir("default") / "specs" / "teapot-survey.md")
+    assert meta["folders"] == {"brand": "read"}
+    grants = folders.load(home)[0]
+    assert set(grants) == {"brand"} and grants["brand"].access == "read"
+    assert "Not shared. The spec leaves ~/Pictures/Trip out." in talk.output
+    assert "you will be asked whether to share it" in talk.output
+    context = talk.client.calls[0]["messages"][0]["content"]
+    assert "Shared folders" in context and "you never share one" in context
+
+
+def test_the_brief_refuses_a_folder_that_can_never_be_shared(home, user):
+    from ombro.interviews import BriefPurpose
+
+    talk = Session(home)
+    talk(
+        BriefPurpose(home, "default", load_limits(home), "Read my keys."),
+        [fake.call("propose", {**SPEC, "folders": [{"folder": "~/.ssh", "access": "read"}]}),
+         fake.call("propose", SPEC)],
+        ["a"],
+    )
+    assert "hidden" in talk.tool_replies()[0]
+    assert folders.load(home)[0] == {}

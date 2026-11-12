@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import contract, mdfile, memory, outbox, outward, prompts, report, runs
+from ombro import contract, folders, mdfile, memory, outbox, outward, prompts, report, runs
 from ombro import journal as journal_mod
 from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
@@ -20,7 +20,7 @@ from ombro.journal import Journal, utc_now
 from ombro.mcp import McpCallLost
 from ombro.roles import Role, load_crew, skill_texts
 from ombro.settings import Limits, ModelSpec, SetupError, ToolSettings, load_models, load_preferences
-from ombro.tools import Tool, ToolContext, ToolError, ToolRegistry
+from ombro.tools import NotGranted, SharedFolder, Tool, ToolContext, ToolError, ToolRegistry
 
 TOOL_RESULT_CAP = 20_000
 
@@ -68,6 +68,12 @@ class Engine:
         # So are the permissions for outward (MCP) tools.
         self.outward = meta.get("outward") or {"preset": outward.DEFAULT_PRESET, "source": "default"}
         self.pool: outward.McpPool | None = None
+        # So are the shared folders, checked against folders.md when the run was created.
+        self.shared = {f["name"]: SharedFolder(f["name"], Path(f["path"]), f["access"])
+                       for f in meta.get("folders") or []}
+        self.folders_left_out = list(meta.get("folders_left_out") or [])
+        self._folders_before: dict[str, Any] = {}
+        self.code_unavailable: str | None = None
         if registry is None:
             from ombro.native import native_registry
 
@@ -102,10 +108,13 @@ class Engine:
         self.lead, self.roles = load_crew(self.home, self.crew, self.limits)
         self.instructions = load_preferences(self.home).instructions
         self._load_mcp()
+        self._prepare_code()
+        self._prepare_folders()
         for role in [self.lead, *self.roles.values()]:
             if role.model not in self.models:
                 raise SetupError(f"role {role.name} uses model {role.model!r}, which is not in models.md")
-            missing_tools = [t for t in role.tools if self.registry.get(t) is None]
+            missing_tools = [t for t in role.tools if self.registry.get(t) is None
+                             and not (t == "code.run" and self.code_unavailable)]
             if missing_tools:
                 self.journal.write(
                     "harness",
@@ -139,6 +148,61 @@ class Engine:
             self.journal.write("harness", "mcp_ready", f"{len(tools)} MCP tool(s): " + ", ".join(
                 f"{t.name} ({t.effect}: {outward.decide(self.outward, t.name, t.effect, self.tool_settings)})"
                 for t in tools), outward=self.outward)
+
+    def _prepare_code(self) -> None:
+        """code.run is offered only where the sandbox can be set up. Code never runs unconfined."""
+        if not any("code.run" in r.tools for r in self.roles.values()):
+            return
+        from ombro import sandbox
+
+        reason = sandbox.unavailable_reason()
+        if reason:
+            self.code_unavailable = reason
+            self.registry.remove("code.run")
+            self.journal.write("harness", "warning", f"code.run is left out of this run: {reason}. Roles that "
+                               "name it carry on without it.", tool="code.run")
+
+    def _prepare_folders(self) -> None:
+        """Clone each writable shared folder into backup/ and note what is in it,
+        before any role can change it."""
+        for note in self.folders_left_out:
+            self.journal.write("harness", "warning", note)
+        if not self.shared:
+            return
+        recorded = []
+        for f in self.shared.values():
+            entry: dict[str, Any] = {"name": f.name, "path": str(f.path), "access": f.access}
+            if f.writable:
+                entry.update(folders.backup(self.run_dir, entry))
+                self._folders_before[f.name] = folders.manifest(f.path)
+            recorded.append(entry)
+            self.journal.write(
+                "harness", "folder_ready",
+                f"shared/{f.name} ({f.access}): {f.path}"
+                + (f"; {entry['backup_note']}" if f.writable else ""), folder=f.name, **entry)
+        runs.update_run(self.run_dir, folders=recorded)
+
+    def _record_folder_changes(self) -> None:
+        """What changed in each writable shared folder, from before and after."""
+        for name, before in self._folders_before.items():
+            f = self.shared[name]
+            d = folders.diff(before, folders.manifest(f.path))
+            n = folders.count(d)
+            cap = folders.CHANGES_LISTED
+            note = ("too many files to compare" if d.get("too_large")
+                    else f"{len(d['created'])} created, {len(d['changed'])} changed, {len(d['removed'])} removed")
+            self.journal.write("harness", "folder_changes", f"shared/{name}: {note}", folder=name, path=str(f.path),
+                               total=n, too_large=bool(d.get("too_large")),
+                               **{k: d[k][:cap] for k in ("created", "changed", "removed")},
+                               counts={k: len(d[k]) for k in ("created", "changed", "removed")})
+        self._folders_before = {}
+
+    def _context(self, role: Role, tool: str) -> ToolContext:
+        return ToolContext(
+            self.run_dir, role.name, timeout=self._tool_timeout(tool), shared=self.shared, limits=self.limits,
+            cancelled=lambda: self.gate.stop_requested or self.gate.timed_out(),
+            event=lambda action, note, **fields: self.journal.write(role.name, action, note, **fields),
+        )
 
     def _close_mcp(self) -> None:
         if self.pool is not None:
@@ -189,6 +253,10 @@ class Engine:
             self.journal.write("harness", "failed", f"internal error: {type(e).__name__}: {e}")
             traceback.print_exc(file=sys.stderr)
         self._close_mcp()
+        try:
+            self._record_folder_changes()
+        except OSError as e:
+            self.journal.write("harness", "warning", f"the changes in shared folders could not be listed: {e}")
         self._notes(status)
         self._report(status)
         runs.update_run(
@@ -252,6 +320,7 @@ class Engine:
                 "content": prompts.lead_system(
                     self.lead, self.instructions, self.roles, self.limits, self.today,
                     memory=memory.lead_context(self.home, self.crew, self.limits),
+                    shared=[(f.name, f.access) for f in self.shared.values()],
                 ),
             },
             {"role": "user", "content": self.spec_body},
@@ -354,7 +423,8 @@ class Engine:
         schemas, by_wire = self._role_tools(role)
         skills, _ = skill_texts(self.home, role.skills)
         messages: list[dict] = [
-            {"role": "system", "content": prompts.role_system(role, skills, [t.name for t in by_wire.values()], self.today)},
+            {"role": "system", "content": prompts.role_system(role, skills, [t.name for t in by_wire.values()], self.today,
+                                                              shared=[(f.name, f.access) for f in self.shared.values()])},
             {"role": "user", "content": prompts.role_task(task)},
         ]
         self.gate.begin_scope(role.name, role.max_steps, brief=True)
@@ -416,10 +486,14 @@ class Engine:
         if tool.outward and tool.effect != "read-only":
             return self._outward_call(role, tool, tc.arguments)
         cost = self.limits.cost_for(name)
-        ctx = ToolContext(self.run_dir, role.name, timeout=self._tool_timeout())
+        ctx = self._context(role, name)
         args_note = _short(_canonical(tc.arguments, ""), 120)
         try:
             out = tool.handler(tc.arguments, ctx) if tool.handler else None
+        except NotGranted as e:
+            self.journal.write(role.name, "tool_error", f"{name}: {_short(e.path, 200)} is not in a shared folder",
+                               tool=name, not_shared=e.path)
+            return {"error": str(e)}
         except ToolError as e:
             self._charge(name, cost, billed=e.billable)
             self.journal.write(role.name, "tool_error", f"{name} {args_note}: {_short(str(e))}", tool=name)
@@ -468,7 +542,7 @@ class Engine:
                     "again; mention it in your summary as staged, not done."}
         # allowed: it runs now
         cost = self.limits.cost_for(name)
-        ctx = ToolContext(self.run_dir, role.name, timeout=self._tool_timeout())
+        ctx = self._context(role, name)
         try:
             out = tool.handler(args, ctx) if tool.handler else {"ok": True}
         except McpCallLost as e:
@@ -494,10 +568,11 @@ class Engine:
             self.journal.write("harness", "tool_cost", f"{name}: ${cost:.4f}", tool=name, usd=round(cost, 6))
             self._save_spend()
 
-    def _tool_timeout(self) -> float:
+    def _tool_timeout(self, tool: str = "") -> float:
         from ombro.native import CALL_TIMEOUT
 
-        return max(0.5, min(CALL_TIMEOUT, self.limits.run_timeout - self.gate.elapsed()))
+        cap = self.limits.code_timeout if tool == "code.run" else CALL_TIMEOUT
+        return max(0.5, min(cap, self.limits.run_timeout - self.gate.elapsed()))
 
     # -- notes -------------------------------------------------------------
 

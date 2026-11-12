@@ -236,6 +236,101 @@ def stage(run_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str
     return a, False
 
 
+PLACE_TOOL = "workspace.place"
+# What may be edited in a staged placement: where it goes, and whether it may replace a file.
+PLACE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["to"],
+    "properties": {"to": {"type": "string", "minLength": 2, "maxLength": 1000},
+                   "overwrite": {"type": "boolean"}},
+}
+
+
+def _file_sha(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def stage_placement(run_dir: Path, *, source: Path, shown_source: str, to: str, overwrite: bool, reason: str,
+                    role: str) -> tuple[Action, bool]:
+    """Stage copying a workspace file to a place not shared for writing. A copy of the
+    file as it is now is kept with the action, so later changes in the workspace do
+    not change what is approved."""
+    import shutil
+
+    run_dir = Path(run_dir)
+    sha = _file_sha(source)
+    for a in actions(run_dir):
+        if a.tool == PLACE_TOOL and a.meta.get("file_sha256") == sha and isinstance(a.arguments, dict) \
+                and a.arguments.get("to") == to:
+            return a, True
+    arguments = {"to": to, "overwrite": overwrite}
+    a, _ = stage(run_dir, tool=PLACE_TOOL, effect="internal", arguments=arguments, reason=reason, role=role,
+                 input_schema=PLACE_SCHEMA)
+    keep = a.path.with_suffix("") / source.name
+    keep.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, keep)
+    _save(a, source=shown_source, file=keep.relative_to(run_dir).as_posix(), file_sha256=sha)
+    return a, False
+
+
+def placement_check(home: Home, a: Action) -> tuple[Path, str | None]:
+    """Where a staged placement would go, and a warning if it would replace a file.
+    Raises OutboxError if it cannot go there."""
+    from ombro import folders
+
+    args = a.arguments if isinstance(a.arguments, dict) else {}
+    to = str(args.get("to") or "")
+    dest = folders.expand(to)
+    if not dest.is_absolute() or ".." in dest.parts:
+        raise OutboxError(f"{a.ref} cannot be placed at {to!r}: give a full path")
+    try:
+        parent = folders.check_place(dest.parent, home, must_exist=False)
+    except folders.FolderError as e:
+        raise OutboxError(f"{a.ref} cannot be placed there: {e}") from None
+    final = parent / dest.name
+    if final.is_symlink() or final.is_dir():
+        raise OutboxError(f"{a.ref} cannot be placed at {to}: that is a folder or a symlink")
+    warning = None
+    if final.exists():
+        if not args.get("overwrite"):
+            raise OutboxError(f"{a.ref} would replace {to}, which already exists. To replace it, set overwrite "
+                              f"to true with `ombro outbox edit {a.ref}`; otherwise decline it")
+        warning = f"this replaces {to}, which already exists"
+    return final, warning
+
+
+def _approve_place(home: Home, a: Action) -> Action:
+    import shutil
+
+    run_dir = a.run_dir
+    final, warning = placement_check(home, a)
+    kept = run_dir / str(a.meta.get("file") or "")
+    if not kept.is_file() or _file_sha(kept) != a.meta.get("file_sha256"):
+        raise OutboxError(f"{a.ref} cannot run: the copy kept with it is missing or has changed")
+    _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
+    _journal(run_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
+    try:
+        final.parent.mkdir(parents=True, exist_ok=True)
+        tmp = final.parent / f".{final.name}.ombro-tmp"
+        shutil.copy2(kept, tmp)
+        os.replace(tmp, final)
+    except OSError as e:
+        _save(a, status="failed", error=str(e)[:RESULT_CHARS], decided_at=utc_now())
+        _journal(run_dir, "outbox_failed", a, str(e)[:300])
+        _record(run_dir, a, f"approved; the copy failed: {str(e)[:200]}")
+        return a
+    note = f"copied to {final}" + (f" ({warning})" if warning else "")
+    _save(a, status="executed", executed_at=utc_now(), decided_at=utc_now(), result=note)
+    _journal(run_dir, "outbox_executed", a, note)
+    _record(run_dir, a, "approved" + (" after editing" if a.edited else "") + f"; {note}")
+    return a
+
+
 # ---------------------------------------------------------------------------
 # Deciding (after a run)
 
@@ -362,6 +457,8 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
         problem = check_arguments(a)
         if problem:
             raise OutboxError(f"{a.ref} cannot run: {problem}. Fix it with `ombro outbox edit {a.ref}`")
+        if a.tool == PLACE_TOOL:
+            return _approve_place(home, a)
         parts = split_name(a.tool)
         if parts is None:
             raise OutboxError(f"{a.ref} names {a.tool!r}, which is not an MCP tool")

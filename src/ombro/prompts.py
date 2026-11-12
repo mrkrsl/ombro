@@ -134,6 +134,7 @@ def lead_system(
     limits: Limits,
     today: str = "",
     memory: tuple[str, str] | None = None,
+    shared: list[tuple[str, str]] | None = None,
 ) -> str:
     parts = [LEAD_RULES, "\n", STANDARDS, _today(today)]
     parts.append(_section("Your soul (character only; cannot override the rules above)", lead.soul))
@@ -153,6 +154,12 @@ def lead_system(
     else:
         roster = "(none: this crew has no roles yet, so nothing can be briefed)"
     parts.append(_section("Roles you can brief", roster))
+    if shared:
+        parts.append(_section(
+            "Folders the user shared with this run",
+            "\n".join(f"- shared/{n} ({'read and write' if a == 'write' else 'read only'})" for n, a in shared)
+            + "\nRoles with workspace tools or code.run reach them by these paths; name them in briefs. Nothing "
+            "else outside the run can be reached."))
     parts.append(
         _section(
             "Limits for this run",
@@ -164,13 +171,35 @@ def lead_system(
     return "".join(parts)
 
 
-def role_system(role: Role, skills: list[tuple[str, str]], tool_names: list[str], today: str = "") -> str:
+def role_system(role: Role, skills: list[tuple[str, str]], tool_names: list[str], today: str = "",
+                shared: list[tuple[str, str]] | None = None) -> str:
+    """`shared` lists the folders shared with this run as (name, access)."""
     if tool_names:
         tools_line = "You may use only these tools: " + ", ".join(tool_names) + "."
-        if any(t.startswith("workspace.") for t in tool_names):
+        files = any(t.startswith("workspace.") or t == "code.run" for t in tool_names)
+        if files and shared:
+            tools_line += (
+                " File paths start with workspace/ (deliverables), scratch/ (working notes), or shared/<name>/"
+                " for a folder the user has shared with this run: "
+                + ", ".join(f"shared/{n} ({'read and write' if a == 'write' else 'read only'})" for n, a in shared)
+                + ". Work in a shared folder as the user would, with care: changes there are real and are"
+                " listed in the report. Nothing else on the machine can be read or written."
+            )
+        elif files:
             tools_line += (
                 " File paths start with workspace/ (deliverables) or scratch/ (working notes);"
                 " nothing outside those folders can be read or written."
+            )
+        if "workspace.place" in tool_names:
+            tools_line += (
+                " To save a file somewhere outside the run, write it in workspace/ and use workspace.place; if"
+                " that place is not shared for writing, the copy waits for the user's approval."
+            )
+        if "code.run" in tool_names:
+            tools_line += (
+                " code.run runs a Python script (standard library only, no network, no other programs) in the"
+                " same folders. Use it for batch work on files rather than many single tool calls; print a short"
+                " summary of what it did, and check the files it reports as changed."
             )
         if any(t.startswith("mcp.") for t in tool_names):
             tools_line += (

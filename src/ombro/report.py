@@ -53,6 +53,10 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     notes: dict[str, Any] | None = None
     outward: dict[str, list[dict[str, Any]]] = {"staged": [], "done": [], "errors": [], "refused": [],
                                                  "duplicates": [], "uncertain": []}
+    code_runs: list[dict[str, Any]] = []
+    folder_changes: dict[str, dict[str, Any]] = {}
+    placed: list[dict[str, Any]] = []
+    not_shared: list[str] = []
     for ev in events:
         action = ev.get("action")
         if action == "briefed":
@@ -89,6 +93,15 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             outward["uncertain"].append(ev)
         elif action == "tool_refused" and ev.get("permission") == "refuse":
             outward["refused"].append(ev)
+        elif action == "code_run":
+            code_runs.append(ev)
+        elif action == "folder_changes":
+            folder_changes[str(ev.get("folder"))] = ev
+        elif action == "placed":
+            placed.append(ev)
+        elif action == "tool_error" and ev.get("not_shared"):
+            if ev["not_shared"] not in not_shared:
+                not_shared.append(ev["not_shared"])
     if failure:
         failures.append(failure)
 
@@ -154,6 +167,12 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "notes": notes,
         "outward": outward,
         "outward_setting": meta.get("outward") or {},
+        "code_runs": code_runs,
+        "folders": list(meta.get("folders") or []),
+        "folders_left_out": list(meta.get("folders_left_out") or []),
+        "folder_changes": folder_changes,
+        "placed": placed,
+        "not_shared": not_shared,
         "workspace": str(workspace),
         "display_currency": load_preferences(home).display_currency,
     }
@@ -195,6 +214,16 @@ def narrative_input(facts: dict[str, Any]) -> str:
                      f"{len(ow.get('staged') or [])} staged and waiting for the user's approval"
                      + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)"
                         if ow.get("uncertain") else "") + ".")
+    if facts.get("code_runs"):
+        stopped = sum(1 for c in facts["code_runs"] if c.get("limit"))
+        failed = sum(1 for c in facts["code_runs"] if not c.get("limit") and c.get("exit_code"))
+        lines.append(f"Scripts run with code.run: {len(facts['code_runs'])}"
+                     + (f" ({failed} ended with an error, {stopped} stopped by a limit)" if failed or stopped else "")
+                     + ".")
+    for name, ev in (facts.get("folder_changes") or {}).items():
+        c = ev.get("counts") or {}
+        lines.append(f"Shared folder {name}: {c.get('created', 0)} files created, {c.get('changed', 0)} changed, "
+                     f"{c.get('removed', 0)} removed (the harness's own comparison).")
     lines.append("")
     if not facts["briefs"]:
         lines.append("No roles were briefed.")
@@ -351,6 +380,10 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     out += ["", f"Workspace: {f['workspace']}", ""]
 
     out += ["## Outward actions", "", *outbox_lines(f), ""]
+    if f.get("code_runs"):
+        out += ["## Code", "", *code_lines(f), ""]
+    if f.get("folders") or f.get("not_shared") or f.get("folders_left_out"):
+        out += ["## Shared folders", "", *folder_lines(f), ""]
     out += ["## Changes to notes.md", "", *notes_lines(f.get("notes")), ""]
 
     cur = f["display_currency"]
@@ -461,6 +494,68 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
         lines.append("")
     while lines and not lines[-1]:
         lines.pop()
+    return lines
+
+
+def code_lines(f: dict[str, Any]) -> list[str]:
+    """Each script the run executed, from the harness's own record."""
+    lines = [f"Scripts run with code.run, in the sandbox ({len(f['code_runs'])}). Each script and its output are "
+             "kept in the run's code/ folder:"]
+    for ev in f["code_runs"]:
+        status = (f"stopped by `{ev['limit']}`" if ev.get("limit") else f"exit {ev.get('exit_code')}")
+        what = f": {_line(ev['purpose'], 160)}" if ev.get("purpose") else ""
+        lines.append(f"- `{ev.get('script')}` ({ev.get('role')}){what}. {status}, "
+                     f"{float(ev.get('seconds') or 0):.1f}s, {ev.get('changed', 0)} file(s) changed")
+    return lines
+
+
+def _change_list(label: str, items: list[str], total: int, n: int = 30) -> list[str]:
+    if not total:
+        return []
+    out = [f"{label} ({total}):"] + [f"- {x}" for x in items[:n]]
+    if total > len(items[:n]):
+        out.append(f"- and {total - len(items[:n])} more")
+    return out
+
+
+def folder_lines(f: dict[str, Any]) -> list[str]:
+    """Shared folders, their access, and what changed in them, from the harness's own record."""
+    lines: list[str] = []
+    changes = f.get("folder_changes") or {}
+    for entry in f.get("folders") or []:
+        name, access = entry.get("name"), entry.get("access")
+        lines.append(f"- **shared/{name}** ({'read and write' if access == 'write' else 'read only'}): "
+                     f"{entry.get('path')}")
+        if access != "write":
+            continue
+        if entry.get("backup"):
+            lines.append(f"  - Backup: cloned before the run to {entry['backup']}. To restore a file, copy it "
+                         "back from there.")
+        elif entry.get("backup_note"):
+            lines.append(f"  - Backup: {entry['backup_note']}.")
+        ev = changes.get(str(name))
+        if ev is None:
+            lines.append("  - Changes: not recorded (the run ended before the folder could be compared); compare "
+                         "it with the backup.")
+        elif ev.get("too_large"):
+            lines.append("  - Changes: the folder has too many files to compare before and after.")
+        elif not ev.get("total"):
+            lines.append("  - Changes: none.")
+        else:
+            c = ev.get("counts") or {}
+            for label, key in (("Created", "created"), ("Changed", "changed"), ("Removed", "removed")):
+                lines += ["  " + x for x in _change_list(label, ev.get(key) or [], int(c.get(key) or 0))]
+    if f.get("placed"):
+        lines += ["", f"Copied into shared folders with workspace.place ({len(f['placed'])}):"]
+        lines += [f"- {ev.get('note')} ({ev.get('role')})" for ev in f["placed"]]
+    for note in f.get("folders_left_out") or []:
+        lines.append(f"- Left out: {note}")
+    if f.get("not_shared"):
+        lines += ["", "Refused because they are not in a folder shared with this run. Share the folder with "
+                  "`ombro folders add <path>` if a later run should reach it:"]
+        lines += [f"- {_line(p, 200)}" for p in f["not_shared"][:20]]
+    if not lines:
+        lines.append("None.")
     return lines
 
 

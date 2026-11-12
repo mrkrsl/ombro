@@ -128,6 +128,11 @@ class Purpose:
         """Check final file texts (also after a hand edit). Raise ProposalError to refuse."""
         return proposal
 
+    def before_write(self, proposal: Proposal, ask: Callable[[str], str], say: Callable[[str], None]) -> Proposal:
+        """Questions only the harness asks once the user has accepted (such as sharing a
+        folder). Returns the proposal to write."""
+        return proposal
+
     def write(self, proposal: Proposal) -> None:
         for f in proposal.files:
             keep_previous(f.path)
@@ -485,6 +490,7 @@ class Interview:
                 "or [q]uit? "
             ).lower()
             if choice in ("a", "accept", "y", "yes"):
+                proposal = self.purpose.before_write(proposal, self._input, self.say)
                 self.purpose.write(proposal)
                 self.transcript.note("You accepted" + (" your edited version." if edited else " the proposal."))
                 for f in proposal.files:

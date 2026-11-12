@@ -338,12 +338,14 @@ class BriefPurpose(Purpose):
         name = proposal.data.get("name", "")
         return f"save it as {name!r} and start the run" if self.then_run else f"save it as {name!r}"
 
-    def __init__(self, home: Home, crew: str, limits: Limits, task: str = "", *, then_run: bool = False):
+    def __init__(self, home: Home, crew: str, limits: Limits, task: str = "", *, then_run: bool = False,
+                 start_dir: Path | None = None):
         self.home = home
         self.crew = crew
         self.limits = limits
         self.task = task.strip()
         self.then_run = then_run
+        self.start_dir = start_dir
         self.accept_label = "save the spec and start the run" if then_run else "save the spec"
 
     def opening(self) -> str:
@@ -380,6 +382,8 @@ class BriefPurpose(Purpose):
              f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.run_timeout)}\n"
              f"- tokens: {format_tokens(L.max_tokens)}"),
         ]
+        out.append(("Shared folders (outside a run, only folders the user has shared can be reached)",
+                    self.folders_context()))
         tools = self.outward_tools()
         if tools:
             from ombro import outward
@@ -394,9 +398,45 @@ class BriefPurpose(Purpose):
                         + f"\nThe user's default permission is {default}. Ask what may happen without them."))
         return out
 
+    def folders_context(self) -> str:
+        from ombro import folders
+
+        try:
+            grants, _ = folders.load(self.home)
+        except SetupError:
+            grants = {}
+        lines = [f"- {g.name}: {g.path} ({g.access})" for g in grants.values()] or ["- none yet"]
+        if self.start_dir is not None:
+            here = Path(self.start_dir).resolve()
+            inside = [g for g in grants.values() if here == folders.expand(g.path).resolve()
+                      or here.is_relative_to(folders.expand(g.path).resolve())]
+            if inside:
+                lines.append(f"The user started this brief in {folders.display_path(here)}, inside shared folder "
+                             f"{inside[0].name!r}.")
+        lines.append("A run reaches only its own workspace and the folders its spec names. If the task needs "
+                     "files outside the run (documents to read, or a folder to save results in), ask which "
+                     "folder and why, and list it in `folders`: a shared folder by name, or a new one by its full "
+                     "path. The harness asks the user before sharing a new folder; you never share one.")
+        return "\n".join(lines)
+
     def tool(self) -> dict:
         props: dict[str, Any] = {
             "name": {"type": "string", "description": "Short lower-case file name for the spec."},
+            "folders": {
+                "type": "array",
+                "description": "Folders outside the run the task needs. Optional.",
+                "items": {
+                    "type": "object",
+                    "required": ["folder", "access"],
+                    "properties": {
+                        "folder": {"type": "string", "description": "A shared folder's name, or the full path of "
+                                   "a folder that is not shared yet (the user is asked)."},
+                        "access": {"type": "string", "enum": ["read", "write"],
+                                   "description": "read to read files; write to change or add files there."},
+                        "why": {"type": "string", "description": "One line on why the task needs it."},
+                    },
+                },
+            },
             "title": {"type": "string", "description": "One line saying what the task is."},
             "details": {"type": "string", "description": "Anything else the crew needs: scope, sources, where "
                         "the result goes. Optional."},
@@ -436,6 +476,9 @@ class BriefPurpose(Purpose):
         for key, label in SPEC_FIELDS:
             lines += [f"{label}: {_text(args, key)}", ""]
         meta: dict[str, Any] = {"name": name, "crew": self.crew}
+        wanted, new = self._folders(args.get("folders"))
+        if wanted:
+            meta["folders"] = wanted
         if args.get("outward_preset") or args.get("outward_allow") or args.get("outward_stage"):
             from ombro import outward
 
@@ -451,7 +494,96 @@ class BriefPurpose(Purpose):
             raise ProposalError("the crew has external tools: ask the user what may happen without them, "
                                 "and give outward_preset")
         text = mdfile.dump(meta, "\n".join(lines))
-        return Proposal([FileDraft(f"crews/{self.crew}/specs/{name}.md", self.path(name), text)], data={"name": name})
+        return Proposal([FileDraft(f"crews/{self.crew}/specs/{name}.md", self.path(name), text)],
+                        data={"name": name, "new_folders": new})
+
+    def _folders(self, value: Any) -> tuple[dict[str, str], list[dict[str, str]]]:
+        """The spec's folders by name, and the folders not yet shared that the user
+        will be asked about on accepting."""
+        from ombro import folders
+
+        if not value:
+            return {}, []
+        if not isinstance(value, list):
+            raise ProposalError("`folders` must be a list of {folder, access, why}")
+        try:
+            grants, _ = folders.load(self.home)
+        except SetupError as e:
+            raise ProposalError(str(e)) from None
+        wanted: dict[str, str] = {}
+        new: list[dict[str, str]] = []
+        for item in value:
+            if not isinstance(item, dict) or not str(item.get("folder") or "").strip():
+                raise ProposalError("each folder needs `folder` (a shared folder's name or a full path) and `access`")
+            ref = str(item["folder"]).strip()
+            access = "write" if item.get("access") == "write" else "read"
+            if ref in grants:
+                wanted[ref] = "read" if grants[ref].access == "read" else access
+                continue
+            if not ref.startswith(("/", "~")):
+                names = ", ".join(grants) or "none"
+                raise ProposalError(f"no folder is shared as {ref!r} (shared: {names}); give the folder's full path")
+            try:
+                real = folders.check_place(ref, self.home)
+            except folders.FolderError as e:
+                raise ProposalError(f"{ref} cannot be shared: {e}") from None
+            existing = folders.find(grants, real)
+            if existing:
+                wanted[existing.name] = "read" if existing.access == "read" else access
+                continue
+            name = folders.suggest_name(real, set(grants) | set(wanted) | {n["name"] for n in new})
+            new.append({"name": name, "path": folders.display_path(real), "access": access,
+                        "why": " ".join(str(item.get("why") or "").split())[:200]})
+            wanted[name] = access
+        return wanted, new
+
+    def before_write(self, proposal: Proposal, ask, say) -> Proposal:
+        """Folders the spec needs that are not shared yet: the user is asked about each,
+        and only a yes shares it. A no leaves it out of the spec."""
+        from ombro import folders
+
+        new = proposal.data.get("new_folders") or []
+        if not new:
+            return proposal
+        (spec,) = proposal.files
+        meta, body = mdfile.parse(spec.text)
+        wanted = dict(meta.get("folders") or {})
+        for f in new:
+            if f["name"] not in wanted:
+                continue  # removed in a hand edit
+            say(f"\nThe spec needs {f['path']} ({'read and write' if f['access'] == 'write' else 'read only'})"
+                + (f": {f['why']}" if f["why"] else "") + ".")
+            options = "[w]rite, [r]ead only, or [n]o" if f["access"] == "write" else "[r]ead, or [n]o"
+            while True:
+                choice = ask(f"Share it with Ombro's runs as {f['name']!r}? {options}: ").strip().lower()
+                if choice in ("w", "write") and f["access"] == "write":
+                    access = "write"
+                elif choice in ("r", "read", "y", "yes"):
+                    access = "read"
+                elif choice in ("n", "no"):
+                    access = None
+                else:
+                    say(f"Type {options.replace('[', '').replace(']', '')}.")
+                    continue
+                break
+            if access is None:
+                wanted.pop(f["name"], None)
+                say(f"Not shared. The spec leaves {f['path']} out.")
+                continue
+            try:
+                g = folders.add(self.home, f["path"], f["name"], access)
+            except (folders.FolderError, SetupError) as e:
+                wanted.pop(f["name"], None)
+                say(f"It could not be shared ({e}), so the spec leaves it out.")
+                continue
+            wanted[g.name] = access
+            say(f"Shared as {g.name!r} ({access}). Backup: {folders.backup_hint(g.path, self.home)}.")
+        if wanted:
+            meta["folders"] = wanted
+        else:
+            meta.pop("folders", None)
+        draft = FileDraft(spec.label, spec.path, mdfile.dump(meta, body))
+        return Proposal([draft], warnings=proposal.warnings, data={**proposal.data, "new_folders": []})
 
     def check(self, proposal: Proposal) -> Proposal:
         (spec,) = proposal.files
@@ -465,6 +597,25 @@ class BriefPurpose(Purpose):
         if limits is not None and not isinstance(limits, dict):
             raise ProposalError("`limits` in a spec must be a mapping, e.g. limits: {allowance: generous}")
         warnings = []
+        if meta.get("folders"):
+            from ombro import folders
+
+            try:
+                wanted = folders.parse_spec(meta["folders"])
+                grants, _ = folders.load(self.home)
+            except SetupError as e:
+                raise ProposalError(str(e)) from None
+            new = {f["name"]: f for f in proposal.data.get("new_folders") or []}
+            for name, access in wanted.items():
+                if name in new:
+                    warnings.append(f"folder {new[name]['path']} is not shared yet: you will be asked whether to "
+                                    f"share it ({new[name]['access']}) when you accept.")
+                elif name in grants:
+                    final = "read" if "read" in (access, grants[name].access) else "write"
+                    warnings.append(f"the run may {'change files in' if final == 'write' else 'read'} shared "
+                                    f"folder {name} ({grants[name].path}).")
+                else:
+                    warnings.append(f"folder {name!r} is not shared, so a run would leave it out.")
         if meta.get("outward") is not None:
             from ombro import outward
 

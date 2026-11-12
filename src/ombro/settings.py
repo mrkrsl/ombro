@@ -75,10 +75,37 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
 # Scheduler settings: how late a tick may start a slot, and how many scheduled
 # runs may start in one tick or run at once.
 SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "10m", "schedule_max_running": 2, "schedule_max_starts": 3}
+# Code execution: limits on each script code.run runs.
+CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 8_000}
+CODE_DEFAULT_CALLS = 10  # code.run's max_calls when neither limits.md nor tools.md sets one
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
 RETIRED_LIMITS = ("budget_usd",)
 INTERVIEW_TIMEOUT = 6 * 3600.0  # interviews wait on a person; the token and turn caps bound them
+
+
+_SIZE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?\s*$", re.IGNORECASE)
+
+
+def parse_size(value: Any) -> int:
+    """Bytes from 1GB, 512MB, 800kb or a plain number of bytes."""
+    if isinstance(value, bool):
+        raise SetupError(f"not a size: {value!r}")
+    if isinstance(value, (int, float)):
+        return int(value)
+    m = _SIZE.match(str(value))
+    if not m:
+        raise SetupError(f"not a size: {value!r} (use e.g. 512MB or 1GB)")
+    n, unit = float(m.group(1)), (m.group(2) or "b").lower()
+    return int(n * {"b": 1, "kb": 1024, "mb": 1024**2, "gb": 1024**3}[unit])
+
+
+def format_size(n: int) -> str:
+    for unit, size in (("GB", 1024**3), ("MB", 1024**2), ("KB", 1024)):
+        if n >= size:
+            v = n / size
+            return f"{v:.0f} {unit}" if v == int(v) else f"{v:.1f} {unit}"
+    return f"{n} bytes"
 
 
 def format_tokens(n: int | None) -> str:
@@ -112,6 +139,9 @@ class Limits:
     schedule_grace: float = 600.0
     schedule_max_running: int = 2
     schedule_max_starts: int = 3
+    code_timeout: float = 60.0
+    code_max_memory: int = 1024**3
+    code_output_chars: int = 8_000
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Limits":
@@ -124,6 +154,7 @@ class Limits:
             "interview_max_turns": 40,
             **copy.deepcopy(MEMORY_CHAT_DEFAULTS),
             **SCHEDULE_DEFAULTS,
+            **CODE_DEFAULTS,
             **{k: v for k, v in d.items() if k not in RETIRED_LIMITS},
         }
         unknown = set(d) - known
@@ -157,6 +188,7 @@ class Limits:
             raise SetupError("limit report_reserve must be between 0 and 0.5")
         tool_calls = int_map("tool_max_calls", d["tool_max_calls"])
         tool_calls.setdefault("default", 20)
+        tool_calls.setdefault("code.run", CODE_DEFAULT_CALLS)
         chat_calls = int_map("chat_tool_max_calls", d["chat_tool_max_calls"])
         chat_calls.setdefault("default", 10)
         costs = d["tool_cost_per_call"]
@@ -191,6 +223,9 @@ class Limits:
             schedule_grace=pos_num("schedule_grace", parse_duration(d["schedule_grace"])),
             schedule_max_running=pos_num("schedule_max_running", d["schedule_max_running"], integer=True),
             schedule_max_starts=pos_num("schedule_max_starts", d["schedule_max_starts"], integer=True),
+            code_timeout=pos_num("code_timeout", parse_duration(d["code_timeout"])),
+            code_max_memory=pos_num("code_max_memory", parse_size(d["code_max_memory"]), integer=True),
+            code_output_chars=pos_num("code_output_chars", d["code_output_chars"], integer=True),
         )
 
     def to_dict(self) -> dict[str, Any]:

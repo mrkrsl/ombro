@@ -495,10 +495,12 @@ def _first_answer(outcome) -> str:
 
 
 def _brief_interview(home: Home, crew: str, task: str, *, then_run: bool):
+    from ombro.folders_cmd import offer_start_folder
     from ombro.interviews import BriefPurpose, start
 
+    offer_start_folder(home)
     limits = load_limits(home)
-    return start(home, BriefPurpose(home, crew, limits, task, then_run=then_run), crew, limits)
+    return start(home, BriefPurpose(home, crew, limits, task, then_run=then_run, start_dir=Path.cwd()), crew, limits)
 
 
 def cmd_brief(args) -> int:
@@ -706,6 +708,10 @@ def cmd_limits(args) -> int:
     print(f"  notes.md         {lim.memory_notes_max_chars:,} characters; a run's Lead sees the last "
           f"{lim.memory_index_entries} index entries")
     print(f"  per model call   {lim.max_output_tokens:,} output tokens")
+    from ombro.settings import format_size
+
+    print(f"  each script      {format_duration(lim.code_timeout)}, {format_size(lim.code_max_memory)}, "
+          f"{lim.code_output_chars:,} characters of output to the role (code.run)")
     print(f"\nLevels: {', '.join(ALLOWANCES)}. Change with `ombro limits set <level>`; details in {home.limits}.")
     if any(k in meta for k in RETIRED_LIMITS):
         print("Note: budget_usd in limits.md is no longer used; dollars are only an estimate now.")
@@ -730,6 +736,12 @@ def cmd_outbox(args) -> int:
 
 def cmd_tools(args) -> int:
     from ombro.outbox_cmd import cmd_tools as run
+
+    return run(args)
+
+
+def cmd_folders(args) -> int:
+    from ombro.folders_cmd import cmd_folders as run
 
     return run(args)
 
@@ -860,6 +872,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("server", nargs="?", help="an MCP server named in tools.md")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_tools)
+
+    s = sub.add_parser("folders", help="folders shared with runs: list, add <path>, remove <name>")
+    s.add_argument("action", nargs="?", choices=["list", "add", "remove"])
+    s.add_argument("target", nargs="?", help="a folder's path (add) or a shared folder's name (remove)")
+    s.add_argument("--name", help="the name runs and specs use for it (add)")
+    s.add_argument("--access", choices=["read", "write"], help="read, or write to let roles change files (add)")
+    s.add_argument("--yes", action="store_true", help="do not ask (add): read unless --access write")
+    s.set_defaults(func=cmd_folders)
 
     s = sub.add_parser("tick", help="start due scheduled runs (called each minute by the system scheduler)")
     s.add_argument("--dry-run", action="store_true", help="show what would start or be noted, and change nothing")

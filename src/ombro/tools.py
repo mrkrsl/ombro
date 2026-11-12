@@ -26,11 +26,39 @@ class ToolInputError(ToolError):
     billable = False
 
 
+class NotGranted(ToolInputError):
+    """A path outside the run and outside every folder shared with it. Recorded,
+    so the report can say which folders the run asked for."""
+
+    def __init__(self, message: str, path: str):
+        super().__init__(message)
+        self.path = path
+
+
+@dataclass(frozen=True)
+class SharedFolder:
+    name: str
+    path: Path  # the real path
+    access: str  # read or write
+
+    @property
+    def writable(self) -> bool:
+        return self.access == "write"
+
+
 @dataclass
 class ToolContext:
     run_dir: Path
     role: str
     timeout: float = 60.0  # seconds this call may take: the lesser of a per-call cap and the run's time left
+    shared: dict[str, SharedFolder] = field(default_factory=dict)  # folders this run was given, by name
+    limits: Any = None  # the run's Limits, for tools with limits of their own (code.run)
+    cancelled: Callable[[], bool] | None = None  # true once the run is stopping
+    event: Callable[..., None] | None = None  # write a journal event as this role: event(action, note, **fields)
+
+    def record(self, action: str, note: str, **fields: Any) -> None:
+        if self.event is not None:
+            self.event(action, note, **fields)
 
     @property
     def workspace(self) -> Path:
@@ -78,6 +106,9 @@ class ToolRegistry:
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
+
+    def remove(self, name: str) -> None:
+        self._tools.pop(name, None)
 
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)

@@ -72,6 +72,14 @@ def _show(a: outbox.Action) -> None:
     for key, label in (("note", "Note"), ("last_error", "Last try"), ("error", "Error"), ("result", "Result")):
         if m.get(key):
             print(f"  {label:<9} {' '.join(str(m[key]).split())[:500]}")
+    if a.tool == outbox.PLACE_TOOL and isinstance(a.arguments, dict):
+        import os
+
+        print(f"  Copies    {m.get('source', '?')} (the copy kept with this action: {m.get('file', '?')})")
+        to = str(a.arguments.get("to") or "")
+        if to and os.path.lexists(os.path.expanduser(to)):
+            print(f"  Replaces  {to} already exists; " + ("approving replaces it" if a.arguments.get("overwrite")
+                                                          else "approving is refused unless overwrite is true"))
     print("  Arguments")
     text = yaml.safe_dump(a.arguments if a.arguments is not None else {}, sort_keys=False, allow_unicode=True,
                           default_flow_style=False).rstrip()
@@ -296,10 +304,15 @@ def cmd_tools(args) -> int:
     from ombro.settings import PROVIDER_TOOLS
 
     rows = {"native": [], "servers": []}
-    for name in ("web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list"):
+    for name in ("web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list", "workspace.place",
+                 "code.run"):
         cfg = settings.tools.get(name, {})
         rows["native"].append({"tool": name, "provider": settings.provider_for(name) if name in PROVIDER_TOOLS else None,
-                               "max_calls": cfg.get("max_calls")})
+                               "max_calls": cfg.get("max_calls") or (10 if name == "code.run" else None)})
+    from ombro import folders, sandbox
+
+    rows["sandbox"] = sandbox.unavailable_reason()
+    rows["folders"] = folders.granted_names(home)
     for name, cfg in settings.servers.items():
         rows["servers"].append({"server": name, "command": cfg.get("command"), "args": cfg.get("args") or [],
                                 "url": cfg.get("url")})
@@ -310,7 +323,13 @@ def cmd_tools(args) -> int:
     for r in rows["native"]:
         extra = f"  provider {r['provider']}" if r["provider"] else ""
         extra += f"  max {r['max_calls']} calls" if r["max_calls"] else ""
+        if r["tool"] == "code.run":
+            extra += ("  sandbox: " + (f"not available ({rows['sandbox']})" if rows["sandbox"] else
+                                       {"macos": "macOS system sandbox", "linux": "bubblewrap"}.get(
+                                           sandbox.kind() or "", "ready")))
         print(f"  {r['tool']:<18}{extra}")
+    print("\nShared folders: " + (", ".join(rows["folders"]) if rows["folders"] else "none")
+          + " (`ombro folders`)")
     print("\nMCP servers (tools.md `servers:`):")
     if not rows["servers"]:
         print("  none yet. Add one under `servers:` in tools.md, then see its tools with `ombro tools <server>`.")
