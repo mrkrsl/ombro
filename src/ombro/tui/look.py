@@ -154,62 +154,35 @@ def tier(width: int, height: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# The logo: the "ombro" wordmark, with its shadow
-#
-# Drawn in text: █ is the letters, ░ their shadow. LOGO_STYLE "full" shows it as
-# drawn, seven rows tall, the shadow as a shade pattern. "half" packs two rows
-# into each cell with half blocks (▀ ▄), four rows tall; the shadow is then a
-# solid lighter colour, since a cell cannot hold half a block and half a shade.
+# The logo: the "ombro" wordmark, with its shadow, drawn in text as given:
+# █ is the letters, ░ their shadow.
 
 LOGO_ART = [
-    "                        ██░",
-    "  ██████   ██████████   ██░     ██████  ██████",
-    " ██░░░░██  ░██░░██░░██░ ██████  ░██░░█░██░░░░██",
-    " ██░   ██░  ██░ ██░ ██░ ██░░░██░ ██░ ░ ██░   ██░",
-    " ██░   ██░  ██░ ██░ ██░ ██░  ██░ ██░   ██░   ██░",
-    "  ██████░░ ███░ ██░ ██░ ██████░░███░    ██████░░",
-    "   ░░░░░░   ░░░  ░░  ░░  ░░░░░░  ░░░     ░░░░░░",
+    "                       ██",
+    " ██████   ██████████   ██░     ██████  ██████",
+    "██░░░░██  ░██░░██░░██░ ██████  ░██░░█░██░░░░██",
+    "██░   ██░  ██░ ██░ ██░ ██░░░██░ ██░ ░ ██░   ██░",
+    "██░   ██░  ██░ ██░ ██░ ██░  ██░ ██░   ██░   ██░",
+    " ██████░░ ███░ ██░ ██░ ██████░░███░    ██████░░",
+    "   ░░░░░    ░░░  ░░  ░░  ░░░░░░  ░░░     ░░░░░",
 ]
-LOGO_STYLE = "full"
 
 
-def logo_cells(dark: bool, style: str | None = None) -> list[list[tuple[str, str | None, str | None]]]:
+def logo_cells(dark: bool) -> list[list[tuple[str, str | None, str | None]]]:
     """Rows of (character, foreground, background) for the logo."""
     p = palette(dark)
-    ink, shade = p.logo_box, p.logo_shadow
     width = max(len(r) for r in LOGO_ART)
-    art = [r.ljust(width) for r in LOGO_ART]
-    if (style or LOGO_STYLE) == "full":
-        return [[(ch, ink if ch == "█" else shade if ch == "░" else None, None) for ch in row] for row in art]
-    colour = {"█": ink, "░": shade}
-    if len(art) % 2:
-        art.append(" " * width)
-    rows = []
-    for top_row, bottom_row in zip(art[0::2], art[1::2]):
-        cells = []
-        for t, b in zip(top_row, bottom_row):
-            top, bottom = colour.get(t), colour.get(b)
-            if top and top == bottom:
-                cells.append(("█", top, None))
-            elif top and bottom:
-                cells.append(("▀", top, bottom))
-            elif top:
-                cells.append(("▀", top, None))
-            elif bottom:
-                cells.append(("▄", bottom, None))
-            else:
-                cells.append((" ", None, None))
-        rows.append(cells)
-    return rows
+    return [[(ch, p.logo_box if ch == "█" else p.logo_shadow if ch == "░" else None, None) for ch in row.ljust(width)]
+            for row in LOGO_ART]
 
 
-def logo_text(dark: bool, style: str | None = None):
+def logo_text(dark: bool):
     """The logo as a Rich Text."""
     from rich.style import Style
     from rich.text import Text
 
     out = Text()
-    for i, row in enumerate(logo_cells(dark, style)):
+    for i, row in enumerate(logo_cells(dark)):
         if i:
             out.append("\n")
         for ch, fg, bg in row:

@@ -79,14 +79,11 @@ def test_width_tiers(w, h, expected):
 def test_the_logo_is_the_wordmark_with_its_shadow():
     for dark in (False, True):
         p = look.palette(dark)
-        full = look.logo_cells(dark, "full")
-        half = look.logo_cells(dark, "half")
-        assert len(full) == 7 and len(half) == 4
-        assert {len(r) for r in full} == {len(r) for r in half} == {48}
-        for rows in (full, half):
-            colours = {fg for r in rows for _, fg, _ in r} | {bg for r in rows for _, _, bg in r}
-            assert p.logo_box in colours and p.logo_shadow in colours
-        assert any(ch == "░" for r in full for ch, _, _ in r)
+        rows = look.logo_cells(dark)
+        assert len(rows) == 7 and {len(r) for r in rows} == {47}
+        assert {fg for r in rows for _, fg, _ in r} == {p.logo_box, p.logo_shadow, None}
+    # the b's stem stands on the letters below it
+    assert look.LOGO_ART[0].index("██") == look.LOGO_ART[2].index("██████")
 
 
 def test_the_chart_says_ombro_lead():
