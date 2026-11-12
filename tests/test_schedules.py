@@ -547,3 +547,27 @@ def test_ombro_tick_starts_a_detached_run_that_completes(home):
     assert meta["status"] == "completed" and meta["schedule"] == "morning" and meta["pid"]
     assert "TICK-REPORT-MARKER" in (run_dir / "report.md").read_text()
     assert "started run" in schedules.log_path(home).read_text()
+
+
+def test_a_percent_sign_in_a_path_is_escaped_for_crontab(tmp_path, no_system_scheduler):
+    from ombro.home import Home, ensure_home
+
+    system = no_system_scheduler
+    system.platform = "linux"
+    system.crontab = ""
+    home = Home(tmp_path / "100% invented home")
+    ensure_home(home)
+    inst = scheduler.make_installer(home)
+    line = inst.cron_line()
+    assert "%" not in line.replace("\\%", "")  # every % is escaped
+    inst.install()
+    assert inst.installed().home == str(home.root)
+
+
+def test_a_path_with_a_line_break_is_refused_for_crontab(tmp_path, no_system_scheduler):
+    from ombro.home import Home
+
+    no_system_scheduler.platform = "linux"
+    inst = scheduler.make_installer(Home(tmp_path / "invented\nhome"))
+    with pytest.raises(OSError, match="line break"):
+        inst.cron_line()

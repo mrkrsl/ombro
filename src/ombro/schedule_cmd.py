@@ -96,7 +96,11 @@ def _offer_install(home: Home) -> None:
 
 
 def _install(home: Home, inst: scheduler.Installer) -> int:
-    plan = inst.plan()
+    try:
+        plan = inst.plan()
+    except OSError as e:
+        print(f"The scheduler entry cannot be installed: {e}.")
+        return 1
     print()
     if plan.kind == "launchd":
         print(f"This writes a launch agent to {plan.path} and loads it, so macOS runs `ombro tick` every minute")

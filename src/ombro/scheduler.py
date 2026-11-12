@@ -104,9 +104,18 @@ class Installer:
         return plistlib.dumps(data).decode("utf-8")
 
     def cron_line(self) -> str:
-        cmd = " ".join(shlex.quote(p) for p in self.program())
-        return (f"* * * * * OMBRO_HOME={shlex.quote(str(self.home.root))} {cmd} "
-                f">/dev/null 2>>{shlex.quote(str(self.error_log))} {CRON_MARK}")
+        """The crontab line. Paths are shell-quoted, and `%`, which crontab turns into a
+        line break, is escaped. A path holding a line break cannot be written at all."""
+        paths = [*self.program(), str(self.home.root), str(self.error_log)]
+        if any(c in p for p in paths for c in "\r\n"):
+            raise OSError("a path has a line break in it, so it cannot go in a crontab line")
+
+        def q(text: str) -> str:
+            return shlex.quote(text).replace("%", "\\%")
+
+        cmd = " ".join(q(p) for p in self.program())
+        return (f"* * * * * OMBRO_HOME={q(str(self.home.root))} {cmd} "
+                f">/dev/null 2>>{q(str(self.error_log))} {CRON_MARK}")
 
     def plan(self) -> Plan:
         now = self.installed()
@@ -140,7 +149,7 @@ class Installer:
                              loaded=r.returncode == 0)
         for line in self._crontab():
             if line.rstrip().endswith(CRON_MARK):
-                parts = shlex.split(line.split(CRON_MARK)[0])
+                parts = shlex.split(line.split(CRON_MARK)[0].replace("\\%", "%"))
                 home = next((p.split("=", 1)[1] for p in parts if p.startswith("OMBRO_HOME=")), None)
                 python = next((p for p in parts[5:] if not p.startswith("OMBRO_HOME=")), None)
                 return Installed("cron", line.split(CRON_MARK)[0].strip(), home, python)
