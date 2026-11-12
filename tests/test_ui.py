@@ -207,3 +207,86 @@ def test_chat_removes_keys_from_what_an_interface_sends(home):
     assert chat.handle("my key is sk-test-INVENTED-0123456789")
     assert "INVENTED-0123456789" not in json.dumps(client.calls[0]["messages"])
     assert ui.of(LeadSaid)[0].text == "Noted." and ui.of(Usage)[0].scope == "chat"
+
+
+# -- the scripted flows as forms ---------------------------------------------------
+
+
+def _shown_text(ui: ScriptedUI) -> str:
+    return json.dumps([e.to_dict() for e in ui.events])
+
+
+def test_connecting_a_model_is_a_form_with_a_hidden_key(tmp_path):
+    from ombro import keys
+    from ombro.client import ModelReply
+    from ombro.home import Home
+    from ombro.init_cmd import connected_model, run_init
+
+    class Client:
+        def complete(self, *a, **k):
+            return ModelReply(content="OK")
+
+    home = Home(tmp_path / "fresh")
+    ui = ScriptedUI(["2", "https://models.invalid/v1", "invented-model", "INVENTED_API_KEY",
+                     "sk-test-INVENTED-0123456789", "", False])
+    assert run_init(home, ui=ui, client_factory=lambda s, h: Client())
+    kinds = [(f.name, f.kind) for f in ui.fields]
+    assert kinds[:5] == [("endpoint", "choice"), ("url", "text"), ("model", "text"), ("key_name", "text"),
+                         ("key", "secret")]
+    assert ui.fields[0].options[0].label.startswith("DeepSeek")
+    assert keys.get_key(home, "INVENTED_API_KEY") == "sk-test-INVENTED-0123456789"
+    assert connected_model(home).model == "invented-model"
+    assert "INVENTED-0123456789" not in _shown_text(ui)
+    assert any(isinstance(e, Progress) and e.text.startswith("Testing invented-model") for e in ui.events)
+
+
+def test_the_model_form_holds_its_own_checks():
+    from ombro.init_cmd import ENDPOINTS, model_form
+
+    form = model_form(ENDPOINTS[1])
+    by_name = {f.name: f for f in form.fields}
+    assert by_name["url"].check("not a url") and by_name["key_name"].check("lower") and not by_name["key_name"].check("")
+    assert [f.name for f in model_form(ENDPOINTS[0]).fields] == ["model"]  # DeepSeek needs only the model name
+    assert model_form(ENDPOINTS[0]).fields[0].check("") is None  # its default is taken
+
+
+def test_setting_a_key_from_an_interface(home):
+    from ombro import cli, keys
+
+    ui = ScriptedUI(["sk-test-INVENTED-9876543210"])
+    assert cli.set_key_flow(home, "INVENTED_KEY", ui) == 0
+    assert ui.fields[0].kind == "secret" and keys.get_key(home, "INVENTED_KEY") == "sk-test-INVENTED-9876543210"
+    assert "9876543210" not in _shown_text(ui)
+    assert cli.set_key_flow(home, "OTHER_KEY", ScriptedUI([KeyboardInterrupt()])) == 1
+
+
+def test_adding_a_server_from_an_interface(home):
+    import argparse
+
+    from ombro import keys
+    from ombro.server_cmd import add_flow
+    from ombro.settings import load_tool_settings
+
+    args = argparse.Namespace(name=None, command=None, url=None, env=None, header=None, secret=None,
+                              server_class=None, no_prompt=False, yes=False)
+    ui = ScriptedUI(["notes", "l", "uvx invented-notes-mcp==1.2.3", "NOTES_TOKEN", "invented-secret-value-123", True])
+    assert add_flow(home, args, ui) == 0
+    assert [f.kind for f in ui.fields] == ["text", "choice", "text", "text", "secret", "yesno"]
+    assert keys.get_key(home, "NOTES_NOTES_TOKEN") == "invented-secret-value-123"
+    assert "invented-secret-value-123" not in _shown_text(ui) + home.tools.read_text()
+    assert "notes" in load_tool_settings(home).servers
+
+
+def test_granting_a_folder_from_an_interface(home, tmp_path, monkeypatch):
+    from ombro import folders
+    from ombro.folders_cmd import add_flow
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    target = tmp_path / "Invented Brand"
+    target.mkdir()
+    ui = ScriptedUI(["w", True])
+    assert add_flow(home, str(target), None, None, False, ui) == 0
+    assert [f.kind for f in ui.fields] == ["choice", "yesno"]
+    (g,) = folders.load(home)[0].values()
+    assert g.access == "write" and g.path == "~/Invented Brand"
+    assert add_flow(home, str(target), "again", None, False, ScriptedUI(["n"])) == 1

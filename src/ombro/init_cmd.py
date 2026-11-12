@@ -8,13 +8,13 @@ starts. They never reach a model.
 
 from __future__ import annotations
 
-import getpass
 from typing import Callable
 
 from ombro import keys, mdfile
 from ombro.client import ModelError, make_client
 from ombro.home import Home, ensure_home
 from ombro.settings import ModelSpec, SetupError, load_models, load_tool_settings
+from ombro.ui import UI, ConsoleUI, Failure, Field, Form, Option, Progress
 
 ENDPOINTS = [
     {
@@ -63,102 +63,119 @@ def _write_default_model(home: Home, entry: dict) -> None:
 def run_init(
     home: Home,
     *,
-    ask: Callable[[str], str] = input,
-    ask_secret: Callable[[str], str] = getpass.getpass,
-    say: Callable[[str], None] = print,
+    ui: UI | None = None,
+    ask: Callable[[str], str] | None = None,
+    ask_secret: Callable[[str], str] | None = None,
+    say: Callable[[str], None] | None = None,
     client_factory=make_client,
     edit=None,
 ) -> bool:
+    ui = ui or ConsoleUI(ask=ask, ask_secret=ask_secret, say=say, edit=edit, home=home)
     created = ensure_home(home)
-    say(f"Ombro home: {home.root}" + (" (created)" if created else ""))
+    ui.say(f"Ombro home: {home.root}" + (" (created)" if created else ""))
 
     spec = connected_model(home)
     if spec is not None:
         ok, detail = test_connection(home, spec, client_factory)
         if ok:
-            say(f"A model is already connected: {spec.model} ({detail}).")
-            if ask("Connect a different model? [y/N] ").strip().lower() not in ("y", "yes"):
-                _offer_search_key(home, ask, ask_secret, say)
-                _set_up(home, ask, say, client_factory, edit)
+            ui.say(f"A model is already connected: {spec.model} ({detail}).")
+            if not ui.yes("reconnect", "Connect a different model?"):
+                _offer_search_key(home, ui)
+                _set_up(home, ui, client_factory)
                 return True
         else:
-            say(f"The configured model did not answer: {detail}")
+            ui.say(f"The configured model did not answer: {detail}")
 
-    say("\nConnect a model. Keys are stored in secrets/keys.env with owner-only permissions and are never sent to a model.")
+    ui.say("Connect a model. Keys are stored in secrets/keys.env with owner-only permissions and are never sent "
+           "to a model.", spaced=True)
     while True:
-        say("Endpoint:")
-        for i, e in enumerate(ENDPOINTS, 1):
-            say(f"  {i}) {e['label']}" + (f" ({e['endpoint']})" if e["endpoint"] else ""))
-        choice = ask("Choose [1]: ").strip() or "1"
-        if not choice.isdigit() or not 1 <= int(choice) <= len(ENDPOINTS):
-            say("Please choose one of the numbers shown.")
-            continue
-        preset = ENDPOINTS[int(choice) - 1]
+        endpoint, model, key_name = connect_model(home, ui)
+        spec = load_models(home)["default"]
+        ui.show(Progress(f"Testing {model} at {endpoint} …"))
+        ok, detail = test_connection(home, spec, client_factory)
+        if ok:
+            ui.say(f"Connected: {detail}.", level="done")
+            break
+        ui.show(Failure(f"The test call failed: {detail}\nLet's try again (Ctrl-C to give up).\n"))
 
-        endpoint = preset["endpoint"]
-        if not endpoint:
-            endpoint = ask("Endpoint base URL (the part before /chat/completions): ").strip()
-            if not endpoint.startswith(("http://", "https://")):
-                say("The URL must start with http:// or https://.")
-                continue
-        model = ask(f"Model name [{preset['model']}]: " if preset["model"] else "Model name: ").strip()
-        model = model or preset["model"] or ""
-        if not model:
-            say("A model name is needed.")
+    _offer_search_key(home, ui)
+    _set_up(home, ui, client_factory)
+    return True
+
+
+def endpoint_field() -> Field:
+    return Field(
+        "endpoint", "Endpoint", "choice", default="1",
+        options=[Option(str(i), e["label"] + (f" ({e['endpoint']})" if e["endpoint"] else ""))
+                 for i, e in enumerate(ENDPOINTS, 1)],
+        invalid="Please choose one of the numbers shown.",
+    )
+
+
+def model_form(preset: dict) -> Form:
+    """What is asked about a model once its endpoint is chosen."""
+    fields = []
+    if not preset["endpoint"]:
+        fields.append(Field("url", "Endpoint base URL (the part before /chat/completions)", required=True,
+                            pattern=r"https?://\S+", invalid="The URL must start with http:// or https://."))
+    fields.append(Field("model", "Model name", default=preset["model"], required=True,
+                        invalid="A model name is needed."))
+    if not preset["key"]:
+        fields.append(Field("key_name", "Name for its key in secrets/keys.env, e.g. MY_PROVIDER_API_KEY "
+                            "(Enter if it needs no key)", pattern=r"[A-Z][A-Z0-9_]*",
+                            invalid="Key names use capitals, digits and underscores, starting with a letter."))
+    return Form("model", "Connect a model", fields)
+
+
+def connect_model(home: Home, ui: UI) -> tuple[str, str, str]:
+    """Part 1 of set-up, without a model: the endpoint, the model name and its key,
+    written to models.md and secrets/keys.env. Returns (endpoint, model, key name)."""
+    while True:
+        preset = ENDPOINTS[int(ui.ask(endpoint_field())) - 1]
+        answers = ui.form(model_form(preset))
+        endpoint = preset["endpoint"] or str(answers.get("url") or "").strip()
+        model = str(answers.get("model") or "").strip() or preset["model"] or ""
+        key_name = preset["key"] or str(answers.get("key_name") or "").strip()
+        problems = [p for f in model_form(preset).fields if (p := f.check(answers.get(f.name)))]
+        if problems:  # an interface that let a bad answer through
+            ui.show(Failure(problems[0]))
             continue
-        key_name = preset["key"]
-        if not key_name:
-            key_name = ask("Name for its key in secrets/keys.env, e.g. MY_PROVIDER_API_KEY (Enter if it needs no key): ").strip()
-            if key_name and not keys.valid_name(key_name):
-                say("Key names use capitals, digits and underscores, starting with a letter.")
-                continue
         if key_name:
             existing = keys.get_key(home, key_name)
             hint = " (Enter keeps the current key)" if existing else ""
-            value = ask_secret(f"API key for {key_name}{hint}: ").strip()
+            value = str(ui.ask(Field("key", f"API key for {key_name}{hint}", "secret")) or "").strip()
             if value:
                 keys.set_key(home, key_name, value)
             elif not existing:
-                say("A key is needed for this endpoint.")
+                ui.say("A key is needed for this endpoint.")
                 continue
-
         entry: dict = {"api": "openai", "endpoint": endpoint, "model": model}
         if key_name:
             entry["key"] = key_name
         _write_default_model(home, entry)
-
-        spec = load_models(home)["default"]
-        say(f"Testing {model} at {endpoint} …")
-        ok, detail = test_connection(home, spec, client_factory)
-        if ok:
-            say(f"Connected: {detail}.")
-            break
-        say(f"The test call failed: {detail}\nLet's try again (Ctrl-C to give up).\n")
-
-    _offer_search_key(home, ask, ask_secret, say)
-    _set_up(home, ask, say, client_factory, edit)
-    return True
+        return endpoint, model, key_name
 
 
-def _offer_search_key(home: Home, ask, ask_secret, say) -> None:
+def _offer_search_key(home: Home, ui: UI) -> None:
     if keys.get_key(home, SEARCH_KEY):
-        say(f"Search key {SEARCH_KEY} is set.")
+        ui.say(f"Search key {SEARCH_KEY} is set.")
     else:
-        value = ask_secret(f"Search key for Firecrawl, {SEARCH_KEY} (hidden; Enter to skip): ").strip()
+        value = str(ui.ask(Field("search_key", f"Search key for Firecrawl, {SEARCH_KEY} (hidden; Enter to skip)",
+                                 "secret")) or "").strip()
         if not value:
-            say("No search key: web.search uses DuckDuckGo (best effort) and web.fetch downloads pages directly.")
+            ui.say("No search key: web.search uses DuckDuckGo (best effort) and web.fetch downloads pages directly.")
             return
         keys.set_key(home, SEARCH_KEY, value)
-        say("Search key saved.")
+        ui.say("Search key saved.", level="done")
     try:
         tools = load_tool_settings(home)
     except (SetupError, mdfile.FrontMatterError):
         return
     if all(tools.provider_for(t) == "firecrawl" for t in ("web.search", "web.fetch")):
         return
-    if ask("Use Firecrawl for web.search and web.fetch? (tools.md) [Y/n] ").strip().lower() in ("", "y", "yes"):
+    if ui.yes("firecrawl", "Use Firecrawl for web.search and web.fetch? (tools.md)", True):
         set_tool_providers(home, {"web.search": "firecrawl", "web.fetch": "firecrawl"})
-        say(f"tools.md now uses Firecrawl for web search and fetch. Edit {home.tools} to change it.")
+        ui.say(f"tools.md now uses Firecrawl for web search and fetch. Edit {home.tools} to change it.")
 
 
 def set_tool_providers(home: Home, providers: dict[str, str]) -> None:
@@ -179,12 +196,7 @@ def _is_default_setup(home: Home) -> bool:
     return True
 
 
-def _yes(answer: str, default: bool) -> bool:
-    a = answer.strip().lower()
-    return default if not a else a in ("y", "yes")
-
-
-def _set_up(home: Home, ask, say, client_factory, edit) -> None:
+def _set_up(home: Home, ui: UI, client_factory) -> None:
     """Part 2: the set-up interview, then an offer to add roles. Nothing is written without confirmation."""
     from ombro.interviews import RolePurpose, SetupPurpose, start
     from ombro.settings import load_limits, load_preferences
@@ -193,34 +205,36 @@ def _set_up(home: Home, ask, say, client_factory, edit) -> None:
     if not home.crew_dir(crew).is_dir():
         crew = "default"
     limits = load_limits(home)
-    kwargs = {"ask": ask, "say": say, "edit": edit, "client_factory": lambda spec: client_factory(spec, home)}
+    kwargs = {"ui": ui, "client_factory": lambda spec: client_factory(spec, home)}
     if _is_default_setup(home):
-        say("\nNext is the set-up interview: the Lead asks who you are, how you work and how you want reports, "
-            "then proposes preferences/instructions.md and its own soul.md for you to accept or change.")
-        go = _yes(ask("Start it now? [Y/n] "), True)
+        ui.say("Next is the set-up interview: the Lead asks who you are, how you work and how you want reports, "
+               "then proposes preferences/instructions.md and its own soul.md for you to accept or change.",
+               spaced=True)
+        go = ui.yes("setup", "Start it now?", True)
     else:
-        go = _yes(ask("\nYour preferences are already set. Hold the set-up interview again? [y/N] "), False)
+        ui.say("")
+        go = ui.yes("setup", "Your preferences are already set. Hold the set-up interview again?")
     if go:
         outcome = start(home, SetupPurpose(home, crew), crew, limits, **kwargs)
         if outcome.confirmed:
-            say("\nSet-up is done. Roles are crew members you can brief for many tasks; "
-                "a task itself is briefed separately.")
-            while _yes(ask("Add a role to the crew now? [y/N] "), False):
+            ui.say("Set-up is done. Roles are crew members you can brief for many tasks; "
+                   "a task itself is briefed separately.", spaced=True)
+            while ui.yes("add_role", "Add a role to the crew now?"):
                 start(home, RolePurpose(home, crew, limits), crew, limits, **kwargs)
                 limits = load_limits(home)
-                say("")
-            if _yes(ask("Brief a first task now? It is saved as a spec you can run. [y/N] "), False):
+                ui.say("")
+            if ui.yes("brief", "Brief a first task now? It is saved as a spec you can run."):
                 from ombro.interviews import BriefPurpose
 
                 brief = start(home, BriefPurpose(home, crew, limits), crew, limits, **kwargs)
                 if brief.confirmed:
-                    say(f"\nSpec saved as {brief.proposal.data['name']!r}. "
-                        f"Run it with:  ombro run --spec {brief.proposal.data['name']}")
-    _next_steps(home, say)
+                    ui.say(f"Spec saved as {brief.proposal.data['name']!r}. "
+                           f"Run it with:  ombro run --spec {brief.proposal.data['name']}", spaced=True, level="done")
+    _next_steps(home, ui)
 
 
-def _next_steps(home: Home, say) -> None:
-    say(
+def _next_steps(home: Home, ui: UI) -> None:
+    ui.say(
         "\nNext:\n"
         "  ombro role add          add a role (or `ombro role list` to see the crew)\n"
         "  ombro brief             describe a task; the Lead turns it into a spec\n"

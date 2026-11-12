@@ -172,6 +172,8 @@ class Field:
                 return None
             return self.invalid or "Choose one of: " + ", ".join(o.key for o in self.options) + "."
         if not text.strip():
+            if self.default not in (None, ""):
+                return None  # the default is taken
             return (self.invalid or f"{self.label} is needed.") if self.required else None
         if self.pattern and not re.fullmatch(self.pattern, text.strip()):
             return self.invalid or f"{self.label} is not in the right form."
@@ -245,9 +247,16 @@ def option_text(options: list[Option], other: str = "") -> str:
     return ", ".join(parts[:-1]) + ", or " + parts[-1]
 
 
+def numbered(f: Field) -> bool:
+    """A choice whose keys are all numbers is shown as a numbered list."""
+    return f.kind == "choice" and bool(f.options) and all(o.key.isdigit() for o in f.options)
+
+
 def prompt_text(f: Field) -> str:
     """How the command line asks a field."""
     mode = f"[{f.mode}] " if f.mode else ""
+    if numbered(f):
+        return f"{mode}Choose" + (f" [{f.default}]" if f.default not in (None, "") else "") + ": "
     if f.kind == "yesno":
         return f"{mode}{f.label} {'[Y/n]' if f.default else '[y/N]'} "
     if f.kind == "choice":
@@ -312,6 +321,10 @@ class ConsoleUI(UI):
 
     def ask(self, f: Field) -> Any:
         prompt = prompt_text(f)
+        if numbered(f):
+            self._say(f"{f.label}:")
+            for o in f.options:
+                self._say(f"  {o.key}) {o.label}")
         while True:
             if f.kind == "secret":
                 raw = self._ask_secret(prompt) or ""
@@ -325,6 +338,8 @@ class ConsoleUI(UI):
                 low = raw.strip().lower()
                 return bool(f.default) if not low else low in ("y", "yes")
             if f.kind == "choice":
+                if not raw.strip() and f.default not in (None, ""):
+                    raw = str(f.default)
                 key = f.choose(raw)
                 if key is not None:
                     return key

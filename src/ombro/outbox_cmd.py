@@ -105,12 +105,8 @@ def _find_all(home: Home, refs: list[str]) -> list[outbox.Action]:
     return out
 
 
-def _confirm(prompt: str) -> bool:
-    try:
-        return input(prompt).strip().lower() in ("y", "yes")
-    except (KeyboardInterrupt, EOFError):
-        print()
-        return False
+def _confirm(label: str) -> bool:
+    return _cli()._confirm(label)
 
 
 def cmd_outbox(args) -> int:
@@ -192,7 +188,7 @@ def _decide(home: Home, action: str, refs: list[str], args) -> int:
     if not args.yes:
         verb = "Run" if action == "approve" else "Decline"
         tail = "" if action == "approve" else " They will never run."
-        if not _confirm(f"{verb} {'this action' if len(items) == 1 else f'these {len(items)} actions'}?{tail} [y/N] "):
+        if not _confirm(f"{verb} {'this action' if len(items) == 1 else f'these {len(items)} actions'}?{tail}"):
             print("Nothing was done.")
             return 1
     results, code = [], 0

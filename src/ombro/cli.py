@@ -485,17 +485,9 @@ def cmd_keys(args) -> int:
     if not keys.valid_name(name):
         raise CliError("Key names use capitals, digits and underscores, starting with a letter.")
     if action == "set":
-        try:
-            value = getpass.getpass(f"Value for {name} (hidden; Enter to cancel): ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\nCancelled.")
-            return 1
-        if not value:
-            print("Cancelled; nothing changed.")
-            return 1
-        keys.set_key(home, name, value)
-        print(f"Saved {name} ({keys.mask(value)}). It is used from the next call, even in a run already going.")
-        return 0
+        from ombro.ui import ConsoleUI
+
+        return set_key_flow(home, name, ConsoleUI())
     if action == "remove":
         removed = keys.remove_key(home, name)
         print(f"Removed {name} from {home.env.name}." if removed else f"{name} was not in {home.env.name}.")
@@ -665,7 +657,7 @@ def cmd_role(args) -> int:
         print(f"{label} is valid.")
         return 0
     if action == "remove":
-        answer = _confirm(f"Remove {label}? Its folder is moved to the crew's removed/ folder. [y/N] ")
+        answer = _confirm(f"Remove {label}? Its folder is moved to the crew's removed/ folder.")
         if not answer:
             print("Nothing changed.")
             return 1
@@ -680,9 +672,30 @@ def cmd_role(args) -> int:
     raise CliError(f"Unknown role action {action!r}.")
 
 
-def _confirm(prompt: str) -> bool:
+def set_key_flow(home: Home, name: str, ui) -> int:
+    """`ombro keys set NAME`: the value is typed hidden and never shown again."""
+    from ombro.ui import Field
+
     try:
-        return input(prompt).strip().lower() in ("y", "yes")
+        value = str(ui.ask(Field("value", f"Value for {name} (hidden; Enter to cancel)", "secret")) or "").strip()
+    except (KeyboardInterrupt, EOFError):
+        ui.say("Cancelled.", spaced=True)
+        return 1
+    if not value:
+        ui.say("Cancelled; nothing changed.")
+        return 1
+    keys.set_key(home, name, value)
+    ui.say(f"Saved {name} ({keys.mask(value)}). It is used from the next call, even in a run already going.",
+           level="done")
+    return 0
+
+
+def _confirm(label: str) -> bool:
+    """A yes or no on the command line; no unless the user says yes."""
+    from ombro.ui import ConsoleUI
+
+    try:
+        return ConsoleUI().yes("confirm", label)
     except (KeyboardInterrupt, EOFError):
         print()
         return False

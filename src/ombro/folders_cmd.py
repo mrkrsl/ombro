@@ -15,20 +15,13 @@ from typing import Callable
 from ombro import folders
 from ombro.home import Home
 from ombro.settings import SetupError
+from ombro.ui import UI, ConsoleUI, Field, Option
 
 
 def _cli():
     from ombro import cli
 
     return cli
-
-
-def _ask(prompt: str) -> str:
-    try:
-        return input(prompt).strip()
-    except (KeyboardInterrupt, EOFError):
-        print()
-        return ""
 
 
 def cmd_folders(args) -> int:
@@ -41,7 +34,7 @@ def cmd_folders(args) -> int:
         if action == "add":
             if not args.target:
                 raise cli.CliError("Give the folder: `ombro folders add ~/Documents/Brand` (or `.` for this one).")
-            return _add(home, args.target, args.name, args.access, args.yes)
+            return add_flow(home, args.target, args.name, args.access, args.yes, ConsoleUI())
         if action == "remove":
             if not args.target:
                 raise cli.CliError("Name the shared folder: `ombro folders remove <name>`.")
@@ -76,19 +69,15 @@ def _list(home: Home) -> int:
     return 0
 
 
-def _choose_access(ask: Callable[[str], str]) -> str | None:
-    while True:
-        a = ask("Access: [r]ead, or [w]rite (roles can change, add and remove files in it)? ").lower()
-        if a in ("r", "read"):
-            return "read"
-        if a in ("w", "write"):
-            return "write"
-        if a in ("", "q", "n", "no"):
-            return None
-        print("Type r or w.")
+def access_field() -> Field:
+    return Field("access", "Access:", "choice", default="n",
+                 options=[Option("r", "read"), Option("w", "write (roles can change, add and remove files in it)"),
+                          Option("n", "no", ("q",))],
+                 invalid="Type r or w, or n to stop.")
 
 
-def _add(home: Home, target: str, name: str | None, access: str | None, yes: bool) -> int:
+def add_flow(home: Home, target: str, name: str | None, access: str | None, yes: bool, ui: UI) -> int:
+    """`ombro folders add`: grant a folder, asking for what is not given."""
     path = Path(os.path.expanduser(target))
     if not path.is_absolute():
         path = Path.cwd() / path
@@ -99,42 +88,55 @@ def _add(home: Home, target: str, name: str | None, access: str | None, yes: boo
         if yes:
             access = "read"
         else:
-            access = _choose_access(_ask)
+            try:
+                access = {"r": "read", "w": "write"}.get(ui.ask(access_field()))
+            except (KeyboardInterrupt, EOFError):
+                access = None
             if access is None:
-                print("Nothing shared.")
+                ui.say("Nothing shared.")
                 return 1
     if access == "write" and not yes:
-        print(f"Backup before each run that can write to it: {folders.backup_hint(real, home)}.")
-        if _ask(f"Let runs change files in {folders.display_path(real)}? [y/N] ").lower() not in ("y", "yes"):
-            print("Nothing shared.")
+        ui.say(f"Backup before each run that can write to it: {folders.backup_hint(real, home)}.")
+        try:
+            go = ui.yes("write", f"Let runs change files in {folders.display_path(real)}?")
+        except (KeyboardInterrupt, EOFError):
+            go = False
+        if not go:
+            ui.say("Nothing shared.")
             return 1
     g = folders.add(home, real, name, access)
-    print(f"Shared {g.path} as {g.name!r} ({g.access}). A spec uses it with `folders: [{g.name}]`.")
+    ui.say(f"Shared {g.path} as {g.name!r} ({g.access}). A spec uses it with `folders: [{g.name}]`.", level="done")
     return 0
 
 
 def offer_start_folder(home: Home, cwd: Path | None = None, ask: Callable[[str], str] | None = None,
-                       say: Callable[[str], None] = print) -> None:
+                       say: Callable[[str], None] | None = None, ui: UI | None = None) -> None:
     """Before a brief in a folder that is not shared and could be, ask once. A no is
     remembered in folders.md and not asked again; just pressing Enter asks next time."""
-    if ask is None:
-        if not sys.stdin.isatty():
+    if ui is None:
+        if ask is None and not sys.stdin.isatty():
             return
-        ask = _ask
+        ui = ConsoleUI(ask=ask, say=say)
     here = (cwd or Path.cwd()).resolve()
     if not folders.offer_wanted(home, here):
         return
     shown = folders.display_path(here)
-    say(f"You are in {shown}, which is not shared with Ombro's runs.")
-    choice = ask("Share it? [r]ead, [w]rite (roles can change files in it), [n]o (don't ask again), "
-                 "or Enter to skip: ").lower()
-    if choice in ("n", "no"):
+    ui.say(f"You are in {shown}, which is not shared with Ombro's runs.")
+    try:
+        choice = ui.ask(Field(
+            "share_here", "Share it?", "choice", default="s",
+            options=[Option("r", "read"), Option("w", "write (roles can change files in it)"),
+                     Option("n", "no (don't ask again)"), Option("s", "skip for now")]))
+    except (KeyboardInterrupt, EOFError):
+        return
+    say = ui.say
+    if choice == "n":
         folders.decline(home, here)
         say("Not shared, and Ombro will not ask about this folder again (`ombro folders add` shares it later).")
         return
-    if choice not in ("r", "read", "w", "write"):
+    if choice not in ("r", "w"):
         return
-    access = "write" if choice.startswith("w") else "read"
+    access = "write" if choice == "w" else "read"
     try:
         grants, _ = folders.load(home)
         g = folders.add(home, here, folders.suggest_name(here, set(grants)), access)

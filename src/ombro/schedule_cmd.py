@@ -21,9 +21,11 @@ def _cli():
     return cli
 
 
-def _ask(prompt: str) -> str | None:
+def _ask(label: str) -> str | None:
+    from ombro.ui import ConsoleUI
+
     try:
-        return input(prompt).strip()
+        return ConsoleUI().text("answer", label).strip()
     except (KeyboardInterrupt, EOFError):
         print()
         return None
@@ -114,7 +116,7 @@ def _install(home: Home, inst: scheduler.Installer) -> int:
     if plan.replaces:
         print(f"\nIt replaces the entry installed now: {plan.replaces}")
     print("\nCommands: " + "; ".join(" ".join(c) for c in plan.commands))
-    if not _cli()._confirm("Install it? [y/N] "):
+    if not _cli()._confirm("Install it?"):
         print("Nothing installed.")
         return 1
     try:
@@ -228,7 +230,7 @@ def cmd_add(home: Home, args) -> int:
         if not saved:
             raise cli.CliError("There are no saved specs. Make one with `ombro brief` first; "
                                "scheduled runs never interview.")
-        spec = _ask(f"Spec to run (saved: {', '.join(saved)}): ")
+        spec = _ask(f"Spec to run (saved: {', '.join(saved)})")
         if not spec:
             print("Nothing saved.")
             return 1
@@ -238,7 +240,7 @@ def cmd_add(home: Home, args) -> int:
         raise cli.CliError(f"There is no saved spec named {spec!r}.{listed}")
     cron_text = args.cron
     if not cron_text:
-        cron_text = _ask('When, as cron in local time (minute hour day month weekday, e.g. "30 7 * * 1-5"): ')
+        cron_text = _ask('When, as cron in local time (minute hour day month weekday, e.g. "30 7 * * 1-5")')
         if not cron_text:
             print("Nothing saved.")
             return 1
@@ -276,7 +278,7 @@ def cmd_add(home: Home, args) -> int:
         print(f"            above limits.md: {', '.join(above)}")
     print(f"  grace     {format_duration(s.grace_for(p.limits))}; a slot not started by then is skipped and noted")
     print(f"  enabled   {'yes' if s.enabled else 'no'}")
-    if not cli._confirm("Save this schedule? [y/N] "):
+    if not cli._confirm("Save this schedule?"):
         print("Nothing saved.")
         return 1
     schedules.write_schedule(home, name, cron.text, spec, s.enabled, limits or None, args.grace)
@@ -302,7 +304,7 @@ def cmd_schedule(args) -> int:
             return 1
         print(f"Installed: {cur.kind} entry running {cur.detail}")
         print("Commands: " + "; ".join(" ".join(c) for c in inst.uninstall_commands()))
-        if not cli._confirm("Remove it? Schedules stop firing until it is installed again. [y/N] "):
+        if not cli._confirm("Remove it? Schedules stop firing until it is installed again."):
             print("Nothing changed.")
             return 1
         try:
@@ -342,7 +344,7 @@ def cmd_schedule(args) -> int:
         return 0
     if action == "remove":
         if not cli._confirm(f"Remove schedule {s.name}? The file is moved to the "
-                            "removed/schedules/ folder; its runs are kept. [y/N] "):
+                            "removed/schedules/ folder; its runs are kept."):
             print("Nothing changed.")
             return 1
         folder = home.removed_dir / "schedules"

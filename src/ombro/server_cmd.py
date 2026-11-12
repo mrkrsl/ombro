@@ -13,7 +13,6 @@ questions in its own way.
 
 from __future__ import annotations
 
-import getpass
 import re
 import shlex
 from typing import Any, Callable
@@ -21,6 +20,7 @@ from typing import Any, Callable
 from ombro import keys, mdfile
 from ombro.home import Home
 from ombro.settings import SERVER_CLASSES, SERVER_NAME, SetupError, ToolSettings
+from ombro.ui import UI, ConsoleUI, Field, Option
 
 RUNNERS = ("uvx", "npx", "pipx", "bunx", "pnpx")
 # Runner options that take no value, so the word after them is a package.
@@ -163,19 +163,19 @@ def _pair(text: str, flag: str) -> tuple[str, str]:
 
 
 def cmd_server(args, *, ask: Callable[[str], str] | None = None,
-               ask_secret: Callable[[str], str] | None = None) -> int:
+               ask_secret: Callable[[str], str] | None = None, ui: UI | None = None) -> int:
     cli = _cli()
     home = cli._home()
-    ask = ask or (lambda prompt: input(prompt))
-    ask_secret = ask_secret or (lambda prompt: getpass.getpass(prompt))
+    ui = ui or ConsoleUI(ask=ask, ask_secret=ask_secret)
     if args.action == "remove":
-        return _remove(home, args, ask)
-    return _add(home, args, ask, ask_secret)
+        return remove_flow(home, args, ui)
+    return add_flow(home, args, ui)
 
 
-def _add(home: Home, args, ask, ask_secret) -> int:
+def add_flow(home: Home, args, ui: UI) -> int:
+    """`ombro server add`: what is missing from `args` is asked through `ui`."""
     cli = _cli()
-    name = (args.name or "").strip() or ask("Server name (lower-case, e.g. sheets): ").strip()
+    name = (args.name or "").strip() or ui.text("name", "Server name (lower-case, e.g. sheets)").strip()
     if not SERVER_NAME.match(name or ""):
         raise cli.CliError("Server names use lower-case letters, digits, - and _ (up to 31).")
     try:
@@ -187,13 +187,15 @@ def _add(home: Home, args, ask, ask_secret) -> int:
                            f"`ombro server remove {name}`, or edit {home.tools}.")
     command, url = args.command, args.url
     if not command and not url:
-        kind = ask("Is it local (a command Ombro starts) or remote (an address)? [l/r]: ").strip().lower()
-        if kind in ("l", "local"):
-            command = ask("Command, with an exact version (e.g. uvx some-mcp-server==1.2.3): ").strip()
-        elif kind in ("r", "remote"):
-            url = ask("Address (https://…): ").strip()
+        kind = ui.ask(Field("kind", "Is it local (a command Ombro starts) or remote (an address)?", "choice",
+                            options=[Option("l", "local"), Option("r", "remote")], invalid="Type l or r."))
+        if kind == "l":
+            command = ui.text("command", "Command, with an exact version (e.g. uvx some-mcp-server==1.2.3)",
+                              required=True, invalid="A command is needed.").strip()
+        elif kind == "r":
+            url = ui.text("url", "Address (https://…)", required=True, invalid="An address is needed.").strip()
         else:
-            print("Nothing added.")
+            ui.say("Nothing added.")
             return 1
     try:
         server_entry(command=command, url=url)  # the command and address are checked before anything is asked
@@ -203,7 +205,8 @@ def _add(home: Home, args, ask, ask_secret) -> int:
     headers = dict(_pair(h, "--header") for h in args.header or [])
     secrets = list(args.secret or [])
     if not args.secret and command and not args.env and not args.no_prompt:
-        more = ask("Variables it needs that hold a secret (names, space-separated; Enter for none): ").split()
+        more = ui.text("secrets", "Variables it needs that hold a secret (names, space-separated; Enter for none)"
+                       ).split()
         secrets += more
     # Each secret: typed hidden, kept in keys.env, written as ${KEY} in env or headers.
     to_set: dict[str, str] = {}
@@ -217,7 +220,8 @@ def _add(home: Home, args, ask, ask_secret) -> int:
             raise cli.CliError(f"{key!r} cannot be a key name: use capitals, digits and underscores")
         have = keys.get_key(home, key)
         hint = " (Enter keeps the one already set)" if have else ""
-        value = ask_secret(f"Value for {var}, kept in secrets/keys.env as {key}{hint}: ").strip()
+        value = str(ui.ask(Field(f"secret_{key}", f"Value for {var}, kept in secrets/keys.env as {key}{hint}",
+                                 "secret")) or "").strip()
         if value:
             to_set[key] = value
         elif not have:
@@ -233,21 +237,22 @@ def _add(home: Home, args, ask, ask_secret) -> int:
     except SetupError as e:
         raise cli.CliError(str(e)) from None
 
-    print(f"\nTo add to tools.md under `servers:`:\n")
-    print("\n".join("  " + ln for ln in mdfile.dump({name: entry}).strip().strip("-").strip().splitlines()))
+    ui.say(f"\nTo add to tools.md under `servers:`:\n")
+    ui.say("\n".join("  " + ln for ln in mdfile.dump({name: entry}).strip().strip("-").strip().splitlines()))
     if to_set:
-        print(f"\nKeys to store in secrets/keys.env (hidden): {', '.join(to_set)}")
+        ui.say(f"\nKeys to store in secrets/keys.env (hidden): {', '.join(to_set)}")
     warning = pin_warning(entry["command"], entry.get("args") or []) if command else None
     if warning:
-        print(f"\nWarning: {warning}")
+        ui.say(f"\nWarning: {warning}")
     if url and not url.startswith("https://"):
-        print("\nWarning: the address is not https, so what is sent to it can be read on the way.")
+        ui.say("\nWarning: the address is not https, so what is sent to it can be read on the way.")
     if not args.server_class:
-        print("\nIts tools are classed by the server's own markings; a tool that changes something and is not "
+        ui.say("\nIts tools are classed by the server's own markings; a tool that changes something and is not "
               "marked counts as external\n(it waits in the outbox). After adding, `ombro tools "
               f"{name}` shows each tool's class.")
-    if not args.yes and ask("\nAdd it? [y/N] ").strip().lower() not in ("y", "yes"):
-        print("Nothing added.")
+    ui.say("")
+    if not args.yes and not ui.yes("add", "Add it?"):
+        ui.say("Nothing added.")
         return 1
     for key, value in to_set.items():
         keys.set_key(home, key, value)
@@ -255,17 +260,18 @@ def _add(home: Home, args, ask, ask_secret) -> int:
         add_server(home, name, entry)
     except SetupError as e:
         raise cli.CliError(str(e)) from None
-    print(f"Added {name} to {home.tools}.")
+    ui.say(f"Added {name} to {home.tools}.")
     if url:
-        print(f"If it asks you to sign in, connect it once with `ombro connect {name}`. Then see its tools with "
+        ui.say(f"If it asks you to sign in, connect it once with `ombro connect {name}`. Then see its tools with "
               f"`ombro tools {name}`.")
     else:
-        print(f"See its tools with `ombro tools {name}` (this starts the server, which may download it first).")
-    print(f"A role uses a tool by naming it in its config.md `tools:` list, as mcp.{name}.<tool>.")
+        ui.say(f"See its tools with `ombro tools {name}` (this starts the server, which may download it first).")
+    ui.say(f"A role uses a tool by naming it in its config.md `tools:` list, as mcp.{name}.<tool>.")
     return 0
 
 
-def _remove(home: Home, args, ask) -> int:
+def remove_flow(home: Home, args, ui: UI) -> int:
+    """`ombro server remove`, asking through `ui`."""
     cli = _cli()
     name = (args.name or "").strip()
     if not name:
@@ -278,20 +284,19 @@ def _remove(home: Home, args, ask) -> int:
         raise cli.CliError(f"No server named {name!r} in tools.md. Servers: {', '.join(servers) or 'none'}")
     users = roles_using(home, name)
     if users:
-        print(f"These roles name its tools and will no longer be offered them: {', '.join(users)}.")
-    if not args.yes and ask(f"Remove {name} and its tool settings from tools.md? [y/N] ").strip().lower() \
-            not in ("y", "yes"):
-        print("Nothing changed.")
+        ui.say(f"These roles name its tools and will no longer be offered them: {', '.join(users)}.")
+    if not args.yes and not ui.yes("remove", f"Remove {name} and its tool settings from tools.md?"):
+        ui.say("Nothing changed.")
         return 1
     dropped = remove_server(home, name)
-    print(f"Removed {name}" + (f" and the settings for {len(dropped)} of its tools" if dropped else "")
+    ui.say(f"Removed {name}" + (f" and the settings for {len(dropped)} of its tools" if dropped else "")
           + f" from {home.tools}.")
     refs = sorted(set(_REF.findall(str(servers[name]))))
     if refs:
-        print(f"Its keys are still in secrets/keys.env ({', '.join(refs)}); remove any you no longer need with "
+        ui.say(f"Its keys are still in secrets/keys.env ({', '.join(refs)}); remove any you no longer need with "
               "`ombro keys remove NAME`.")
     from ombro import oauth
 
     if servers[name].get("url") and oauth.status(home, name) != "not signed in":
-        print(f"Its sign-in is still kept; forget it with `ombro disconnect {name}`.")
+        ui.say(f"Its sign-in is still kept; forget it with `ombro disconnect {name}`.")
     return 0
