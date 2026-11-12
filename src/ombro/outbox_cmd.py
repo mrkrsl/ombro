@@ -339,7 +339,8 @@ def cmd_tools(args) -> int:
           + " (`ombro folders`)")
     print("\nMCP servers (tools.md `servers:`):")
     if not rows["servers"]:
-        print("  none yet. Add one under `servers:` in tools.md, then see its tools with `ombro tools <server>`.")
+        print("  none yet. Add one with `ombro server add <name>` (or under `servers:` in tools.md), then see "
+              "its tools with `ombro tools <server>`.")
     for r in rows["servers"]:
         how = r["url"] or " ".join([r["command"] or "", *map(str, r["args"])])
         if r["url"]:

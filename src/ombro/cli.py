@@ -804,6 +804,12 @@ def cmd_tools(args) -> int:
     return run(args)
 
 
+def cmd_server(args) -> int:
+    from ombro.server_cmd import cmd_server as run
+
+    return run(args)
+
+
 def cmd_folders(args) -> int:
     from ombro.folders_cmd import cmd_folders as run
 
@@ -901,6 +907,23 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("server", help="the server's name under `servers:` in tools.md")
     s.add_argument("--no-browser", action="store_true", help="print the sign-in address instead of opening it")
     s.set_defaults(func=cmd_connect)
+
+    s = sub.add_parser("server", help="add or remove an MCP server in tools.md")
+    s.add_argument("action", choices=["add", "remove"])
+    s.add_argument("name", nargs="?", help="the server's name, e.g. sheets")
+    s.add_argument("--command", help='for add: a local server\'s command line, e.g. "uvx some-server==1.2.3"')
+    s.add_argument("--url", help="for add: a remote server's address")
+    s.add_argument("--env", action="append", metavar="NAME=VALUE", help="for add: a setting for a local server "
+                   "(not a secret); repeat for several")
+    s.add_argument("--header", action="append", metavar="NAME=VALUE", help="for add: a header for a remote "
+                   "server (not a secret)")
+    s.add_argument("--secret", action="append", metavar="NAME[=KEY]", help="for add: a variable (local) or header "
+                   "(remote) that holds a secret, typed hidden and kept in secrets/keys.env as KEY")
+    s.add_argument("--class", dest="server_class", choices=["internal", "external"],
+                   help="for add: the class of its tools that are not read-only")
+    s.add_argument("--no-prompt", action="store_true", help="for add: do not ask about secrets not given")
+    s.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    s.set_defaults(func=cmd_server)
 
     s = sub.add_parser("disconnect", help="forget the sign-in for a remote MCP server")
     s.add_argument("server")

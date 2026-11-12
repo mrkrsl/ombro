@@ -75,6 +75,8 @@ ombro outbox approve ab12-1 ab12-3     # run the named ones (each at most once);
 ombro outbox decline ab12-2            # drop it for good
 ombro outbox edit ab12-3               # change its arguments; it waits for approval again
 ombro tools [server]                   # tools and MCP servers; a server's tools and their permission
+ombro server add <name>                # add an MCP server to tools.md; asks for any secret hidden
+ombro server remove <name>
 ombro folders                          # folders shared with runs, and whether each can be backed up
 ombro folders add ~/Documents/Brand    # share one; asks read or write
 ombro folders remove brand
@@ -457,6 +459,21 @@ tools:
   mcp.sheets.update_cells: {max_calls: 10}
   mcp.sheets.share_spreadsheet: {permission: refuse}
 ---
+```
+
+`ombro server add <name>` writes an entry like these for you, so tools.md need
+not be edited by hand. It asks whether the server is local or remote, takes its
+command or address, and asks for each secret in a hidden prompt: the value goes
+into `secrets/keys.env` and tools.md gets only `${NAME}`, in `env` for a local
+server or `headers` for a remote one. It warns when a package runner's server
+or library is not pinned to an exact version, refuses a `${NAME}` on the
+command line, checks the entry as a run would, and writes nothing until you
+confirm. The same as flags, for scripts and interfaces:
+
+```bash
+ombro server add notes --command "uvx invented-notes-mcp==1.2.3" --secret NOTES_TOKEN --class internal
+ombro server add tracker --url https://mcp.tracker.invalid/mcp --secret Authorization=TRACKER_TOKEN
+ombro server remove notes    # its tool settings too; says which roles named its tools; keys are kept
 ```
 
 `${NAME}` is read from `secrets/keys.env` when the server starts and is never logged.
