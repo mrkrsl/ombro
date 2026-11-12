@@ -340,12 +340,18 @@ start, and nothing else: not the rest of the Ombro home (secrets, settings,
 roles, memory, other runs, this run's journal, `run.md` or report), not the
 rest of your files, and not the network. It runs on the Python Ombro runs
 on, isolated, with the standard library only. It cannot start other
-programs. Its environment holds no keys.
+programs (on Linux it can start programs already inside its sandbox, which
+still has no network). Its environment holds no keys. It may change what is
+in `workspace/`, `scratch/` and a writable shared folder, but never the
+folders themselves; if one is ever not a real folder where the run started,
+the tools refuse it.
 
 Each script is limited by `code_timeout` (60s, never more than the run has
 left), CPU time, `code_max_memory` (1 GB; on macOS by watching the script),
 5 MB for any one file, and `code_output_chars` (8,000 characters of output
-shown to the role: the start and end, with the middle cut). `code.run` has
+shown to the role: the start and end, with the middle cut). `code_max_total`
+(2 GB) caps everything in a run's `workspace/` and `scratch/`: past it, no
+more scripts run in that run. `code.run` has
 10 calls a run unless `tools.md` says otherwise. The role is told the exit
 status, the output, the time, any limit that stopped it, and which files
 were created, changed or removed, worked out by the harness. Each script and
@@ -526,7 +532,8 @@ outward: {preset: balanced, allow: [mcp.mail.send_message], stage: [mcp.sheets.u
 The task interview asks what may happen without you whenever the crew has
 external tools, and writes the answer into the spec. A crew whose tools are
 only read-only and internal needs no answer. `permission: refuse` in
-`tools.md` beats everything. Permissions are fixed when a run starts and
+`tools.md` beats everything, for every class, read-only included: a refused
+tool is not offered to any role. Permissions are fixed when a run starts and
 recorded in `run.md`; scheduled runs follow them like any other.
 
 **The outbox.** A staged call does not happen. The harness writes it to the
