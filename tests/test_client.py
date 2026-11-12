@@ -130,7 +130,7 @@ def test_keys_never_reach_run_files(home):
         return OpenAICompatibleClient(spec.endpoint, spec.model, lambda: get_key(home, spec.key),
                                       transport=transport, retries=0)
 
-    run_dir = runs.create_run(home, "default", {}, "Find invented things.", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "Find invented things.", load_limits(home), source="test")
     status = Engine(home, run_dir, client_factory=factory).execute()
     assert status == "completed"
     for path in run_dir.rglob("*"):

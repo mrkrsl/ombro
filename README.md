@@ -79,8 +79,12 @@ ombro folders                          # folders shared with runs, and whether e
 ombro folders add ~/Documents/Brand    # share one; asks read or write
 ombro folders remove brand
 ombro keys remove FIRECRAWL_API_KEY
-ombro role list | edit <name> | remove <name>
-ombro crew list | add <name> | use <name>
+ombro role list [--crew <crew>]        # the Lead, then each crew's roles
+ombro role add [name] --crew <crew>    # a role joins one crew
+ombro role edit | remove <crew>/<role> # or the role's own name, where only one crew has it
+ombro role edit lead                   # the one Lead's files
+ombro crew list | add <name> | use <name>   # a new crew starts empty; `use` sets the default crew
+ombro run --spec <spec> --crew ops     # --crew gives the crews when the spec names none
 ```
 
 Set `OMBRO_HOME` to use a home directory other than `~/.config/ombro`.
@@ -130,14 +134,32 @@ to it as `name.previous.md`.
 - **Keys** are never asked for. Anything you type is scrubbed of the values in
   `secrets/keys.env` and of common key shapes before it reaches the model or the transcript.
 - Each interview has its own token cap (see Limits) and is saved as a
-  transcript in `crews/<crew>/interviews/`. A run started from an interview
+  transcript in `interviews/`. A run started from an interview
   keeps a copy as `interview.md`, and its report shows the interview's tokens
   separately from the run's.
 
+## One Lead, many crews
+
+There is one Lead, above every crew. It is the role you talk to in chat and
+interviews, and the one that briefs roles in runs. A crew is a named group of
+roles with its own memory: a team of skills (legal, marketing, ops) or a
+separate project or client (marketing for one project, marketing for
+another), whichever suits you. A fresh install has the Lead and a `default`
+crew with one role in it, `general-assistant`, a generalist for everyday
+tasks that no other role fits.
+
+A spec names the crews its run may use (`crews: [marketing-a, ops]`); a spec
+with no `crews:` line uses the default crew. The brief interview proposes the
+crews, asks which one where two do similar work, and shows them before you
+accept. In a run with more than one crew, roles are named `crew/role`
+(`marketing-a/writer`); the Lead may use a role's own name where only one of
+the crews has it. Runs, specs, schedules and interview transcripts belong to
+no crew.
+
 ## How a run works
 
-1. Ombro loads the crew's roles, the limits, the spec and the crew's memory
-   (see Memory).
+1. Ombro loads the Lead, the roles of the crews the spec names, the limits,
+   the spec and those crews' memory (see Memory).
 2. The Lead decides whom to brief and with what (`brief`), one role at a time.
 3. The role works within its own step limit and returns a structured result.
 4. The harness validates the result and records it in the journal. An invalid
@@ -146,17 +168,20 @@ to it as `name.previous.md`.
 5. The Lead briefs again, searches past reports (`memory.search`), or calls
    `finish`.
 6. On finish, or when any limit is reached, delegation stops. The Lead
-   rewrites its part of the crew's notes in one call, then writes the report
+   rewrites its part of the notes of each crew whose roles it briefed, one
+   call per crew, then writes the report
    in a separate call with no tools. If even that is impossible, the harness
    writes the report from the journal.
-7. The harness adds one line for the run to the crew's `memory/index.md`.
+7. The harness adds one line for the run to the `memory/index.md` of each
+   crew the spec names.
 
 ## Memory
 
-Each crew has its own memory, and a run never sees another crew's. What a
-run costs stays the same however many runs came before it.
+Each crew has its own memory, and a run sees only the memory of the crews its
+spec names. What a run costs stays the same however many runs came before
+it; it grows only with the crews a spec names.
 
-- **`memory/index.md`**: one line per run, written by the harness: date, run
+- **`memory/index.md`**: one line per run that named the crew, written by the harness: date, run
   ID, outcome, one-line brief and the path to its report. Every run gets
   one, including stopped, failed and insufficient briefs.
 - **`memory/notes.md`**: standing lessons in two parts. **From you** holds
@@ -168,9 +193,11 @@ run costs stays the same however many runs came before it.
   room it has; a second refusal leaves the notes as they were. The report's
   "Changes to notes.md" lists what was added and removed, worked out by the
   harness. The old file is kept as `notes.previous.md`.
-- **At the start of a run** the Lead is given notes.md and the 20 most recent
-  index entries, each at most 200 characters. Nothing else.
-- **`memory.search`** (the Lead only) finds passages in the crew's past
+- **At the start of a run** the Lead is given the notes.md of each crew the
+  spec names and the 20 most recent index entries across those crews, each
+  at most 200 characters. Nothing else.
+- **`memory.search`** (the Lead only) finds passages in the past reports of
+  runs that used the spec's crews,
   reports by keyword, up to 4,000 characters in all, and is capped at 8 calls
   a run. It does not use a round.
 
@@ -183,7 +210,7 @@ every model: `memory_notes_max_chars`, `memory_index_entries`,
 `ombro chat` is a conversation with the Lead, with two modes; the current one
 is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
 
-- **Chat** is read-only and sees every crew. The Lead can search and read
+- **Chat** is read-only and sees every crew: it is the same one Lead. It can search and read
   reports, specs, notes, indexes and workspace files, and use web search and
   fetch. It cannot brief roles, start runs, approve the outbox, write files or
   use outward tools; those calls are refused. Chat transcripts, journals,
@@ -215,13 +242,13 @@ is one answer.
 
 ## Schedules
 
-A schedule is a file in `crews/<crew>/schedules/<name>.md`:
+A schedule is a file in `schedules/<name>.md`:
 
 ```yaml
 ---
 name: morning-brief
 cron: "30 7 * * 1-5"          # local time: minute hour day month weekday
-spec: specs/morning-brief.md  # a spec saved in this crew; scheduled runs never interview
+spec: specs/morning-brief.md  # a saved spec, which names the crews; scheduled runs never interview
 enabled: true
 limits: {allowance: conservative, run_timeout: 15m}   # optional; tokens, never dollars
 grace: 10m                     # optional; default schedule_grace in limits.md
@@ -242,10 +269,11 @@ from the schedule's next slot.
   run must have a token cap, so `unlimited` is refused.
 - **Late and missed.** A slot is started if a tick sees it within its grace
   period. A slot missed because the machine was off, asleep or logged out is
-  never started late: it is noted in the crew's `index.md`, one entry per gap:
+  never started late: it is noted in the `index.md` of each crew its spec
+  names, one entry per gap:
 
   ```
-  - 2026-11-10 · schedule:morning-brief@2026-11-10T07:30..2026-11-12T07:30 · missed · 3 slots not run: the machine was off or asleep (no tick from 09 Nov 23:00 to 12 Nov 09:14) · crews/default/schedules/morning-brief.md
+  - 2026-11-10 · schedule:morning-brief@2026-11-10T07:30..2026-11-12T07:30 · missed · 3 slots not run: the machine was off or asleep (no tick from 09 Nov 23:00 to 12 Nov 09:14) · schedules/morning-brief.md
   ```
 - **Overlap.** If a schedule's previous run is still going, or
   `schedule_max_running` scheduled runs are going, or this tick has already
@@ -274,7 +302,7 @@ A role gets only the tools its `config.md` lists:
 | `workspace.read`, `workspace.write`, `workspace.list` | Text files in the run's `workspace/` and `scratch/` folders, and in folders shared with the run. |
 | `workspace.place` | Copies a workspace file outside the run: at once into a folder shared for writing, staged in the outbox anywhere else. |
 | `code.run` | Runs a Python script the role writes, in the operating system's sandbox. See Code and shared folders. |
-| `memory.search` | The Lead only: passages from this crew's past reports. |
+| `memory.search` | The Lead only: passages from past reports of runs that used the spec's crews. |
 
 Workspace paths start with `workspace/` (deliverables) or `scratch/` (working
 notes). Absolute paths, `..`, and symlinks that lead outside those folders
@@ -633,22 +661,28 @@ matter, except the journal, which is JSON Lines:
   preferences/config.md  preferences/instructions.md
   chats/<time>.md                      chat transcripts (never loaded or searched)
   scheduler/tick.md, tick.log, scheduler.log   the last tick and the scheduler's logs
-  crews/default/
+  lead/config.md, soul.md              the one Lead, above every crew
+  specs/<name>.md                      saved specs; each names its crews
+  schedules/<name>.md
+  interviews/<time>-<kind>.md
+  removed/schedules/<name>.md          schedules removed with `ombro schedule remove`
+  runs/<run_id>/run.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/,
+                code/ (scripts and their output), backup/ (clones of writable shared folders)
+  crews/<crew>/
     crew.md
     roles/<role>/config.md, soul.md
     memory/index.md, notes.md
-    specs/<name>.md
-    schedules/<name>.md
-    interviews/<time>-<kind>.md
-    removed/<role>/                  roles removed with `ombro role remove`
-    removed/schedules/<name>.md      schedules removed with `ombro schedule remove`
-    runs/<run_id>/run.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/,
-                  code/ (scripts and their output), backup/ (clones of writable shared folders)
+    removed/<role>/                    roles removed with `ombro role remove`
 ```
 
+A home made by an earlier Ombro, with a Lead inside each crew, is refused
+with a message: move it aside (keeping `secrets/` if you want your keys) and
+run `ombro init` for a new one.
+
 A role is a folder with `config.md` (name, kind, description, model, tools,
-skills, max_steps) and `soul.md` (its prompt). `kind` is `lead`, `specialist`
-or `helper`; helpers default to the `cheap` model and fewer steps.
+skills, max_steps) and `soul.md` (its prompt). `kind` is `specialist` or
+`helper` in a crew, and `lead` only for the one Lead in `lead/`; helpers
+default to the `cheap` model and fewer steps.
 
 ## Testing without a model
 

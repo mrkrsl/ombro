@@ -140,7 +140,7 @@ def _row(home: Home, s: schedules.Schedule, recent: list[tuple[Path, dict]], now
         n = outbox.waiting_count(rd)
         if n:
             last += f" ({n} in outbox)"
-    out = [f"{s.crew + '/' + s.name:<30} {'on' if s.enabled else 'off':<4} {s.cron_text or '?':<18} "
+    out = [f"{s.name:<30} {'on' if s.enabled else 'off':<4} {s.cron_text or '?':<18} "
            f"{nxt:<17} {last}"]
     if s.error:
         out.append(f"  problem: {s.error}")
@@ -161,7 +161,7 @@ def cmd_list(home: Home, crew: str | None) -> int:
     else:
         print(f"{'SCHEDULE':<30} {'ON':<4} {'CRON':<18} {'NEXT':<17} LAST RUN")
         for s in rows:
-            for line in _row(home, s, by.get((s.crew, s.name), []), now):
+            for line in _row(home, s, by.get(s.name, []), now):
                 print(line)
     print()
     for line in scheduler_status(home, enabled=sum(1 for s in rows if s.enabled and not s.error)):
@@ -170,8 +170,9 @@ def cmd_list(home: Home, crew: str | None) -> int:
 
 
 def cmd_show(home: Home, s: schedules.Schedule) -> int:
-    print(f"Schedule  {s.crew}/{s.name}")
+    print(f"Schedule  {s.name}")
     print(f"File      {s.path}")
+    print(f"Crews     {', '.join(s.crews) or '-'} (from its spec)")
     print(f"Enabled   {'yes' if s.enabled else 'no'}")
     print(f"Cron      {s.cron_text or '?'} (local time)")
     print(f"Spec      {s.spec}")
@@ -191,11 +192,11 @@ def cmd_show(home: Home, s: schedules.Schedule) -> int:
         print("\nNext due:")
         for w in cronmod.describe_next(s.cron, datetime.now(), 5):
             print(f"  {w}")
-    recent = schedules.scheduled_runs(home).get((s.crew, s.name), [])
+    recent = schedules.scheduled_runs(home).get(s.name, [])
     print("\nRecent runs:" if recent else "\nNo runs yet.")
     for rd, m in recent[-5:]:
         print(f"  {str(m.get('due', ''))[:16].replace('T', ' ')}  {rd.name}  {m.get('status')}")
-    noted = memory.schedule_entries(home, s.crew, s.name)
+    noted = list(dict.fromkeys(ln for c in s.crews for ln in memory.schedule_entries(home, c, s.name)))
     if noted:
         print("\nSkipped or missed (from index.md):")
         for ln in noted[-5:]:
@@ -214,28 +215,27 @@ def cmd_add(home: Home, args) -> int:
     from ombro.roles import NAME
 
     cli = _cli()
-    crew = cli._crew(home, args.crew)
     name = (args.name or "").strip().lower()
     if not NAME.match(name):
         raise cli.CliError("Give the schedule a name of lower-case letters, digits, - and _, "
                            "e.g. `ombro schedule add morning-prep`.")
-    path = home.schedules_dir(crew) / f"{name}.md"
+    path = home.schedules_dir / f"{name}.md"
     if path.exists():
-        raise cli.CliError(f"Crew {crew} already has a schedule named {name} ({path}).")
-    saved = [n for n, _ in cli.saved_specs(home, crew)]
+        raise cli.CliError(f"There is already a schedule named {name} ({path}).")
+    saved = [n for n, _ in cli.saved_specs(home)]
     spec = args.spec
     if not spec:
         if not saved:
-            raise cli.CliError(f"Crew {crew} has no saved specs. Make one with `ombro brief` first; "
+            raise cli.CliError("There are no saved specs. Make one with `ombro brief` first; "
                                "scheduled runs never interview.")
-        spec = _ask(f"Spec to run (saved in crew {crew}: {', '.join(saved)}): ")
+        spec = _ask(f"Spec to run (saved: {', '.join(saved)}): ")
         if not spec:
             print("Nothing saved.")
             return 1
     spec = _spec_name(spec)
     if spec not in saved:
         listed = f" Saved specs: {', '.join(saved)}." if saved else " Make one with `ombro brief`."
-        raise cli.CliError(f"Crew {crew} has no saved spec named {spec!r}.{listed}")
+        raise cli.CliError(f"There is no saved spec named {spec!r}.{listed}")
     cron_text = args.cron
     if not cron_text:
         cron_text = _ask('When, as cron in local time (minute hour day month weekday, e.g. "30 7 * * 1-5"): ')
@@ -253,7 +253,7 @@ def cmd_add(home: Home, args) -> int:
         limits["max_tokens"] = args.max_tokens
     if args.run_timeout:
         limits["run_timeout"] = args.run_timeout
-    s = schedules.Schedule(crew=crew, name=name, path=path, cron_text=cron.text, cron=cron,
+    s = schedules.Schedule(name=name, path=path, cron_text=cron.text, cron=cron,
                            spec=f"specs/{spec}.md", enabled=not args.disabled, limits=limits)
     if args.grace:
         try:
@@ -265,8 +265,9 @@ def cmd_add(home: Home, args) -> int:
     except (SetupError, mdfile.FrontMatterError) as e:
         raise cli.CliError(f"This schedule's runs could not start: {e}") from None
 
-    print(f"\nSchedule {crew}/{name}, saved as {path}")
+    print(f"\nSchedule {name}, saved as {path}")
     print(f"  spec      {s.spec}: {runs.first_line(p.spec_body, 70)}")
+    print(f"  crews     {', '.join(runs.spec_crews(home, p.spec_meta))} (from the spec)")
     print(f"  cron      {cron.text} (local time)")
     print(f"  next      {'; '.join(cronmod.describe_next(cron, datetime.now(), 3))}")
     print(f"  limits    {_limits_line(p.limits)}")
@@ -278,7 +279,7 @@ def cmd_add(home: Home, args) -> int:
     if not cli._confirm("Save this schedule? [y/N] "):
         print("Nothing saved.")
         return 1
-    schedules.write_schedule(home, crew, name, cron.text, spec, s.enabled, limits or None, args.grace)
+    schedules.write_schedule(home, name, cron.text, spec, s.enabled, limits or None, args.grace)
     print(f"Saved {path}. Edit it at any time; the next tick reads it.")
     if s.enabled:
         _offer_install(home)
@@ -324,14 +325,14 @@ def cmd_schedule(args) -> int:
     if action in ("enable", "disable"):
         on = action == "enable"
         if s.enabled == on and not s.error:
-            print(f"{s.crew}/{s.name} is already {action}d.")
+            print(f"{s.name} is already {action}d.")
             return 0
         try:
             schedules.set_enabled(s.path, on)
         except (OSError, mdfile.FrontMatterError) as e:
             raise cli.CliError(f"Could not change {s.path}: {e}") from None
-        s = schedules.load_schedule(home, s.crew, s.path)
-        print(f"{s.crew}/{s.name} is {action}d.")
+        s = schedules.load_schedule(home, s.path)
+        print(f"{s.name} is {action}d.")
         if s.error:
             print(f"It has a problem, so it will not run until it is fixed: {s.error}")
         elif on and s.cron:
@@ -340,11 +341,11 @@ def cmd_schedule(args) -> int:
             _offer_install(home)
         return 0
     if action == "remove":
-        if not cli._confirm(f"Remove schedule {s.crew}/{s.name}? The file is moved to the crew's "
+        if not cli._confirm(f"Remove schedule {s.name}? The file is moved to the "
                             "removed/schedules/ folder; its runs are kept. [y/N] "):
             print("Nothing changed.")
             return 1
-        folder = home.crew_dir(s.crew) / "removed" / "schedules"
+        folder = home.removed_dir / "schedules"
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / s.path.name
         if target.exists():

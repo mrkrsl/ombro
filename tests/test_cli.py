@@ -127,7 +127,7 @@ def test_dead_run_is_reaped_by_the_next_command(home):
     proc.wait()  # a pid that is certainly gone
     from ombro.settings import load_limits
 
-    run_dir = runs.create_run(home, "default", {}, "Invented brief.", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "Invented brief.", load_limits(home), source="test")
     runs.update_run(run_dir, pid=proc.pid, started_at="2026-11-11T10:00:00Z")
     with (run_dir / "journal.jsonl").open("a") as f:
         f.write(json.dumps({"ts": "2026-11-11T10:00:01Z", "role": "lead", "action": "briefed",
@@ -175,7 +175,7 @@ def test_init_connects_after_a_failed_test_call(tmp_path):
     assert stat.S_IMODE(os.stat(home.env).st_mode) == 0o600
     spec = connected_model(home)
     assert spec.endpoint == "https://api.deepseek.com" and spec.model == "deepseek-chat" and spec.priced
-    assert (home.crew_dir("default") / "roles" / "lead" / "soul.md").is_file()
+    assert (home.lead_dir / "soul.md").is_file()
     assert keys.get_key(home, "FIRECRAWL_API_KEY") is None  # search key skipped
 
 

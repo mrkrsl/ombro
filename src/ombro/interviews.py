@@ -16,7 +16,7 @@ from typing import Any
 from ombro import mdfile, prompts
 from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
-from ombro.roles import KINDS, NAME, RoleError, load_crew, load_role
+from ombro.roles import KINDS, NAME, RoleError, crew_roles, load_lead, load_role
 from ombro.settings import Limits, SetupError, format_duration, format_tokens, load_models, load_tool_settings
 
 
@@ -69,8 +69,9 @@ def available_skills(home: Home) -> dict[str, str]:
 
 
 def roster(home: Home, crew: str, limits: Limits) -> str:
+    """One crew's roles."""
     try:
-        _, roles = load_crew(home, crew, limits)
+        roles = crew_roles(home, crew, limits)
     except (RoleError, SetupError) as e:
         return f"(the crew's roles could not be loaded: {e})"
     if not roles:
@@ -78,6 +79,29 @@ def roster(home: Home, crew: str, limits: Limits) -> str:
     return "\n".join(
         f"- {r.name} ({r.kind}; tools: {', '.join(r.tools) or 'none'}): {r.description}" for r in roles.values()
     )
+
+
+def crews_roster(home: Home, limits: Limits) -> str:
+    """Every crew, its description and its roles, named crew/role."""
+    out = []
+    for crew in home.crews():
+        meta = {}
+        try:
+            if (home.crew_dir(crew) / "crew.md").is_file():
+                meta = mdfile.read(home.crew_dir(crew) / "crew.md")[0]
+        except mdfile.FrontMatterError:
+            meta = {}
+        out.append(f"Crew {crew}: {str(meta.get('description') or '').strip() or '(no description)'}")
+        try:
+            roles = crew_roles(home, crew, limits)
+        except (RoleError, SetupError) as e:
+            out.append(f"  (its roles could not be loaded: {e})")
+            continue
+        if not roles:
+            out.append("  (no roles yet)")
+        for r in roles.values():
+            out.append(f"  - {crew}/{r.name} ({r.kind}; tools: {', '.join(r.tools) or 'none'}): {r.description}")
+    return "\n".join(out) or "(no crews)"
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +120,7 @@ class SetupPurpose(Purpose):
     def __init__(self, home: Home, crew: str = "default"):
         self.home = home
         self.crew = crew
-        self.soul_path = home.roles_dir(crew) / "lead" / "soul.md"
+        self.soul_path = home.lead_dir / "soul.md"
 
     def context(self) -> list[tuple[str, str]]:
         instructions = ""
@@ -145,7 +169,7 @@ class SetupPurpose(Purpose):
             [
                 FileDraft("preferences/instructions.md", self.home.instructions,
                           mdfile.dump({}, INSTRUCTIONS_BODY + "\n" + body + "\n")),
-                FileDraft(f"crews/{self.crew}/roles/lead/soul.md", self.soul_path, _text(args, "soul") + "\n"),
+                FileDraft("lead/soul.md", self.soul_path, _text(args, "soul") + "\n"),
             ]
         )
 
@@ -260,7 +284,7 @@ class RolePurpose(Purpose):
         if not NAME.match(name):
             raise ProposalError("the name must use lower-case letters, digits, - and _")
         if name == "lead" or meta.get("kind") == "lead":
-            raise ProposalError("a crew has one Lead already; propose a specialist or a helper")
+            raise ProposalError("there is one Lead already, above every crew; propose a specialist or a helper")
         if meta.get("kind") not in KINDS[1:]:
             raise ProposalError("kind must be specialist or helper")
         if self.folder(name).exists():
@@ -339,9 +363,10 @@ class BriefPurpose(Purpose):
         return f"save it as {name!r} and start the run" if self.then_run else f"save it as {name!r}"
 
     def __init__(self, home: Home, crew: str, limits: Limits, task: str = "", *, then_run: bool = False,
-                 start_dir: Path | None = None):
+                 start_dir: Path | None = None, crews: list[str] | None = None):
         self.home = home
-        self.crew = crew
+        self.crew = crew  # the default crew, for a spec that names none
+        self.suggested = [c for c in (crews or []) if c in home.crews()]
         self.limits = limits
         self.task = task.strip()
         self.then_run = then_run
@@ -351,33 +376,40 @@ class BriefPurpose(Purpose):
     def opening(self) -> str:
         if self.task:
             return f"The user's task, in their own words:\n\n{self.task}\n\nBegin the interview."
-        return ("The user has a task for the crew. Begin by asking them to describe it in their own words: "
+        return ("The user has a task for the crews. Begin by asking them to describe it in their own words: "
                 "what it is and why.")
 
-    def outward_tools(self) -> list[str]:
-        """The crew's external tools (reaching people outside the organisation, or the public): the ones a
-        brief must ask about. Reading and work need no answer."""
-        if getattr(self, "_external", None) is None:
+    def outward_tools(self, crews: list[str] | None = None) -> list[str]:
+        """External tools (reaching people outside the organisation, or the public) in the given crews, or in
+        every crew: the ones a brief must ask about. Reading and work need no answer."""
+        key = tuple(crews) if crews is not None else None
+        cache = self.__dict__.setdefault("_external", {})
+        if key not in cache:
             from ombro import outward
             from ombro.settings import load_tool_settings
 
-            try:
-                _, roles = load_crew(self.home, self.crew, self.limits)
-            except (RoleError, SetupError):
-                roles = {}
-            names = sorted({t for r in roles.values() for t in r.tools if t.startswith("mcp.")})
+            roles = []
+            for c in (crews if crews is not None else self.home.crews()):
+                try:
+                    roles += list(crew_roles(self.home, c, self.limits).values())
+                except (RoleError, SetupError):
+                    pass
+            names = sorted({t for r in roles for t in r.tools if t.startswith("mcp.")})
             try:
                 settings = load_tool_settings(self.home)
             except (SetupError, mdfile.FrontMatterError):
-                self._external = names  # cannot tell: ask
+                cache[key] = names  # cannot tell: ask
             else:
-                self._external = outward.external_tools(self.home, settings, names) if names else []
-        return self._external
+                cache[key] = outward.external_tools(self.home, settings, names) if names else []
+        return cache[key]
 
     def context(self) -> list[tuple[str, str]]:
         L = self.limits
         out = [
-            ("Roles in the crew", roster(self.home, self.crew, L)),
+            ("Crews and their roles (a run may brief roles only in the crews its spec names)",
+             crews_roster(self.home, L)
+             + (f"\nThe user started this brief for: {', '.join(self.suggested)}." if self.suggested else "")
+             + f"\nThe default crew is {self.crew}."),
             ("Limits a run will have",
              f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.run_timeout)}\n"
              f"- tokens: {format_tokens(L.max_tokens)}"),
@@ -392,10 +424,11 @@ class BriefPurpose(Purpose):
                 default = outward.resolve(self.home, {})["preset"]
             except SetupError:
                 default = outward.DEFAULT_PRESET
-            out.append(("External tools in the crew (they reach people outside the organisation, or the "
+            out.append(("External tools in the crews (they reach people outside the organisation, or the "
                         "public, or spend money)",
                         "\n".join(f"- {t}" for t in tools)
-                        + f"\nThe user's default permission is {default}. Ask what may happen without them."))
+                        + f"\nThe user's default permission is {default}. If the task's crews have any of them, "
+                        "ask what may happen without them."))
         return out
 
     def folders_context(self) -> str:
@@ -422,6 +455,8 @@ class BriefPurpose(Purpose):
     def tool(self) -> dict:
         props: dict[str, Any] = {
             "name": {"type": "string", "description": "Short lower-case file name for the spec."},
+            "crews": {"type": "array", "items": {"type": "string"},
+                      "description": "The crews whose roles the run may brief: the fewest that cover the task."},
             "folders": {
                 "type": "array",
                 "description": "Folders outside the run the task needs. Optional.",
@@ -453,11 +488,11 @@ class BriefPurpose(Purpose):
             "Propose the spec. The harness refuses it if any of the five required answers is empty, shows it, "
             "and saves it only if the user accepts.",
             props,
-            ["name", "title", *[k for k, _ in SPEC_FIELDS]],
+            ["name", "crews", "title", *[k for k, _ in SPEC_FIELDS]],
         )
 
     def path(self, name: str) -> Path:
-        return self.home.crew_dir(self.crew) / "specs" / f"{name}.md"
+        return self.home.specs_dir / f"{name}.md"
 
     def build(self, args: dict) -> Proposal:
         name = _text(args, "name").lower()
@@ -475,7 +510,8 @@ class BriefPurpose(Purpose):
             lines += [_text(args, "details"), ""]
         for key, label in SPEC_FIELDS:
             lines += [f"{label}: {_text(args, key)}", ""]
-        meta: dict[str, Any] = {"name": name, "crew": self.crew}
+        crews = self._crews(args.get("crews"))
+        meta: dict[str, Any] = {"name": name, "crews": crews}
         wanted, new = self._folders(args.get("folders"))
         if wanted:
             meta["folders"] = wanted
@@ -490,12 +526,30 @@ class BriefPurpose(Purpose):
             except SetupError as e:
                 raise ProposalError(str(e)) from None
             meta["outward"] = setting
-        elif self.outward_tools():
-            raise ProposalError("the crew has external tools: ask the user what may happen without them, "
+        elif self.outward_tools(crews):
+            raise ProposalError("the crews have external tools: ask the user what may happen without them, "
                                 "and give outward_preset")
         text = mdfile.dump(meta, "\n".join(lines))
-        return Proposal([FileDraft(f"crews/{self.crew}/specs/{name}.md", self.path(name), text)],
+        return Proposal([FileDraft(f"specs/{name}.md", self.path(name), text)],
                         data={"name": name, "new_folders": new})
+
+    def _crews(self, value: Any) -> list[str]:
+        """The proposed crews. Left out, they are the crews the brief started from, or the default
+        crew; the user sees which before accepting."""
+        if isinstance(value, str):
+            value = [value]
+        if not value:
+            value = self.suggested or [self.crew]
+        if not isinstance(value, list):
+            raise ProposalError("`crews` must be a list of crew names")
+        crews: list[str] = []
+        for c in value:
+            c = str(c or "").strip()
+            if c not in self.home.crews():
+                raise ProposalError(f"no crew named {c!r}; crews: {', '.join(self.home.crews())}")
+            if c not in crews:
+                crews.append(c)
+        return crews
 
     def _folders(self, value: Any) -> tuple[dict[str, str], list[dict[str, str]]]:
         """The spec's folders by name, and the folders not yet shared that the user
@@ -597,6 +651,15 @@ class BriefPurpose(Purpose):
         if limits is not None and not isinstance(limits, dict):
             raise ProposalError("`limits` in a spec must be a mapping, e.g. limits: {allowance: generous}")
         warnings = []
+        from ombro import runs
+
+        try:
+            crews = runs.spec_crews(self.home, meta)
+        except SetupError as e:
+            raise ProposalError(str(e)) from None
+        warnings.append(("the run may brief roles in crews " if len(crews) > 1 else "the run may brief roles in "
+                         "crew ") + ", ".join(crews)
+                        + ("" if meta.get("crews") else " (the default crew: the spec names none)") + ".")
         if meta.get("folders"):
             from ombro import folders
 
@@ -640,11 +703,11 @@ class BriefPurpose(Purpose):
 
 
 def start(home: Home, purpose: Purpose, crew: str, limits: Limits, **kwargs):
-    """Hold one interview with the crew's Lead. kwargs go to Interview (ask, say, edit, client_factory…)."""
+    """Hold one interview with the Lead. kwargs go to Interview (ask, say, edit, client_factory…)."""
     from ombro.interview import Interview
     from ombro.settings import load_preferences
 
-    lead = load_role(home.roles_dir(crew) / "lead", limits)
+    lead = load_lead(home, limits)
     return Interview(
         home,
         purpose,
@@ -657,7 +720,8 @@ def start(home: Home, purpose: Purpose, crew: str, limits: Limits, **kwargs):
     ).run()
 
 
-def record_insufficient_brief(home: Home, crew: str, limits: Limits, outcome, task: str, tools: dict | None = None) -> Path:
+def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outcome, task: str,
+                              tools: dict | None = None) -> Path:
     """A run that ends as insufficient_brief: no roles briefed, a report naming the gaps."""
     from ombro import report, runs
     from ombro.journal import Journal, utc_now
@@ -669,7 +733,7 @@ def record_insufficient_brief(home: Home, crew: str, limits: Limits, outcome, ta
         gaps.append("No spec was confirmed.")
     body = task.strip() or "(The task was not stated.)"
     spec_text = f"No spec was confirmed. The task as first given:\n\n{body}"
-    run_dir = runs.create_run(home, crew, {}, spec_text, limits, source="interview (no spec was confirmed)",
+    run_dir = runs.create_run(home, crews, {}, spec_text, limits, source="interview (no spec was confirmed)",
                               tools=tools)
     if outcome.transcript and Path(outcome.transcript).is_file():
         shutil.copy2(outcome.transcript, run_dir / "interview.md")

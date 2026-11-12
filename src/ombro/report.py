@@ -51,7 +51,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     failures: list[str] = []
     brief_limits: list[dict[str, Any]] = []
     gaps: list[str] = []
-    notes: dict[str, Any] | None = None
+    notes: list[dict[str, Any]] = []
     outward: dict[str, list[dict[str, Any]]] = {"staged": [], "done": [], "errors": [], "refused": [],
                                                  "duplicates": [], "uncertain": []}
     code_runs: list[dict[str, Any]] = []
@@ -81,7 +81,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         elif action == "insufficient_brief":
             gaps = list(ev.get("gaps") or [])
         elif action == "notes":
-            notes = ev
+            notes.append(ev)
         elif action == "staged":
             outward["staged"].append(ev)
         elif action == "staged_duplicate":
@@ -142,7 +142,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     in_progress = briefs[-1] if briefs and briefs[-1]["status"] == "in_progress" else None
     return {
         "run_id": meta.get("run_id", run_dir.name),
-        "crew": meta.get("crew", ""),
+        "crew": ", ".join(str(c) for c in meta.get("crews") or []),
         "status": status,
         "brief": meta.get("brief", ""),
         "source": meta.get("source", ""),
@@ -325,7 +325,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     sp = f["spend"]
     out = [f"# Report: {f['run_id']}", ""]
     out.append(f"- **Status:** {f['status']}")
-    out.append(f"- **Crew:** {f['crew']}")
+    out.append(f"- **{'Crews' if ', ' in f['crew'] else 'Crew'}:** {f['crew']}")
     out.append(f"- **Started:** {f['started_at']}")
     out.append(f"- **Finished:** {f['finished_at']}")
     if f["limit"]:
@@ -387,7 +387,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         out += ["## Code", "", *code_lines(f), ""]
     if f.get("folders") or f.get("not_shared") or f.get("folders_left_out"):
         out += ["## Shared folders", "", *folder_lines(f), ""]
-    out += ["## Changes to notes.md", "", *notes_lines(f.get("notes")), ""]
+    out += ["## Changes to notes.md", "", *all_notes_lines(f.get("notes")), ""]
 
     cur = f["display_currency"]
     out += ["## Cost", ""]
@@ -560,6 +560,22 @@ def folder_lines(f: dict[str, Any]) -> list[str]:
     if not lines:
         lines.append("None.")
     return lines
+
+
+def all_notes_lines(events: list[dict[str, Any]] | None) -> list[str]:
+    """The notes section: one part for each crew whose notes the Lead was asked to rewrite."""
+    events = list(events or [])
+    per_crew = [e for e in events if e.get("crew")]
+    if not per_crew:
+        return notes_lines(events[-1] if events else None)
+    out: list[str] = []
+    for ev in per_crew:
+        crew = str(ev["crew"])
+        note = str(ev.get("note") or "")
+        if note.startswith(f"{crew}: "):
+            ev = {**ev, "note": note[len(crew) + 2:]}
+        out += [f"### Crew {crew}", "", *notes_lines(ev), ""]
+    return out[:-1]
 
 
 def notes_lines(ev: dict[str, Any] | None) -> list[str]:

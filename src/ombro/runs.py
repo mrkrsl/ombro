@@ -34,6 +34,33 @@ def first_line(text: str, limit: int = 120) -> str:
     return ""
 
 
+def spec_crews(home: Home, spec_meta: dict[str, Any] | None, given: list[str] | None = None) -> list[str]:
+    """The crews a run may use: the spec's `crews:`, else those given (--crew), else the default crew.
+    Raises SetupError for a crew that does not exist."""
+    from ombro.settings import load_preferences
+
+    raw = (spec_meta or {}).get("crews")
+    if isinstance(raw, str):
+        raw = [raw]
+    if raw is not None and (not isinstance(raw, list) or not all(isinstance(c, str) and c.strip() for c in raw)):
+        raise SetupError("`crews` in a spec must be a list of crew names, like [marketing, ops]")
+    crews = [c.strip() for c in raw] if raw else [c for c in (given or []) if c]
+    if not crews:
+        crews = [load_preferences(home).default_crew]
+    out: list[str] = []
+    for c in crews:
+        if c not in home.crews():
+            raise SetupError(f"no crew named {c!r}; crews: {', '.join(home.crews()) or 'none'}")
+        if c not in out:
+            out.append(c)
+    return out
+
+
+def run_crews(meta: dict[str, Any]) -> list[str]:
+    raw = meta.get("crews")
+    return [str(c) for c in raw] if isinstance(raw, list) else []
+
+
 RUN_BODY = """\
 This file is written by Ombro while the run is in progress. Edits are overwritten.
 Limits, tool settings, outward permissions and shared folders above were fixed when the run started and cannot change during it.
@@ -42,7 +69,7 @@ Limits, tool settings, outward permissions and shared folders above were fixed w
 
 def create_run(
     home: Home,
-    crew: str,
+    crews: list[str],
     spec_meta: dict[str, Any],
     spec_body: str,
     limits: Limits,
@@ -64,7 +91,7 @@ def create_run(
         shared, left_out = folders_mod.for_run(home, spec_meta)
     except SetupError as e:
         shared, left_out = [], [f"no shared folder was given: {e}"]
-    runs_dir = home.runs_dir(crew)
+    runs_dir = home.runs_dir
     runs_dir.mkdir(parents=True, exist_ok=True)
     while True:
         run_id = new_run_id()
@@ -80,7 +107,7 @@ def create_run(
     (run_dir / "journal.jsonl").touch()
     meta = {
         "run_id": run_id,
-        "crew": crew,
+        "crews": list(crews),
         "status": "running",
         "pid": None,
         "brief": first_line(spec_body),
@@ -133,23 +160,30 @@ def update_run(run_dir: Path, **fields: Any) -> dict[str, Any]:
     return meta
 
 
-def all_runs(home: Home, crew: str | None = None) -> list[tuple[str, Path]]:
+def all_runs(home: Home, crew: str | None = None) -> list[Path]:
+    """Every run, oldest first; with a crew, only the runs that used it."""
+    rdir = home.runs_dir
+    if not rdir.is_dir():
+        return []
     out = []
-    for c in [crew] if crew else home.crews():
-        rdir = home.runs_dir(c)
-        if not rdir.is_dir():
+    for d in rdir.iterdir():
+        if not (d.is_dir() and (d / "run.md").is_file()):
             continue
-        for d in rdir.iterdir():
-            if d.is_dir() and (d / "run.md").is_file():
-                out.append((c, d))
-    out.sort(key=lambda cd: cd[1].name)
+        if crew:
+            try:
+                if crew not in run_crews(read_run(d)[0]):
+                    continue
+            except (OSError, mdfile.FrontMatterError):
+                continue
+        out.append(d)
+    out.sort(key=lambda d: d.name)
     return out
 
 
 def find_run(home: Home, run_id: str) -> Path:
-    matches = [d for _, d in all_runs(home) if d.name == run_id]
+    matches = [d for d in all_runs(home) if d.name == run_id]
     if not matches:
-        matches = [d for _, d in all_runs(home) if d.name.startswith(run_id)]
+        matches = [d for d in all_runs(home) if d.name.startswith(run_id)]
     if not matches:
         raise RunNotFound(f"no run matching {run_id!r}")
     if len(matches) > 1:
@@ -160,8 +194,8 @@ def find_run(home: Home, run_id: str) -> Path:
 def latest_run(home: Home, crew: str | None) -> Path:
     runs = all_runs(home, crew)
     if not runs:
-        raise RunNotFound("there are no runs yet" + (f" in crew {crew!r}" if crew else ""))
-    return runs[-1][1]
+        raise RunNotFound("there are no runs yet" + (f" that used crew {crew!r}" if crew else ""))
+    return runs[-1]
 
 
 def pid_alive(pid: int) -> bool:
@@ -198,7 +232,7 @@ def reap_dead_runs(home: Home) -> list[Path]:
     from ombro import report  # local import: report depends on this module
 
     reaped = []
-    for _, run_dir in all_runs(home):
+    for run_dir in all_runs(home):
         try:
             meta, _ = read_run(run_dir)
         except (OSError, mdfile.FrontMatterError):

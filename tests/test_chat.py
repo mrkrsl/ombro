@@ -94,7 +94,7 @@ def test_chat_answers_about_a_past_run_from_every_crew(chat, run, home):
     podcast = past_run(run, "Booked the invented Copperkettle podcast guest.", crew="podcast")
     chat([
         fake.call("memory__search", {"query": "Copperkettle"}),
-        fake.call("memory__read", {"path": f"crews/default/runs/{teapots}/report.md"}),
+        fake.call("memory__read", {"path": f"runs/{teapots}/report.md"}),
         fake.say(f"Run {teapots} found the Copperkettle teapot works."),
     ], ["What did we find about Copperkettle?"])
     search, read = chat.tool_replies()
@@ -109,9 +109,9 @@ def test_chat_answers_about_a_past_run_from_every_crew(chat, run, home):
 def test_chat_reads_only_reports_notes_indexes_specs_and_deliverables(chat, run, home):
     rid = past_run(run, "Found invented teapots.")
     (home.root / "chats" / "20261101-090000.md").write_text("An old chat.")
-    paths = [f"crews/default/runs/{rid}/journal.jsonl", "chats/20261101-090000.md", ".env", "models.md",
-             f"crews/default/runs/{rid}/../../../../.env", "crews/default/roles/lead/soul.md",
-             "crews/default/memory/notes.md", f"crews/default/runs/{rid}/spec.md"]
+    paths = [f"runs/{rid}/journal.jsonl", "chats/20261101-090000.md", ".env", "models.md",
+             f"runs/{rid}/../../../../.env", "crews/default/roles/lead/soul.md",
+             "crews/default/memory/notes.md", f"runs/{rid}/spec.md"]
     reads = {"tool_calls": [{"name": "memory__read", "arguments": {"path": p}} for p in paths]}
     chat([reads, fake.say("Done.")], ["Read things."])
     replies = chat.tool_replies()
@@ -166,7 +166,7 @@ def test_the_lead_offers_a_brief_and_the_chat_becomes_its_starting_point(chat, h
         brief_opening,
         fake.say("Saved. Anything else?"),
     ], ["I want three invented teapot makers in Lowtown.", "y", "a", "Thanks."])
-    assert (home.crew_dir("default") / "specs" / "find-teapots.md").is_file()
+    assert (home.specs_dir / "find-teapots.md").is_file()
     assert "ombro run --spec find-teapots" in chat.output
     asked = chat.answers.asked
     assert asked[0].startswith("[Chat]") and asked[1].startswith("[Chat] Start a brief")
@@ -181,14 +181,14 @@ def test_the_lead_never_switches_on_its_own(chat, home):
          ["I might want some teapot makers found.", "n"])
     assert chat.client.calls[-1]["tools"][0]["function"]["name"] == "memory__search"  # still chat
     assert all(not a.startswith("[Brief]") for a in chat.answers.asked)
-    assert not list((home.crew_dir("default") / "specs").glob("*.md"))
+    assert not list((home.specs_dir).glob("*.md"))
 
 
 def test_slash_brief_then_slash_chat_writes_nothing(chat, home):
     chat([fake.say("Tell me about the task.")], ["/brief Find invented kettles.", "/chat", "/quit"])
     assert "Back in Chat mode." in chat.output
     assert "Interview stopped. Nothing was written." in chat.output
-    assert not list((home.crew_dir("default") / "specs").glob("*.md"))
+    assert not list((home.specs_dir).glob("*.md"))
     first = chat.client.calls[0]["messages"][1]["content"]
     assert "Find invented kettles." in first
 
@@ -196,7 +196,7 @@ def test_slash_brief_then_slash_chat_writes_nothing(chat, home):
 def test_slash_brief_names_another_crew(chat, home):
     ensure_crew(home, "podcast")
     chat([fake.call("propose", SPEC_ARGS)], ["/brief @podcast Find teapots.", "a"])
-    assert (home.crew_dir("podcast") / "specs" / "find-teapots.md").is_file()
+    assert (home.specs_dir / "find-teapots.md").is_file()
 
 
 # -- remember ----------------------------------------------------------------------

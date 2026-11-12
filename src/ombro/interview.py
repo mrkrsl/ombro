@@ -204,8 +204,8 @@ class Transcript:
         return mdfile.dump(meta, f"# Interview: {self.kind}\n\n" + "\n\n".join(self.entries) + "\n")
 
 
-def interviews_dir(home: Home, crew: str) -> Path:
-    return home.crew_dir(crew) / "interviews"
+def interviews_dir(home: Home, crew: str = "") -> Path:
+    return home.interviews_dir
 
 
 # ---------------------------------------------------------------------------

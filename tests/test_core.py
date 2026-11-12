@@ -10,7 +10,7 @@ import pytest
 from conftest import write_role
 from ombro import contract, journal, mdfile, prompts
 from ombro.home import Home, ensure_home
-from ombro.roles import RoleError, load_crew, load_role, skill_texts
+from ombro.roles import RoleError, crew_roles, load_lead, load_role, skill_texts
 from ombro.settings import load_limits, load_models, parse_duration
 
 
@@ -25,9 +25,9 @@ def test_fresh_home_layout(tmp_path):
     for rel in (
         "secrets/keys.env", "limits.md", "models.md", "tools.md",
         "preferences/config.md", "preferences/instructions.md", "skills", "chats",
-        "crews/default/crew.md", "crews/default/roles/lead/config.md", "crews/default/roles/lead/soul.md",
-        "crews/default/memory/index.md", "crews/default/memory/notes.md",
-        "crews/default/schedules", "crews/default/specs", "crews/default/runs",
+        "lead/config.md", "lead/soul.md", "specs", "schedules", "runs", "interviews",
+        "crews/default/crew.md", "crews/default/memory/index.md", "crews/default/memory/notes.md",
+        "crews/default/roles/general-assistant/config.md", "crews/default/roles/general-assistant/soul.md",
     ):
         assert (h.root / rel).exists(), rel
     assert stat.S_IMODE(os.stat(h.env).st_mode) == 0o600
@@ -51,8 +51,9 @@ def test_default_install_loads(tmp_path):
     h = Home(tmp_path / "h")
     ensure_home(h)
     limits = load_limits(h)
-    lead, roles = load_crew(h, "default", limits)
-    assert lead.kind == "lead" and roles == {}
+    lead, roles = load_lead(h, limits), crew_roles(h, "default", limits)
+    assert lead.kind == "lead" and list(roles) == ["general-assistant"]
+    assert lead.path == h.lead_dir and not (h.roles_dir("default") / "lead").exists()
     models = load_models(h)
     assert models["cheap"].model == models["default"].model
     assert models["cheap"].name == "cheap"
@@ -100,10 +101,10 @@ def test_missing_soul_is_refused(home):
         load_role(folder, load_limits(home))
 
 
-def test_crew_needs_one_lead(home):
+def test_a_crew_has_no_lead_of_its_own(home):
     write_role(home, "usurper", kind="lead")
-    with pytest.raises(RoleError, match="only the role in roles/lead"):
-        load_crew(home, "default", load_limits(home))
+    with pytest.raises(RoleError, match="a crew has no Lead of its own"):
+        crew_roles(home, "default", load_limits(home))
 
 
 def test_skills_are_included_in_the_role_prompt(home):

@@ -11,7 +11,7 @@ from ombro import fake, keys, mdfile, runs
 from ombro.fake import ScriptedClient
 from ombro.home import LEAD_SOUL
 from ombro.interviews import BriefPurpose, RolePurpose, SetupPurpose, record_insufficient_brief, start
-from ombro.roles import load_crew
+from ombro.roles import crew_roles, load_lead
 from ombro.settings import load_limits
 
 
@@ -84,7 +84,7 @@ SETUP = {
 
 
 def test_setup_writes_nothing_until_accepted(talk, home):
-    soul_path = home.roles_dir("default") / "lead" / "soul.md"
+    soul_path = home.lead_dir / "soul.md"
     before = home.instructions.read_text()
 
     def unchanged_so_far(messages, tools):
@@ -135,7 +135,7 @@ def test_edit_by_hand_then_accept_writes_the_edited_version(talk, home):
 
     out = talk(SetupPurpose(home), [fake.call("propose", SETUP)], ["e", "a"], edit=edit)
     assert out.status == "confirmed" and out.edited
-    soul = (home.roles_dir("default") / "lead" / "soul.md").read_text()
+    soul = (home.lead_dir / "soul.md").read_text()
     assert soul == "You are an invented Lead, edited by hand.\n"
     assert "You edited it to" in out.transcript.read_text()
 
@@ -176,7 +176,7 @@ def test_role_interview_refuses_tools_and_skills_that_do_not_exist(talk, home):
     assert "no such tool: email.send" in replies[0] and "workspace.read" in replies[0]
     assert "no such skill: invented-skill" in replies[1]
     assert out.status == "confirmed"
-    lead, roles = load_crew(home, "default", load_limits(home))
+    roles = crew_roles(home, "default", load_limits(home))
     assert roles["fact-checker"].tools == ROLE["tools"]
     assert "never rewrite" in roles["fact-checker"].soul
 
@@ -231,8 +231,8 @@ def test_brief_refuses_a_spec_with_a_required_answer_missing(talk, home):
     reply = talk.tool_replies()[0]
     assert "A waste would be" in reply and "Not wanted" in reply
     assert out.status == "confirmed"
-    meta, body = mdfile.read(home.crew_dir("default") / "specs" / "teapot-survey.md")
-    assert meta["crew"] == "default"
+    meta, body = mdfile.read(home.specs_dir / "teapot-survey.md")
+    assert meta["crews"] == ["default"]
     for line in ("Done looks like: workspace/makers.md", "Who uses it and how:", "Binding constraint: every fact",
                  "A waste would be: makers outside", "Not wanted: prices"):
         assert line in body
@@ -258,8 +258,8 @@ def test_insufficient_brief_ends_in_a_report_with_no_roles_briefed(talk, home):
         ["/end"],
     )
     assert out.status == "insufficient" and out.gaps == gaps
-    assert not list((home.crew_dir("default") / "specs").glob("*.md"))
-    run_dir = record_insufficient_brief(home, "default", load_limits(home), out, "Something about teapots.")
+    assert not list((home.specs_dir).glob("*.md"))
+    run_dir = record_insufficient_brief(home, ["default"], load_limits(home), out, "Something about teapots.")
     meta = runs.read_run(run_dir)[0]
     assert meta["status"] == "insufficient_brief"
     actions = [json.loads(line)["action"] for line in (run_dir / "journal.jsonl").read_text().splitlines()]
@@ -313,7 +313,7 @@ def test_interview_spend_is_kept_apart_from_the_run(home, monkeypatch, capsys):
     assert "interview; spec saved at" in meta["source"]
     assert (run_dir / "interview.md").is_file()
     assert "Task interview (separate from the run's limits): 4,850 tokens" in (run_dir / "report.md").read_text()
-    assert (home.crew_dir("default") / "specs" / "teapot-survey.md").is_file()
+    assert (home.specs_dir / "teapot-survey.md").is_file()
 
 
 def test_ombro_run_with_an_insufficient_brief(home, monkeypatch):
@@ -379,7 +379,7 @@ def test_init_holds_the_setup_interview_and_offers_a_role(tmp_path):
     assert "invented bakery" in h.instructions.read_text()
     assert (h.roles_dir("default") / "fact-checker" / "soul.md").is_file()
     assert "sk-test-INVENTED-model" not in json.dumps([c["messages"] for c in client.calls])
-    assert len(list((h.crew_dir("default") / "interviews").glob("*-setup.md"))) == 1
+    assert len(list((h.interviews_dir).glob("*-setup.md"))) == 1
 
 
 # -- keeping each interview to its purpose, and showing progress -------------------
@@ -435,9 +435,7 @@ def test_standards_are_fixed_and_the_role_interview_chooses_tools_itself(talk, h
     assert prompts.STANDARDS in system and "never ask the user whether they want them" in system
     assert "do not ask the user\n  about files" in system
     # The same standards reach every role and every Lead in a run.
-    from ombro.roles import load_crew
-
-    lead, roles = load_crew(home, "default", load_limits(home))
+    lead, roles = load_lead(home, load_limits(home)), crew_roles(home, "default", load_limits(home))
     assert prompts.STANDARDS in prompts.role_system(roles["researcher"], [], [])
     assert prompts.STANDARDS in prompts.lead_system(lead, "", roles, load_limits(home))
 

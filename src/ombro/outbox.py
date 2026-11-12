@@ -166,7 +166,7 @@ def describe_counts(c: dict[str, int]) -> str:
 def waiting(home: Home, crew: str | None = None) -> list[Action]:
     """Every action waiting for a decision, oldest run first."""
     out = []
-    for _, run_dir in runs.all_runs(home, crew):
+    for run_dir in runs.all_runs(home, crew):
         if not outbox_dir(run_dir).is_dir():
             continue
         settle(run_dir)
@@ -183,9 +183,9 @@ def find(home: Home, ref: str) -> Action:
     if not m:
         raise OutboxError(f"{ref!r} is not an action reference; they look like ab12-3 (see `ombro outbox`)")
     frag, n = m.group("run"), int(m.group("n"))
-    matches = [d for _, d in runs.all_runs(home) if d.name == frag]
+    matches = [d for d in runs.all_runs(home) if d.name == frag]
     if not matches:
-        matches = [d for _, d in runs.all_runs(home) if d.name.endswith(frag) or d.name.startswith(frag)]
+        matches = [d for d in runs.all_runs(home) if d.name.endswith(frag) or d.name.startswith(frag)]
     if not matches:
         raise OutboxError(f"no run matches {frag!r}")
     found = [a for d in matches for a in actions(d) if a.number == n]

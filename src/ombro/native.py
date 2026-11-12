@@ -232,8 +232,8 @@ PATH_DOC = ("A path starting with workspace/ (deliverables) or scratch/ (working
 
 
 def _home_root(ctx: ToolContext) -> Path:
-    # A run folder is <home>/crews/<crew>/runs/<run_id>.
-    return ctx.run_dir.resolve().parents[3]
+    # A run folder is <home>/runs/<run_id>.
+    return ctx.run_dir.resolve().parents[1]
 
 
 def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:

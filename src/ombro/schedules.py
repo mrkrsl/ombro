@@ -52,7 +52,8 @@ scheduler, starts a run of the spec when the cron expression is due. Edit
 this file freely; the next tick reads it, and nothing needs reinstalling.
 
 - cron: five fields in local time: minute hour day-of-month month day-of-week.
-- spec: a saved spec in this crew's specs/ folder. Scheduled runs never interview.
+- spec: a saved spec in specs/. The spec names the crews the run uses.
+  Scheduled runs never interview.
 - enabled: true or false (`ombro schedule enable|disable <name>`).
 - limits: optional, the same keys as a spec's limits (allowance, max_tokens,
   max_rounds, run_timeout, tool_max_calls…). They are fixed when each run
@@ -70,7 +71,6 @@ missed while the machine was off or asleep. Safe to delete.
 
 @dataclass
 class Schedule:
-    crew: str
     name: str
     path: Path
     cron_text: str = ""
@@ -81,20 +81,21 @@ class Schedule:
     grace: float | None = None
     error: str | None = None
     mtime: float = 0.0
+    crews: list[str] = field(default_factory=list)  # from its spec: where missed slots are noted
 
     @property
     def rel(self) -> str:
-        return f"crews/{self.crew}/schedules/{self.path.name}"
+        return f"schedules/{self.path.name}"
 
     def spec_path(self, home: Home) -> Path:
-        return spec_ref_path(home, self.crew, self.spec)
+        return spec_ref_path(home, self.spec)
 
     def grace_for(self, limits: Limits) -> float:
         return self.grace if self.grace is not None else limits.schedule_grace
 
 
-def spec_ref_path(home: Home, crew: str, ref: Any) -> Path:
-    """`specs/name.md` or `name`: a spec saved in the crew's specs/ folder, nothing else."""
+def spec_ref_path(home: Home, ref: Any) -> Path:
+    """`specs/name.md` or `name`: a spec saved in specs/, nothing else."""
     text = str(ref or "").strip()
     if not text:
         raise SetupError("no spec is named (spec: specs/<name>.md)")
@@ -102,15 +103,15 @@ def spec_ref_path(home: Home, crew: str, ref: Any) -> Path:
     if not name.endswith(".md"):
         name += ".md"
     if "/" in name or "\\" in name or name.startswith("."):
-        raise SetupError(f"spec {text!r} must be a saved spec in the crew's specs/ folder, e.g. specs/my-task.md")
-    return home.crew_dir(crew) / "specs" / name
+        raise SetupError(f"spec {text!r} must be a saved spec in specs/, e.g. specs/my-task.md")
+    return home.specs_dir / name
 
 
-def load_schedule(home: Home, crew: str, path: Path) -> Schedule:
+def load_schedule(home: Home, path: Path) -> Schedule:
     """Never raises: a problem is recorded in `error`, so a broken file is shown, not hidden."""
     from ombro.roles import NAME
 
-    s = Schedule(crew=crew, name=path.stem, path=path)
+    s = Schedule(name=path.stem, path=path)
     try:
         s.mtime = path.stat().st_mtime
         meta, _ = mdfile.read(path)
@@ -133,8 +134,10 @@ def load_schedule(home: Home, crew: str, path: Path) -> Schedule:
         problems.append(f"cron: {e}")
     s.spec = str(meta.get("spec") or "")
     try:
-        spec_ref_path(home, crew, s.spec)
-    except SetupError as e:
+        spec_path = spec_ref_path(home, s.spec)
+        spec_meta = mdfile.read(spec_path)[0] if spec_path.is_file() else {}
+        s.crews = runs.spec_crews(home, spec_meta)
+    except (SetupError, mdfile.FrontMatterError, OSError) as e:
         problems.append(str(e))
     enabled = meta.get("enabled")
     if not isinstance(enabled, bool):
@@ -160,25 +163,24 @@ def load_schedule(home: Home, crew: str, path: Path) -> Schedule:
 
 
 def all_schedules(home: Home, crew: str | None = None) -> list[Schedule]:
+    """Every schedule; with a crew, those whose spec names it."""
+    folder = home.schedules_dir
+    if not folder.is_dir():
+        return []
     out = []
-    for c in [crew] if crew else home.crews():
-        folder = home.schedules_dir(c)
-        if not folder.is_dir():
+    for path in sorted(folder.glob("*.md")):
+        if path.name.startswith(".") or path.name.endswith(".previous.md"):
             continue
-        for path in sorted(folder.glob("*.md")):
-            if path.name.startswith(".") or path.name.endswith(".previous.md"):
-                continue
-            out.append(load_schedule(home, c, path))
+        s = load_schedule(home, path)
+        if crew is None or crew in s.crews:
+            out.append(s)
     return out
 
 
 def find_schedule(home: Home, name: str, crew: str | None = None) -> Schedule:
-    matches = [s for s in all_schedules(home, crew) if s.name == name]
+    matches = [s for s in all_schedules(home) if s.name == name]
     if not matches:
-        raise SetupError(f"no schedule named {name!r}" + (f" in crew {crew}" if crew else ""))
-    if len(matches) > 1:
-        crews = ", ".join(s.crew for s in matches)
-        raise SetupError(f"schedules named {name!r} exist in several crews ({crews}); give --crew")
+        raise SetupError(f"no schedule named {name!r}")
     return matches[0]
 
 
@@ -204,7 +206,7 @@ def prepare(home: Home, s: Schedule) -> Prepared:
         raise SetupError(f"the schedule file has a problem: {s.error}")
     path = s.spec_path(home)
     if not path.is_file():
-        raise SetupError(f"its spec {s.spec} does not exist in crew {s.crew}")
+        raise SetupError(f"its spec {s.spec} does not exist")
     meta, body = mdfile.read(path)
     if not body.strip():
         raise SetupError(f"its spec {s.spec} is empty")
@@ -215,6 +217,7 @@ def prepare(home: Home, s: Schedule) -> Prepared:
     from ombro import outward
 
     outward.resolve(home, meta)  # raises SetupError if the spec's outward setting is wrong
+    runs.spec_crews(home, meta)  # and if it names a crew that does not exist
     lim = load_limits(home, over, tools, s.limits)
     if lim.max_tokens is None:
         raise SetupError(
@@ -317,16 +320,16 @@ def write_log(home: Home, lines: list[str], now: float) -> None:
 # Scheduled runs
 
 
-def scheduled_runs(home: Home) -> dict[tuple[str, str], list[tuple[Path, dict]]]:
-    """(crew, schedule) -> its runs, oldest first."""
-    out: dict[tuple[str, str], list[tuple[Path, dict]]] = {}
-    for crew, run_dir in runs.all_runs(home):
+def scheduled_runs(home: Home) -> dict[str, list[tuple[Path, dict]]]:
+    """schedule -> its runs, oldest first."""
+    out: dict[str, list[tuple[Path, dict]]] = {}
+    for run_dir in runs.all_runs(home):
         try:
             meta, _ = runs.read_run(run_dir)
         except (OSError, mdfile.FrontMatterError):
             continue
         if meta.get("schedule"):
-            out.setdefault((crew, str(meta["schedule"])), []).append((run_dir, meta))
+            out.setdefault(str(meta["schedule"]), []).append((run_dir, meta))
     return out
 
 
@@ -348,7 +351,7 @@ def record_failed_start(home: Home, s: Schedule, slot: str, reason: str, limits:
     except (OSError, mdfile.FrontMatterError, SetupError):
         pass
     run_dir = runs.create_run(
-        home, s.crew, {}, spec_text, limits, source=_source(s, slot, note), tools={},
+        home, s.crews or runs.spec_crews(home, {}), {}, spec_text, limits, source=_source(s, slot, note), tools={},
         extra={"schedule": s.name, "due": slot},
     )
     runs.update_run(run_dir, started_at=utc_now())
@@ -433,14 +436,15 @@ def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: 
         # Slots after the last tick, plus any the last tick left waiting; the rest it already decided.
         slots = [(name, fire) for name, fire in
                  ((cronmod.slot_name(w), fire) for w, fire in cronmod.slots_between(s.cron, start, now, tz))
-                 if fire >= s.mtime and (last is None or fire > last or f"{s.crew}/{s.name}@{name}" in state.pending)]
+                 if fire >= s.mtime and (last is None or fire > last or f"{s.name}@{name}" in state.pending)]
         if not slots:
             continue
-        if s.crew not in noted_by_crew:
-            noted_by_crew[s.crew] = memory.noted_slots(home, s.crew)
-        own = by_schedule.get((s.crew, s.name), [])
+        for c in s.crews:
+            if c not in noted_by_crew:
+                noted_by_crew[c] = memory.noted_slots(home, c)
+        own = by_schedule.get(s.name, [])
         ran = {str(m.get("due")) for _, m in own}
-        ranges = [(a, b) for n, a, b in noted_by_crew[s.crew] if n == s.name]
+        ranges = [(a, b) for c in s.crews for n, a, b in noted_by_crew[c] if n == s.name]
         todo = [(slot, fire) for slot, fire in slots
                 if slot not in ran and not any(a <= slot <= b for a, b in ranges)]
         if not todo:
@@ -453,14 +457,14 @@ def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: 
         skipped: list[tuple[str, str]] = []  # (slot, reason) noted as skipped
         missed: list[str] = []
         for slot, fire in stale:
-            why = state.pending.get(f"{s.crew}/{s.name}@{slot}")
+            why = state.pending.get(f"{s.name}@{slot}")
             if why:
                 skipped.append((slot, f"not started within the grace period: {why}"))
             else:
                 missed.append(slot)
         if fresh:
             slot, fire = fresh[-1]
-            key = f"{s.crew}/{s.name}@{slot}"
+            key = f"{s.name}@{slot}"
             previous = next((rd for rd, m in reversed(own) if m.get("status") == "running"), None)
             if previous is not None:
                 reason = f"the previous run {previous.name} was still running"
@@ -472,9 +476,9 @@ def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: 
                 reason = None
             if reason:
                 for sl, _ in fresh:
-                    pending[f"{s.crew}/{s.name}@{sl}"] = reason
+                    pending[f"{s.name}@{sl}"] = reason
                 res.waiting.append(key)
-                res.lines.append(f"{s.crew}/{s.name} due {_fmt_slot(slot)} is waiting: {reason}")
+                res.lines.append(f"{s.name} due {_fmt_slot(slot)} is waiting: {reason}")
             else:
                 note = ""
                 if cronmod.slot_name(cronmod.to_local(fire, tz)) != slot:
@@ -509,17 +513,20 @@ def _note(home: Home, s: Schedule, slots: list[str], status: str, why: str, base
           res: TickResult) -> None:
     what = _fmt_slot(slots[0]) if len(slots) == 1 else f"{len(slots)} slots from {_fmt_slot(slots[0])} to {_fmt_slot(slots[-1])}"
     if dry_run:
-        res.lines.append(f"{s.crew}/{s.name}: would note {what} as {status}: {why}")
+        res.lines.append(f"{s.name}: would note {what} as {status}: {why}")
         res.noted.append(slots[0])
         return
-    if memory.add_schedule_entry(home, s.crew, s.name, slots, status, why, base.memory_index_entry_chars):
+    added = False
+    for c in s.crews:
+        added = memory.add_schedule_entry(home, c, s.name, slots, status, why, base.memory_index_entry_chars) or added
+    if added:
         res.noted.append(slots[0])
-        res.lines.append(f"{s.crew}/{s.name}: {what} {status}: {why}; noted in index.md")
+        res.lines.append(f"{s.name}: {what} {status}: {why}; noted in index.md")
 
 
 def _start(home: Home, s: Schedule, slot: str, base: Limits, starter: Starter, dry_run: bool, res: TickResult,
            note: str) -> None:
-    label = f"{s.crew}/{s.name} due {_fmt_slot(slot)}"
+    label = f"{s.name} due {_fmt_slot(slot)}"
     try:
         p = prepare(home, s)
         problem = _model_problem(home)
@@ -540,7 +547,7 @@ def _start(home: Home, s: Schedule, slot: str, base: Limits, starter: Starter, d
         res.started.append(Path("."))
         return
     run_dir = runs.create_run(
-        home, s.crew, p.spec_meta, p.spec_body, p.limits, source=_source(s, slot, note),
+        home, runs.spec_crews(home, p.spec_meta), p.spec_meta, p.spec_body, p.limits, source=_source(s, slot, note),
         tools=p.tools.to_dict(), extra={"schedule": s.name, "due": slot},
     )
     try:
@@ -559,14 +566,14 @@ def _start(home: Home, s: Schedule, slot: str, base: Limits, starter: Starter, d
 # Writing schedule files (for `ombro schedule add|enable|disable`)
 
 
-def write_schedule(home: Home, crew: str, name: str, cron_text: str, spec_name: str, enabled: bool,
+def write_schedule(home: Home, name: str, cron_text: str, spec_name: str, enabled: bool,
                    limits: dict | None = None, grace: str | None = None) -> Path:
     meta: dict[str, Any] = {"name": name, "cron": cron_text, "spec": f"specs/{spec_name}.md", "enabled": enabled}
     if limits:
         meta["limits"] = limits
     if grace:
         meta["grace"] = grace
-    path = home.schedules_dir(crew) / f"{name}.md"
+    path = home.schedules_dir / f"{name}.md"
     mdfile.write(path, meta, SCHEDULE_BODY)
     return path
 

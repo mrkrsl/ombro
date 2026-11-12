@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from ombro import mdfile
@@ -31,6 +31,7 @@ class Role:
     max_steps: int
     tools: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
+    crew: str = ""  # empty for the Lead
 
 
 def _str_list(value, label: str, where: Path) -> list[str]:
@@ -84,28 +85,61 @@ def load_role(folder: Path, limits: Limits) -> Role:
     )
 
 
-def load_crew(home: Home, crew: str, limits: Limits) -> tuple[Role, dict[str, Role]]:
-    """Return (lead, other roles by name)."""
+def load_lead(home: Home, limits: Limits) -> Role:
+    """The one Lead, in lead/ at the top of the home."""
+    if not home.lead_dir.is_dir():
+        raise RoleError(f"{home.lead_dir} is missing: there is no Lead")
+    lead = load_role(home.lead_dir, limits)
+    if lead.kind != "lead":
+        raise RoleError(f"{home.lead_dir / 'config.md'}: the Lead must have kind: lead")
+    return lead
+
+
+def crew_roles(home: Home, crew: str, limits: Limits) -> dict[str, Role]:
+    """One crew's roles by their own name. A crew has no Lead of its own."""
     rdir = home.roles_dir(crew)
     if not home.crew_dir(crew).is_dir():
         raise RoleError(f"no crew named {crew!r} in {home.crews_dir}")
     if not rdir.is_dir():
         raise RoleError(f"{rdir} is missing")
-    lead: Role | None = None
     roles: dict[str, Role] = {}
     for folder in sorted(p for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")):
         role = load_role(folder, limits)
         if role.kind == "lead":
-            if folder.name != "lead":
-                raise RoleError(f"{folder}: only the role in roles/lead can be the Lead")
-            lead = role
-        else:
-            if folder.name == "lead":
-                raise RoleError(f"{folder}: the role in roles/lead must have kind: lead")
-            roles[role.name] = role
-    if lead is None:
-        raise RoleError(f"crew {crew!r} has no Lead (roles/lead with kind: lead)")
-    return lead, roles
+            raise RoleError(f"{folder}: a crew has no Lead of its own; the one Lead is in {home.lead_dir}")
+        roles[role.name] = replace(role, crew=crew)
+    return roles
+
+
+def load_roles(home: Home, crews: list[str], limits: Limits) -> dict[str, Role]:
+    """The roles of the given crews. With more than one crew each is named crew/role, so
+    two crews can each have a role of the same name; with one, by its own name."""
+    out: dict[str, Role] = {}
+    for crew in crews:
+        for name, role in crew_roles(home, crew, limits).items():
+            full = f"{crew}/{name}" if len(crews) > 1 else name
+            out[full] = replace(role, name=full)
+    return out
+
+
+def resolve_role(roles: dict[str, Role], name: str) -> tuple[Role | None, str]:
+    """A role by the name it has in the run, by crew/role, or by its own name where only
+    one crew has it. Returns (role, "") or (None, why not)."""
+    name = name.strip()
+    if name in roles:
+        return roles[name], ""
+    if "/" in name:
+        crew, _, own = name.partition("/")
+        matches = [r for r in roles.values() if r.crew == crew and r.path.name == own]
+    else:
+        matches = [r for r in roles.values() if r.path.name == name]
+    if len(matches) == 1:
+        return matches[0], ""
+    known = ", ".join(roles) or "none"
+    if matches:
+        return None, f"more than one crew has a role named {name!r}; name it as crew/role: " + \
+            ", ".join(r.name for r in matches)
+    return None, f"there is no role named {name!r}. Roles you can brief: {known}"
 
 
 def skill_texts(home: Home, skills: list[str]) -> tuple[list[tuple[str, str]], list[str]]:

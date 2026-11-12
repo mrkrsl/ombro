@@ -242,12 +242,17 @@ def _append_index_line(home: Home, crew: str, key: str, line: str) -> bool:
 
 
 def add_index_entry(home: Home, run_dir: Path) -> bool:
-    """One entry per run, written by the harness. Returns False if it was already there."""
+    """One entry per run in each crew it named, written by the harness.
+    Returns False if every one was already there."""
     meta, _ = runs.read_run(run_dir)
-    crew = meta.get("crew") or Path(run_dir).parent.parent.name
     run_id = meta.get("run_id", Path(run_dir).name)
     limit = (meta.get("limits") or {}).get("memory_index_entry_chars") or 200
-    return _append_index_line(home, crew, run_id, index_entry(home, run_dir, int(limit)))
+    line = index_entry(home, run_dir, int(limit))
+    added = False
+    for crew in runs.run_crews(meta):
+        if crew in home.crews():
+            added = _append_index_line(home, crew, run_id, line) or added
+    return added
 
 
 SLOT = r"\d{4}-\d\d-\d\dT\d\d:\d\d"
@@ -270,7 +275,7 @@ def add_schedule_entry(
         what = f"{len(slots)} slots not run: {reason}"
     what = " ".join(what.split())
     key = schedule_key(name, first, last)
-    path = f"crews/{crew}/schedules/{name}.md"
+    path = f"schedules/{name}.md"
     fixed = f"- {first[:10]} · {key} · {status} ·  · {path}"
     room = max(20, max_chars - len(fixed))
     if len(what) > room:
@@ -311,17 +316,29 @@ def recent_index(home: Home, crew: str, n: int, max_chars: int) -> list[str]:
     return out
 
 
-def lead_context(home: Home, crew: str, limits: Limits) -> tuple[str, str]:
-    """What a run's Lead is given from memory: (notes text, index text). Nothing else."""
+def lead_context(home: Home, crews: list[str], limits: Limits) -> tuple[str, str]:
+    """What a run's Lead is given from memory: (notes text, index text). Nothing else.
+    Each crew's notes, and the most recent index entries across the crews in all."""
     cap = limits.memory_notes_max_chars
-    notes = read_notes(home, crew)
-    text = notes.render().strip()
-    if not notes.your_entries() and not notes.run_lines():
-        text = "(empty: no lessons yet)"
-    elif len(text) > cap:
-        text = text[: cap - 60].rstrip() + f"\n…(cut at the cap of {cap:,} characters)"
-    entries = recent_index(home, crew, limits.memory_index_entries, limits.memory_index_entry_chars)
-    return text, ("\n".join(entries) if entries else "(no earlier runs in this crew)")
+    parts = []
+    for crew in crews:
+        notes = read_notes(home, crew)
+        text = notes.render().strip()
+        if not notes.your_entries() and not notes.run_lines():
+            text = "(empty: no lessons yet)"
+        elif len(text) > cap:
+            text = text[: cap - 60].rstrip() + f"\n…(cut at the cap of {cap:,} characters)"
+        parts.append(f"### Crew {crew}\n\n{text}" if len(crews) > 1 else text)
+    n = limits.memory_index_entries
+    lines: list[str] = []
+    for crew in crews:
+        for ln in recent_index(home, crew, n, limits.memory_index_entry_chars):
+            if ln not in lines:
+                lines.append(ln)
+    # Entries start with the date and then the run ID (date and time), so they sort by age.
+    lines = sorted(lines, reverse=True)[:n] if n else []
+    which = "these crews" if len(crews) > 1 else "this crew"
+    return "\n\n".join(parts), ("\n".join(lines) if lines else f"(no earlier runs in {which})")
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +403,7 @@ def _chunks(text: str, size: int = PASSAGE_CHARS) -> list[str]:
 
 
 def report_passages(home: Home, crew: str, run_dir: Path) -> list[Passage]:
+    """`crew` names the run's crews for the passage, e.g. "marketing, ops"."""
     report = Path(run_dir) / "report.md"
     if not report.is_file():
         return []
@@ -430,15 +448,21 @@ def search(
         return {"query": query, "results": [], "note": "the query has no searchable words"}
     passages: list[Passage] = []
     reports = 0
-    for crew in crews:
-        for _, run_dir in runs.all_runs(home, crew):
-            if exclude is not None and run_dir.resolve() == Path(exclude).resolve():
-                continue
-            if run_id and not run_dir.name.startswith(run_id):
-                continue
-            found = report_passages(home, crew, run_dir)
-            reports += bool(found)
-            passages += found
+    wanted = set(crews)
+    for run_dir in runs.all_runs(home):
+        if exclude is not None and run_dir.resolve() == Path(exclude).resolve():
+            continue
+        if run_id and not run_dir.name.startswith(run_id):
+            continue
+        try:
+            used = runs.run_crews(runs.read_run(run_dir)[0])
+        except (OSError, mdfile.FrontMatterError):
+            continue
+        if not wanted & set(used):
+            continue
+        found = report_passages(home, ", ".join(used), run_dir)
+        reports += bool(found)
+        passages += found
     if not passages:
         return {"query": query, "results": [], "reports_searched": 0, "note": "there are no past reports to search"}
 
@@ -492,26 +516,28 @@ class ReadRefused(ValueError):
     pass
 
 
+READABLE_TOP = ("crews", "specs", "runs")
+
+
 def _allowed(parts: list[str]) -> bool:
-    # parts are relative to the home root, e.g. crews/default/runs/<id>/report.md
+    # parts are relative to the home root, e.g. runs/<id>/report.md
+    if len(parts) == 2 and parts[0] == "specs" and parts[1].endswith(".md"):
+        return True
+    if len(parts) >= 3 and parts[0] == "runs":
+        if len(parts) == 3 and parts[2] in ("report.md", "spec.md"):
+            return True
+        if parts[2] == "workspace" and len(parts) >= 4:
+            return True
+        return False
     if len(parts) < 3 or parts[0] != "crews":
         return False
     rest = parts[2:]
-    if rest == ["crew.md"] or rest in (["memory", "notes.md"], ["memory", "index.md"]):
-        return True
-    if len(rest) == 2 and rest[0] == "specs" and rest[1].endswith(".md"):
-        return True
-    if len(rest) >= 3 and rest[0] == "runs":
-        if len(rest) == 3 and rest[2] in ("report.md", "spec.md"):
-            return True
-        if rest[2] == "workspace" and len(rest) >= 4:
-            return True
-    return False
+    return rest == ["crew.md"] or rest in (["memory", "notes.md"], ["memory", "index.md"])
 
 
 def resolve_readable(home: Home, path: Any) -> Path:
     if not isinstance(path, str) or not path.strip():
-        raise ReadRefused("give a path such as crews/default/runs/<run_id>/report.md")
+        raise ReadRefused("give a path such as runs/<run_id>/report.md")
     p = path.strip().replace("\\", "/")
     if p.startswith(str(home.root)):
         p = p[len(str(home.root)) :]
@@ -520,13 +546,13 @@ def resolve_readable(home: Home, path: Any) -> Path:
         raise ReadRefused("paths cannot contain `..`")
     if not _allowed(parts):
         raise ReadRefused(
-            "only reports, specs, notes, indexes and workspace files in crews/ can be read "
-            "(for example crews/default/runs/<run_id>/report.md); chat transcripts, journals, keys and "
-            "settings cannot"
+            "only reports, specs, notes, indexes and workspace files can be read "
+            "(for example runs/<run_id>/report.md, specs/<name>.md or crews/<crew>/memory/notes.md); chat "
+            "transcripts, journals, keys and settings cannot"
         )
     target = home.root.joinpath(*parts)
     real = target.resolve()
-    if not real.is_relative_to(home.crews_dir.resolve()) or not _allowed(
+    if not any(real.is_relative_to((home.root / top).resolve()) for top in READABLE_TOP) or not _allowed(
         list(real.relative_to(home.root).parts) if real.is_relative_to(home.root) else []
     ):
         raise ReadRefused(f"{path} leads outside what chat may read (through a symlink), so it is refused")
@@ -557,7 +583,7 @@ LIST_MAX_FILES = 100
 def listing(home: Home, crew: str | None = None, run_id: str | None = None) -> dict[str, Any]:
     """Crews, a crew's runs and specs, or one run's files: what chat can then read."""
     from ombro.roles import RoleError, load_role
-    from ombro.settings import load_limits
+    from ombro.settings import SetupError, load_limits
 
     if run_id:
         try:
@@ -570,7 +596,7 @@ def listing(home: Home, crew: str | None = None, run_id: str | None = None) -> d
             if ws.is_dir() and not ws.is_symlink() else []
         return {
             "run_id": run_dir.name,
-            "crew": meta.get("crew"),
+            "crews": runs.run_crews(meta),
             "status": meta.get("status"),
             "brief": meta.get("brief"),
             "finished_at": meta.get("finished_at"),
@@ -582,12 +608,20 @@ def listing(home: Home, crew: str | None = None, run_id: str | None = None) -> d
         if crew not in home.crews():
             raise ReadRefused(f"no crew named {crew!r}; crews: {', '.join(home.crews())}")
         rows = []
-        for _, run_dir in reversed(runs.all_runs(home, crew)):
+        for run_dir in reversed(runs.all_runs(home, crew)):
             meta, _ = runs.read_run(run_dir)
             rows.append({"run_id": run_dir.name, "status": meta.get("status"), "brief": meta.get("brief"),
                          "date": str(meta.get("finished_at") or meta.get("created_at") or "")[:10]})
-        specs = sorted(f.stem for f in (home.crew_dir(crew) / "specs").glob("*.md")
-                       if not f.name.endswith(".previous.md"))
+        specs = []
+        for f in sorted(home.specs_dir.glob("*.md")):
+            if f.name.endswith(".previous.md"):
+                continue
+            try:
+                named = runs.spec_crews(home, mdfile.read(f)[0])
+            except (OSError, mdfile.FrontMatterError, SetupError):
+                continue
+            if crew in named:
+                specs.append(f.stem)
         return {
             "crew": crew,
             "runs_newest_first": rows[:LIST_MAX_RUNS],
@@ -602,7 +636,7 @@ def listing(home: Home, crew: str | None = None, run_id: str | None = None) -> d
         meta = mdfile.read(home.crew_dir(c) / "crew.md")[0] if (home.crew_dir(c) / "crew.md").is_file() else {}
         roles = []
         rdir = home.roles_dir(c)
-        for folder in sorted(p for p in rdir.iterdir() if p.is_dir() and p.name != "lead") if rdir.is_dir() else []:
+        for folder in sorted(p for p in rdir.iterdir() if p.is_dir()) if rdir.is_dir() else []:
             try:
                 r = load_role(folder, limits)
                 roles.append(f"{r.name}: {r.description}")

@@ -37,7 +37,7 @@ def test_every_run_gets_one_index_entry(run, home):
     meta = run.meta
     assert line.startswith(f"- {meta['finished_at'][:10]} · {meta['run_id']} · completed · ")
     assert "Survey of invented teapot makers" in line
-    assert line.endswith(f"crews/default/runs/{meta['run_id']}/report.md")
+    assert line.endswith(f"runs/{meta['run_id']}/report.md")
     # Written by the harness once, however often it is asked.
     assert memory.add_index_entry(home, run.run_dir) is False
     assert len(index_lines(home)) == 1
@@ -62,7 +62,7 @@ def test_a_reaped_dead_run_is_indexed(home):
     from ombro.settings import load_tool_settings
 
     tools = load_tool_settings(home)
-    run_dir = runs.create_run(home, "default", {}, SPEC, load_limits(home, None, tools), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, SPEC, load_limits(home, None, tools), source="test")
     runs.update_run(run_dir, pid=999_999_9, status="running")
     assert runs.reap_dead_runs(home) == [run_dir]
     (line,) = index_lines(home)
@@ -73,7 +73,7 @@ def test_an_insufficient_brief_is_indexed_with_its_task(home):
     from ombro.interview import Outcome
 
     outcome = Outcome("insufficient", gaps=["No one said what done looks like."])
-    run_dir = record_insufficient_brief(home, "default", load_limits(home), outcome, "Something about teapots.")
+    run_dir = record_insufficient_brief(home, ["default"], load_limits(home), outcome, "Something about teapots.")
     (line,) = index_lines(home)
     assert f" · {run_dir.name} · insufficient_brief · Something about teapots. · " in line
 

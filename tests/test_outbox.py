@@ -163,7 +163,7 @@ def test_a_refused_read_only_tool_is_refused_even_if_offered(home, tmp_path):
     from ombro.tools import ToolRegistry
 
     tools_cfg = {"tools": {"mcp.inv.lookup": {"permission": "refuse"}}, "servers": {"inv": {"command": "x"}}}
-    run_dir = runs.create_run(home, "default", {}, "# Invented", load_limits(home), source="test", tools=tools_cfg)
+    run_dir = runs.create_run(home, ["default"], {}, "# Invented", load_limits(home), source="test", tools=tools_cfg)
     called = []
     t = outward.make_tool("inv", "lookup", "invented", {"type": "object", "properties": {}}, "read-only",
                           lambda r, a, timeout: called.append(r) or {"content": []})
@@ -243,8 +243,8 @@ def test_a_scheduled_run_stages_too(home, record):
     from ombro import keys
 
     keys.set_key(home, "TEST_MODEL_KEY", "invented-test-key")
-    mdfile.write(home.crew_dir("default") / "specs" / "news.md", {"outward": "manual"}, SPEC)
-    path = schedules.write_schedule(home, "default", "morning", "* * * * *", "news", True)
+    mdfile.write(home.specs_dir / "news.md", {"outward": "manual"}, SPEC)
+    path = schedules.write_schedule(home, "morning", "* * * * *", "news", True)
     os.utime(path, (0, 0))
     client = ScriptedClient(script(post()))
 

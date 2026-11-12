@@ -1,5 +1,6 @@
 ---
 name: post-update
+crews: [default]
 outward: balanced
 limits:
   max_rounds: 3

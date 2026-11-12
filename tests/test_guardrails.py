@@ -407,7 +407,7 @@ def test_setup_error_in_a_role_is_reported_by_the_lead(run, home):
 def test_setup_error_in_the_lead_still_writes_a_report(run, home):
     from ombro import mdfile
 
-    mdfile.write(home.roles_dir("default") / "lead" / "config.md", {"name": "lead", "kind": "lead", "model": "nope"})
+    mdfile.write(home.lead_dir / "config.md", {"name": "lead", "kind": "lead", "model": "nope"})
     status = run([LEAD_REPORT])
     assert status == "failed"
     assert_reported(run, "failed", by_lead=False)

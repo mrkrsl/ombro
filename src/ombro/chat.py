@@ -30,7 +30,7 @@ from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home
 from ombro.interview import read_answer
 from ombro.journal import utc_now
-from ombro.roles import load_role
+from ombro.roles import load_lead
 from ombro.settings import ModelSpec, SetupError, format_tokens, load_limits, load_models, load_preferences, load_tool_settings
 from ombro.tools import ToolContext, ToolError, ToolRegistry
 
@@ -53,6 +53,11 @@ notes, specs and deliverables, and search the web, but it changes nothing.
   /quit                     end the chat (it is saved in chats/)
 
 For several lines, start and end with \"\"\"."""
+
+
+def rest_named(text: str) -> bool:
+    """Whether a /brief or /remember line names a crew with @crew."""
+    return text.partition(" ")[2].strip().startswith("@")
 
 
 def _short(text: str, n: int = 120) -> str:
@@ -108,7 +113,7 @@ class Chat:
         self.base_limits = load_limits(home)
         self.limits = self.base_limits.for_chat()
         self.models = load_models(home)
-        self.lead = load_role(home.roles_dir(self.crew) / "lead", self.base_limits)
+        self.lead = load_lead(home, self.base_limits)
         self.spec = self.models.get(self.lead.model) or self.models["default"]
         self._client_factory = client_factory or (lambda spec: make_client(spec, home))
         self._client: ChatClient | None = None
@@ -173,15 +178,17 @@ class Chat:
             if (self.home.crew_dir(c) / "crew.md").is_file():
                 meta = mdfile.read(self.home.crew_dir(c) / "crew.md")[0]
             rdir = self.home.roles_dir(c)
-            roles = sorted(p.name for p in rdir.iterdir() if p.is_dir() and p.name != "lead") if rdir.is_dir() else []
+            roles = sorted(p.name for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")) \
+                if rdir.is_dir() else []
             all_runs = runs.all_runs(self.home, c)
-            latest = all_runs[-1][1].name[:8] if all_runs else ""
+            latest = all_runs[-1].name[:8] if all_runs else ""
             when = f", latest {latest[:4]}-{latest[4:6]}-{latest[6:8]}" if latest else ""
             mark = " (the default crew)" if c == self.crew else ""
             lines.append(f"- {c}{mark}: {meta.get('description', '')} Roles: {', '.join(roles) or 'none'}. "
                          f"Runs: {len(all_runs)}{when}.")
-        lines.append("\nFiles are under the home directory: crews/<crew>/runs/<run_id>/report.md, spec.md and "
-                     "workspace/; crews/<crew>/memory/notes.md and index.md; crews/<crew>/specs/<name>.md.")
+        lines.append("\nFiles are under the home directory: runs/<run_id>/report.md, spec.md and workspace/ "
+                     "(a run may have used several crews); specs/<name>.md; crews/<crew>/memory/notes.md and "
+                     "index.md.")
         return "\n".join(lines)
 
     def _limits_line(self) -> str:
@@ -272,7 +279,7 @@ class Chat:
         elif word == "/brief":
             crew, rest = self._crew_arg(rest)
             if crew:
-                self._brief(crew, self.brief_opening(rest, None))
+                self._brief([crew] if rest_named(text) else [], self.brief_opening(rest, None))
         elif word == "/remember":
             crew, rest = self._crew_arg(rest)
             if crew:
@@ -297,8 +304,8 @@ class Chat:
             return None, remainder
         return name, remainder.strip()
 
-    def _turn(self, text: str) -> tuple[str, str] | None:
-        """One message to the Lead and its answer. Returns (crew, summary) if the
+    def _turn(self, text: str) -> tuple[list[str], str] | None:
+        """One message to the Lead and its answer. Returns (crews, summary) if the
         user accepted an offer to brief."""
         self.gate._seen.clear()  # loop detection counts repeats within one message
         self.exchanges.append([{"role": "user", "content": self.pending_note + text}])
@@ -330,7 +337,7 @@ class Chat:
 
     # -- tools -------------------------------------------------------------
 
-    def _tool(self, tc) -> tuple[dict, tuple[str, str] | None]:
+    def _tool(self, tc) -> tuple[dict, tuple[list[str], str] | None]:
         name = tc.name
         internal = MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name)
         if name not in OFFERS and (internal is None or (name in WEB_TOOLS and self.registry.get(internal) is None)):
@@ -384,16 +391,17 @@ class Chat:
         except Exception as e:
             return {"error": f"{type(e).__name__}: {e}"}, None
 
-    def _offer_brief(self, args: dict) -> tuple[dict, tuple[str, str] | None]:
+    def _offer_brief(self, args: dict) -> tuple[dict, tuple[list[str], str] | None]:
         summary = _short(args.get("summary") or "", 300)
-        crew = str(args.get("crew") or self.crew)
-        if crew not in self.home.crews():
-            crew = self.crew
-        self.say(f"\nThe Lead offers to brief this as a task for crew {crew}: {summary}")
+        raw = args.get("crews") or args.get("crew") or []
+        crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
+                 if str(c) in self.home.crews()]
+        which = f" for crew{'s' if len(crews) > 1 else ''} {', '.join(crews)}" if crews else ""
+        self.say(f"\nThe Lead offers to brief this as a task{which}: {summary}")
         answer = self._input("[Chat] Start a brief now? [y/N] ").lower()
         if answer in ("y", "yes"):
             self.transcript.note(f"The Lead offered a brief ({summary}); you accepted.")
-            return {"status": "the user accepted; the task interview starts now, so do not reply"}, (crew, summary)
+            return {"status": "the user accepted; the task interview starts now, so do not reply"}, (crews, summary)
         self.transcript.note(f"The Lead offered a brief ({summary}); you declined.")
         return {"status": "the user declined; carry on the conversation and do not offer again for this"}, None
 
@@ -497,12 +505,13 @@ class Chat:
             parts.append(f"The Lead's one-line summary in the chat, which the user accepted: {summary}")
         return "\n\n".join(parts)
 
-    def _brief(self, crew: str, opening: str) -> None:
+    def _brief(self, crews: list[str], opening: str) -> None:
         from ombro.interviews import BriefPurpose, start
 
         self.mode = "Brief"
-        self.say(f"\n── Brief mode: a task interview for crew {crew}. /chat goes back to Chat with nothing written. ──")
-        self.transcript.note(f"Switched to Brief mode (crew {crew}).")
+        which = f" (starting from crew{'s' if len(crews) > 1 else ''} {', '.join(crews)})" if crews else ""
+        self.say(f"\n── Brief mode: a task interview{which}. /chat goes back to Chat with nothing written. ──")
+        self.transcript.note(f"Switched to Brief mode{which}.")
 
         def ask(prompt: str) -> str:
             raw = self.ask(f"[Brief] {prompt}")
@@ -512,7 +521,8 @@ class Chat:
 
         try:
             outcome = start(
-                self.home, BriefPurpose(self.home, crew, self.base_limits, opening), crew, self.base_limits,
+                self.home, BriefPurpose(self.home, self.crew, self.base_limits, opening, crews=crews), self.crew,
+                self.base_limits,
                 ask=ask, say=self.say, edit=self.edit, client_factory=self._client_factory, today=self.today_date,
             )
         except (SetupError, ModelError) as e:
@@ -521,13 +531,11 @@ class Chat:
         self.mode = "Chat"
         if outcome is not None and outcome.confirmed:
             name = outcome.proposal.data["name"]
-            self.specs.append(f"{crew}/{name}")
-            flag = f" --crew {crew}" if crew != load_preferences(self.home).default_crew else ""
-            self.say(f"\nSpec saved as {name!r}. Run it with:  ombro run --spec {name}{flag}")
-            self.transcript.note(f"Brief mode ended: spec {name!r} saved in crew {crew} "
-                                 f"(transcript {outcome.transcript}).")
-            self.pending_note += (f"[Ombro note: in Brief mode the user confirmed a spec, saved as {name!r} in crew "
-                                  f"{crew}. It has not been run.]\n")
+            self.specs.append(name)
+            self.say(f"\nSpec saved as {name!r}. Run it with:  ombro run --spec {name}")
+            self.transcript.note(f"Brief mode ended: spec {name!r} saved (transcript {outcome.transcript}).")
+            self.pending_note += (f"[Ombro note: in Brief mode the user confirmed a spec, saved as {name!r}. "
+                                  "It has not been run.]\n")
         else:
             detail = outcome.status if outcome is not None else "could not start"
             self.transcript.note(f"Brief mode ended without a spec ({detail}).")

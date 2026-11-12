@@ -1,5 +1,6 @@
 ---
 name: rename-photos
+crews: [default]
 folders: [photos]
 limits:
   max_rounds: 2

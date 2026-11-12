@@ -25,7 +25,7 @@ Generic roles and specs for trying Ombro.
   morning, unattended, under a conservative allowance. Saved disabled.
 
 Copy the role folders into `~/.config/ombro/crews/default/roles/` (or your
-`$OMBRO_HOME`), then run:
+`$OMBRO_HOME`). Each example spec names `crews: [default]`. Then run:
 
     ombro run --spec examples/specs/composting-guide.md
     ombro run --spec examples/specs/library-hours.md
@@ -34,7 +34,7 @@ The research spec uses whichever provider `tools.md` names for `web.search`
 and `web.fetch`: DuckDuckGo and a direct download by default, or Firecrawl
 once its key is set.
 
-To schedule the research spec, copy `specs/library-hours.md` into the crew's
+To schedule the research spec, copy `specs/library-hours.md` into the home's
 `specs/` folder and `schedules/library-hours-weekly.md` into its
 `schedules/` folder, then:
 

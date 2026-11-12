@@ -1,5 +1,6 @@
 ---
 name: library-hours
+crews: [default]
 limits:
   max_rounds: 3
   run_timeout: 10m

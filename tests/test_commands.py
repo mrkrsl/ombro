@@ -34,14 +34,14 @@ def test_role_remove_asks_then_moves_the_folder(home, monkeypatch, capsys):
     assert cli.main(["role", "remove", "researcher"]) == 0
     assert len(list((home.crew_dir("default") / "removed").iterdir())) == 2
     # The crew still loads without it.
-    from ombro.roles import load_crew
+    from ombro.roles import crew_roles
 
-    assert "researcher" not in load_crew(home, "default", load_limits(home))[1]
+    assert "researcher" not in crew_roles(home, "default", load_limits(home))
 
 
 def test_the_lead_cannot_be_removed(home, capsys):
     assert cli.main(["role", "remove", "lead"]) == 2
-    assert (home.roles_dir("default") / "lead").is_dir()
+    assert (home.lead_dir / "config.md").is_file()
 
 
 def test_role_edit_opens_the_editor_and_checks_the_result(home, tmp_path, capsys):
@@ -78,8 +78,9 @@ def test_role_add_refuses_an_existing_name(home, capsys):
 
 def test_crew_add_list_and_use(home, capsys):
     assert cli.main(["crew", "add", "podcast", "--description", "Invented podcast work."]) == 0
-    assert (home.roles_dir("podcast") / "lead" / "config.md").is_file()
-    assert (home.crew_dir("podcast") / "interviews").is_dir()
+    # A new crew has no Lead of its own: the one Lead briefs its roles.
+    assert home.roles_dir("podcast").is_dir() and not (home.roles_dir("podcast") / "lead").exists()
+    assert (home.crew_dir("podcast") / "memory" / "notes.md").is_file()
     assert cli.main(["crew", "add", "podcast"]) == 2
     assert cli.main(["crew", "add", "Not Valid"]) == 2
     capsys.readouterr()
@@ -89,7 +90,7 @@ def test_crew_add_list_and_use(home, capsys):
     assert cli.main(["crew", "use", "podcast"]) == 0
     assert load_preferences(home).default_crew == "podcast"
     assert "editor" in mdfile.read(home.preferences_config)[0]  # other preferences kept
-    assert cli.main(["role", "list"]) == 0 and "Roles in crew podcast" in capsys.readouterr().out
+    assert cli.main(["role", "list"]) == 0 and "Crew podcast:\n  (no roles yet)" in capsys.readouterr().out
     assert cli.main(["crew", "use", "nowhere"]) == 2
 
 
@@ -111,20 +112,20 @@ def test_limits_shows_and_sets_the_allowance(home, capsys):
 def test_run_accepts_the_name_of_a_saved_spec(home):
     from ombro.cli import _spec_path
 
-    spec = home.crew_dir("default") / "specs" / "invented.md"
+    spec = home.specs_dir / "invented.md"
     spec.write_text("# Invented\n")
-    assert _spec_path(home, "invented", None) == spec
+    assert _spec_path(home, "invented") == spec
     with pytest.raises(cli.CliError):
-        _spec_path(home, "missing", None)
+        _spec_path(home, "missing")
 
 
 def test_specs_lists_saved_specs_by_name(home, capsys):
     assert cli.main(["specs"]) == 0 and "No specs saved" in capsys.readouterr().out
-    folder = home.crew_dir("default") / "specs"
+    folder = home.specs_dir
     (folder / "teapot-survey.md").write_text("---\nname: teapot-survey\n---\n\n# Three invented teapot makers\n")
     (folder / "teapot-survey.previous.md").write_text("# Old\n")
     assert cli.main(["specs"]) == 0
     out = capsys.readouterr().out
     assert "teapot-survey" in out and "Three invented teapot makers" in out and "previous" not in out
     with pytest.raises(cli.CliError, match="Saved specs: teapot-survey"):
-        cli._spec_path(home, "nope", None)
+        cli._spec_path(home, "nope")

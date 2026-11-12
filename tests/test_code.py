@@ -44,7 +44,7 @@ def run_dir(home):
     """A run folder laid out as a real one, with a journal and run.md beside the workspace."""
     from ombro import runs
 
-    d = runs.create_run(home, "default", {}, "# Invented task", load_limits(home), source="test")
+    d = runs.create_run(home, ["default"], {}, "# Invented task", load_limits(home), source="test")
     (d / "journal.jsonl").write_text('{"note": "invented journal line"}\n')
     return d
 

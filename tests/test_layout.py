@@ -76,7 +76,7 @@ t("work inside", lambda: (os.rename("workspace/a.txt", "workspace/b.txt"), os.mk
 
 
 def test_workspace_tools_refuse_a_workspace_that_has_become_a_symlink(home, secret):
-    run_dir = runs.create_run(home, "default", {}, "# Invented task", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "# Invented task", load_limits(home), source="test")
     swap_for_symlink(run_dir / "workspace", home.root)
     reg = native_registry(home)
     ctx = ToolContext(run_dir, "researcher")
@@ -97,7 +97,7 @@ def test_workspace_tools_refuse_a_workspace_that_has_become_a_symlink(home, secr
 
 
 def test_scratch_that_has_become_a_symlink_is_refused_too(home, secret):
-    run_dir = runs.create_run(home, "default", {}, "# Invented task", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "# Invented task", load_limits(home), source="test")
     swap_for_symlink(run_dir / "scratch", run_dir)
     reg = native_registry(home)
     with pytest.raises(LayoutChanged):
@@ -115,7 +115,7 @@ def test_code_run_refuses_to_start_when_a_folder_has_become_a_symlink(run_dir, h
 
 
 def test_a_shared_folder_that_has_become_a_symlink_is_refused(home, user, tmp_path):
-    run_dir = runs.create_run(home, "default", {}, "# Invented task", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "# Invented task", load_limits(home), source="test")
     trip = user / "Pictures" / "Trip"
     shared = {"photos": SharedFolder("photos", trip, "write")}
     swap_for_symlink(trip, user / "Documents")
@@ -136,7 +136,7 @@ def test_a_grant_whose_path_now_leads_elsewhere_is_left_out(home, user):
 
 
 def test_the_report_lists_nothing_through_a_replaced_workspace(home, secret):
-    run_dir = runs.create_run(home, "default", {}, "# Invented task", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "# Invented task", load_limits(home), source="test")
     swap_for_symlink(run_dir / "workspace", home.root)
     facts = report.gather_facts(home, run_dir, "completed")
     assert facts["other_files"] == []
@@ -144,7 +144,7 @@ def test_the_report_lists_nothing_through_a_replaced_workspace(home, secret):
 
 
 def test_ombro_open_refuses_a_workspace_that_is_not_a_real_folder(home, monkeypatch, capsys):
-    run_dir = runs.create_run(home, "default", {}, "# Invented task", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "# Invented task", load_limits(home), source="test")
     runs.update_run(run_dir, status="completed")
     swap_for_symlink(run_dir / "workspace", home.root)
     opened = []

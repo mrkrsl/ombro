@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import socket
 from pathlib import Path
 
@@ -110,7 +111,8 @@ class FakeSystem:
 
 
 def write_role(home: Home, name: str, *, kind: str = "specialist", soul: str | None = None, crew: str = "default", **cfg):
-    folder = home.roles_dir(crew) / name
+    """A role in a crew; with kind lead, the one Lead (replacing the default one)."""
+    folder = home.lead_dir if kind == "lead" and name == "lead" else home.roles_dir(crew) / name
     folder.mkdir(parents=True, exist_ok=True)
     meta = {"name": name, "kind": kind, "description": cfg.pop("description", f"The {name} role, for tests.")}
     meta.update(cfg)
@@ -126,6 +128,9 @@ def home(tmp_path, monkeypatch) -> Home:
     h = Home()
     ensure_home(h)
     mdfile.write(h.models, TEST_MODELS, "Test models.")
+    # The General Assistant that a fresh install brings is tested on its own; here the
+    # default crew has just the one invented role.
+    shutil.rmtree(h.roles_dir("default") / "general-assistant")
     write_role(h, "researcher", max_steps=10)
     return h
 
@@ -169,10 +174,10 @@ class Runner:
         self.run_dir: Path | None = None
 
     def __call__(self, script, *, limits=None, registry=None, spec=SPEC, crew="default", today=None,
-                 spec_meta=None) -> str:
+                 spec_meta=None, crews=None) -> str:
         tools = load_tool_settings(self.home)
         lim = load_limits(self.home, limits, tools)
-        self.run_dir = runs.create_run(self.home, crew, spec_meta or {}, spec, lim, source="test",
+        self.run_dir = runs.create_run(self.home, crews or [crew], spec_meta or {}, spec, lim, source="test",
                                        tools=tools.to_dict())
         self.client = ScriptedClient(script, clock=self.clock)
         self.engine = Engine(

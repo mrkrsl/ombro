@@ -146,7 +146,7 @@ def ctx_for(run_dir, user, access="read"):
 
 
 def test_workspace_tools_reach_shared_folders_as_granted(home, user):
-    run_dir = runs.create_run(home, "default", {}, "# x", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "# x", load_limits(home), source="test")
     reg = native_registry(home)
     ctx = ctx_for(run_dir, user, access="write")
     read = reg.get("workspace.read").handler
@@ -291,7 +291,7 @@ def test_the_brief_asks_before_sharing_a_folder_the_spec_needs(home, user):
         ["a", "r", "n"],
     )
     assert out.status == "confirmed"
-    meta, _ = mdfile.read(home.crew_dir("default") / "specs" / "teapot-survey.md")
+    meta, _ = mdfile.read(home.specs_dir / "teapot-survey.md")
     assert meta["folders"] == {"brand": "read"}
     grants = folders.load(home)[0]
     assert set(grants) == {"brand"} and grants["brand"].access == "read"
@@ -322,7 +322,7 @@ def test_the_brief_refuses_a_folder_that_can_never_be_shared(home, user):
 def test_a_placement_never_writes_through_a_planted_symlink(home, user, tmp_path):
     victim = tmp_path / "victim.txt"
     victim.write_text("the user's own file\n")
-    run_dir = runs.create_run(home, "default", {}, "# x", load_limits(home), source="test")
+    run_dir = runs.create_run(home, ["default"], {}, "# x", load_limits(home), source="test")
     trip = user / "Pictures" / "Trip"
     # What a script in an earlier run, or this one, could have left in the shared folder.
     for name in (".summary.md.ombro-tmp", ".summary.md.tmp", "summary.md.ombro-tmp"):

@@ -18,7 +18,7 @@ from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
 from ombro.mcp import McpCallLost
-from ombro.roles import Role, load_crew, skill_texts
+from ombro.roles import Role, load_lead, load_roles, resolve_role, skill_texts
 from ombro.settings import Limits, ModelSpec, SetupError, ToolSettings, load_models, load_preferences
 from ombro.tools import NotGranted, SharedFolder, Tool, ToolContext, ToolError, ToolRegistry
 
@@ -68,7 +68,7 @@ class Engine:
         self.run_dir = Path(run_dir)
         meta, _ = runs.read_run(self.run_dir)
         self.run_id = meta["run_id"]
-        self.crew = meta["crew"]
+        self.crews = runs.run_crews(meta)
         self.limits = Limits.from_dict(meta["limits"])  # fixed at run creation
         self.clock = clock
         self.journal = Journal(self.run_dir / "journal.jsonl", echo=echo)
@@ -115,7 +115,10 @@ class Engine:
 
     def _load(self) -> None:
         self.models = load_models(self.home)
-        self.lead, self.roles = load_crew(self.home, self.crew, self.limits)
+        if not self.crews:
+            raise SetupError("run.md names no crews")
+        self.lead = load_lead(self.home, self.limits)
+        self.roles = load_roles(self.home, self.crews, self.limits)
         self.instructions = load_preferences(self.home).instructions
         self._load_mcp()
         self._prepare_code()
@@ -355,7 +358,7 @@ class Engine:
                 "role": "system",
                 "content": prompts.lead_system(
                     self.lead, self.instructions, self.roles, self.limits, self.today,
-                    memory=memory.lead_context(self.home, self.crew, self.limits),
+                    memory=memory.lead_context(self.home, self.crews, self.limits),
                     shared=[(f.name, f.access) for f in self.shared.values()],
                 ),
             },
@@ -419,7 +422,7 @@ class Engine:
         query = str(args.get("query") or "")
         out = memory.search(
             self.home,
-            [self.crew],  # runs never see another crew's memory
+            self.crews,  # a run sees only the memory of the crews its spec names
             query,
             run_id=str(args.get("run_id") or "") or None,
             exclude=self.run_dir,
@@ -433,17 +436,18 @@ class Engine:
     def _brief(self, args: dict) -> dict[str, Any]:
         name = str(args.get("role") or "").strip()
         task = str(args.get("task") or "").strip()
-        role = self.roles.get(name)
+        role, why = resolve_role(self.roles, name)
         if role is None:
-            known = ", ".join(self.roles) or "none"
-            self.journal.write("lead", "tool_refused", f"brief: no role named {name!r}")
-            return {"error": f"there is no role named {name!r}. Roles you can brief: {known}"}
+            self.journal.write("lead", "tool_refused", f"brief: {why}")
+            return {"error": why}
+        name = role.name
         if not task:
             self.journal.write("lead", "tool_refused", "brief: empty task")
             return {"error": "the task is empty"}
         self.gate.check_round()
         n = self.gate.record_round()
-        self.journal.write("lead", "briefed", f"{name}: {_short(task)}", target=name, task=task, round=n)
+        self.journal.write("lead", "briefed", f"{name}: {_short(task)}", target=name, crew=role.crew, task=task,
+                           round=n)
         outcome = self._run_role(role, task)
         assert self.lead is not None
         self.gate.begin_scope(self.lead.name, self.lead.max_steps)
@@ -621,21 +625,30 @@ class Engine:
     NOTES_ATTEMPTS = 2
 
     def _notes(self, status: str) -> None:
-        """The Lead rewrites its part of notes.md, in its own call before the report.
-        Recorded in the journal as one `notes` event that the report shows."""
-        def record(outcome: str, note: str, **extra: Any) -> None:
-            self.journal.write("lead" if outcome in ("changed", "kept") else "harness", "notes", note,
-                               outcome=outcome, **extra)
-
-        events = [e.get("action") for e in journal_mod.read(self.run_dir / "journal.jsonl")]
+        """The Lead rewrites its part of notes.md for each crew whose roles it briefed, one crew
+        per call, before the report. Each is recorded as a `notes` event that the report shows."""
+        events = journal_mod.read(self.run_dir / "journal.jsonl")
         if self.lead is None or self.lead.model not in self.models:
-            return record("skipped", "the Lead could not be loaded")
-        if "briefed" not in events:
-            return record("skipped", "no role was briefed, so this run had nothing new to teach")
-        cap = self.limits.memory_notes_max_chars
+            self.journal.write("harness", "notes", "the Lead could not be loaded", outcome="skipped")
+            return
+        briefed = {str(e.get("crew") or "") for e in events if e.get("action") == "briefed"}
+        crews = [c for c in self.crews if c in briefed]
+        if not crews:
+            self.journal.write("harness", "notes", "no role was briefed, so this run had nothing new to teach",
+                               outcome="skipped")
+            return
         self.gate.enter_report_phase("notes")
+        for crew in crews:
+            self._notes_for(crew, status)
+
+    def _notes_for(self, crew: str, status: str) -> None:
+        def record(outcome: str, note: str, **extra: Any) -> None:
+            self.journal.write("lead" if outcome in ("changed", "kept") else "harness", "notes",
+                               f"{crew}: {note}", outcome=outcome, crew=crew, **extra)
+
+        cap = self.limits.memory_notes_max_chars
         try:
-            current = memory.read_notes(self.home, self.crew)
+            current = memory.read_notes(self.home, crew)
         except OSError as e:
             return record("skipped", f"notes.md could not be read: {e}")
         room = cap - memory.with_from_runs(current, "").size
@@ -643,7 +656,7 @@ class Engine:
         messages: list[dict] = [
             {"role": "system", "content": prompts.notes_system(self.lead, self.instructions, self.today)},
             {"role": "user", "content": prompts.notes_input(
-                current.from_you, current.from_runs, cap, room, report.narrative_input(facts))},
+                current.from_you, current.from_runs, cap, room, report.narrative_input(facts), crew)},
         ]
         # Keep enough of the reserve for the report: estimate its call before each notes call.
         report_worst = estimate_tokens([{"role": "user", "content": report.narrative_input(facts)}]) + 2_000 \
@@ -678,10 +691,10 @@ class Engine:
                     break
                 continue
             try:
-                old, new = memory.replace_from_runs(self.home, self.crew, tc.arguments.get("from_runs", ""), cap)
+                old, new = memory.replace_from_runs(self.home, crew, tc.arguments.get("from_runs", ""), cap)
             except memory.NotesError as e:
                 refused += 1
-                self.journal.write("lead", "notes_refused", _short(str(e), 300), attempt=refused)
+                self.journal.write("lead", "notes_refused", _short(str(e), 300), attempt=refused, crew=crew)
                 messages.append(_tool_message(tc.id, {"error": str(e)}))
                 last_error = str(e)
                 if refused >= self.NOTES_ATTEMPTS:

@@ -38,15 +38,15 @@ def home(home):
     return home
 
 
-def save_spec(home, name="teapots", body=SPEC, meta=None, crew="default"):
-    path = home.crew_dir(crew) / "specs" / f"{name}.md"
+def save_spec(home, name="teapots", body=SPEC, meta=None):
+    path = home.specs_dir / f"{name}.md"
     mdfile.write(path, meta or {}, body)
     return path
 
 
 def add_schedule(home, name="morning", cron="30 7 * * *", spec="teapots", *, enabled=True, limits=None,
-                 grace=None, crew="default", mtime=LONG_AGO):
-    path = schedules.write_schedule(home, crew, name, cron, spec, enabled, limits, grace)
+                 grace=None, mtime=LONG_AGO):
+    path = schedules.write_schedule(home, name, cron, spec, enabled, limits, grace)
     os.utime(path, (mtime, mtime))
     return path
 
@@ -146,14 +146,14 @@ def test_a_due_slot_starts_once_detached_with_limits_fixed(home):
     assert len(r.started) == 1 and starter.dirs == r.started
     meta = runs.read_run(r.started[0])[0]
     assert meta["schedule"] == "morning" and meta["due"] == "2026-11-12T07:30"
-    assert meta["source"] == "schedule morning (crews/default/schedules/morning.md), due 2026-11-12 07:30"
+    assert meta["source"] == "schedule morning (schedules/morning.md), due 2026-11-12 07:30"
     assert meta["limits"]["max_tokens"] == 150_000 and meta["limits"]["run_timeout"] == 900
     assert "fictional teapot makers" in (r.started[0] / "spec.md").read_text()
     # The same minute again, and the next minute: nothing new.
     assert not tick(home, ts(2026, 11, 12, 7, 30, 50), starter).started
     assert not tick(home, ts(2026, 11, 12, 7, 31, 5), starter).started
     log = schedules.log_path(home).read_text()
-    assert "default/morning due 2026-11-12 07:30: started run" in log
+    assert "morning due 2026-11-12 07:30: started run" in log
     assert log.count("tick: 1 schedule(s)") == 3
 
 
@@ -173,7 +173,7 @@ def test_a_slot_past_grace_is_missed_and_noted_not_run(home):
     assert "schedule:morning@2026-11-12T07:30 · missed · 07:30 not run" in line
     assert "the machine was off or asleep (no tick from 12 Nov 07:20 to 12 Nov 07:45)" in line
     assert len(line) <= 200
-    assert line.endswith("crews/default/schedules/morning.md")
+    assert line.endswith("schedules/morning.md")
     assert not tick(home, ts(2026, 11, 12, 7, 46)).noted  # noted once
 
 
@@ -188,7 +188,7 @@ def test_a_long_sleep_is_one_entry_per_schedule(home):
     assert not tick(home, ts(2026, 11, 12, 9, 15)).noted
     assert len(index_lines(home)) == 1
     # The Lead of the crew's next run sees it among the recent entries.
-    _, recent = memory.lead_context(home, "default", schedules.base_limits(home))
+    _, recent = memory.lead_context(home, ["default"], schedules.base_limits(home))
     assert "3 slots not run" in recent
 
 
@@ -250,7 +250,7 @@ def test_a_late_tick_starts_the_newest_slot_and_notes_the_ones_before(home):
 def test_overlap_waits_within_grace_then_is_skipped_with_the_reason(home):
     add_schedule(home)
     day1 = tick(home, ts(2026, 11, 11, 7, 30, 5)).started[0]  # left running
-    assert tick(home, ts(2026, 11, 12, 7, 30, 5)).waiting == ["default/morning@2026-11-12T07:30"]
+    assert tick(home, ts(2026, 11, 12, 7, 30, 5)).waiting == ["morning@2026-11-12T07:30"]
     assert tick(home, ts(2026, 11, 12, 7, 35)).waiting
     r = tick(home, ts(2026, 11, 12, 7, 41))
     assert not r.started and not r.waiting
@@ -275,7 +275,7 @@ def test_caps_on_running_and_starting_scheduled_runs(home):
     add_schedule(home, "alpha")
     add_schedule(home, "beta")
     r = tick(home, ts(2026, 11, 12, 7, 30, 5))
-    assert len(r.started) == 1 and r.waiting == ["default/beta@2026-11-12T07:30"]
+    assert len(r.started) == 1 and r.waiting == ["beta@2026-11-12T07:30"]
     assert "1 scheduled runs were already running (schedule_max_running)" in "\n".join(r.lines)
 
     mdfile.write(home.limits, {**meta, "schedule_max_running": 5, "schedule_max_starts": 1}, body)
@@ -361,14 +361,14 @@ def test_a_broken_schedule_file_is_logged_once(home):
     add_schedule(home, cron="61 * * * *")
     tick(home, ts(2026, 11, 12, 7, 30, 5))
     tick(home, ts(2026, 11, 12, 7, 31, 5))
-    assert schedules.log_path(home).read_text().count("problem in crews/default/schedules/morning.md") == 1
+    assert schedules.log_path(home).read_text().count("problem in schedules/morning.md") == 1
 
 
 def test_schedule_file_problems_are_found(home):
-    path = home.schedules_dir("default") / "odd.md"
+    path = home.schedules_dir / "odd.md"
     mdfile.write(path, {"name": "other", "cron": "30 7 * * *", "spec": "../etc/x", "enabled": "yes",
                         "colour": "blue"})
-    err = schedules.load_schedule(home, "default", path).error
+    err = schedules.load_schedule(home, path).error
     assert "unknown setting(s): colour" in err and "does not match the file name" in err
     assert "must be a saved spec" in err and "enabled must be true or false" in err
 
@@ -394,7 +394,7 @@ def test_a_scheduled_run_end_to_end_with_the_fake_model(home):
 def test_dry_run_changes_nothing(home):
     add_schedule(home)
     r = tick(home, ts(2026, 11, 12, 7, 30, 5), dry_run=True)
-    assert "default/morning due 2026-11-12 07:30: would start a run" in "\n".join(r.lines)
+    assert "morning due 2026-11-12 07:30: would start a run" in "\n".join(r.lines)
     assert runs.all_runs(home) == [] and schedules.last_tick(home) is None
     assert not schedules.log_path(home).exists()
 
@@ -463,7 +463,7 @@ def test_schedule_add_saves_the_file_and_offers_the_install(home, monkeypatch, c
     out = capsys.readouterr().out
     assert "allowance conservative: 150,000 tokens" in out and "not installed yet" in out
     assert "local.ombro.tick.plist" in out and "Installed." in out
-    meta, _ = mdfile.read(home.schedules_dir("default") / "morning.md")
+    meta, _ = mdfile.read(home.schedules_dir / "morning.md")
     assert meta == {"name": "morning", "cron": "30 7 * * 1-5", "spec": "specs/teapots.md", "enabled": True,
                     "limits": {"allowance": "conservative"}, "grace": "5m"}
     assert no_system_scheduler.loaded
@@ -486,16 +486,16 @@ def test_schedule_list_show_enable_disable_remove(home, monkeypatch, capsys):
     add_schedule(home, "broken", cron="not a cron")
     assert cli.main(["schedule"]) == 0
     out = capsys.readouterr().out
-    assert "default/morning" in out and "30 7 * * *" in out and "problem: cron:" in out
+    assert "morning" in out and "30 7 * * *" in out and "problem: cron:" in out
     assert "Scheduler: not installed" in out and "Last tick: never" in out
 
     assert cli.main(["schedule", "disable", "morning"]) == 0
-    assert mdfile.read(home.schedules_dir("default") / "morning.md")[0]["enabled"] is False
+    assert mdfile.read(home.schedules_dir / "morning.md")[0]["enabled"] is False
     monkeypatch.setattr("builtins.input", Answers("n"))
     assert cli.main(["schedule", "enable", "morning"]) == 0
     out = capsys.readouterr().out
     assert "takes effect from its next slot" in out and "Install it?" not in out or "Nothing installed" in out
-    assert mdfile.read(home.schedules_dir("default") / "morning.md")[0]["enabled"] is True
+    assert mdfile.read(home.schedules_dir / "morning.md")[0]["enabled"] is True
 
     assert cli.main(["schedule", "show", "morning"]) == 0
     out = capsys.readouterr().out
@@ -503,8 +503,8 @@ def test_schedule_list_show_enable_disable_remove(home, monkeypatch, capsys):
 
     monkeypatch.setattr("builtins.input", Answers("y"))
     assert cli.main(["schedule", "remove", "morning"]) == 0
-    assert not (home.schedules_dir("default") / "morning.md").exists()
-    assert (home.crew_dir("default") / "removed" / "schedules" / "morning.md").is_file()
+    assert not (home.schedules_dir / "morning.md").exists()
+    assert (home.removed_dir / "schedules" / "morning.md").is_file()
 
 
 def test_schedule_install_and_uninstall_ask_first(home, monkeypatch, capsys, no_system_scheduler):
@@ -538,8 +538,8 @@ def test_ombro_tick_starts_a_detached_run_that_completes(home):
     r = subprocess.run([sys.executable, "-m", "ombro", "tick"], capture_output=True, text=True, timeout=60,
                        env={**os.environ, "OMBRO_HOME": str(home.root)})
     assert r.returncode == 0, r.stderr
-    assert "default/morning due" in r.stdout and "started run" in r.stdout
-    [(_, run_dir)] = runs.all_runs(home)
+    assert "morning due" in r.stdout and "started run" in r.stdout
+    [run_dir] = runs.all_runs(home)
     deadline = time.time() + 30
     while runs.read_run(run_dir)[0]["status"] == "running" and time.time() < deadline:
         time.sleep(0.1)

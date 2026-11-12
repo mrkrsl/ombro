@@ -147,7 +147,7 @@ def _list(home: Home, args) -> int:
         from ombro import runs
 
         items = []
-        for _, d in runs.all_runs(home, crew):
+        for d in runs.all_runs(home, crew):
             outbox.settle(d)
             items += outbox.actions(d)
     else:
