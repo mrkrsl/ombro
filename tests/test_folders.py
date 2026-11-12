@@ -412,3 +412,17 @@ def test_approving_a_placement_rechecks_the_spelling(run, home, user, capsys):
     with pytest.raises(outbox.OutboxError, match="Library"):
         outbox.approve(home, outbox.load(a.path))
     assert not (user / "Library" / "LaunchAgents" / "x.plist").exists()
+
+
+def test_approving_a_placement_copies_only_the_file_kept_with_it(run, home, user):
+    (user / "Documents" / "Reports").mkdir()
+    place_run(run, home, user, "~/Documents/Reports/")
+    (a,) = outbox.actions(run.run_dir)
+    other = run.run_dir / "spec.md"  # something else in the run, named by a hand edit of the action file
+    meta, body = mdfile.read(a.path)
+    meta.update(file="spec.md", file_sha256=outbox._file_sha(other))
+    mdfile.write(a.path, meta, body)
+    with pytest.raises(outbox.OutboxError, match="copy kept"):
+        outbox.approve(home, outbox.load(a.path))
+    assert not (user / "Documents" / "Reports" / "spec.md").exists()
+    assert outbox.load(a.path).status == "pending"

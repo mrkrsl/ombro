@@ -310,6 +310,9 @@ def _approve_place(home: Home, a: Action) -> Action:
     run_dir = a.run_dir
     final, warning = placement_check(home, a)
     kept = run_dir / str(a.meta.get("file") or "")
+    own = a.path.with_suffix("")  # outbox/<action>/: where the copy was kept when it was staged
+    if kept.is_symlink() or not kept.resolve().is_relative_to(own.resolve()) or kept.resolve() == own.resolve():
+        raise OutboxError(f"{a.ref} cannot run: its `file` must be the copy kept in {own.relative_to(run_dir)}/")
     if not kept.is_file() or _file_sha(kept) != a.meta.get("file_sha256"):
         raise OutboxError(f"{a.ref} cannot run: the copy kept with it is missing or has changed")
     _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
