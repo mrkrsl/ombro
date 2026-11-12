@@ -43,6 +43,15 @@ def _tool_message(call_id: str, payload: Any) -> dict[str, Any]:
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 
 
+def _error(tool: Tool, e: Exception) -> dict[str, Any]:
+    """A tool's error for the role. An outside service's error text is its own words,
+    so it is marked as material, like its results."""
+    out: dict[str, Any] = {"error": str(e)}
+    if tool.outward:
+        out["note"] = outward.MCP_NOTE
+    return out
+
+
 class Engine:
     def __init__(
         self,
@@ -520,7 +529,7 @@ class Engine:
         except ToolError as e:
             self._charge(name, cost, billed=e.billable)
             self.journal.write(role.name, "tool_error", f"{name} {args_note}: {_short(str(e))}", tool=name)
-            return {"error": str(e)}
+            return _error(tool, e)
         except Exception as e:
             self._charge(name, cost, billed=True)
             self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
@@ -579,7 +588,7 @@ class Engine:
             self._charge(name, cost, billed=e.billable)
             self.journal.write(role.name, "outward_error", f"{name} {args_note}: {_short(str(e))}", tool=name,
                                reason=reason, arguments=args)
-            return {"error": str(e)}
+            return _error(tool, e)
         self._charge(name, cost, billed=True)
         self.journal.write(role.name, "outward_done", f"{name} {args_note}", tool=name, effect=tool.effect,
                            reason=reason, arguments=args)
