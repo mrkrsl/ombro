@@ -22,7 +22,7 @@ from textual.widget import Widget
 from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option as ListOption
 
-from ombro import views
+from ombro import runs, views
 from ombro.home import Home
 from ombro.tui import look
 from ombro.ui import UI, Event, Failure, Field, LeadSaid, ModeChanged, Note, Progress, ProposalShown, Usage
@@ -50,9 +50,10 @@ SLASH = [
     ("/quit", "leave Ombro"),
 ]
 CHAT_COMMANDS = ("/chat", "/new", "/brief", "/remember")  # handled by chat itself
-LATER = ("/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/keys", "/folders",
-         "/tools", "/preferences")
+TUI_COMMANDS = ("/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/keys", "/folders",
+                "/tools", "/preferences")
 QUIT_AGAIN_SECONDS = 2.5
+POLL_SECONDS = 2.0
 
 
 def filter_slash(text: str) -> list[tuple[str, str]]:
@@ -92,6 +93,8 @@ class TuiUI(UI):
             raise Interrupted()
 
     def show(self, event: Event) -> None:
+        if not self.app.is_running:
+            raise Interrupted()
         self.app.call_from_thread(self.app.show_event, event)
         self._check()
 
@@ -99,12 +102,16 @@ class TuiUI(UI):
         self._check()
         pending = Pending(f)
         self.app.call_from_thread(self.app.begin_ask, pending)
-        pending.done.wait()
+        while not pending.done.wait(0.25):
+            if not self.app.is_running:  # the app has closed: nothing will answer
+                raise Interrupted()
         if pending.error:
             raise pending.error
         return pending.value
 
     def edit(self, paths: list[Path]) -> None:
+        if not self.app.is_running:
+            raise Interrupted()
         self.app.call_from_thread(self.app.edit_files, paths)
 
 
@@ -194,6 +201,8 @@ class OmbroApp(App):
     .progress { color: $ombro-dim; padding: 0 1; }
     .error { color: $ombro-text; text-style: bold; padding: 0 1; }
     .proposal { color: $ombro-text; padding: 0 1; border-left: wide $ombro-dim; }
+    .report { color: $ombro-text; padding: 0 1; border-left: wide $ombro-dim; }
+    .notice { color: $ombro-text; padding: 0 1; border-left: wide $ombro-muted; }
     .rule { height: 1; color: $ombro-dim; }
     #slash { height: auto; max-height: 12; display: none; background: $ombro-bg; color: $ombro-muted;
              border: none; padding: 0; scrollbar-size-vertical: 1; scrollbar-color: $ombro-dim;
@@ -217,11 +226,16 @@ class OmbroApp(App):
 
     BINDINGS = [Binding("ctrl+c", "interrupt", "Stop or leave", priority=True, show=False)]
 
-    def __init__(self, home: Home, *, dark: bool, client_factory=None):
+    def __init__(self, home: Home, *, dark: bool, client_factory=None, poll: bool = True):
         self.dark = dark
         self.colours = look.palette(dark)  # before Textual reads the CSS variables
         super().__init__()
         self.home = home
+        self.poll = poll
+        self.init_client_factory = (lambda spec, h: client_factory(spec)) if client_factory else None
+        self.active_runs: set[str] = set()
+        self.following: dict[str, Any] = {}
+        self.last_counts: dict[str, Any] = {}
         self.client_factory = client_factory
         self.summary = views.summary(home)
         self.first_opening = not any((home.root / "chats").glob("*.md")) and not self.summary["unseen"] \
@@ -234,6 +248,9 @@ class OmbroApp(App):
         except Exception:  # noqa: BLE001
             self.usage = (0, None)
         self.bridge = TuiUI(self)
+        from ombro.tui.commands import Commands
+
+        self.commands = Commands(self)
         self.pending: Pending | None = None
         self.busy = False
         self.chat = None
@@ -277,15 +294,34 @@ class OmbroApp(App):
         self.draw_rules()
         self.update_footer()
         if self.setup_needed:
-            self.add_line(Note(f"Ombro is not set up here yet: {self.setup_needed} Set-up inside this screen "
-                               "comes in a later build; for now, run `ombro init` in a shell, then open Ombro "
-                               "again."), "note")
+            self.add_line(Note(f"Welcome. Ombro needs setting up first: {self.setup_needed} It takes a few "
+                               "questions: your name, a model and its key (typed hidden, never sent to a model), "
+                               "then a short interview with the Lead."), "note")
+            self.start_work(self._set_up)
         else:
-            self.add_line(LeadSaid(look.greeting(self.summary["name"])), "lead")
-            since = look.since_line(views.since_last(self.home))
-            if since:
-                self.add_line(Note(since), "note")
+            self.greet()
+        self.active_runs = {r["run_id"] for r in views.run_list(self.home) if r["active"]}
+        if self.poll:
+            self.set_interval(POLL_SECONDS, self.poll_runs)
         self.query_one("#input", Input).focus()
+
+    def greet(self) -> None:
+        self.add_line(LeadSaid(look.greeting(self.summary["name"])), "lead")
+        since = look.since_line(views.since_last(self.home))
+        if since:
+            self.add_line(Note(since), "note")
+
+    def _set_up(self) -> None:
+        self.commands.setup()
+        self.setup_needed = setup_needed(self.home)
+        self.call_from_thread(self._after_set_up)
+
+    def _after_set_up(self) -> None:
+        self.refresh_summary()
+        if self.setup_needed:
+            self.add_line(Note(f"Set-up is not finished: {self.setup_needed} Type /setup to try again."), "note")
+        else:
+            self.greet()
 
     def on_resize(self, event: events.Resize) -> None:
         self.draw_rules()
@@ -326,6 +362,9 @@ class OmbroApp(App):
         text = render_event(event, self.colours)
         if text is None:
             return
+        self.add_text(text, kind)
+
+    def add_text(self, text: Text, kind: str) -> None:
         box = self.query_one("#messages")
         box.mount(Line(text, classes=kind))
         self.call_after_refresh(self._after_line)
@@ -482,39 +521,106 @@ class OmbroApp(App):
         if word == "/help":
             self.add_line(Note("Commands:", items=[f"{c}  {h}" for c, h in SLASH]), "note")
             return
-        if word in LATER:
-            self.add_line(Note(f"{word} is not in this build of the terminal interface yet. For now, use "
-                               f"`ombro {word[1:]}` in a shell."), "note")
+        if word == "/setup":
+            self.start_work(self._set_up)
             return
         if self.setup_needed:
-            self.add_line(Note("Run `ombro init` in a shell first."), "note")
+            self.add_line(Note("Ombro is not set up yet. Type /setup to set it up."), "note")
             return
+        if word in TUI_COMMANDS:
+            rest = text[len(word):].strip()
+            self.start_work(lambda: self.commands.run(word, rest))
+            return
+        self.start_work(lambda: self._chat_turn(text))
+
+    def start_work(self, fn) -> None:
+        """Run core work on a worker thread, one piece at a time."""
         if self.busy:
-            self.add_line(Note("The Lead is still working on your last message."), "note")
+            self.add_line(Note("Still working on the last thing; wait for it, or Ctrl+C to stop it."), "note")
             return
         self.busy = True
-        self.run_worker(lambda: self._chat_turn(text), thread=True, exclusive=False)
+
+        def work() -> None:
+            try:
+                fn()
+            except KeyboardInterrupt:
+                if self.chat is not None and self.chat.exchanges and \
+                        self.chat.exchanges[-1][-1].get("role") == "user":
+                    self.chat.exchanges.pop()
+                if self.is_running:
+                    self.call_from_thread(self.add_line, Note("Stopped."), "note")
+            except Exception as e:  # noqa: BLE001 - shown, never a crash
+                if self.is_running:
+                    self.call_from_thread(self.add_line, Failure(f"Something went wrong: {e}"), "error")
+            finally:
+                self.busy = False
+                self.bridge.stop_requested = False
+                if self.is_running:
+                    try:
+                        self.call_from_thread(self.refresh_summary)
+                    except RuntimeError:
+                        pass
+
+        self.run_worker(work, thread=True, exclusive=False)
 
     def _chat_turn(self, text: str) -> None:
-        try:
-            if self.chat is None:
-                from ombro.chat import Chat
+        if self.chat is None:
+            from ombro.chat import Chat
 
-                kw = {"client_factory": self.client_factory} if self.client_factory else {}
-                self.chat = Chat(self.home, ui=self.bridge, **kw)
-            go_on = self.chat.handle(text)
-            if not go_on:
-                self.call_from_thread(self.leave)
-        except KeyboardInterrupt:
-            if self.chat is not None and self.chat.exchanges and \
-                    self.chat.exchanges[-1][-1].get("role") == "user":
-                self.chat.exchanges.pop()
-            self.call_from_thread(self.add_line, Note("Stopped."), "note")
-        except Exception as e:  # noqa: BLE001 - shown, never a crash
-            self.call_from_thread(self.add_line, Failure(f"Something went wrong: {e}"), "error")
-        finally:
-            self.busy = False
-            self.bridge.stop_requested = False
+            kw = {"client_factory": self.client_factory} if self.client_factory else {}
+            self.chat = Chat(self.home, ui=self.bridge, **kw)
+        specs_before = len(self.chat.specs)
+        go_on = self.chat.handle(text)
+        if not go_on:
+            self.call_from_thread(self.leave)
+            return
+        if len(self.chat.specs) > specs_before:
+            self._offer_run(self.chat.specs[-1])
+
+    def _offer_run(self, spec: str) -> None:
+        """After a confirmed brief: run it now, detached (specification 10.3). Chat itself never starts it."""
+        if not self.bridge.yes("run_now", "Run it now? It runs in the background, and its progress shows here."):
+            self.bridge.say(f"Run it later with `ombro run --spec {spec}`.")
+            return
+        run_id = self.commands.start_run(spec)
+        if run_id:
+            from ombro.journal import Follower
+
+            self.following[run_id] = Follower(runs.find_run(self.home, run_id) / "journal.jsonl")
+            self.active_runs.add(run_id)
+            self.bridge.say(f"Started run {run_id}. Keep chatting; its progress and its notice appear here.",
+                            level="done")
+
+    # -- runs: progress, notices and the header's counts --------------------------
+
+    def poll_runs(self) -> None:
+        self.run_worker(self._poll, thread=True, exclusive=True, group="poll")
+
+    def _poll(self) -> None:
+        from ombro.tui.commands import notice_text, progress_line
+
+        try:
+            rows = views.run_list(self.home)
+        except Exception:  # noqa: BLE001 - a run being written; try at the next tick
+            return
+        for run_id, follower in list(self.following.items()):
+            for ev in follower.new_events():
+                line = progress_line(run_id, ev)
+                if line:
+                    self.call_from_thread(self.add_line, Progress(line), "progress")
+        active = {r["run_id"] for r in rows if r["active"]}
+        for run_id in sorted(self.active_runs - active):
+            self.following.pop(run_id, None)
+            self.call_from_thread(self.add_text, notice_text(self, run_id), "notice")
+            try:
+                runs.mark_seen(runs.find_run(self.home, run_id))
+            except (LookupError, OSError):
+                pass
+        counts = {"active": sorted(active), "waiting": sum(r["waiting"] for r in rows), "runs": len(rows)}
+        changed = counts != self.last_counts or active != self.active_runs
+        self.active_runs = active
+        self.last_counts = counts
+        if changed:
             self.call_from_thread(self.refresh_summary)
 
     def refresh_summary(self) -> None:
@@ -564,8 +670,12 @@ def field_prompt(f: Field) -> str:
     if f.kind == "yesno":
         return f"{f.label} (y or n{', Enter for ' + ('yes' if f.default else 'no')})"
     if f.kind == "choice":
-        opts = "; ".join(f"{o.key}: {o.label}" for o in f.options)
-        return (f"{f.label} " if f.label else "") + f"Type {opts}" + (f"; or {f.other}" if f.other else "") + "."
+        from ombro.ui import numbered
+
+        if numbered(f):
+            return f.label + ":\n" + "\n".join(f"  {o.key}) {o.label}" for o in f.options) + \
+                (f"\n(Enter for {f.default})" if f.default not in (None, "") else "")
+        return (f"{f.label} " if f.label else "") + option_text(f.options, f.other) + "?"
     if f.kind == "secret":
         return f"{f.label} (hidden as you type)"
     return f.label + (f" (Enter for {f.default})" if f.default not in (None, "") else "")

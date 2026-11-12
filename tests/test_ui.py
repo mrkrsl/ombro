@@ -169,8 +169,9 @@ def test_an_interview_speaks_only_in_events(home):
     decision = ui.fields[-1]
     assert decision.kind == "choice" and [o.key for o in decision.options] == ["a", "c", "e", "q"]
     assert any(n.level == "done" and n.text.startswith("Wrote ") for n in ui.of(Note))
-    (usage,) = ui.of(Usage)
-    assert usage.scope == "interview" and usage.final and usage.total_tokens > 0
+    usages = ui.of(Usage)
+    assert [u.final for u in usages] == [False, False, True]  # live after each model call, then the total
+    assert all(u.scope == "interview" for u in usages) and usages[-1].total_tokens >= usages[0].total_tokens > 0
 
 
 def test_quitting_from_an_interface_writes_nothing(home):

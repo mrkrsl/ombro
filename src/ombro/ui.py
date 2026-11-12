@@ -381,6 +381,8 @@ def render(event: Event) -> list[str]:
         if event.scope == "interview":
             from ombro.settings import format_tokens
 
+            if not event.final:
+                return []  # the command line shows only the closing figure
             return [f"(Interview used {event.total_tokens:,} of {format_tokens(event.max_tokens)} tokens.)"]
         from ombro.settings import format_tokens
 

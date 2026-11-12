@@ -120,10 +120,33 @@ nothing in progress and nothing typed, press it twice to leave, or type
 `/quit`. `theme: auto | light | dark` in `preferences/config.md` sets the
 colours; `auto` asks the terminal for its background, then the system.
 
-The interface is a layer over the commands and files: everything it does,
-the command line does too. Some commands in its `/` list (runs, the outbox,
-schedules and settings) are still to come in it; until then it says which
-`ombro` command to use.
+On a home with no model or key, it opens into set-up: your name, the model and
+its key (typed into a hidden field), then the set-up interview. `/setup` goes
+through it again.
+
+The `/` commands do what their `ombro` commands do:
+
+- `/brief`, `/chat`, `/new`, `/remember`: as in `ombro chat`. When a brief is
+  confirmed, it offers to run the spec at once, in the background.
+- `/runs`, `/report [run_id]` (deliverables as links that open the file),
+  `/stop <run_id>`, `/open [run_id]`.
+- `/outbox`, `/outbox show | approve | decline <ref>...`,
+  `/outbox resolve <ref> sent | not-sent`; decisions work while a run is going.
+- `/role`, `/role add [title] [--crew <crew>]`, `/role edit <name>`;
+  `/crew`, `/crew add <name> [title]`, `/crew use <name>`.
+- `/keys`, `/keys set <NAME>` (hidden); `/folders`, `/folders add <path>`,
+  `/folders remove <name>`; `/schedule`, `/schedule enable | disable <name>`;
+  `/tools`, `/tools add [name]`, `/tools remove <name>`; `/preferences`,
+  `/preferences edit`; `/theme`, `/help`, `/quit`.
+
+A run started here shows its progress as it goes (who was briefed, who
+returned). When any run ends while the interface is open, scheduled runs
+included, a notice says how it ended, links its deliverables, says what is
+waiting and how to open the report; on opening, it says what finished and what
+is waiting since you were last here. The interface is a layer over the
+commands and files: everything it does, the command line does too. A few
+things are still command-line only: `ombro outbox edit`, `ombro schedule add`,
+`ombro keys remove`.
 
 ## Interviews
 

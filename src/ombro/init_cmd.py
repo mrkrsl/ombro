@@ -69,6 +69,7 @@ def run_init(
     say: Callable[[str], None] | None = None,
     client_factory=make_client,
     edit=None,
+    next_steps: bool = True,
 ) -> bool:
     ui = ui or ConsoleUI(ask=ask, ask_secret=ask_secret, say=say, edit=edit, home=home)
     created = ensure_home(home)
@@ -82,7 +83,7 @@ def run_init(
             ui.say(f"A model is already connected: {spec.model} ({detail}).")
             if not ui.yes("reconnect", "Connect a different model?"):
                 _offer_search_key(home, ui)
-                _set_up(home, ui, client_factory)
+                _set_up(home, ui, client_factory, next_steps)
                 return True
         else:
             ui.say(f"The configured model did not answer: {detail}")
@@ -100,7 +101,7 @@ def run_init(
         ui.show(Failure(f"The test call failed: {detail}\nLet's try again (Ctrl-C to give up).\n"))
 
     _offer_search_key(home, ui)
-    _set_up(home, ui, client_factory)
+    _set_up(home, ui, client_factory, next_steps)
     return True
 
 
@@ -212,7 +213,7 @@ def _is_default_setup(home: Home) -> bool:
     return True
 
 
-def _set_up(home: Home, ui: UI, client_factory) -> None:
+def _set_up(home: Home, ui: UI, client_factory, next_steps: bool = True) -> None:
     """Part 2: the set-up interview, then an offer to add roles. Nothing is written without confirmation."""
     from ombro.interviews import RolePurpose, SetupPurpose, start
     from ombro.settings import load_limits, load_preferences
@@ -246,7 +247,8 @@ def _set_up(home: Home, ui: UI, client_factory) -> None:
                 if brief.confirmed:
                     ui.say(f"Spec saved as {brief.proposal.data['name']!r}. "
                            f"Run it with:  ombro run --spec {brief.proposal.data['name']}", spaced=True, level="done")
-    _next_steps(home, ui)
+    if next_steps:
+        _next_steps(home, ui)
 
 
 def _next_steps(home: Home, ui: UI) -> None:

@@ -106,7 +106,7 @@ def test_the_logo_keeps_its_columns_on_screen(home):
             starts = {ln.index(art.strip()) - (len(art) - len(art.lstrip())) for ln, art in zip(rows, look.LOGO_ART)}
             assert len(starts) == 1, starts
 
-    run(go())
+    drive(go())
 
 
 def test_the_shadow_is_hatched_in_ghostty_and_shaded_elsewhere():
@@ -144,7 +144,7 @@ def _app(home, script=None, *, dark=False):
 
     keys.set_key(home, "TEST_MODEL_KEY", "sk-test-INVENTED-0123456789")
     client = ScriptedClient(script or [])
-    return OmbroApp(home, dark=dark, client_factory=lambda spec: client), client
+    return OmbroApp(home, dark=dark, client_factory=lambda spec: client, poll=False), client
 
 
 def _texts(app):
@@ -161,7 +161,7 @@ def _screen(app) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", app.export_screenshot())).replace("\xa0", " ")
 
 
-def run(coro):
+def drive(coro):
     return asyncio.run(coro)
 
 
@@ -180,7 +180,7 @@ def test_opens_with_the_header_and_the_greeting(home):
             assert "Hey Ada, welcome to Ombro" in shot and "Working with Ada" in shot
             assert "Ombro Lead" in shot and "└ Default Crew" in shot and "└ Researcher" in shot and "Usage: 0%" in shot and "Balanced" in shot
 
-    run(go())
+    drive(go())
 
 
 def test_a_chat_message_gets_the_leads_answer(home):
@@ -200,7 +200,7 @@ def test_a_chat_message_gets_the_leads_answer(home):
             assert app.usage[0] > 0
             assert client.calls
 
-    run(go())
+    drive(go())
 
 
 def test_brief_mode_shows_in_the_footer_and_chat_leaves_it(home):
@@ -227,7 +227,7 @@ def test_brief_mode_shows_in_the_footer_and_chat_leaves_it(home):
                     break
             assert app.mode == "Chat" and not app.busy
 
-    run(go())
+    drive(go())
 
 
 def test_theme_switches_and_is_saved(home):
@@ -244,7 +244,7 @@ def test_theme_switches_and_is_saved(home):
             await pilot.pause()
             assert app.dark is True
 
-    run(go())
+    drive(go())
     assert load_preferences(home).theme == "dark"
 
 
@@ -262,7 +262,7 @@ def test_the_slash_menu_filters_and_takes_a_command(home):
             await pilot.press("tab")
             assert app.query_one("#input", Input).value == "/theme "
 
-    run(go())
+    drive(go())
 
 
 def test_ctrl_c_twice_leaves(home):
@@ -276,22 +276,55 @@ def test_ctrl_c_twice_leaves(home):
             await pilot.press("ctrl+c")
             await pilot.pause()
 
-    run(go())
+    drive(go())
     assert app.return_code == 0
 
 
-def test_without_a_key_it_says_set_up_is_needed(home):
+async def answer(pilot, app, text: str) -> None:
+    """Wait for the core to ask, then type the answer and press Enter."""
+    for _ in range(200):
+        if app.pending is not None:
+            break
+        await pilot.pause(0.02)
+    assert app.pending is not None, "nothing was asked"
+    if text:
+        await pilot.press(*text)
+    await pilot.press("enter")
+    await pilot.pause(0.05)
+
+
+def test_a_fresh_home_is_set_up_inside_the_interface(home):
     from ombro.tui.app import OmbroApp, setup_needed
 
     assert setup_needed(home) == "the model's key (TEST_MODEL_KEY) is not set."
-    app = OmbroApp(home, dark=False)
+    client = ScriptedClient([fake.say("OK")])
+    app = OmbroApp(home, dark=False, client_factory=lambda spec: client, poll=False)
 
     async def go():
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            assert any("ombro init" in t for t in _texts(app))
+            await answer(pilot, app, "Ada")  # your name
+            await answer(pilot, app, "1")  # DeepSeek
+            await answer(pilot, app, "")  # the model name: its default
+            assert app.pending.field.kind == "secret"
+            assert app.query_one("#input").password
+            await answer(pilot, app, "sk-test-INVENTED-0123456789")
+            await answer(pilot, app, "")  # no search key
+            await answer(pilot, app, "n")  # no set-up interview now
+            for _ in range(100):
+                await pilot.pause(0.05)
+                if not app.busy:
+                    break
+            texts = _texts(app)
+            assert not any("INVENTED-0123456789" in t for t in texts)
+            assert any("What would you like to get done today?" in t for t in texts)
 
-    run(go())
+    drive(go())
+    assert keys.get_key(home, "DEEPSEEK_API_KEY") == "sk-test-INVENTED-0123456789"
+    assert setup_needed(home) is None
+    from ombro.settings import load_preferences
+
+    assert load_preferences(home).name == "Ada"
 
 
 @pytest.mark.parametrize("width, expect", [(130, True), (100, False)])
@@ -306,7 +339,7 @@ def test_the_logo_shows_only_where_it_fits_whole(home, width, expect):
                 assert ("██░░░░██" in shot) is expect, width
                 assert "Ombro Lead" in shot
 
-    run(go())
+    drive(go())
 
 
 def test_narrow_and_dark_render(home):
@@ -318,4 +351,172 @@ def test_narrow_and_dark_render(home):
             shot = _screen(app)
             assert "ready" in shot and "Working with" not in shot  # one line of stats
 
-    run(go())
+    drive(go())
+
+
+# -- 10c to 10e: roles, briefs, runs, notices, the outbox and settings -------------------
+
+
+async def settle(pilot, app, rounds: int = 100) -> None:
+    for _ in range(rounds):
+        await pilot.pause(0.03)
+        if not app.busy and app.pending is None:
+            return
+
+
+async def command(pilot, app, text: str) -> None:
+    await pilot.press(*text)
+    await pilot.press("escape")  # close the slash menu, so Enter sends the line
+    await pilot.press("enter")
+    await pilot.pause(0.05)
+
+
+def test_adding_a_role_is_the_same_interview(home):
+    from ombro.roles import crew_roles
+    from ombro.settings import load_limits
+
+    app, _ = _app(home, [fake.call("propose", {
+        "title": "Invented Writer", "kind": "specialist", "description": "Writes invented copy and returns a file.",
+        "tools": ["workspace.read", "workspace.write", "workspace.list"], "soul": "You write short, clear copy."})])
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/role add Invented Writer")
+            await answer(pilot, app, "a")
+            await settle(pilot, app)
+            assert any("Added invented-writer" in t for t in _texts(app))
+
+    drive(go())
+    assert crew_roles(home, "default", load_limits(home))["invented-writer"].title == "Invented Writer"
+
+
+def test_a_confirmed_brief_offers_to_run_it(home, monkeypatch):
+    spec = {"name": "invented-teapots", "title": "Find invented teapot makers", "crews": ["default"],
+            "done_looks_like": "A list of three.", "users": "Me, to pick one.", "binding_constraint": "Lowtown only.",
+            "waste": "Makers outside Lowtown.", "non_goals": "No prices."}
+    app, _ = _app(home, [fake.call("propose", spec)])
+    started = []
+    monkeypatch.setattr(app.commands, "start_run", lambda name: started.append(name) or "20261112-000000-abcd")
+    monkeypatch.setattr("ombro.tui.app.runs.find_run", lambda h, rid: home.root / "runs" / rid)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/brief")
+            await answer(pilot, app, "a")  # accept the spec
+            await answer(pilot, app, "y")  # run it now
+            await settle(pilot, app)
+            assert app.mode == "Chat"
+
+    drive(go())
+    assert started == ["invented-teapots"]
+
+
+def test_a_run_ending_posts_a_notice_and_marks_it_seen(home, run):
+    from conftest import LEAD_REPORT, write_role
+    from ombro import runs as runs_mod
+    from ombro.journal import Follower
+
+    write_role(home, "writer", tools=["workspace.write"])
+    run([fake.brief("writer", "Write an invented note."),
+         fake.call("workspace__write", {"path": "workspace/note.md", "content": "Invented.\n"}),
+         fake.result("Wrote it.", deliverables=[{"name": "The note", "path": "workspace/note.md"}]),
+         fake.finish(), fake.keep_notes(), LEAD_REPORT])
+    run_id = run.run_dir.name
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.active_runs = {run_id}  # as if it was running when the interface opened
+            app.following[run_id] = Follower(run.run_dir / "journal.jsonl")
+            app.poll_runs()
+            for _ in range(100):
+                await pilot.pause(0.03)
+                if any("has ended" in t for t in _texts(app)):
+                    break
+            texts = _texts(app)
+            assert any(f"{run_id} · lead briefed" in t for t in texts)
+            notice = next(t for t in texts if "has ended" in t)
+            assert "completed" in notice and "The note:" in notice and f"/report {run_id}" in notice
+
+    drive(go())
+    assert runs_mod.read_run(run.run_dir)[0].get("seen_at")
+
+
+def test_runs_and_report_commands(home, run):
+    from conftest import LEAD_REPORT
+
+    run([fake.brief("researcher", "Look into an invented thing."), fake.result("Done."), fake.finish(),
+         fake.keep_notes(), LEAD_REPORT])
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/runs")
+            await settle(pilot, app)
+            assert any(run.run_dir.name in t and "completed" in t for t in _texts(app))
+            await command(pilot, app, "/report")
+            await settle(pilot, app)
+            assert any("# Report:" in t and "Workspace:" in t for t in _texts(app))
+
+    drive(go())
+    assert run.meta.get("seen_at")
+
+
+def test_declining_from_the_outbox(home, run):
+    from conftest import LEAD_REPORT
+    from ombro import outbox
+
+    run([fake.brief("researcher", "Do an invented thing."), fake.result("Done."), fake.finish(),
+         fake.keep_notes(), LEAD_REPORT])
+    a, _ = outbox.stage(run.run_dir, tool="mcp.fake.post_message", effect="external",
+                        arguments={"channel": "news", "text": "Invented."}, reason="Invented.", role="researcher",
+                        input_schema={})
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/outbox")
+            await settle(pilot, app)
+            assert any(a.ref in t and "waiting for your decision" in t for t in _texts(app))
+            await command(pilot, app, f"/outbox decline {a.ref}")
+            await answer(pilot, app, "y")
+            await settle(pilot, app)
+
+    drive(go())
+    assert outbox.load(a.path).status == "declined"
+
+
+def test_settings_commands(home):
+    from ombro.home import crew_title
+
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/keys set INVENTED_KEY")
+            assert app.pending.field.kind == "secret"
+            await answer(pilot, app, "sk-test-INVENTED-9876543210")
+            await settle(pilot, app)
+            await command(pilot, app, "/crew add legal Legal Team")
+            await settle(pilot, app)
+            await command(pilot, app, "/keys")
+            await settle(pilot, app)
+            await command(pilot, app, "/preferences")
+            await settle(pilot, app)
+            await command(pilot, app, "/schedule")
+            await settle(pilot, app)
+            await command(pilot, app, "/folders")
+            await settle(pilot, app)
+            texts = "\n".join(_texts(app))
+            assert "INVENTED_KEY: set" in texts and "9876543210" not in texts
+            assert "theme: auto" in texts and "No schedules yet" in texts and "No folders are shared" in texts
+
+    drive(go())
+    assert keys.get_key(home, "INVENTED_KEY") == "sk-test-INVENTED-9876543210"
+    assert crew_title(home, "legal") == "Legal Team"

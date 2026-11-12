@@ -275,6 +275,9 @@ class Interview:
         in_tokens = u.input_tokens if u.input_tokens or not u.estimated else est
         out_tokens = min(u.output_tokens, max_out) if u.estimated else u.output_tokens
         self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated)
+        snap = self.gate.snapshot()
+        self.ui.show(Usage("interview", self.purpose.kind, snap.get("total_tokens", 0), self.limits.max_tokens,
+                           sum((snap.get("tool_calls") or {}).values())))
         return reply
 
     def _show(self, proposal: Proposal) -> None:
