@@ -11,7 +11,7 @@ import pytest
 
 from conftest import fake_sent, use_fake_mcp
 from ombro import mdfile, outward
-from ombro.mcp import McpCallLost, McpClient, McpError, McpNotReached, ServerConfig, result_text
+from ombro.mcp import MODERN_VERSION, McpCallLost, McpClient, McpError, McpNotReached, ServerConfig, result_text
 from ombro.settings import SetupError, ToolSettings, load_tool_settings
 
 
@@ -23,16 +23,18 @@ def fake_server(record, **env) -> ServerConfig:
 # -- the client ---------------------------------------------------------------
 
 
-def test_stdio_client_lists_and_calls_tools(home, tmp_path):
+@pytest.mark.parametrize("era, version", [("legacy", "2025-06-18"), ("modern", "2026-07-28")])
+def test_stdio_client_lists_and_calls_tools_in_either_era(home, tmp_path, era, version):
     record = tmp_path / "sent.jsonl"
-    with McpClient(home, fake_server(record)) as c:
+    with McpClient(home, fake_server(record, OMBRO_FAKE_MCP_ERA=era)) as c:
+        assert c.version == version
         tools = {t.name: t for t in c.list_tools()}
         assert set(tools) == {"find_rows", "add_row", "post_message", "fire_hook"}
         assert tools["find_rows"].annotations == {"readOnlyHint": True}
         result = c.call_tool("post_message", {"channel": "news", "text": "Invented news."})
     assert "Would have posted to news" in result_text(result)
     assert fake_sent(record) == [{"ts": fake_sent(record)[0]["ts"], "tool": "post_message",
-                                  "arguments": {"channel": "news", "text": "Invented news."}}]
+                                  "arguments": {"channel": "news", "text": "Invented news."}, "protocol": version}]
 
 
 def test_a_server_that_cannot_start_is_not_reached(home):
@@ -81,6 +83,9 @@ def test_http_transport_with_json_and_event_stream_answers(home):
         seen.append((msg.get("method"), request.headers.get("mcp-session-id"), request.headers.get("authorization")))
         if "id" not in msg:
             return httpx.Response(202)
+        if msg["method"] == "server/discover":  # a legacy server does not know it
+            return httpx.Response(400, json={"jsonrpc": "2.0", "id": msg["id"],
+                                             "error": {"code": -32601, "message": "Method not found"}})
         if msg["method"] == "initialize":
             return httpx.Response(200, json={"jsonrpc": "2.0", "id": msg["id"], "result": {
                 "protocolVersion": "2025-06-18", "capabilities": {}, "serverInfo": {"name": "invented"}}},
@@ -98,7 +103,8 @@ def test_http_transport_with_json_and_event_stream_answers(home):
     with McpClient(home, cfg, transport=httpx.MockTransport(handle)) as c:
         assert [t.name for t in c.list_tools()] == ["note"]
         assert result_text(c.call_tool("note", {})) == "noted"
-    assert seen[0] == ("initialize", None, "Bearer abc123")
+    assert seen[0] == ("server/discover", None, "Bearer abc123")  # asked the modern way first
+    assert seen[1] == ("initialize", None, "Bearer abc123")  # then the legacy handshake
     assert seen[-1] == ("DELETE", "sess-1", None)  # the session is closed
     assert all(s[1] == "sess-1" for s in seen[1:] if s[0] != "initialize")
 
@@ -112,6 +118,9 @@ def _remote(answer_call):
         msg = json.loads(request.content)
         if "id" not in msg:
             return httpx.Response(202)
+        if msg["method"] == "server/discover":  # a legacy server
+            return httpx.Response(400, json={"jsonrpc": "2.0", "id": msg["id"],
+                                             "error": {"code": -32601, "message": "Method not found"}})
         if msg["method"] == "initialize":
             return httpx.Response(200, json={"jsonrpc": "2.0", "id": msg["id"], "result": {
                 "protocolVersion": "2025-06-18", "capabilities": {}}})
@@ -146,6 +155,110 @@ def test_remote_failures_after_sending_are_lost_not_unsent(home, answer, expecte
     assert type(caught.value) is expected
     if expected is McpCallLost:
         assert sent  # so an approval marks it uncertain and never retries it
+
+
+class ModernRemote:
+    """An invented remote server speaking 2026-07-28 over HTTP."""
+
+    def __init__(self, discover="ok", tools=None, call_result=None, break_list_once=False):
+        self.discover, self.break_list_once = discover, break_list_once
+        self.tools = tools or [{"name": "note", "inputSchema": {"type": "object"}}]
+        self.call_result = call_result or {"resultType": "complete", "content": [{"type": "text", "text": "noted"}]}
+        self.seen: list[tuple[str, dict, dict]] = []
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        if request.method != "POST":
+            self.seen.append((request.method, dict(request.headers), {}))
+            return httpx.Response(405)
+        msg = json.loads(request.content)
+        self.seen.append((msg.get("method"), dict(request.headers), msg))
+        rid, method = msg.get("id"), msg.get("method")
+        meta = (msg.get("params") or {}).get("_meta") or {}
+        if method == "initialize" or meta.get("io.modelcontextprotocol/protocolVersion") != MODERN_VERSION:
+            return httpx.Response(400, json={"jsonrpc": "2.0", "id": rid, "error": {
+                "code": -32022, "message": "Unsupported protocol version",
+                "data": {"supported": [MODERN_VERSION], "requested": None}}})
+        if method == "server/discover":
+            if self.discover == "unsupported":
+                return httpx.Response(400, json={"jsonrpc": "2.0", "id": rid, "error": {
+                    "code": -32022, "message": "Unsupported protocol version",
+                    "data": {"supported": [MODERN_VERSION], "requested": "x"}}})
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": rid, "result": {
+                "resultType": "complete", "supportedVersions": [MODERN_VERSION], "capabilities": {},
+                "_meta": {"io.modelcontextprotocol/serverInfo": {"name": "invented", "version": "1"}},
+                "ttlMs": 0, "cacheScope": "public"}}, headers={"Mcp-Session-Id": "should-be-ignored"})
+        if method == "tools/list":
+            if self.break_list_once:
+                self.break_list_once = False
+                raise httpx.ReadError("stream broke", request=request)
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": rid, "result": {
+                "resultType": "complete", "tools": self.tools, "ttlMs": 0, "cacheScope": "public"}})
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": rid, "result": self.call_result})
+
+
+def _modern_client(home, server):
+    return McpClient(home, ServerConfig(name="remote", url="https://mcp.invalid/mcp"),
+                     transport=httpx.MockTransport(server.handle))
+
+
+@pytest.mark.parametrize("discover", ["ok", "unsupported"])
+def test_a_modern_remote_server_is_spoken_to_in_the_2026_07_28_way(home, discover):
+    server = ModernRemote(discover=discover)
+    with _modern_client(home, server) as c:
+        assert c.version == MODERN_VERSION
+        assert [t.name for t in c.list_tools()] == ["note"]
+        assert result_text(c.call_tool("note", {"text": "hi"})) == "noted"
+    methods = [m for m, _, _ in server.seen]
+    assert "initialize" not in methods and "DELETE" not in methods  # no handshake, no session to close
+    _, headers, msg = server.seen[-1]
+    assert headers["mcp-protocol-version"] == MODERN_VERSION and headers["mcp-method"] == "tools/call"
+    assert headers["mcp-name"] == "note" and "mcp-session-id" not in headers
+    meta = msg["params"]["_meta"]
+    assert meta["io.modelcontextprotocol/protocolVersion"] == MODERN_VERSION
+    assert meta["io.modelcontextprotocol/clientCapabilities"] == {} and meta["io.modelcontextprotocol/clientInfo"]
+
+
+def test_arguments_marked_for_headers_are_sent_as_headers_and_bad_ones_drop_the_tool(home):
+    tools = [{"name": "note", "inputSchema": {"type": "object", "properties": {
+                 "region": {"type": "string", "x-mcp-header": "Region"}, "text": {"type": "string"}}}},
+             {"name": "bad", "inputSchema": {"type": "object", "properties": {
+                 "x": {"type": "string", "x-mcp-header": "Not A Token"}}}}]
+    server = ModernRemote(tools=tools)
+    with _modern_client(home, server) as c:
+        assert [t.name for t in c.list_tools()] == ["note"]  # the invalid one is left out
+        c.call_tool("note", {"region": "Café Nord", "text": "x"})
+        c.call_tool("note", {"region": "north", "text": "x"})
+    first, second = server.seen[-2][1], server.seen[-1][1]
+    assert first["mcp-param-region"].startswith("=?base64?") and second["mcp-param-region"] == "north"
+
+
+def test_a_broken_listing_is_asked_again_but_input_requests_are_refused(home):
+    with _modern_client(home, ModernRemote(break_list_once=True)) as c:
+        assert [t.name for t in c.list_tools()] == ["note"]
+    server = ModernRemote(call_result={"resultType": "input_required", "inputRequests": {}})
+    with _modern_client(home, server) as c:
+        with pytest.raises(McpError, match="asked for input"):
+            c.call_tool("note", {})
+
+
+def test_a_modern_server_found_out_late_is_still_spoken_to_properly(home, tmp_path):
+    """A stdio server that says nothing to the probe at first is tried the legacy
+    way; a modern server refuses that with its versions, and Ombro switches."""
+    import ombro.mcp as m
+
+    record = tmp_path / "sent.jsonl"
+    old = m.PROBE_TIMEOUT
+    m.PROBE_TIMEOUT = 0.01
+    try:
+        cfg = fake_server(record, OMBRO_FAKE_MCP_ERA="modern")
+        script = "import time, runpy; time.sleep(0.5); runpy.run_module('ombro.fake_mcp', run_name='__main__')"
+        cfg = ServerConfig(name="fake", command=sys.executable, args=("-c", script), env=cfg.env)
+        with McpClient(home, cfg) as c:
+            assert c.version == MODERN_VERSION
+            c.call_tool("fire_hook", {})
+    finally:
+        m.PROBE_TIMEOUT = old
+    assert fake_sent(record)[0]["protocol"] == MODERN_VERSION
 
 
 def test_server_errors_are_reported(home, tmp_path):

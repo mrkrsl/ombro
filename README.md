@@ -342,7 +342,12 @@ tools:
 A server's tools are named `mcp.<server>.<tool>`; `ombro tools <server>`
 lists them. A role can use only the ones its `tools:` list names, so a large
 server costs only what a role uses. Ombro speaks MCP itself (tools only),
-rather than through the SDK.
+rather than through the SDK, in both eras of the protocol: it asks in the
+2026-07-28 way first and falls back to the 2025-06-18 handshake for a server
+that does not understand it. `ombro tools <server>` says which one a server
+speaks. Where the 2026-07-28 standard says to send a request again after a
+broken answer, Ombro does so only for listing tools: a tool call that may
+have happened is never sent twice (it becomes uncertain instead).
 
 **Signing in to a remote server.** A remote server that asks for sign-in is
 connected once, in your browser:

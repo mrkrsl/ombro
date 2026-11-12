@@ -337,6 +337,7 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
     try:
         with McpClient(home, ServerConfig.from_dict(name, settings.servers[name])) as c:
             listed = c.list_tools()
+            version = c.version
     except McpError as e:
         raise cli.CliError(f"Could not list the tools of {name}: {e}") from None
     rows = []
@@ -348,7 +349,8 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
     if args.json:
         _print_json(rows)
         return 0
-    print(f"Tools of {name} ({len(rows)}), with the permission each gets under {pref['preset']}:\n")
+    print(f"Tools of {name} ({len(rows)}; it speaks MCP {version}), with the permission each gets under "
+          f"{pref['preset']}:\n")
     print(f"  {'TOOL':<44} {'CLASS':<9} {'FROM':<8} {'PERMISSION':<10} DESCRIPTION")
     for r in rows:
         desc = " ".join(r["description"].split())[:50]

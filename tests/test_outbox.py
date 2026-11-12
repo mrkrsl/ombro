@@ -518,3 +518,14 @@ def test_whole_flow_on_the_command_line(home, record):
     assert ombro(home, "outbox", "decline", second.ref, "--yes").returncode == 0
     assert [e["arguments"]["text"] for e in fake_sent(record)] == ["first"]
     assert "Nothing is waiting" in ombro(home, "outbox").stdout
+
+
+def test_a_run_and_an_approval_work_with_a_2026_07_28_server(home, run, tmp_path):
+    record = tmp_path / "sent.jsonl"
+    use_fake_mcp(home, record, OMBRO_FAKE_MCP_ERA="modern")
+    write_role(home, "poster", kind="helper", tools=ALL)
+    run(script(add(), post()))  # balanced: the row is work and runs; the post is staged
+    [a] = outbox.actions(run.run_dir)
+    outbox.approve(home, a)
+    assert [(e["tool"], e["protocol"]) for e in fake_sent(record)] == [
+        ("add_row", "2026-07-28"), ("post_message", "2026-07-28")]

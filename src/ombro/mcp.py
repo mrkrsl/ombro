@@ -6,9 +6,16 @@ Two transports:
 - http: Ombro posts JSON-RPC to a remote server's address ("streamable HTTP"),
   with any token taken from secrets/keys.env.
 
-Only what Ombro needs is implemented: initialize, tools/list and tools/call.
-Requests from the server (sampling, roots, elicitation) are refused, since
-Ombro offers none of them; pings are answered.
+Only what Ombro needs is implemented: tools/list and tools/call, in both eras
+of the protocol:
+- modern (2026-07-28): no handshake and no session; every request carries
+  its protocol version, client capabilities and client info in `_meta`, and
+  over HTTP the MCP-Protocol-Version, Mcp-Method and Mcp-Name headers;
+- legacy (2025-06-18): the initialize handshake, and a session over HTTP.
+Ombro asks in the modern way first (server/discover) and falls back to the
+legacy handshake for a server that does not understand it, as the standard
+describes. Requests from a legacy server (sampling, roots, elicitation) are
+refused, since Ombro offers none of them; pings are answered.
 
 Values written as ${NAME} in a server's settings are read from secrets/keys.env when the
 server starts, and are never logged.
@@ -16,6 +23,7 @@ server starts, and are never logged.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import queue
@@ -34,7 +42,13 @@ from ombro import __version__, keys
 from ombro.home import Home
 from ombro.tools import ToolError
 
-PROTOCOL_VERSION = "2025-06-18"
+MODERN_VERSION = "2026-07-28"
+LEGACY_VERSION = "2025-06-18"
+PROTOCOL_VERSION = LEGACY_VERSION  # what the legacy handshake asks for
+PROBE_TIMEOUT = 10.0  # a stdio server that says nothing this long is treated as legacy
+UNSUPPORTED_VERSION = -32022
+MODERN_ERRORS = {-32020, -32021, -32022}
+_HEADER_TOKEN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 START_TIMEOUT = 30.0
 CALL_TIMEOUT = 60.0
 RESULT_MAX_CHARS = 8_000
@@ -43,6 +57,10 @@ _REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 class McpError(ToolError):
     """An MCP server could not do what was asked. The message is shown to the caller."""
+
+    def __init__(self, message: str, code: int | None = None, data: Any = None):
+        super().__init__(message)
+        self.code, self.data = code, data
 
 
 class McpNotReached(McpError):
@@ -104,6 +122,18 @@ class McpTool:
     description: str
     input_schema: dict[str, Any]
     annotations: dict[str, Any]
+    param_headers: dict[str, str] = field(default_factory=dict)  # argument -> Mcp-Param-<Name>
+
+
+def header_value(value: Any) -> str:
+    """A header value as the 2026-07-28 transport sends it: plain ASCII as it is,
+    anything else as =?base64?...?=."""
+    if isinstance(value, bool):
+        text = "true" if value else "false"
+    else:
+        text = str(value)
+    plain = (text.isascii() and text == text.strip() and text.isprintable() and not text.startswith("=?base64?"))
+    return text if plain else "=?base64?" + base64.b64encode(text.encode()).decode() + "?="
 
 
 def result_text(result: dict[str, Any], max_chars: int = RESULT_MAX_CHARS) -> str:
@@ -232,6 +262,19 @@ class _Stdio:
             self._log.close()
 
 
+def _json_rpc_error(r: httpx.Response, rid: Any) -> dict | None:
+    """The JSON-RPC error in a 4xx answer to request `rid`, if it holds one."""
+    if rid is None or "json" not in r.headers.get("content-type", ""):
+        return None
+    try:
+        body = r.json()
+    except ValueError:
+        return None
+    if isinstance(body, dict) and body.get("id") == rid and isinstance(body.get("error"), dict):
+        return body
+    return None
+
+
 def _sse_messages(text: str) -> list[dict]:
     out, data = [], []
     for line in text.splitlines() + [""]:
@@ -262,18 +305,27 @@ class _Http:
         self.auth = oauth.session_for(home, cfg.name, {"url": self.url, "headers": self.headers}, transport)
         self.session: str | None = None
         self.protocol: str | None = None
+        self.modern = False  # set by the client once it knows the server's era
+        self.extra_headers: dict[str, str] = {}  # for the next request only (Mcp-Param-*)
+        self.last_status: int | None = None
         self.pending: list[dict] = []
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, msg: dict | None = None) -> dict[str, str]:
         h = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json", **self.headers}
-        if self.session:
+        if self.session and not self.modern:
             h["Mcp-Session-Id"] = self.session
         if self.protocol:
             h["MCP-Protocol-Version"] = self.protocol
+        if self.modern and msg and msg.get("method"):
+            h["Mcp-Method"] = header_value(msg["method"])
+            name = (msg.get("params") or {}).get("name")
+            if msg["method"] == "tools/call" and name:
+                h["Mcp-Name"] = header_value(name)
+            h.update(self.extra_headers)
         return h
 
     def _post(self, msg: dict, timeout: float, token: str | None) -> httpx.Response:
-        headers = self._headers()
+        headers = self._headers(msg)
         if token:
             headers["Authorization"] = f"Bearer {token}"
         return self.client.post(self.url, content=json.dumps(msg), headers=headers,
@@ -306,7 +358,8 @@ class _Http:
             # The request may have reached the server (a dropped connection, a broken
             # answer): it may or may not have happened.
             raise _AnswerLost(f"the connection failed after the request was sent ({str(e) or type(e).__name__})") from None
-        if r.headers.get("mcp-session-id"):
+        self.last_status = r.status_code
+        if r.headers.get("mcp-session-id") and not self.modern:
             self.session = r.headers["mcp-session-id"]
         if r.status_code in (202, 204):
             return []
@@ -320,6 +373,11 @@ class _Http:
             raise ConnectionError(f"it needs more access than the sign-in gave: run `ombro connect {self.name}` "
                                   "again")
         if r.status_code >= 400:
+            # A server that answers with a JSON-RPC error has answered: the error is
+            # the reply (the 2026-07-28 transport sends errors with HTTP 4xx).
+            answer = _json_rpc_error(r, msg.get("id"))
+            if answer is not None:
+                return [answer]
             # Refused before it was handled (a lost session, a bad address).
             raise ConnectionError(f"HTTP {r.status_code}")
         ctype = r.headers.get("content-type", "")
@@ -340,7 +398,7 @@ class _Http:
         raise TimeoutError
 
     def close(self) -> None:
-        if self.session:
+        if self.session and not self.modern:
             headers = self._headers()
             try:
                 token = self._token()
@@ -371,6 +429,71 @@ class McpClient:
         self._t: _Stdio | _Http | None = None
         self._next = 0
         self.server_info: dict[str, Any] = {}
+        self.version: str | None = None  # the protocol version agreed with the server
+        self._param_headers: dict[str, dict[str, str]] = {}
+
+    @property
+    def modern(self) -> bool:
+        return self.version == MODERN_VERSION
+
+    def _meta(self) -> dict[str, Any]:
+        return {"io.modelcontextprotocol/protocolVersion": MODERN_VERSION,
+                "io.modelcontextprotocol/clientCapabilities": {},
+                "io.modelcontextprotocol/clientInfo": {"name": "ombro", "version": __version__}}
+
+    def _params(self, params: dict) -> dict:
+        """Request params as the agreed era wants them."""
+        return {**params, "_meta": self._meta()} if self.modern else params
+
+    def _go_modern(self, info: dict | None = None) -> None:
+        self.version = MODERN_VERSION
+        if isinstance(self._t, _Http):
+            self._t.modern, self._t.protocol = True, MODERN_VERSION
+        meta = (info or {}).get("_meta") or {}
+        self.server_info = meta.get("io.modelcontextprotocol/serverInfo") or {}
+
+    def _modern_offered(self, e: McpError) -> bool:
+        data = e.data if isinstance(e.data, dict) else {}
+        return e.code == UNSUPPORTED_VERSION and MODERN_VERSION in (data.get("supported") or [])
+
+    def _probe(self) -> bool:
+        """Does the server speak 2026-07-28? Asks server/discover, as the standard
+        advises. A modern answer, or a modern 'unsupported version' error that
+        offers 2026-07-28, means modern. Anything else means legacy: an
+        unknown-method error, a plain HTTP refusal (400, 404, 405), or, over
+        stdio, no answer within PROBE_TIMEOUT."""
+        assert self._t is not None
+        stdio = isinstance(self._t, _Stdio)
+        if not stdio:
+            self._t.modern, self._t.protocol = True, MODERN_VERSION
+        try:
+            # _call adds the modern _meta itself once the version is set, so set it for the probe.
+            self.version = MODERN_VERSION
+            result = self._call("server/discover", {}, PROBE_TIMEOUT if stdio else self.cfg.start_timeout)
+        except McpError as e:
+            self.version = None
+            if self._modern_offered(e):
+                self._go_modern()
+                return True
+            if isinstance(e, McpCallLost):
+                if stdio:
+                    return False  # silence: a legacy server, or one still starting
+                raise
+            if isinstance(e, McpNotReached):
+                if not stdio and self._t.last_status in (400, 404, 405):
+                    return self._legacy_http()
+                raise
+            return self._legacy_http() if not stdio else False
+        self.version = None
+        if MODERN_VERSION in (result.get("supportedVersions") or []):
+            self._go_modern(result)
+            return True
+        return self._legacy_http() if not stdio else False
+
+    def _legacy_http(self) -> bool:
+        assert isinstance(self._t, _Http)
+        self._t.modern, self._t.protocol = False, None
+        return False
 
     # -- connecting --------------------------------------------------------
 
@@ -384,15 +507,23 @@ class McpClient:
         else:
             raise McpNotReached(f"server {self.cfg.name} has neither a command nor a url in tools.md")
         try:
-            result = self._call("initialize", {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "ombro", "version": __version__},
-            }, self.cfg.start_timeout)
-            if isinstance(self._t, _Http):
-                self._t.protocol = str(result.get("protocolVersion") or PROTOCOL_VERSION)
-            self.server_info = result.get("serverInfo") or {}
-            self._notify("notifications/initialized")
+            if not self._probe():
+                try:
+                    result = self._call("initialize", {
+                        "protocolVersion": PROTOCOL_VERSION,
+                        "capabilities": {},
+                        "clientInfo": {"name": "ombro", "version": __version__},
+                    }, self.cfg.start_timeout)
+                except McpError as e:
+                    if not self._modern_offered(e):  # a slow modern server, found out late
+                        raise
+                    self._go_modern()
+                else:
+                    self.version = str(result.get("protocolVersion") or PROTOCOL_VERSION)
+                    if isinstance(self._t, _Http):
+                        self._t.protocol = self.version
+                    self.server_info = result.get("serverInfo") or {}
+                    self._notify("notifications/initialized")
         except McpError as e:
             tail = ""
             if isinstance(self._t, _Stdio):
@@ -449,7 +580,8 @@ class McpClient:
         rid = self._next
         deadline = time.monotonic() + timeout
         try:
-            replies = self._t.request({"jsonrpc": "2.0", "id": rid, "method": method, "params": params}, timeout)
+            replies = self._t.request({"jsonrpc": "2.0", "id": rid, "method": method,
+                                       "params": self._params(params)}, timeout)
         except TimeoutError as e:
             if sent is not None:
                 sent.append(True)
@@ -477,9 +609,16 @@ class McpClient:
                 continue  # a notification, or an answer to something abandoned
             if "error" in msg:
                 err = msg.get("error") or {}
-                raise McpError(f"server {self.cfg.name}: {err.get('message') or 'error'}")
+                raise McpError(f"server {self.cfg.name}: {err.get('message') or 'error'}",
+                               code=err.get("code"), data=err.get("data"))
             result = msg.get("result")
-            return result if isinstance(result, dict) else {}
+            result = result if isinstance(result, dict) else {}
+            kind = result.get("resultType", "complete")
+            if kind == "input_required":
+                raise McpError(f"server {self.cfg.name} asked for input during {method}, which Ombro cannot give")
+            if kind != "complete":
+                raise McpError(f"server {self.cfg.name} gave an answer of an unknown kind ({kind!r})")
+            return result
 
     # -- tools -------------------------------------------------------------
 
@@ -488,17 +627,30 @@ class McpClient:
         out: list[McpTool] = []
         cursor = None
         for _ in range(50):
-            result = self._call("tools/list", {"cursor": cursor} if cursor else {}, self.cfg.start_timeout)
+            params = {"cursor": cursor} if cursor else {}
+            try:
+                result = self._call("tools/list", params, self.cfg.start_timeout)
+            except McpCallLost:
+                if not self.modern:
+                    raise
+                # 2026-07-28: a broken answer loses the request; ask again with a new id.
+                # Only listing is asked again: a tool call that may have happened never is.
+                result = self._call("tools/list", params, self.cfg.start_timeout)
             for t in result.get("tools") or []:
                 if not isinstance(t, dict) or not t.get("name"):
                     continue
                 schema = t.get("inputSchema") if isinstance(t.get("inputSchema"), dict) else {}
+                headers = _param_headers(schema)
+                if headers is None:
+                    continue  # an invalid x-mcp-header: the standard says to leave the tool out
                 out.append(McpTool(
                     name=str(t["name"]),
                     description=str(t.get("description") or ""),
                     input_schema=schema or {"type": "object", "properties": {}},
                     annotations=t.get("annotations") if isinstance(t.get("annotations"), dict) else {},
+                    param_headers=headers,
                 ))
+                self._param_headers[str(t["name"])] = headers
             cursor = result.get("nextCursor")
             if not cursor:
                 break
@@ -509,5 +661,27 @@ class McpClient:
         """The raw tools/call result. Raises McpNotReached if nothing was sent,
         McpCallLost if it was sent and no answer came, McpError if refused."""
         self.start()
-        return self._call("tools/call", {"name": name, "arguments": arguments},
-                          min(timeout or self.cfg.timeout, self.cfg.timeout), sent=sent)
+        if isinstance(self._t, _Http) and self.modern:
+            self._t.extra_headers = {
+                f"Mcp-Param-{h}": header_value(arguments[arg])
+                for arg, h in self._param_headers.get(name, {}).items()
+                if isinstance(arguments.get(arg), (str, int, float, bool)) and arguments.get(arg) is not None}
+        try:
+            return self._call("tools/call", {"name": name, "arguments": arguments},
+                              min(timeout or self.cfg.timeout, self.cfg.timeout), sent=sent)
+        finally:
+            if isinstance(self._t, _Http):
+                self._t.extra_headers = {}
+
+
+def _param_headers(schema: dict) -> dict[str, str] | None:
+    """Arguments a 2026-07-28 server wants mirrored into Mcp-Param-<Name> headers,
+    or None if one of its x-mcp-header names is invalid."""
+    out: dict[str, str] = {}
+    for arg, prop in ((schema or {}).get("properties") or {}).items():
+        if isinstance(prop, dict) and "x-mcp-header" in prop:
+            name = prop["x-mcp-header"]
+            if not isinstance(name, str) or not _HEADER_TOKEN.match(name):
+                return None
+            out[arg] = name
+    return out
