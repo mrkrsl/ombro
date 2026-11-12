@@ -137,6 +137,7 @@ LIMITS_META = {
     "code_timeout": "60s",
     "code_max_memory": "1GB",
     "code_output_chars": 8_000,
+    "code_max_total": "2GB",
 }
 
 LIMITS_BODY = """\
@@ -207,6 +208,9 @@ Code (the code.run tool), for each script a role runs:
 - code_max_memory: memory, e.g. 1GB or 512MB.
 - code_output_chars: how much of a script's output the role sees; the start
   and the end are kept and the middle cut. The run's code/ folder keeps more.
+- code_max_total: all the files in the run's workspace/ and scratch/
+  together, e.g. 2GB. Once scripts have written more, code.run runs no
+  more scripts in that run, and the report says so.
 - code.run has its own max_calls (10 unless tool_max_calls or tools.md says).
 
 Dollars are not a limit. Where models.md has prices, reports show an estimate.

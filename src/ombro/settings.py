@@ -76,7 +76,8 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
 # runs may start in one tick or run at once.
 SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "10m", "schedule_max_running": 2, "schedule_max_starts": 3}
 # Code execution: limits on each script code.run runs.
-CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 8_000}
+CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 8_000,
+                                 "code_max_total": "2GB"}
 CODE_DEFAULT_CALLS = 10  # code.run's max_calls when neither limits.md nor tools.md sets one
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
@@ -142,6 +143,7 @@ class Limits:
     code_timeout: float = 60.0
     code_max_memory: int = 1024**3
     code_output_chars: int = 8_000
+    code_max_total: int = 2 * 1024**3  # all the files in workspace/ and scratch/ together
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Limits":
@@ -226,6 +228,7 @@ class Limits:
             code_timeout=pos_num("code_timeout", parse_duration(d["code_timeout"])),
             code_max_memory=pos_num("code_max_memory", parse_size(d["code_max_memory"]), integer=True),
             code_output_chars=pos_num("code_output_chars", d["code_output_chars"], integer=True),
+            code_max_total=pos_num("code_max_total", parse_size(d["code_max_total"]), integer=True),
         )
 
     def to_dict(self) -> dict[str, Any]:

@@ -715,6 +715,7 @@ def cmd_limits(args) -> int:
 
     print(f"  each script      {format_duration(lim.code_timeout)}, {format_size(lim.code_max_memory)}, "
           f"{lim.code_output_chars:,} characters of output to the role (code.run)")
+    print(f"  scripts in all   {format_size(lim.code_max_total)} in a run's workspace/ and scratch/ (code.run)")
     print(f"\nLevels: {', '.join(ALLOWANCES)}. Change with `ombro limits set <level>`; details in {home.limits}.")
     if any(k in meta for k in RETIRED_LIMITS):
         print("Note: budget_usd in limits.md is no longer used; dollars are only an estimate now.")

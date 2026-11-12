@@ -103,6 +103,28 @@ def _shown(ch: dict[str, Any], n: int = CHANGES_SHOWN) -> dict[str, Any]:
     return out
 
 
+def _space_used(roots: dict[str, Path]) -> int | None:
+    """Bytes in the run's own workspace/ and scratch/, or None if there are too many
+    files to count."""
+    total = 0
+    for label in ("workspace", "scratch"):
+        m = folders.manifest(roots[label])
+        if m is None:
+            return None
+        total += sum(size for size, _ in m.values())
+    return total
+
+
+def _space_note(used: int | None, cap: int) -> str | None:
+    if used is None:
+        return (f"the run's workspace/ and scratch/ hold more than {folders.MANIFEST_MAX_FILES:,} files, so no more "
+                "scripts run in this run")
+    if used > cap:
+        return (f"the run's workspace/ and scratch/ hold {format_size(used)}, more than code_max_total "
+                f"({format_size(cap)}), so no more scripts run in this run")
+    return None
+
+
 def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     code = args.get("code")
     if not isinstance(code, str) or not code.strip():
@@ -119,6 +141,10 @@ def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     purpose = " ".join(str(args.get("purpose") or "").split())[:200]
 
     _check_layout(ctx)  # before anything is written: a replaced folder is never handed to a script
+    cap = limits.code_max_total if limits else 2 * 1024**3
+    full = _space_note(_space_used(_roots(ctx)), cap)
+    if full:
+        raise ToolInputError(full + ". Carry on without code.run, and say so in did_not_do.")
     code_dir = ctx.run_dir / "code"
     code_dir.mkdir(exist_ok=True)
     n = _next_number(code_dir)
@@ -189,6 +215,10 @@ def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     if was_cut or outcome.output_total > len(outcome.output):
         result["output_note"] = (f"the output was {outcome.output_total:,} bytes; the middle was cut. Print less, "
                                  "or write long results to a file in scratch/ and read the part you need.")
+    full = _space_note(_space_used(roots), cap)
+    if full:
+        ctx.record("warning", f"after {rel}: {full}", tool="code.run", script=rel)
+        result["note_space"] = full + ". Do not call code.run again."
     if layout_problem:
         ctx.record("layout_changed", f"after {rel}: {layout_problem}", tool="code.run", script=rel)
         result["error"] = layout_problem + " Further tool calls on that folder will be refused."

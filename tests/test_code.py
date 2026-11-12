@@ -286,3 +286,14 @@ def test_the_macos_profile_denies_by_default(tmp_path):
     assert "network" not in profile and "process-fork" not in profile
     assert f'(allow file-read* file-write* (subpath "{tmp_path / "run" / "workspace"}"))' in profile
     assert 'brand \\"quoted\\"' in profile
+
+
+@needs_sandbox
+def test_scripts_stop_once_the_run_folders_pass_code_max_total(run_dir):
+    ctx, events = make_ctx(run_dir, code_max_total="3MB")
+    out = run_script(ctx, "for i in range(2):\n    open(f'scratch/big{i}.bin', 'wb').write(b'x' * 2_000_000)\n")
+    assert out["exit_code"] == 0 and "no more scripts" in out["note_space"]
+    assert any(e["action"] == "warning" and "code_max_total" in e["note"] for e in events)
+    with pytest.raises(coderun.ToolInputError, match="code_max_total"):
+        run_script(ctx, "print('one more')")
+    assert not (run_dir / "code" / "002.py").exists()
