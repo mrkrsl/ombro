@@ -132,8 +132,45 @@ def test_refuse_in_tools_md_beats_a_brief_that_allows(home, run, tmp_path):
     write_role(home, "poster", kind="helper", tools=ALL)
     run(script(post()), spec_meta=spec_with("auto"))
     assert fake_sent(record) == [] and outbox.actions(run.run_dir) == []
-    assert any("refused by the user's settings" in r.get("error", "") for r in tool_replies(run))
-    assert "Refused by tools.md (1)" in run.report
+    # A refused tool is not offered at all, so the call never reaches a handler.
+    offered = {t["function"]["name"] for c in run.client.calls for t in (c.get("tools") or [])}
+    assert POST not in offered and ADD in offered
+    assert any("not one of your tools" in r.get("error", "") for r in tool_replies(run))
+    assert any(e["action"] == "warning" and "permission: refuse" in e["note"] for e in run.events)
+
+
+@pytest.mark.parametrize("tool, call", [
+    ("mcp.fake.find_rows", lambda: fake.call("mcp__fake__find_rows", {"sheet": "Leads"})),  # marked read-only
+    ("mcp.fake.add_row", lambda: add()),  # internal
+    ("mcp.fake.post_message", lambda: post()),  # external
+])
+def test_refuse_holds_for_every_class(home, run, tmp_path, tool, call):
+    record = tmp_path / "sent.jsonl"
+    use_fake_mcp(home, record, tools={tool: {"permission": "refuse"}})
+    write_role(home, "poster", kind="helper", tools=ALL)
+    run(script(call()), spec_meta=spec_with("auto"))
+    assert fake_sent(record) == [] and outbox.actions(run.run_dir) == []
+    offered = {t["function"]["name"] for c in run.client.calls for t in (c.get("tools") or [])}
+    assert tool.replace(".", "__") not in offered
+
+
+def test_a_refused_read_only_tool_is_refused_even_if_offered(home, tmp_path):
+    """The call-time check, for a tool that reached the registry some other way."""
+    import types
+
+    from ombro import outward, runs
+    from ombro.settings import load_limits
+    from ombro.tools import ToolRegistry
+
+    tools_cfg = {"tools": {"mcp.inv.lookup": {"permission": "refuse"}}, "servers": {"inv": {"command": "x"}}}
+    run_dir = runs.create_run(home, "default", {}, "# Invented", load_limits(home), source="test", tools=tools_cfg)
+    called = []
+    t = outward.make_tool("inv", "lookup", "invented", {"type": "object", "properties": {}}, "read-only",
+                          lambda r, a, timeout: called.append(r) or {"content": []})
+    eng = Engine(home, run_dir, registry=ToolRegistry([t]))
+    tc = types.SimpleNamespace(id="1", name=t.wire_name, arguments={}, raw_arguments="{}")
+    out = eng._role_tool(types.SimpleNamespace(name="poster"), tc, {t.wire_name: t})
+    assert "refused by the user's settings" in out["error"] and called == []
 
 
 def test_an_allowed_call_with_no_answer_is_uncertain_and_the_role_is_told_not_to_retry(home, run, tmp_path):

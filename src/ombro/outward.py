@@ -144,9 +144,14 @@ def tool_class(settings: ToolSettings, name: str, annotations: dict[str, Any] | 
     return classify_with_source(annotations, settings.tools.get(name, {}).get("class"), server_class)
 
 
+def refused(name: str, tool_settings: ToolSettings) -> bool:
+    """`permission: refuse` in tools.md: refused whatever any layer, or the tool's class, says."""
+    return tool_settings.tools.get(name, {}).get("permission") == "refuse"
+
+
 def decide(setting: dict[str, Any] | None, name: str, effect: str, tool_settings: ToolSettings) -> str:
-    """allow, stage or refuse for one call."""
-    if tool_settings.tools.get(name, {}).get("permission") == "refuse":
+    """allow, stage or refuse for one call. Refuse holds for every class, read-only too."""
+    if refused(name, tool_settings):
         return "refuse"
     setting = setting or {"preset": DEFAULT_PRESET}
     if name in (setting.get("allow") or []):

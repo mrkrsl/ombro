@@ -68,6 +68,7 @@ class Engine:
         # So are the permissions for outward (MCP) tools.
         self.outward = meta.get("outward") or {"preset": outward.DEFAULT_PRESET, "source": "default"}
         self.pool: outward.McpPool | None = None
+        self.refused_tools: set[str] = set()  # set to `permission: refuse` in tools.md: never offered
         # So are the shared folders, checked against folders.md when the run was created.
         self.shared = {f["name"]: SharedFolder(f["name"], Path(f["path"]), f["access"])
                        for f in meta.get("folders") or []}
@@ -114,7 +115,7 @@ class Engine:
             if role.model not in self.models:
                 raise SetupError(f"role {role.name} uses model {role.model!r}, which is not in models.md")
             missing_tools = [t for t in role.tools if self.registry.get(t) is None
-                             and not (t == "code.run" and self.code_unavailable)]
+                             and not (t == "code.run" and self.code_unavailable) and t not in self.refused_tools]
             if missing_tools:
                 self.journal.write(
                     "harness",
@@ -140,10 +141,19 @@ class Engine:
             return
         self.pool = outward.McpPool(self.home, self.tool_settings, log_dir=self.run_dir)
         tools, warnings = self.pool.tools(names)
+        # `permission: refuse` beats everything, whatever a tool's class: a refused
+        # tool is not offered at all (and _role_tool refuses it again if called).
+        refused = [t for t in tools if outward.refused(t.name, self.tool_settings)]
+        self.refused_tools = {t.name for t in refused}
+        tools = [t for t in tools if t.name not in self.refused_tools]
         for t in tools:
             self.registry.register(t)
         for w in warnings:
             self.journal.write("harness", "warning", w)
+        if refused:
+            listed = ", ".join(sorted(self.refused_tools))
+            self.journal.write("harness", "warning", f"not offered to any role, because tools.md sets them to "
+                               f"`permission: refuse`: {listed}", refused=sorted(self.refused_tools))
         if tools:
             self.journal.write("harness", "mcp_ready", f"{len(tools)} MCP tool(s): " + ", ".join(
                 f"{t.name} ({t.effect}: {outward.decide(self.outward, t.name, t.effect, self.tool_settings)})"
@@ -483,6 +493,12 @@ class Engine:
         if tc.arguments is None:
             self.journal.write(role.name, "tool_refused", f"{name}: arguments were not a JSON object")
             return {"error": "the arguments were not a JSON object"}
+        if tool.outward and outward.refused(name, self.tool_settings):
+            # Checked before the class: refuse holds for read-only tools too.
+            self.journal.write(role.name, "tool_refused", f"{name}: refused by tools.md", tool=name,
+                               permission="refuse")
+            return {"error": f"{name} is refused by the user's settings. Carry on without it, and say so in "
+                    "did_not_do."}
         if tool.outward and tool.effect != "read-only":
             return self._outward_call(role, tool, tc.arguments)
         cost = self.limits.cost_for(name)
