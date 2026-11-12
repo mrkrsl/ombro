@@ -4,10 +4,14 @@ version = "0.1.0"
 description = "A small local harness for briefing a crew of AI roles and getting bounded, reported work back."
 readme = "README.md"
 requires-python = ">=3.11"
+# Minimums are the versions tested in uv.lock. `uv tool install` does not read the
+# lock, so these are what keep an install off older releases with known holes.
 dependencies = [
-    "httpx>=0.27",
-    "PyYAML>=6.0",
-    "jsonschema>=4.20",
+    "httpx>=0.28.1",
+    "httpcore>=1.0.9",
+    "h11>=0.16.0",  # CVE-2025-43859 is fixed from 0.16.0
+    "PyYAML>=6.0.3",
+    "jsonschema>=4.26.0",
 ]
 
 [project.scripts]
