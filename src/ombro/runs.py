@@ -121,7 +121,7 @@ def create_run(
         "outward": outward,
         "folders": shared,
         **({"folders_left_out": left_out} if left_out else {}),
-        "spend": {},
+        "usage": {},
         **(extra or {}),
     }
     mdfile.write(run_dir / "run.md", meta, RUN_BODY)
@@ -147,6 +147,15 @@ def start_detached(home: Home, run_dir: Path) -> int:
     finally:
         log.close()
     return proc.pid
+
+
+def usage(meta: dict[str, Any]) -> dict[str, Any]:
+    """A run's usage so far. Runs from before step 10a-0 kept it as `spend`."""
+    return dict(meta.get("usage") or meta.get("spend") or {})
+
+
+def interview_usage(meta: dict[str, Any]) -> dict[str, Any]:
+    return dict(meta.get("interview_usage") or meta.get("interview_spend") or {})
 
 
 def read_run(run_dir: Path) -> tuple[dict[str, Any], str]:

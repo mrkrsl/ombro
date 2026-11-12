@@ -143,7 +143,6 @@ LIMITS_META = {
     "loop_threshold": 3,
     "max_steps": {"lead": 6, "specialist": 15, "helper": 8},
     "tool_max_calls": {"default": 20, "memory.search": 8},
-    "tool_cost_per_call": {},
     "report_max_output_tokens": 2000,
     "report_timeout": "2m",
     "interview_max_turns": 40,
@@ -237,7 +236,7 @@ Code (the code.run tool), for each script a role runs:
   more scripts in that run, and the report says so.
 - code.run has its own max_calls (10 unless tool_max_calls or tools.md says).
 
-Dollars are not a limit. Where models.md has prices, reports show an estimate.
+Limits and usage are in tokens. Ombro reports no costs.
 """
 
 MODELS_META = {
@@ -247,21 +246,18 @@ MODELS_META = {
             "endpoint": "https://api.deepseek.com",
             "model": "deepseek-chat",
             "key": "DEEPSEEK_API_KEY",
-            "price_per_mtok": {"input": 0.30, "output": 1.20},
         },
         "cheap": "default",
     }
 }
 
 MODELS_BODY = """\
-Model names used by roles (`model:` in a role's config.md), with endpoints and
-prices. Any OpenAI-compatible chat endpoint with tool calling works.
+Model names used by roles (`model:` in a role's config.md), with their
+endpoints. Any OpenAI-compatible chat endpoint with tool calling works.
 
 - api: `openai` for an OpenAI-compatible endpoint, or `fake` for a scripted
   model used in tests and dry runs (`script:` names a JSON file of replies).
 - key: the name of the variable in secrets/keys.env that holds the API key. Keys never go in this file.
-- price_per_mtok: optional US dollars per million input and output tokens,
-  used only to show an estimated cost in reports. Limits are in tokens.
 - A name can point at another name, as `cheap: default` does.
 """
 
@@ -297,9 +293,8 @@ Tools:
 Settings for any tool:
 - provider: which provider backs it.
 - max_calls: calls allowed per run. Tools not named use `default` in limits.md.
-- cost_per_call: optional US dollars per call, added to the estimated cost
-  shown in reports. For services that bill in their own units, such as
-  Firecrawl credits. Tools are limited by max_calls, not by cost.
+  Services that bill in their own units, such as Firecrawl credits, are
+  limited this way too.
 
 providers: settings for each provider. `key` names the variable in secrets/keys.env that
 holds its key (set it with `ombro keys set NAME`). `fake` returns invented
@@ -327,7 +322,7 @@ for each call, e.g. 60s. For example:
 
 A server's tools are named mcp.<server>.<tool>; `ombro tools <server>` lists
 them. A role uses only the ones its `tools:` list names. Per-tool settings
-for MCP tools, as well as max_calls and cost_per_call:
+for MCP tools, as well as max_calls:
 - class: read-only, internal or external, when the server's marking is
   wrong or missing. read-only changes nothing. internal changes things in
   your organisation's own tools (documents, sheets, databases, CRMs,
@@ -344,13 +339,11 @@ Whether other calls run or wait in the outbox is set by `outward:` in
 preferences/config.md and in each spec.
 """
 
-PREFERENCES_META = {"default_crew": DEFAULT_CREW, "editor": "", "display_currency": None, "outward": "balanced"}
+PREFERENCES_META = {"default_crew": DEFAULT_CREW, "editor": "", "outward": "balanced"}
 
 PREFERENCES_BODY = """\
 - default_crew: the crew commands use when --crew is not given.
 - editor: command used to open files for editing. Empty means $EDITOR.
-- display_currency: optional, e.g. `{code: GBP, rate: 0.79}`. Shown alongside
-  US dollars; never used for enforcement.
 - outward: what outward (MCP) tools may do without you, unless a spec says
   otherwise. manual: only read-only calls run; internal and external
   actions wait in the outbox. balanced: read-only and internal (changes in

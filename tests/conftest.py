@@ -24,7 +24,6 @@ TEST_MODELS = {
             "endpoint": "https://models.invalid/v1",
             "model": "test-model",
             "key": "TEST_MODEL_KEY",
-            "price_per_mtok": {"input": 1.0, "output": 1.0},
         },
         "cheap": "default",
     }

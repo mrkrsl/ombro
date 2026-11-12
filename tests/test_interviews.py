@@ -274,7 +274,7 @@ def test_insufficient_brief_ends_in_a_report_with_no_roles_briefed(talk, home):
 # -- limits -------------------------------------------------------------------------
 
 
-def test_interview_spend_has_its_own_cap(talk, home):
+def test_interview_usage_has_its_own_cap(talk, home):
     mdfile.write(home.limits, {"allowance": "moderate", "interview_max_tokens": 12000})
     out = talk(
         SetupPurpose(home),
@@ -282,14 +282,14 @@ def test_interview_spend_has_its_own_cap(talk, home):
         ["An invented baker."],
     )
     assert out.status == "limit" and "max_tokens" in out.detail
-    assert out.spend["total_tokens"] <= 12000
+    assert out.usage["total_tokens"] <= 12000
     assert talk.client.remaining == 1  # the call that would pass the cap never happened
     # The run cap is untouched by the interview's.
     assert load_limits(home).max_tokens == 400_000
 
 
-def test_interview_spend_is_kept_apart_from_the_run(home, monkeypatch, capsys):
-    """`ombro run` with no spec: interview, confirm, then the run, each with its own spend."""
+def test_interview_usage_is_kept_apart_from_the_run(home, monkeypatch, capsys):
+    """`ombro run` with no spec: interview, confirm, then the run, each with its own usage."""
     from ombro import cli
 
     script = [
@@ -308,8 +308,8 @@ def test_interview_spend_is_kept_apart_from_the_run(home, monkeypatch, capsys):
     run_dir = runs.latest_run(home, "default")
     meta = runs.read_run(run_dir)[0]
     assert meta["status"] == "completed"
-    assert meta["interview_spend"]["total_tokens"] == 4850
-    assert meta["spend"]["total_tokens"] == 440  # the run counts only its own calls
+    assert meta["interview_usage"]["total_tokens"] == 4850
+    assert meta["usage"]["total_tokens"] == 440  # the run counts only its own calls
     assert "interview; spec saved at" in meta["source"]
     assert (run_dir / "interview.md").is_file()
     assert "Task interview (separate from the run's limits): 4,850 tokens" in (run_dir / "report.md").read_text()

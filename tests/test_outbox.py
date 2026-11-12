@@ -210,7 +210,7 @@ def test_staging_counts_towards_the_tools_cap(home, run, tmp_path):
     run(script(post("one"), post("two"), post("three")))
     assert [a.arguments["text"] for a in outbox.actions(run.run_dir)] == ["one", "two"]
     assert any("used all 2 calls" in r.get("error", "") for r in tool_replies(run))
-    assert run.meta["spend"]["tool_refused"] == {"mcp.fake.post_message": 1}
+    assert run.meta["usage"]["tool_refused"] == {"mcp.fake.post_message": 1}
 
 
 def test_repeating_the_same_staging_ends_the_brief(run, record):

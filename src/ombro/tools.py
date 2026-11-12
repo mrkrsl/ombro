@@ -14,18 +14,11 @@ from typing import Any, Callable
 
 
 class ToolError(Exception):
-    """A tool could not do what was asked. The message is shown to the role.
-
-    `billable` says whether the service was actually called, and so whether a
-    cost_per_call is charged for the attempt."""
-
-    billable = True
+    """A tool could not do what was asked. The message is shown to the role."""
 
 
 class ToolInputError(ToolError):
-    """The arguments were refused before anything was called. Never charged."""
-
-    billable = False
+    """The arguments were refused before anything was called."""
 
 
 class NotGranted(ToolInputError):

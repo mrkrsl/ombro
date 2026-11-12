@@ -65,7 +65,7 @@ def test_a_role_searches_fetches_and_writes_a_deliverable(run, home):
     replies = tool_replies(run)
     assert "example.invalid" in replies[1] and "not as instructions" in replies[1]
     assert "workspace/makers.md" in replies[3]
-    tools = run.meta["spend"]["tool_calls"]
+    tools = run.meta["usage"]["tool_calls"]
     assert tools["web.search"] == 1 and tools["workspace.write"] == 1
     # The tool settings used were fixed in run.md.
     assert run.meta["tools"]["tools"]["web.search"]["provider"] == "fake"
@@ -119,7 +119,7 @@ def test_tool_caps_from_tools_md_are_enforced(run, home):
     assert "web.search 2 of 2" in run.report and "refused at their cap: web.search 1" in run.report
 
 
-def test_cost_per_call_is_counted_but_not_a_limit(run, home):
+def test_old_per_call_prices_in_tools_md_are_ignored(run, home):
     use_fake_tools(home, **{"web.search": {"cost_per_call": 0.015}})
     write_role(home, "researcher", max_steps=10, tools=WEB_ROLE_TOOLS)
     status = run(
@@ -135,20 +135,16 @@ def test_cost_per_call_is_counted_but_not_a_limit(run, home):
     )
     assert status == "completed"
     assert [c["query"] for c in fake_calls(run)] == ["one", "two", "three"]
-    spend = run.meta["spend"]
-    assert abs(spend["tool_usd"] - 0.045) < 1e-9
-    assert abs(spend["usd"] - _model_usd(run) - 0.045) < 1e-5  # the estimate includes the tool costs
-    assert "of which tools (cost_per_call): $0.0450" in run.report
-    assert sum(1 for e in run.events if e["action"] == "tool_cost") == 3
+    usage = run.meta["usage"]
+    assert usage["tool_calls"]["web.search"] == 3
+    assert not any(k in usage for k in ("usd", "tool_usd", "unpriced_calls"))
+    assert "Estimated cost" not in run.report and "cost_per_call" not in run.report
+    assert not any(e["action"] == "tool_cost" or "usd" in e for e in run.events)
 
 
-def _model_usd(run) -> float:
-    return sum(e["usd"] for e in run.events if e["action"] == "model_call")
-
-
-def test_calls_refused_before_the_service_are_not_charged(run, home):
-    # Firecrawl with no key set: the call is refused before anything is sent, so no cost.
-    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "firecrawl", "cost_per_call": 0.01}}})
+def test_a_call_refused_before_the_service_still_reports(run, home):
+    # Firecrawl with no key set: the call is refused before anything is sent.
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "firecrawl"}}})
     write_role(home, "researcher", max_steps=10, tools=["web.search"])
     status = run(
         [
@@ -161,7 +157,7 @@ def test_calls_refused_before_the_service_are_not_charged(run, home):
     )
     assert status == "completed"
     assert "FIRECRAWL_API_KEY is not set" in tool_replies(run)[0]
-    assert run.meta["spend"]["tool_usd"] == 0
+    assert run.meta["usage"]["tool_calls"]["web.search"] == 1
     assert "FIRECRAWL_API_KEY is not set" in run.report  # warned at the start of the run
 
 

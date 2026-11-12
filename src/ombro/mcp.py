@@ -72,8 +72,6 @@ class McpError(ToolError):
 class McpNotReached(McpError):
     """The server could not be started or reached, so nothing was sent to it."""
 
-    billable = False
-
 
 class McpCallLost(McpError):
     """A call was sent, but no answer came back: it may or may not have happened."""

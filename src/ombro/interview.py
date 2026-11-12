@@ -7,7 +7,7 @@ user to accept it, ask for a change, edit it by hand, or quit. Only the
 harness writes files, and only after the user accepts.
 
 Every model call goes through its own Gate, under the interview limits in
-limits.md, so interview spend never touches a run's. Anything the user types
+limits.md, so interview usage never touches a run's. Anything the user types
 is scrubbed of keys before it reaches the model or the transcript.
 """
 
@@ -88,7 +88,7 @@ class Outcome:
     gaps: list[str] = field(default_factory=list)
     detail: str = ""
     transcript: Path | None = None
-    spend: dict[str, Any] = field(default_factory=dict)
+    usage: dict[str, Any] = field(default_factory=dict)
     edited: bool = False
     answers: list[str] = field(default_factory=list)
 
@@ -242,7 +242,7 @@ class Interview:
             model = "default"
         self.spec = self.models[model]
         self._client_factory = client_factory or (lambda spec: make_client(spec, home))
-        self.gate = Gate(self.limits, self._price, clock)
+        self.gate = Gate(self.limits, clock)
         self.today = prompts.format_date(today or date.today())
         self.lead_soul = lead_soul
         self.instructions = instructions
@@ -250,10 +250,6 @@ class Interview:
         self.gaps: list[str] = []
         self._client: ChatClient | None = None
         self.answers: list[str] = []
-
-    def _price(self, name: str):
-        spec = self.models.get(name)
-        return (spec.price_in, spec.price_out) if spec is not None and spec.priced else None
 
     # -- helpers -----------------------------------------------------------
 
@@ -362,10 +358,10 @@ class Interview:
             self.transcript.note("You stopped the interview.")
             self.say("\nInterview stopped. Nothing was written.")
             outcome = Outcome("quit", detail="stopped by you")
-        outcome.spend = self.gate.snapshot()
+        outcome.usage = self.gate.snapshot()
         outcome.answers = list(self.answers)
         outcome.transcript = self._save_transcript(outcome)
-        used = outcome.spend.get("total_tokens", 0)
+        used = outcome.usage.get("total_tokens", 0)
         self.say(f"(Interview used {used:,} of {format_tokens(self.limits.max_tokens)} tokens.)")
         return outcome
 
@@ -564,9 +560,9 @@ class Interview:
             "files_written": [str(f.path) for f in outcome.proposal.files] if outcome.confirmed and outcome.proposal else [],
             "gaps": outcome.gaps,
             "limits": {"max_tokens": self.limits.max_tokens, "max_answers": self.limits.max_rounds},
-            "spend": {
-                k: outcome.spend.get(k)
-                for k in ("total_tokens", "input_tokens", "output_tokens", "model_calls", "rounds", "usd")
+            "usage": {
+                k: outcome.usage.get(k)
+                for k in ("total_tokens", "input_tokens", "output_tokens", "model_calls", "rounds")
             },
         }
         text = self.transcript.render(meta)

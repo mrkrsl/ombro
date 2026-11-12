@@ -22,9 +22,8 @@ ENDPOINTS = [
         "endpoint": "https://api.deepseek.com",
         "model": "deepseek-chat",
         "key": "DEEPSEEK_API_KEY",
-        "price": {"input": 0.30, "output": 1.20},
     },
-    {"label": "Another OpenAI-compatible endpoint", "endpoint": None, "model": None, "key": None, "price": None},
+    {"label": "Another OpenAI-compatible endpoint", "endpoint": None, "model": None, "key": None},
 ]
 SEARCH_KEY = "FIRECRAWL_API_KEY"
 TEST_PROMPT = [{"role": "user", "content": "Reply with the single word OK."}]
@@ -126,8 +125,6 @@ def run_init(
         entry: dict = {"api": "openai", "endpoint": endpoint, "model": model}
         if key_name:
             entry["key"] = key_name
-        if preset["price"] and model == preset["model"]:
-            entry["price_per_mtok"] = dict(preset["price"])
         _write_default_model(home, entry)
 
         spec = load_models(home)["default"]
@@ -135,11 +132,6 @@ def run_init(
         ok, detail = test_connection(home, spec, client_factory)
         if ok:
             say(f"Connected: {detail}.")
-            if spec.priced:
-                say(
-                    f"Prices in models.md (for cost estimates only): ${spec.price_in}/M input, "
-                    f"${spec.price_out}/M output tokens."
-                )
             break
         say(f"The test call failed: {detail}\nLet's try again (Ctrl-C to give up).\n")
 

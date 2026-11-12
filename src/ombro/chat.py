@@ -118,7 +118,7 @@ class Chat:
         self._client_factory = client_factory or (lambda spec: make_client(spec, home))
         self._client: ChatClient | None = None
         self.clock = clock
-        self.gate = Gate(self.limits, self._price, clock)
+        self.gate = Gate(self.limits, clock)
         self.today_date = today or date.today()
         self.today = prompts.format_date(self.today_date)
         if registry is None:
@@ -139,10 +139,6 @@ class Chat:
         self.path = self._transcript_path()
 
     # -- plumbing ----------------------------------------------------------
-
-    def _price(self, name: str):
-        spec = self.models.get(name)
-        return (spec.price_in, spec.price_out) if spec is not None and spec.priced else None
 
     def _input(self, prompt: str) -> str:
         raw = read_answer(self.ask, prompt)
@@ -213,12 +209,11 @@ class Chat:
                 self.transcript.note("From here on, the oldest turns were no longer sent to the Lead.")
         return [{"role": "system", "content": system}] + [m for ex in self.exchanges for m in ex]
 
-    def _spend_line(self) -> None:
+    def _usage_line(self) -> None:
         s = self.gate.snapshot()
         tools = sum((s.get("tool_calls") or {}).values())
-        cost = f" · est. ${s['usd']:.4f}" if s.get("usd") else ""
         self.say(f"[{self.mode} · {s['total_tokens']:,} of {format_tokens(self.limits.max_tokens)} tokens · "
-                 f"{tools} tool call(s){cost}]")
+                 f"{tools} tool call(s)]")
 
     # -- the conversation --------------------------------------------------
 
@@ -254,7 +249,7 @@ class Chat:
                     self.transcript.note(f"The model call failed: {e}")
                     self.say(f"\nThe model call failed: {e}. Say it again, or /quit.")
                     continue
-                self._spend_line()
+                self._usage_line()
                 if request:
                     self._brief(request[0], self.brief_opening("", request[1]))
                 self._save()
@@ -567,8 +562,8 @@ class Chat:
             "specs_saved": self.specs,
             "refused_tools": sorted(set(self.refused)),
             "limits": {"max_tokens": self.limits.max_tokens, "tool_max_calls": self.limits.tool_max_calls},
-            "spend": {k: s.get(k) for k in ("total_tokens", "input_tokens", "output_tokens", "model_calls",
-                                            "tool_calls", "usd")},
+            "usage": {k: s.get(k) for k in ("total_tokens", "input_tokens", "output_tokens", "model_calls",
+                                            "tool_calls")},
         }
         body = ("# Chat\n\nSaved, not remembered: this transcript is never loaded into a later chat or run.\n\n"
                 + "\n\n".join(self.transcript.entries) + "\n")

@@ -54,7 +54,7 @@ ombro run --spec find-bakeries         # run a saved spec (by name or by path)
 ombro run                              # brief a task, then run it as soon as you accept the spec
 ombro run --spec my-spec.md --detach   # keeps going after the terminal closes
 ombro runs                             # list runs
-ombro status [run_id]                  # limits and spend
+ombro status [run_id]                  # limits and usage
 ombro journal [run_id]                 # the event log, readable
 ombro report [run_id]                  # the final report
 ombro chat                             # talk with the Lead about past work; /brief, /remember inside
@@ -231,7 +231,7 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   what to trim.
 - **Bounded.** A chat has its own token cap (`chat_max_tokens`, set by the
   allowance), per-tool call caps (`chat_tool_max_calls`) and a cap on model
-  calls for one message. Spend is shown after each reply. Once the
+  calls for one message. Usage is shown after each reply. Once the
   conversation passes `chat_history_chars` (30,000), the oldest turns are no
   longer sent to the model.
 - **Saved, not remembered.** Each chat is saved in `chats/`. Transcripts are
@@ -252,7 +252,7 @@ name: morning-brief
 cron: "30 7 * * 1-5"          # local time: minute hour day month weekday
 spec: specs/morning-brief.md  # a saved spec, which names the crews; scheduled runs never interview
 enabled: true
-limits: {allowance: conservative, run_timeout: 15m}   # optional; tokens, never dollars
+limits: {allowance: conservative, run_timeout: 15m}   # optional; in tokens
 grace: 10m                     # optional; default schedule_grace in limits.md
 ---
 ```
@@ -327,7 +327,7 @@ provider backs each one:
 ```yaml
 ---
 tools:
-  web.search: {provider: firecrawl, max_calls: 20, cost_per_call: 0.002}
+  web.search: {provider: firecrawl, max_calls: 20}
   web.fetch: {provider: firecrawl, max_calls: 30}
   workspace.write: {max_calls: 40}
 providers:
@@ -335,9 +335,8 @@ providers:
 ---
 ```
 
-`max_calls` caps a tool's calls per run. `cost_per_call` is optional: dollars
-per call for services that bill in their own units, such as Firecrawl credits.
-It is added to the estimated cost in the report, and is never a limit. Like
+`max_calls` caps a tool's calls per run, which is also how a service that
+bills in its own units, such as Firecrawl credits, is kept in bounds. Like
 limits, tool settings are fixed when a run starts and recorded in `run.md`.
 
 Every secret lives in one owner-only folder, `secrets/`: single keys in
@@ -615,7 +614,7 @@ run (see `examples/`).
 
 Limits are enforced by code, never by asking the model. Every model call and
 tool call passes through one gate that checks all limits before the call and
-records the cost after it.
+records the usage after it.
 
 One word in `limits.md` sets how far runs and interviews may go:
 
@@ -643,8 +642,11 @@ which wins over the level. Even `unlimited` keeps every other cap:
 | `interview_max_tokens`, `interview_max_turns` | each interview |
 | `chat_max_tokens`, `chat_tool_max_calls`, `chat_calls_per_message` | each chat |
 
-Dollars are not a limit. If `models.md` has prices, reports and `ombro status`
-show an estimated cost.
+Limits and usage are in tokens; Ombro reports no costs. Settings from earlier
+versions (`budget_usd`, prices in `models.md`, `cost_per_call` in `tools.md`,
+`display_currency` in preferences) are accepted and ignored. A run's usage is
+kept under `usage:` in its `run.md`; older runs that call it `spend:` are still
+read.
 
 Tokens, rounds, time and a stop request end the whole run. Narrower limits
 end only what they bound, and the run goes on:
@@ -707,7 +709,7 @@ default to the `cheap` model and fewer steps.
 and `tools.md` accepts `provider: fake` for search and fetch, and the fake
 MCP server for outward tools. The test suite uses the same fakes, scripted answers for interviews, and mock HTTP
 transports for the real providers, so every guardrail, interview and tool is
-tested without a network connection or spend. Schedules are tested with a fake
+tested without a network connection or a paid call. Schedules are tested with a fake
 clock and a fake scheduler installer; no test touches launchctl or crontab.
 Code is tested in the real sandbox of the system the tests run on, with
 invented files in temporary folders; the network test only tries to reach a

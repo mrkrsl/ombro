@@ -14,7 +14,7 @@ from ombro import journal as journal_mod
 from ombro import mdfile, runs
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
-from ombro.settings import format_duration, format_tokens, load_preferences
+from ombro.settings import format_duration, format_tokens
 from ombro.tools import area_path
 
 NARRATIVE_INPUT_CAP = 24_000
@@ -106,12 +106,12 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     if failure:
         failures.append(failure)
 
-    spend = dict(meta.get("spend") or {})
-    if not spend.get("elapsed_seconds") and meta.get("started_at") and events:
+    usage = runs.usage(meta)
+    if not usage.get("elapsed_seconds") and meta.get("started_at") and events:
         try:
             start = datetime.strptime(meta["started_at"], "%Y-%m-%dT%H:%M:%SZ")
             end = datetime.strptime(events[-1]["ts"], "%Y-%m-%dT%H:%M:%SZ")
-            spend["elapsed_seconds"] = max(0.0, (end - start).total_seconds())
+            usage["elapsed_seconds"] = max(0.0, (end - start).total_seconds())
         except (KeyError, ValueError):
             pass
 
@@ -150,7 +150,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "finished_at": utc_now(),
         "spec": spec_body.strip(),
         "limits": meta.get("limits") or {},
-        "spend": spend,
+        "usage": usage,
         "briefs": briefs,
         "in_progress": in_progress,
         "limit": limit,
@@ -159,7 +159,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "failures": failures,
         "brief_limits": brief_limits,
         "gaps": gaps,
-        "interview_spend": meta.get("interview_spend") or {},
+        "interview_usage": runs.interview_usage(meta),
         "deliverables": deliverables,
         "working_files": working,
         "inline_notes": inline,
@@ -175,7 +175,6 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "placed": placed,
         "not_shared": not_shared,
         "workspace": str(workspace),
-        "display_currency": load_preferences(home).display_currency,
     }
 
 
@@ -312,17 +311,10 @@ def _clean_narrative(text: str) -> str:
 # Rendering
 
 
-def _money(usd: float, cur: dict | None) -> str:
-    s = f"${usd:.4f}"
-    if cur:
-        s += f" (≈ {cur['code']} {usd * cur['rate']:.4f})"
-    return s
-
-
 def render(facts: dict[str, Any], narrative: str | None, note: str | None = None) -> str:
     f = facts
     lim = f["limits"]
-    sp = f["spend"]
+    sp = f["usage"]
     out = [f"# Report: {f['run_id']}", ""]
     out.append(f"- **Status:** {f['status']}")
     out.append(f"- **{'Crews' if ', ' in f['crew'] else 'Crew'}:** {f['crew']}")
@@ -389,8 +381,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         out += ["## Shared folders", "", *folder_lines(f), ""]
     out += ["## Changes to notes.md", "", *all_notes_lines(f.get("notes")), ""]
 
-    cur = f["display_currency"]
-    out += ["## Cost", ""]
+    out += ["## Usage", ""]
     cap_tokens = lim.get("max_tokens")
     allowance = lim.get("allowance")
     out.append(
@@ -398,22 +389,15 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         f"{sp.get('output_tokens', 0):,} out) of {format_tokens(cap_tokens)}"
         + (f" (allowance: {allowance})" if allowance and allowance != "custom" else "")
     )
-    if sp.get("usd"):
-        line = f"- Estimated cost: {_money(sp.get('usd', 0.0), cur)}, from the prices in models.md (not a limit)"
-        out.append(line)
-        if sp.get("unpriced_calls"):
-            out.append(f"  - {sp['unpriced_calls']} model call(s) had no price in models.md and are not in the estimate")
     if sp.get("estimated_calls"):
         out.append(f"  - {sp['estimated_calls']} model call(s) reported no token counts; estimates were used")
     out.append(f"- Model calls: {sp.get('model_calls', 0)}")
-    isp = f.get("interview_spend") or {}
+    isp = f.get("interview_usage") or {}
     if isp:
         out.append(
             f"- Task interview (separate from the run's limits): {isp.get('total_tokens', 0):,} tokens, "
             f"{isp.get('model_calls', 0)} model calls"
         )
-    if sp.get("tool_usd"):
-        out.append(f"  - of which tools (cost_per_call): {_money(sp['tool_usd'], cur)}")
     tools = sp.get("tool_calls") or {}
     caps = lim.get("tool_max_calls") or {}
 

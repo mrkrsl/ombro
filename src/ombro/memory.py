@@ -346,7 +346,7 @@ def lead_context(home: Home, crews: list[str], limits: Limits) -> tuple[str, str
 
 PASSAGE_CHARS = 800
 MAX_RESULTS = 5
-SKIP_SECTIONS = ("cost", "outbox", "outward actions", "warnings")
+SKIP_SECTIONS = ("usage", "cost", "outbox", "outward actions", "warnings")
 _STOP = set(
     """a about above after again all also am an and any are as at be because been before being below between
     both but by can could did do does doing down during each few for from further had has have having he her

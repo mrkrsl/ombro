@@ -88,7 +88,6 @@ def test_firecrawl_errors_are_plain_and_never_show_the_key(status, body, expect)
         p.search("q", 3, 10)
     assert expect in str(e.value)
     assert "fc-invented-key-123456" not in str(e.value)
-    assert e.value.billable
 
 
 def test_firecrawl_without_a_key_is_not_called():

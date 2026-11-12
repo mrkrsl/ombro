@@ -13,7 +13,7 @@ def assert_reported(run, status: str, limit: str | None = None, by_lead: bool = 
     assert run.meta["status"] == status
     assert f"**Status:** {status}" in report
     for section in ("## What was asked", "## What was done", "## What was not done and why",
-                    "## Decisions for you", "## Deliverables", "## Outward actions", "## Changes to notes.md", "## Cost"):
+                    "## Decisions for you", "## Deliverables", "## Outward actions", "## Changes to notes.md", "## Usage"):
         assert section in report, section
     if limit:
         assert run.meta["limit_hit"] == limit
@@ -43,8 +43,8 @@ def test_completed_run(run):
     assert_reported(run, "completed")
     assert "Found three makers." in run.report
     assert "Ada Pots" in run.report
-    assert run.meta["spend"]["rounds"] == 1
-    assert run.meta["spend"]["model_calls"] == 5  # Lead, role, Lead, notes, report
+    assert run.meta["usage"]["rounds"] == 1
+    assert run.meta["usage"]["model_calls"] == 5  # Lead, role, Lead, notes, report
     # The report call had no tools.
     assert run.client.calls[-1]["tools"] is None
 
@@ -128,7 +128,7 @@ def test_looping_lead_is_stopped(run):
     )
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "loop_detection")
-    assert run.meta["spend"]["rounds"] == 3
+    assert run.meta["usage"]["rounds"] == 3
 
 
 # -- run-level limits ---------------------------------------------------------------
@@ -147,7 +147,7 @@ def test_over_token_limit_stops_and_reserve_pays_for_report(run):
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "max_tokens")
     assert "The notes were not rewritten: not enough of the token limit was left" in run.report
-    spend = run.meta["spend"]
+    spend = run.meta["usage"]
     assert spend["total_tokens"] <= 20000
     # Work stopped inside the share left after the reserve; only the report used the reserve.
     report_call = [e for e in run.events if e["action"] == "model_call"][-1]
@@ -167,7 +167,7 @@ def test_without_a_reserve_the_report_falls_back_to_the_journal(run):
     )
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "max_tokens", by_lead=False)
-    assert run.meta["spend"]["total_tokens"] <= 20000
+    assert run.meta["usage"]["total_tokens"] <= 20000
     assert "Read it all." in run.report  # the harness still reports what was done
 
 
@@ -183,7 +183,7 @@ def test_dollars_are_an_estimate_not_a_limit(run):
         limits={"max_tokens": 1_000_000, "budget_usd": 0.0001},  # a retired setting is ignored
     )
     assert status == "completed"
-    assert "Estimated cost: $0.06" in run.report and "not a limit" in run.report
+    assert "## Usage" in run.report and "$" not in run.report
     assert "budget_usd" not in run.meta["limits"]
 
 
@@ -196,7 +196,7 @@ def test_unlimited_allowance_has_no_token_cap_but_keeps_rounds(run):
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "max_rounds")
     assert run.meta["limits"]["max_tokens"] is None
-    assert run.meta["spend"]["total_tokens"] > 40_000_000
+    assert run.meta["usage"]["total_tokens"] > 40_000_000
     assert "of no cap (allowance: unlimited)" in run.report
 
 
@@ -212,7 +212,7 @@ def test_max_rounds(run):
     )
     assert status == "stopped_by_limit"
     assert_reported(run, "stopped_by_limit", "max_rounds")
-    assert run.meta["spend"]["rounds"] == 2
+    assert run.meta["usage"]["rounds"] == 2
 
 
 def test_timed_out_run(run):
@@ -278,7 +278,7 @@ def test_max_steps_ends_the_brief_and_the_lead_can_brief_again(run, home):
     assert "Limits that ended a brief: `max_steps` (researcher)" in run.report
     assert "1. **researcher** (stopped_by_limit)" in run.report
     assert "2. **researcher** (ok)" in run.report
-    assert run.meta["spend"]["rounds"] == 2
+    assert run.meta["usage"]["rounds"] == 2
 
 
 def test_lead_steps_still_stop_the_run(run, home):
@@ -312,7 +312,7 @@ def test_max_calls_per_tool_refuses_the_call_and_the_role_carries_on(run, home):
     assert refused["role"] == "tool" and "used all 2 calls" in refused["content"]
     assert "test.echo 2 of 2" in run.report
     assert "refused at their cap: test.echo 1" in run.report
-    assert run.meta["spend"]["tool_refused"] == {"test.echo": 1}
+    assert run.meta["usage"]["tool_refused"] == {"test.echo": 1}
 
 
 def test_unknown_tools_count_against_caps(run):

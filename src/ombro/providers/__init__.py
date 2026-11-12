@@ -27,9 +27,7 @@ class ProviderError(ToolError):
 
 
 class NotCalled(ProviderError):
-    """Refused before the service was contacted (no key, a refused address). Never charged."""
-
-    billable = False
+    """Refused before the service was contacted (no key, a refused address)."""
 
 
 class SearchProvider(Protocol):

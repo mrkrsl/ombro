@@ -112,7 +112,7 @@ def test_stop_a_detached_run(home, spec_file):
     use_fake_model(home, [fake.brief("researcher", "Slow work."), fake.result("Partial.", sleep=2), REPORT])
     ombro(home, "run", "--spec", str(spec_file), "--detach")
     run_dir = runs.latest_run(home, "default")
-    wait_for(run_dir, lambda m: m.get("pid") and m.get("spend", {}).get("model_calls", 0) >= 1)
+    wait_for(run_dir, lambda m: m.get("pid") and m.get("usage", {}).get("model_calls", 0) >= 1)
     r = ombro(home, "stop", run_dir.name)
     assert r.returncode == 0, r.stdout + r.stderr
     meta = wait_for(run_dir, lambda m: m["status"] != "running")
@@ -174,7 +174,8 @@ def test_init_connects_after_a_failed_test_call(tmp_path):
     assert "INVENTED" not in out  # keys are never echoed
     assert stat.S_IMODE(os.stat(home.env).st_mode) == 0o600
     spec = connected_model(home)
-    assert spec.endpoint == "https://api.deepseek.com" and spec.model == "deepseek-chat" and spec.priced
+    assert spec.endpoint == "https://api.deepseek.com" and spec.model == "deepseek-chat"
+    assert "price" not in home.models.read_text()
     assert (home.lead_dir / "soul.md").is_file()
     assert keys.get_key(home, "FIRECRAWL_API_KEY") is None  # search key skipped
 
@@ -191,8 +192,8 @@ def test_init_other_endpoint_without_key(tmp_path):
     secret = ScriptedPrompts([""])
     run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
     spec = connected_model(home)
-    assert spec.endpoint == "http://localhost:11434/v1" and spec.key is None and not spec.priced
-    assert not any("Prices in models.md" in s for s in said)
+    assert spec.endpoint == "http://localhost:11434/v1" and spec.key is None
+    assert not any("$" in s for s in said)
 
 
 def test_init_offers_firecrawl_when_a_search_key_is_saved(tmp_path):
@@ -274,7 +275,7 @@ def test_open_opens_the_workspace_of_a_run(home, run, capsys, monkeypatch):
 def test_run_with_tools_from_the_command_line(home, spec_file):
     from conftest import use_fake_tools
 
-    use_fake_tools(home, **{"web.search": {"cost_per_call": 0.001}})
+    use_fake_tools(home)
     write_role(home, "researcher", max_steps=8, tools=["web.search", "workspace.write"])
     use_fake_model(home, [
         fake.brief("researcher", "Find two invented rivers and save them."),
@@ -289,7 +290,7 @@ def test_run_with_tools_from_the_command_line(home, spec_file):
     run_dir = runs.latest_run(home, "default")
     assert f"Rivers (researcher): {(run_dir / 'workspace' / 'rivers.md').resolve()}" in r.stdout
     s = ombro(home, "status", run_dir.name)
-    assert "web.search" in s.stdout and "of it tools" in s.stdout
+    assert "web.search" in s.stdout and "$" not in s.stdout and "cost" not in s.stdout.lower()
     assert (run_dir / "fake-calls.jsonl").is_file()
 
 

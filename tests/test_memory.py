@@ -132,7 +132,7 @@ def test_the_lead_rewrites_its_part_and_the_report_says_what_changed(run, home):
     text = memory.notes_path(home, "default").read_text()
     assert text.startswith(YOURS)  # the user's part, character for character
     assert text.endswith("## From runs\n\n- Ask the researcher for sources.\n- Invented makers cluster in Lowtown.\n")
-    changes = run.report.split("## Changes to notes.md")[1].split("## Cost")[0]
+    changes = run.report.split("## Changes to notes.md")[1].split("## Usage")[0]
     assert "Added:\n- Invented makers cluster in Lowtown." in changes
     assert "Removed:\n- The fake directory is out of date." in changes
     # The Lead was shown both parts and the room it has.
@@ -244,7 +244,7 @@ def test_search_skips_cost_and_never_reads_chats(run, home):
     (home.root / "chats" / "20261101-100000.md").write_text("CHAT-ONLY-MARKER about teapots")
     out = memory.search(home, home.crews(), "CHAT-ONLY-MARKER")
     assert out["results"] == []
-    assert all(r["section"] != "Cost" for r in memory.search(home, ["default"], "tokens model calls")["results"])
+    assert all(r["section"] != "Usage" for r in memory.search(home, ["default"], "tokens model calls")["results"])
 
 
 # -- the report's deliverables ------------------------------------------------------

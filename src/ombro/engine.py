@@ -92,7 +92,7 @@ class Engine:
         self._client_factory = client_factory or (lambda spec: make_client(spec, home))
         self._clients: dict[str, ChatClient] = {}
         self.models: dict[str, ModelSpec] = {}
-        self.gate = Gate(self.limits, self._price, clock)
+        self.gate = Gate(self.limits, clock)
         self.lead: Role | None = None
         self.roles: dict[str, Role] = {}
         self.instructions = ""
@@ -101,12 +101,6 @@ class Engine:
         self.today = prompts.format_date(today or date.today())
 
     # -- set-up ------------------------------------------------------------
-
-    def _price(self, model_name: str) -> tuple[float, float] | None:
-        spec = self.models.get(model_name)
-        if spec is None or not spec.priced:
-            return None
-        return spec.price_in, spec.price_out
 
     def _client(self, spec: ModelSpec) -> ChatClient:
         if spec.name not in self._clients:
@@ -293,7 +287,7 @@ class Engine:
             status=status,
             limit_hit=limit_hit,
             finished_at=utc_now(),
-            spend=self.gate.snapshot(),
+            usage=self.gate.snapshot(),
             **({"outbox": c} if (c := outbox.counts(self.run_dir)) else {}),
         )
         self.journal.write("harness", "run_ended", status)
@@ -303,8 +297,8 @@ class Engine:
             print(f"ombro: could not add the run to index.md: {e}", file=sys.stderr)
         return status
 
-    def _save_spend(self) -> None:
-        runs.update_run(self.run_dir, spend=self.gate.snapshot())
+    def _save_usage(self) -> None:
+        runs.update_run(self.run_dir, usage=self.gate.snapshot())
 
     def _model_call(
         self,
@@ -328,17 +322,16 @@ class Engine:
         usage = reply.usage
         in_tokens = usage.input_tokens if usage.input_tokens or not usage.estimated else est
         out_tokens = min(usage.output_tokens, max_out) if usage.estimated else usage.output_tokens
-        cost = self.gate.record_model_call(spec.name, in_tokens, out_tokens, estimated=usage.estimated)
+        self.gate.record_model_call(spec.name, in_tokens, out_tokens, estimated=usage.estimated)
         self.journal.write(
             role.name,
             "model_call",
-            f"{spec.name}: {in_tokens:,} in, {out_tokens:,} out, ${cost:.4f}",
+            f"{spec.name}: {in_tokens:,} in, {out_tokens:,} out",
             model=spec.name,
             input_tokens=in_tokens,
             output_tokens=out_tokens,
-            usd=round(cost, 6),
         )
-        self._save_spend()
+        self._save_usage()
         return reply
 
     def _count_lost(self, role: Role, model: str, n: int, est: int, max_out: int) -> None:
@@ -347,7 +340,7 @@ class Engine:
             self.journal.write(role.name, "model_call_lost",
                                f"{model}: {n} attempt(s) timed out and were tried again; counted at their worst "
                                f"case, {tokens:,} tokens (estimated)", model=model, attempts=n, tokens=tokens)
-            self._save_spend()
+            self._save_usage()
 
     # -- Lead --------------------------------------------------------------
 
@@ -399,7 +392,7 @@ class Engine:
             self.journal.write("lead", "tool_refused", f"{tc.name}: {e.detail}", limit=e.limit)
             return {"error": e.detail}
         finally:
-            self._save_spend()
+            self._save_usage()
         if tc.arguments is None:
             self.journal.write("lead", "tool_refused", f"{tc.name}: arguments were not a JSON object")
             return {"error": "the arguments were not a JSON object"}
@@ -474,7 +467,7 @@ class Engine:
             # The brief ends; the run goes on and the Lead decides what to do.
             reason = f"stopped by {e.limit}: {e.detail}"
             self.journal.write(role.name, "returned", reason, status="stopped_by_limit", limit=e.limit, reason=reason)
-            self._save_spend()
+            self._save_usage()
             return {
                 "status": "stopped_by_limit",
                 "role": role.name,
@@ -516,7 +509,7 @@ class Engine:
             self.journal.write(role.name, "tool_refused", f"{name}: {e.detail}", limit=e.limit, tool=name)
             return {"error": f"{e.detail}. Carry on without it, or return what you have."}
         finally:
-            self._save_spend()
+            self._save_usage()
         if tool is None:
             self.journal.write(role.name, "tool_refused", f"{name}: not one of this role's tools")
             return {"error": f"{name} is not one of your tools"}
@@ -531,7 +524,6 @@ class Engine:
                     "did_not_do."}
         if tool.outward and tool.effect != "read-only":
             return self._outward_call(role, tool, tc.arguments)
-        cost = self.limits.cost_for(name)
         ctx = self._context(role, name)
         args_note = _short(_canonical(tc.arguments, ""), 120)
         try:
@@ -541,14 +533,11 @@ class Engine:
                                tool=name, not_shared=e.path)
             return {"error": str(e)}
         except ToolError as e:
-            self._charge(name, cost, billed=e.billable)
             self.journal.write(role.name, "tool_error", f"{name} {args_note}: {_short(str(e))}", tool=name)
             return _error(tool, e)
         except Exception as e:
-            self._charge(name, cost, billed=True)
             self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
             return {"error": f"{type(e).__name__}: {e}"}
-        self._charge(name, cost, billed=True)
         self.journal.write(role.name, "tool_call", f"{name} {args_note}", tool=name)
         return out if out is not None else {"ok": True}
 
@@ -587,32 +576,22 @@ class Engine:
                     "note": "Not done yet. It waits for the user to approve after the run. Do not stage it "
                     "again; mention it in your summary as staged, not done."}
         # allowed: it runs now
-        cost = self.limits.cost_for(name)
         ctx = self._context(role, name)
         try:
             out = tool.handler(args, ctx) if tool.handler else {"ok": True}
         except McpCallLost as e:
             # Sent, but no answer: it may have happened. Retrying could do it twice.
-            self._charge(name, cost, billed=True)
             self.journal.write(role.name, "outward_uncertain", f"{name} {args_note}: {_short(str(e))}", tool=name,
                                reason=reason, arguments=args)
             return {"status": "uncertain", "error": f"{e}. It may or may not have happened. Do not try it "
                     "again; say in your summary that it is uncertain, so the user can check."}
         except ToolError as e:
-            self._charge(name, cost, billed=e.billable)
             self.journal.write(role.name, "outward_error", f"{name} {args_note}: {_short(str(e))}", tool=name,
                                reason=reason, arguments=args)
             return _error(tool, e)
-        self._charge(name, cost, billed=True)
         self.journal.write(role.name, "outward_done", f"{name} {args_note}", tool=name, effect=tool.effect,
                            reason=reason, arguments=args)
         return {"status": "done", **(out if isinstance(out, dict) else {"result": out})}
-
-    def _charge(self, name: str, cost: float, billed: bool) -> None:
-        if cost and billed:
-            self.gate.record_tool_cost(cost)
-            self.journal.write("harness", "tool_cost", f"{name}: ${cost:.4f}", tool=name, usd=round(cost, 6))
-            self._save_spend()
 
     def _tool_timeout(self, tool: str = "") -> float:
         from ombro.native import CALL_TIMEOUT
@@ -666,7 +645,7 @@ class Engine:
         for _ in range(self.NOTES_ATTEMPTS + 1):
             worst = estimate_tokens(messages, prompts.NOTES_TOOLS) + max_out
             if self.limits.max_tokens is not None and \
-                    self.gate.spend.total_tokens + worst + report_worst > self.limits.max_tokens:
+                    self.gate.usage.total_tokens + worst + report_worst > self.limits.max_tokens:
                 note = "not enough of the token limit was left to rewrite the notes and still write the report"
                 return record("refused" if refused else "skipped", note)
             try:
@@ -736,7 +715,7 @@ class Engine:
             note = "the Lead could not be loaded"
         if note:
             self.journal.write("harness", "warning", f"report written without the Lead: {note}")
-        self._save_spend()
+        self._save_usage()
         facts = report.gather_facts(self.home, self.run_dir, status)
         path = report.write(self.run_dir, report.render(facts, narrative, note))
         self.journal.write("lead" if narrative else "harness", "report_written", str(path))

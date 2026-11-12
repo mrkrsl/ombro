@@ -177,12 +177,11 @@ def test_fresh_tools_md_defaults(home):
     assert lim.max_calls_for("web.search") == 20 and lim.max_calls_for("web.fetch") == 30
 
 
-def test_tools_md_caps_and_costs_feed_the_limits(home):
+def test_tools_md_caps_feed_the_limits_and_old_costs_are_ignored(home):
     mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake", "max_calls": 4, "cost_per_call": 0.01}}})
     lim = load_limits(home)
     assert lim.max_calls_for("web.search") == 4
-    assert lim.cost_for("web.search") == 0.01
-    assert lim.cost_for("web.fetch") == 0.0
+    assert "tool_cost_per_call" not in lim.to_dict()
     # A spec's limits still win.
     assert load_limits(home, {"tool_max_calls": {"web.search": 2}}).max_calls_for("web.search") == 2
 
@@ -193,7 +192,6 @@ def test_tools_md_caps_and_costs_feed_the_limits(home):
         {"tools": {"web.search": {"provider": "bing"}}},
         {"tools": {"web.fetch": {"provider": "duckduckgo"}}},
         {"tools": {"web.search": {"max_calls": 0}}},
-        {"tools": {"web.search": {"cost_per_call": -1}}},
         {"tools": {"web.search": {"colour": "blue"}}},
         {"tools": {"workspace.read": {"provider": "fake"}}},
         {"mcp": {}},

@@ -98,7 +98,7 @@ that need judgement. These are Ombro's fixed rules.
 - Tools are disabled. Write the report from the record below and nothing else.
   State only what the record shows; do not invent results.
 - The harness adds the spec, the list of briefs, deliverables, outward
-  actions done and staged, changes to notes.md, cost and limits itself, so
+  actions done and staged, changes to notes.md, usage and limits itself, so
   do not repeat those lists or figures. If actions are staged, say under
   "Decisions for you" that they wait for the user's approval.
 - Write Markdown with exactly these three headings, in this order:

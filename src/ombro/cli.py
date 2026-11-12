@@ -210,10 +210,10 @@ def cmd_run(args) -> int:
     run_dir = runs.create_run(home, crews, spec_meta, spec_body, limits, source=source, tools=tool_settings.to_dict())
     run_id = run_dir.name
     if interview is not None:
-        from ombro.interviews import _interview_spend
+        from ombro.interviews import _interview_usage
 
         shutil.copy2(interview.transcript, run_dir / "interview.md")
-        runs.update_run(run_dir, interview_spend=_interview_spend(interview))
+        runs.update_run(run_dir, interview_usage=_interview_usage(interview))
     if args.detach:
         pid = runs.start_detached(home, run_dir)
         # The child records its own pid in run.md; writing it here too would race its updates.
@@ -260,7 +260,7 @@ def cmd_runs(args) -> int:
     for run_dir in rows:
         meta, _ = runs.read_run(run_dir)
         crew = ", ".join(runs.run_crews(meta))
-        tokens = (meta.get("spend") or {}).get("total_tokens", 0)
+        tokens = runs.usage(meta).get("total_tokens", 0)
         n = outbox.waiting_count(run_dir)
         box = f"{n} waiting" if n else "-"
         print(f"{run_dir.name:<24} {crew[:16]:<16} {meta.get('status', '?'):<18} {tokens:>9,}  {box:<10} "
@@ -275,10 +275,7 @@ def cmd_status(args) -> int:
     _reap(home)
     run_dir = _resolve_run(home, args.run_id, args.crew)
     meta, _ = runs.read_run(run_dir)
-    lim, sp = meta.get("limits") or {}, meta.get("spend") or {}
-    cur = load_preferences(home).display_currency
-    usd = sp.get("usd", 0.0)
-    money = f"${usd:.4f}" + (f" (≈ {cur['code']} {usd * cur['rate']:.4f})" if cur else "")
+    lim, sp = meta.get("limits") or {}, runs.usage(meta)
     reserve = lim.get("report_reserve", 0)
     print(f"Run       {meta.get('run_id')}  (crews {', '.join(runs.run_crews(meta))})")
     print(f"Status    {meta.get('status')}" + (f", stopped by {meta['limit_hit']}" if meta.get("limit_hit") else ""))
@@ -296,10 +293,6 @@ def cmd_status(args) -> int:
         f"{'Time':<14}{format_duration(sp.get('elapsed_seconds', 0)):>16}  "
         f"{format_duration(lim.get('run_timeout', 0)):>14}"
     )
-    if usd:
-        print(f"{'Est. cost':<14}{money:>16}  {'(not a limit)':>14}")
-    if sp.get("tool_usd"):
-        print(f"{'  of it tools':<14}{'$' + format(sp['tool_usd'], '.4f'):>16}")
     print(f"{'Model calls':<14}{sp.get('model_calls', 0):>16}")
     tools = sp.get("tool_calls") or {}
     caps = lim.get("tool_max_calls") or {}
@@ -777,8 +770,10 @@ def cmd_limits(args) -> int:
           f"{lim.code_output_chars:,} characters of output to the role (code.run)")
     print(f"  scripts in all   {format_size(lim.code_max_total)} in a run's workspace/ and scratch/ (code.run)")
     print(f"\nLevels: {', '.join(ALLOWANCES)}. Change with `ombro limits set <level>`; details in {home.limits}.")
-    if any(k in meta for k in RETIRED_LIMITS):
-        print("Note: budget_usd in limits.md is no longer used; dollars are only an estimate now.")
+    retired = [k for k in RETIRED_LIMITS if k in meta]
+    if retired:
+        print(f"Note: {', '.join(retired)} in limits.md no longer do anything (Ombro reports tokens only); "
+              "you can delete them.")
     return 0
 
 
@@ -876,7 +871,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_runs)
 
     for name, func, helptext in (
-        ("status", cmd_status, "limits and spend for a run"),
+        ("status", cmd_status, "limits and usage for a run"),
         ("report", cmd_report, "show a run's report"),
         ("journal", cmd_journal, "show a run's journal"),
     ):

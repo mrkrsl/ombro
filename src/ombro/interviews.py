@@ -739,12 +739,12 @@ def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outc
         shutil.copy2(outcome.transcript, run_dir / "interview.md")
     j = Journal(run_dir / "journal.jsonl")
     now = utc_now()
-    runs.update_run(run_dir, started_at=now, interview_spend=_interview_spend(outcome))
+    runs.update_run(run_dir, started_at=now, interview_usage=_interview_usage(outcome))
     j.write("harness", "run_started", "from a task interview")
     j.write("lead", "insufficient_brief", "; ".join(gaps), gaps=gaps)
     facts = report.gather_facts(home, run_dir, "insufficient_brief")
     report.write(run_dir, report.render(facts, None, "no roles were briefed"))
-    runs.update_run(run_dir, status="insufficient_brief", finished_at=utc_now(), spend={},
+    runs.update_run(run_dir, status="insufficient_brief", finished_at=utc_now(), usage={},
                     brief=runs.first_line(task) or "(the task was not stated)")
     j.write("harness", "run_ended", "insufficient_brief")
     from ombro import memory
@@ -753,6 +753,6 @@ def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outc
     return run_dir
 
 
-def _interview_spend(outcome) -> dict:
-    s = outcome.spend or {}
+def _interview_usage(outcome) -> dict:
+    s = outcome.usage or {}
     return {k: s.get(k, 0) for k in ("total_tokens", "input_tokens", "output_tokens", "model_calls")}

@@ -169,6 +169,6 @@ def test_a_run_counts_lost_attempts_at_their_worst_case():
     from ombro.settings import Limits, resolve_allowance
     from ombro.home import LIMITS_META
 
-    g = Gate(Limits.from_dict(resolve_allowance(dict(LIMITS_META))), lambda m: None, lambda: 0.0)
+    g = Gate(Limits.from_dict(resolve_allowance(dict(LIMITS_META))), lambda: 0.0)
     assert g.record_lost_calls("m", 2, 1_000, 500) == 3_000
-    assert g.spend.total_tokens == 3_000 and g.spend.estimated_calls == 2
+    assert g.usage.total_tokens == 3_000 and g.usage.estimated_calls == 2

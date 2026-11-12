@@ -247,7 +247,7 @@ def test_a_remember_over_the_cap_asks_what_to_trim(chat, home):
 # -- bounds ------------------------------------------------------------------------
 
 
-def test_chat_spend_has_its_own_cap(chat, run, home):
+def test_chat_usage_has_its_own_cap(chat, run, home):
     mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_max_tokens": 12000}, mdfile.read(home.limits)[1])
     chat([fake.say("Hello.", usage={"input": 7000, "output": 100})] * 5, ["Hi.", "Again.", "And again."])
     assert "The chat has reached its limit" in chat.output

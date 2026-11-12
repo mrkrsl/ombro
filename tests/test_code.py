@@ -240,7 +240,7 @@ def test_a_run_records_each_script_in_the_journal_and_report(run, home):
     assert "## Code" in report
     assert "- `code/001.py` (coder): make three numbered files. exit 0" in report
     assert "`code/002.py` (coder). exit 2" in report
-    assert run.meta["spend"]["tool_calls"]["code.run"] == 2
+    assert run.meta["usage"]["tool_calls"]["code.run"] == 2
     system = run.client.calls[1]["messages"][0]["content"]
     assert "code.run runs a Python script" in system
 

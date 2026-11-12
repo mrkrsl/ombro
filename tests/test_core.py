@@ -210,6 +210,40 @@ def test_old_limits_files_still_load(home):
     assert lim.max_tokens == 400_000 and "budget_usd" not in lim.to_dict()
 
 
+def test_cost_settings_from_earlier_versions_are_accepted_and_ignored(home):
+    """Ombro reports tokens only. Prices, per-call costs and a display currency
+    left in older files load without error and do nothing."""
+    from ombro import runs
+    from ombro.settings import load_preferences, load_tool_settings
+
+    meta, body = mdfile.read(home.limits)
+    mdfile.write(home.limits, {**meta, "tool_cost_per_call": {"web.search": 0.01}}, body)
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake", "cost_per_call": 0.002}}})
+    models, _ = mdfile.read(home.models)
+    models["models"]["default"]["price_per_mtok"] = {"input": 0.3, "output": 1.2}
+    mdfile.write(home.models, models)
+    prefs, body = mdfile.read(home.preferences_config)
+    mdfile.write(home.preferences_config, {**prefs, "display_currency": {"code": "GBP", "rate": 0.79}}, body)
+
+    lim = load_limits(home)
+    assert "tool_cost_per_call" not in lim.to_dict()
+    assert "cost_per_call" not in load_tool_settings(home).tools["web.search"]
+    assert not hasattr(load_models(home)["default"], "price_in")
+    assert not hasattr(load_preferences(home), "display_currency")
+    # A run.md written before usage was renamed is still read.
+    assert runs.usage({"spend": {"total_tokens": 7}}) == {"total_tokens": 7}
+    assert runs.interview_usage({"interview_spend": {"total_tokens": 3}}) == {"total_tokens": 3}
+    assert runs.usage({"usage": {"total_tokens": 9}, "spend": {"total_tokens": 7}}) == {"total_tokens": 9}
+
+
+def test_fresh_files_mention_no_costs(tmp_path):
+    h = Home(tmp_path / "h")
+    ensure_home(h)
+    for f in (h.limits, h.models, h.tools, h.preferences_config):
+        text = f.read_text()
+        assert "price" not in text and "currency" not in text and "cost_per_call" not in text, f
+
+
 def test_interview_limits_use_their_own_cap(home):
     lim = load_limits(home).for_interview()
     assert lim.max_tokens == 100_000 and lim.max_rounds == 40 and lim.report_reserve == 0

@@ -81,7 +81,7 @@ CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB"
 CODE_DEFAULT_CALLS = 10  # code.run's max_calls when neither limits.md nor tools.md sets one
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
-RETIRED_LIMITS = ("budget_usd",)
+RETIRED_LIMITS = ("budget_usd", "tool_cost_per_call")
 INTERVIEW_TIMEOUT = 6 * 3600.0  # interviews wait on a person; the token and turn caps bound them
 
 
@@ -124,7 +124,6 @@ class Limits:
     allowance: str = DEFAULT_ALLOWANCE
     max_steps: dict[str, int] = field(default_factory=dict)
     tool_max_calls: dict[str, int] = field(default_factory=dict)
-    tool_cost_per_call: dict[str, float] = field(default_factory=dict)
     report_max_output_tokens: int = 2000
     report_timeout: float = 120.0
     interview_max_tokens: int | None = 100_000
@@ -150,7 +149,6 @@ class Limits:
         known = set(cls.__dataclass_fields__)
         # Absent from runs made before they existed.
         d = {
-            "tool_cost_per_call": {},
             "allowance": "custom",
             "interview_max_tokens": ALLOWANCES[DEFAULT_ALLOWANCE]["interview_max_tokens"],
             "interview_max_turns": 40,
@@ -193,12 +191,6 @@ class Limits:
         tool_calls.setdefault("code.run", CODE_DEFAULT_CALLS)
         chat_calls = int_map("chat_tool_max_calls", d["chat_tool_max_calls"])
         chat_calls.setdefault("default", 10)
-        costs = d["tool_cost_per_call"]
-        if not isinstance(costs, dict):
-            raise SetupError("limit tool_cost_per_call must be a mapping")
-        for k, v in costs.items():
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
-                raise SetupError(f"cost_per_call for {k} must be zero or a positive number of dollars, not {v!r}")
         return cls(
             allowance=str(d["allowance"]),
             max_tokens=token_cap("max_tokens", d["max_tokens"]),
@@ -209,7 +201,6 @@ class Limits:
             loop_threshold=pos_num("loop_threshold", d["loop_threshold"], integer=True),
             max_steps=int_map("max_steps", d["max_steps"]),
             tool_max_calls=tool_calls,
-            tool_cost_per_call={str(k): float(v) for k, v in costs.items()},
             report_max_output_tokens=pos_num("report_max_output_tokens", d["report_max_output_tokens"], integer=True),
             report_timeout=pos_num("report_timeout", parse_duration(d["report_timeout"])),
             interview_max_tokens=token_cap("interview_max_tokens", d["interview_max_tokens"]),
@@ -237,9 +228,6 @@ class Limits:
     def max_calls_for(self, tool: str) -> int:
         return self.tool_max_calls.get(tool, self.tool_max_calls["default"])
 
-    def cost_for(self, tool: str) -> float:
-        return self.tool_cost_per_call.get(tool, 0.0)
-
     def for_interview(self) -> "Limits":
         """The limits one interview runs under: its own token cap, a turn cap, no reserve."""
         from dataclasses import replace
@@ -263,7 +251,6 @@ class Limits:
             run_timeout=INTERVIEW_TIMEOUT,
             report_reserve=0.0,
             tool_max_calls=dict(self.chat_tool_max_calls),
-            tool_cost_per_call=dict(self.tool_cost_per_call),
         )
 
 
@@ -299,17 +286,15 @@ def load_limits(
     tools: "ToolSettings | None" = None,
     schedule: dict | None = None,
 ) -> Limits:
-    """limits.md, then per-tool caps and costs from tools.md, then a spec's
+    """limits.md, then per-tool caps from tools.md, then a spec's
     overrides, then a schedule's."""
     meta = mdfile.read(home.limits)[0] if home.limits.is_file() else {}
     merged = _layer(copy.deepcopy(LIMITS_META), meta)
     tools = tools if tools is not None else load_tool_settings(home)
-    per_tool: dict[str, dict] = {"tool_max_calls": {}, "tool_cost_per_call": {}}
+    per_tool: dict[str, dict] = {"tool_max_calls": {}}
     for name, cfg in tools.tools.items():
         if "max_calls" in cfg:
             per_tool["tool_max_calls"][name] = cfg["max_calls"]
-        if "cost_per_call" in cfg:
-            per_tool["tool_cost_per_call"][name] = cfg["cost_per_call"]
     merged = _layer(_layer(_layer(merged, per_tool), overrides or {}), schedule or {})
     return Limits.from_dict(resolve_allowance(merged))
 
@@ -323,7 +308,9 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
     "web.fetch": (("firecrawl", "direct", "fake"), "direct"),
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
-_TOOL_FIELDS = {"provider", "max_calls", "cost_per_call", "class", "permission"}
+_TOOL_FIELDS = {"provider", "max_calls", "class", "permission"}
+# Accepted in tools.md from earlier versions, and ignored.
+_RETIRED_TOOL_FIELDS = {"cost_per_call"}
 _SERVER_FIELDS = {"command", "args", "env", "pass_env", "url", "headers", "timeout", "start_timeout", "class",
                   "client_id"}
 TOOL_CLASSES = ("read-only", "internal", "external")
@@ -362,7 +349,7 @@ class ToolSettings:
             cfg = cfg or {}
             if not isinstance(cfg, dict):
                 raise SetupError(f"{where}: settings for {name} must be a mapping, e.g. {{provider: fake, max_calls: 10}}")
-            bad = set(cfg) - _TOOL_FIELDS
+            bad = set(cfg) - _TOOL_FIELDS - _RETIRED_TOOL_FIELDS
             if bad:
                 raise SetupError(f"{where}: {name} has unknown setting(s): {', '.join(sorted(bad))}")
             out: dict[str, Any] = {}
@@ -378,11 +365,6 @@ class ToolSettings:
                 if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
                     raise SetupError(f"{where}: max_calls for {name} must be a positive whole number")
                 out["max_calls"] = v
-            if "cost_per_call" in cfg:
-                v = cfg["cost_per_call"]
-                if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
-                    raise SetupError(f"{where}: cost_per_call for {name} must be zero or more US dollars")
-                out["cost_per_call"] = float(v)
             if "class" in cfg or "permission" in cfg:
                 if not name.startswith("mcp."):
                     raise SetupError(f"{where}: class and permission apply only to MCP tools (mcp.<server>.<tool>), "
@@ -479,13 +461,7 @@ class ModelSpec:
     model: str
     endpoint: str | None = None
     key: str | None = None
-    price_in: float | None = None
-    price_out: float | None = None
     script: str | None = None
-
-    @property
-    def priced(self) -> bool:
-        return self.price_in is not None and self.price_out is not None
 
 
 def load_models(home: Home) -> dict[str, ModelSpec]:
@@ -510,11 +486,6 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
         api = str(entry.get("api", "openai"))
         if api not in ("openai", "fake"):
             raise SetupError(f"{home.models}: model {name!r} has unknown api {api!r} (use openai or fake)")
-        price = entry.get("price_per_mtok") or {}
-        p_in, p_out = price.get("input"), price.get("output")
-        for label, p in (("input", p_in), ("output", p_out)):
-            if p is not None and (isinstance(p, bool) or not isinstance(p, (int, float)) or p < 0):
-                raise SetupError(f"{home.models}: model {name!r} has an invalid {label} price")
         if api == "openai" and not entry.get("endpoint"):
             raise SetupError(f"{home.models}: model {name!r} has no endpoint")
         if api == "fake" and not entry.get("script"):
@@ -525,8 +496,6 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
             model=str(entry.get("model") or name),
             endpoint=entry.get("endpoint"),
             key=entry.get("key") or None,
-            price_in=float(p_in) if p_in is not None else None,
-            price_out=float(p_out) if p_out is not None else None,
             script=entry.get("script"),
         )
 
@@ -541,7 +510,6 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
 class Preferences:
     default_crew: str = DEFAULT_CREW
     editor: str = ""
-    display_currency: dict | None = None
     instructions: str = ""
     outward: Any = None
 
@@ -552,9 +520,6 @@ def load_preferences(home: Home) -> Preferences:
         meta, _ = mdfile.read(home.preferences_config)
         prefs.default_crew = str(meta.get("default_crew") or DEFAULT_CREW)
         prefs.editor = str(meta.get("editor") or "")
-        cur = meta.get("display_currency")
-        if isinstance(cur, dict) and cur.get("code") and isinstance(cur.get("rate"), (int, float)):
-            prefs.display_currency = {"code": str(cur["code"]), "rate": float(cur["rate"])}
         prefs.outward = meta.get("outward")
     if home.instructions.is_file():
         _, body = mdfile.read(home.instructions)

@@ -1,6 +1,6 @@
 """The guardrail gate. Every model call and tool call passes through here.
 
-Checks happen before a call; cost is recorded after it. Limits are fixed when
+Checks happen before a call; usage is recorded after it. Limits are fixed when
 the gate is built and nothing in a run can change them.
 
 Three outcomes when a check fails:
@@ -46,16 +46,13 @@ class ToolRefused(Exception):
 
 
 @dataclass
-class Spend:
+class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
-    usd: float = 0.0
     model_calls: int = 0
     tool_calls: dict[str, int] = field(default_factory=dict)
     tool_refused: dict[str, int] = field(default_factory=dict)
-    tool_usd: float = 0.0
     rounds: int = 0
-    unpriced_calls: int = 0
     estimated_calls: int = 0
     elapsed_seconds: float = 0.0
 
@@ -64,16 +61,12 @@ class Spend:
         return self.input_tokens + self.output_tokens
 
 
-PriceLookup = Callable[[str], tuple[float, float] | None]
-
-
 class Gate:
-    def __init__(self, limits: Limits, prices: PriceLookup, clock: Callable[[], float]):
+    def __init__(self, limits: Limits, clock: Callable[[], float]):
         self.limits = limits
-        self.prices = prices
         self.clock = clock
         self.started = clock()
-        self.spend = Spend()
+        self.usage = Usage()
         self.phase = "work"
         self.report_deadline: float | None = None
         self._stop: str | None = None
@@ -155,30 +148,22 @@ class Gate:
             where = "in the run"
 
         worst_tokens = est_input + max_out
-        if token_cap is not None and self.spend.total_tokens + worst_tokens > token_cap:
+        if token_cap is not None and self.usage.total_tokens + worst_tokens > token_cap:
             raise LimitReached(
                 "max_tokens",
                 f"the next call could use up to {worst_tokens:,} tokens; "
-                f"{self.spend.total_tokens:,} of {token_cap:,} tokens {where} are already used",
+                f"{self.usage.total_tokens:,} of {token_cap:,} tokens {where} are already used",
             )
         if self.phase == "work":
             self.scope_steps += 1
         return max_out, max(timeout, 0.001)
 
-    def record_model_call(self, model: str, input_tokens: int, output_tokens: int, estimated: bool = False) -> float:
-        self.spend.model_calls += 1
-        self.spend.input_tokens += input_tokens
-        self.spend.output_tokens += output_tokens
+    def record_model_call(self, model: str, input_tokens: int, output_tokens: int, estimated: bool = False) -> None:
+        self.usage.model_calls += 1
+        self.usage.input_tokens += input_tokens
+        self.usage.output_tokens += output_tokens
         if estimated:
-            self.spend.estimated_calls += 1
-        price = self.prices(model)
-        cost = 0.0
-        if price is None:
-            self.spend.unpriced_calls += 1
-        else:
-            cost = (input_tokens * price[0] + output_tokens * price[1]) / 1_000_000
-            self.spend.usd += cost
-        return cost
+            self.usage.estimated_calls += 1
 
     def record_lost_calls(self, model: str, n: int, est_input: int, max_output: int) -> int:
         """Attempts that timed out and were tried again: the provider may have done and
@@ -190,12 +175,12 @@ class Gate:
 
     def check_round(self) -> None:
         self._work_checks()
-        if self.spend.rounds >= self.limits.max_rounds:
+        if self.usage.rounds >= self.limits.max_rounds:
             raise LimitReached("max_rounds", f"the Lead has used all {self.limits.max_rounds} delegation rounds")
 
     def record_round(self) -> int:
-        self.spend.rounds += 1
-        return self.spend.rounds
+        self.usage.rounds += 1
+        return self.usage.rounds
 
     def check_tool_call(self, role: str, tool: str, args_key: str, brief: bool = False, capped: bool = True) -> None:
         """Check one tool call. brief=True for a role's call inside a brief, where
@@ -217,21 +202,14 @@ class Gate:
         if not capped:
             return
         cap = self.limits.max_calls_for(tool)
-        used = self.spend.tool_calls.get(tool, 0)
+        used = self.usage.tool_calls.get(tool, 0)
         if used >= cap:
-            self.spend.tool_refused[tool] = self.spend.tool_refused.get(tool, 0) + 1
+            self.usage.tool_refused[tool] = self.usage.tool_refused.get(tool, 0) + 1
             raise ToolRefused("max_calls", f"{tool} has used all {cap} calls allowed in this run")
-        self.spend.tool_calls[tool] = used + 1
-
-    def record_tool_cost(self, usd: float) -> None:
-        """For tools that bill per call (cost_per_call in tools.md). An estimate, never a limit."""
-        self.spend.usd += usd
-        self.spend.tool_usd += usd
+        self.usage.tool_calls[tool] = used + 1
 
     def snapshot(self) -> dict:
-        self.spend.elapsed_seconds = round(self.elapsed(), 3)
-        d = asdict(self.spend)
-        d["usd"] = round(d["usd"], 6)
-        d["tool_usd"] = round(d["tool_usd"], 6)
-        d["total_tokens"] = self.spend.total_tokens
+        self.usage.elapsed_seconds = round(self.elapsed(), 3)
+        d = asdict(self.usage)
+        d["total_tokens"] = self.usage.total_tokens
         return d
