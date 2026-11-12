@@ -17,6 +17,7 @@ from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, ma
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
+from ombro.mcp import McpCallLost
 from ombro.roles import Role, load_crew, skill_texts
 from ombro.settings import Limits, ModelSpec, SetupError, ToolSettings, load_models, load_preferences
 from ombro.tools import Tool, ToolContext, ToolError, ToolRegistry
@@ -196,6 +197,7 @@ class Engine:
             limit_hit=limit_hit,
             finished_at=utc_now(),
             spend=self.gate.snapshot(),
+            **({"outbox": c} if (c := outbox.counts(self.run_dir)) else {}),
         )
         self.journal.write("harness", "run_ended", status)
         try:
@@ -469,6 +471,13 @@ class Engine:
         ctx = ToolContext(self.run_dir, role.name, timeout=self._tool_timeout())
         try:
             out = tool.handler(args, ctx) if tool.handler else {"ok": True}
+        except McpCallLost as e:
+            # Sent, but no answer: it may have happened. Retrying could do it twice.
+            self._charge(name, cost, billed=True)
+            self.journal.write(role.name, "outward_uncertain", f"{name} {args_note}: {_short(str(e))}", tool=name,
+                               reason=reason, arguments=args)
+            return {"status": "uncertain", "error": f"{e}. It may or may not have happened. Do not try it "
+                    "again; say in your summary that it is uncertain, so the user can check."}
         except ToolError as e:
             self._charge(name, cost, billed=e.billable)
             self.journal.write(role.name, "outward_error", f"{name} {args_note}: {_short(str(e))}", tool=name,

@@ -21,6 +21,7 @@ import os
 import queue
 import re
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -52,6 +53,10 @@ class McpNotReached(McpError):
 
 class McpCallLost(McpError):
     """A call was sent, but no answer came back: it may or may not have happened."""
+
+
+class _AnswerLost(TimeoutError):
+    """Inside a transport: the request left, but no usable answer came back."""
 
 
 @dataclass(frozen=True)
@@ -128,7 +133,13 @@ class _Stdio:
     def __init__(self, home: Home, cfg: ServerConfig, log: Path | None):
         cmd = [expand(home, cfg.command or "", cfg.name), *(expand(home, a, cfg.name) for a in cfg.args)]
         env = {**os.environ, **{k: expand(home, v, cfg.name) for k, v in cfg.env.items()}}
-        self._log = open(log, "ab") if log else subprocess.DEVNULL
+        # Values from .env, so they can be hidden from anything the server prints.
+        self._secrets = [v for v in (keys.get_key(home, n) for n in cfg.key_refs()) if v]
+        # The server's own output goes to the run's log, or to a temporary file,
+        # so a failure to start can show its last lines.
+        self._log_path = log
+        self._log = open(log, "ab") if log else tempfile.TemporaryFile()
+        self._log_start = self._log.tell()
         try:
             self.proc = subprocess.Popen(
                 cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self._log, env=env,
@@ -196,8 +207,28 @@ class _Stdio:
                 self.proc.wait()
         self._close_log()
 
+    def output_tail(self, lines: int = 5, max_chars: int = 600) -> str:
+        """The last lines the server printed since it was started, with .env values hidden."""
+        try:
+            self._log.flush()
+            if self._log_path:
+                with open(self._log_path, "rb") as f:
+                    f.seek(self._log_start)
+                    data = f.read()
+            else:
+                self._log.seek(self._log_start)
+                data = self._log.read()
+        except (OSError, ValueError):
+            return ""
+        text = data.decode("utf-8", "replace")
+        for secret in self._secrets:
+            text = text.replace(secret, "[hidden]")
+        kept = [ln.strip() for ln in text.splitlines() if ln.strip()][-lines:]
+        out = " | ".join(kept)
+        return out if len(out) <= max_chars else "…" + out[-max_chars:]
+
     def _close_log(self) -> None:
-        if self._log not in (subprocess.DEVNULL, None):
+        if self._log is not None and not self._log.closed:
             self._log.close()
 
 
@@ -240,15 +271,24 @@ class _Http:
         try:
             r = self.client.post(self.url, content=json.dumps(msg), headers=self._headers(),
                                  timeout=httpx.Timeout(max(timeout, 0.5), connect=min(max(timeout, 0.5), 15.0)))
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.UnsupportedProtocol) as e:
+            # Nothing left the machine: safe to try again later.
+            raise ConnectionError(str(e) or type(e).__name__) from None
         except httpx.TimeoutException:
             raise TimeoutError from None
         except httpx.HTTPError as e:
-            raise ConnectionError(str(e)) from None
+            # The request may have reached the server (a dropped connection, a broken
+            # answer): it may or may not have happened.
+            raise _AnswerLost(f"the connection failed after the request was sent ({str(e) or type(e).__name__})") from None
         if r.headers.get("mcp-session-id"):
             self.session = r.headers["mcp-session-id"]
         if r.status_code in (202, 204):
             return []
+        if r.status_code >= 500:
+            # The server failed while handling it; it may have acted first.
+            raise _AnswerLost(f"the server answered HTTP {r.status_code}")
         if r.status_code >= 400:
+            # Refused before it was handled (sign-in, a lost session, a bad address).
             raise ConnectionError(f"HTTP {r.status_code}")
         ctype = r.headers.get("content-type", "")
         if "text/event-stream" in ctype:
@@ -315,8 +355,13 @@ class McpClient:
             self.server_info = result.get("serverInfo") or {}
             self._notify("notifications/initialized")
         except McpError as e:
+            tail = ""
+            if isinstance(self._t, _Stdio):
+                time.sleep(0.2)  # let a dying server finish printing
+                tail = self._t.output_tail()
             self.close()
-            raise McpNotReached(f"server {self.cfg.name} did not start properly: {e}") from None
+            raise McpNotReached(f"server {self.cfg.name} did not start properly: {e}"
+                                + (f". Its last output: {tail}" if tail else "")) from None
 
     def close(self) -> None:
         if self._t is not None:
@@ -366,9 +411,11 @@ class McpClient:
         deadline = time.monotonic() + timeout
         try:
             replies = self._t.request({"jsonrpc": "2.0", "id": rid, "method": method, "params": params}, timeout)
-        except TimeoutError:
+        except TimeoutError as e:
             if sent is not None:
                 sent.append(True)
+            if isinstance(e, _AnswerLost):
+                raise McpCallLost(f"server {self.cfg.name}: {e}") from None
             raise McpCallLost(f"server {self.cfg.name} did not answer {method} within {timeout:.0f}s") from None
         except ConnectionError as e:
             raise McpNotReached(f"server {self.cfg.name} could not be reached: {e}") from None

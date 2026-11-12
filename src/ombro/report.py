@@ -52,7 +52,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     gaps: list[str] = []
     notes: dict[str, Any] | None = None
     outward: dict[str, list[dict[str, Any]]] = {"staged": [], "done": [], "errors": [], "refused": [],
-                                                 "duplicates": []}
+                                                 "duplicates": [], "uncertain": []}
     for ev in events:
         action = ev.get("action")
         if action == "briefed":
@@ -85,6 +85,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             outward["done"].append(ev)
         elif action == "outward_error":
             outward["errors"].append(ev)
+        elif action == "outward_uncertain":
+            outward["uncertain"].append(ev)
         elif action == "tool_refused" and ev.get("permission") == "refuse":
             outward["refused"].append(ev)
     if failure:
@@ -187,9 +189,11 @@ def narrative_input(facts: dict[str, Any]) -> str:
     if facts["finish"]:
         lines.append(f"You called finish ({facts['finish']['outcome']}): {facts['finish']['summary']}")
     ow = facts.get("outward") or {}
-    if ow.get("staged") or ow.get("done"):
+    if ow.get("staged") or ow.get("done") or ow.get("uncertain"):
         lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the run, "
-                     f"{len(ow.get('staged') or [])} staged and waiting for the user's approval.")
+                     f"{len(ow.get('staged') or [])} staged and waiting for the user's approval"
+                     + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)"
+                        if ow.get("uncertain") else "") + ".")
     lines.append("")
     if not facts["briefs"]:
         lines.append("No roles were briefed.")
@@ -412,7 +416,8 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     ow = f.get("outward") or {}
     staged, done = ow.get("staged") or [], ow.get("done") or []
     errors, refused, dups = ow.get("errors") or [], ow.get("refused") or [], ow.get("duplicates") or []
-    if not any((staged, done, errors, refused)):
+    uncertain = ow.get("uncertain") or []
+    if not any((staged, done, errors, refused, uncertain)):
         return ["Nothing staged."]
     lines: list[str] = []
     setting = f.get("outward_setting") or {}
@@ -433,6 +438,11 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     if done:
         lines.append(f"Done during the run, as your permissions allow ({len(done)}):")
         lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in done]
+        lines.append("")
+    if uncertain:
+        lines.append(f"Uncertain: sent during the run, but no answer came back, so it may or may not have "
+                     f"happened ({len(uncertain)}). Check the service:")
+        lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in uncertain]
         lines.append("")
     if errors:
         lines.append(f"Tried during the run, but the service reported an error ({len(errors)}):")

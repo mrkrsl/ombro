@@ -292,6 +292,7 @@ def settle(run_dir: Path) -> None:
 
 
 def _journal(run_dir: Path, action: str, a: Action, note: str, **extra: Any) -> None:
+    note = " ".join(str(note).split())  # one line, whatever the server's answer looked like
     Journal(Path(run_dir) / "journal.jsonl").write("you", action, f"{a.ref} {a.tool}: {note}",
                                                    ref=a.ref, tool=a.tool, **extra)
 

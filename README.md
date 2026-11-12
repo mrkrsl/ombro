@@ -319,14 +319,15 @@ comes from an MCP server listed in `tools.md`:
 servers:
   sheets:
     command: uvx                          # a local server, which handles its own sign-in
-    args: [mcp-google-sheets@latest]
-    env: {SERVICE_ACCOUNT_PATH: "${SHEETS_KEY_FILE}"}
+    args: [--with, "mcp==1.30.0", "mcp-google-sheets==0.6.3", --include-tools, "get_sheet_data,update_cells"]
+    env: {SERVICE_ACCOUNT_PATH: "${SHEETS_KEY_FILE}", DRIVE_FOLDER_ID: "<a folder shared with the account>"}
+    start_timeout: 120s                   # the first start downloads the package
   remote:
     url: https://mcp.example.invalid/mcp  # a remote server
     headers: {Authorization: "Bearer ${REMOTE_TOKEN}"}
 tools:
-  mcp.sheets.add_rows: {max_calls: 10}
-  mcp.sheets.delete_sheet: {permission: refuse}
+  mcp.sheets.update_cells: {max_calls: 10}
+  mcp.sheets.share_spreadsheet: {permission: refuse}
 ---
 ```
 
@@ -336,6 +337,15 @@ lists them. A role can use only the ones its `tools:` list names, so a large
 server costs only what a role uses. Remote servers that need an OAuth
 sign-in are not supported yet. Ombro speaks MCP itself (tools only), rather
 than through the SDK.
+
+**Pin what a server runs.** A package runner such as `uvx` downloads and
+runs the server's code, so name an exact version (`==0.6.3`, never
+`@latest`). It also resolves the server's own dependencies afresh, so pin
+those where the server needs it: `mcp-google-sheets` 0.6.3 asks for any
+`mcp>=1.8`, gets 2.x and fails to start, hence `--with "mcp==1.30.0"`. If a
+server can limit the tools it offers (here `--include-tools`), offer only
+those your roles use. When a server fails to start, Ombro shows the last
+lines it printed; in a run, all of it is in the run's `mcp-<server>.log`.
 
 **Classes.** Each tool is `read` (the server marks it read-only), `change`
 (it changes something but, by the server's marking, destroys nothing) or

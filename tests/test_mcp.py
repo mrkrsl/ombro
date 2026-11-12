@@ -41,6 +41,18 @@ def test_a_server_that_cannot_start_is_not_reached(home):
         McpClient(home, cfg).start()
 
 
+def test_a_server_that_fails_to_start_shows_its_last_output_with_keys_hidden(home):
+    home.env.write_text("INVENTED_TOKEN=abc123secret\n")
+    script = ("import os, sys; sys.stderr.write('starting\\nToken is ' + os.environ['T'] + '\\n'"
+              " + 'ModuleNotFoundError: invented.module\\n'); sys.exit(1)")
+    cfg = ServerConfig(name="broken", command=sys.executable, args=("-c", script), env={"T": "${INVENTED_TOKEN}"})
+    with pytest.raises(McpNotReached) as caught:
+        McpClient(home, cfg).start()
+    msg = str(caught.value)
+    assert "Its last output:" in msg and "ModuleNotFoundError: invented.module" in msg
+    assert "abc123secret" not in msg and "[hidden]" in msg
+
+
 def test_a_missing_key_stops_the_server_before_it_starts(home, tmp_path):
     cfg = ServerConfig(name="fake", command=sys.executable, args=("-m", "ombro.fake_mcp"),
                        env={"TOKEN": "${INVENTED_SERVER_KEY}"})
@@ -89,6 +101,51 @@ def test_http_transport_with_json_and_event_stream_answers(home):
     assert seen[0] == ("initialize", None, "Bearer abc123")
     assert seen[-1] == ("DELETE", "sess-1", None)  # the session is closed
     assert all(s[1] == "sess-1" for s in seen[1:] if s[0] != "initialize")
+
+
+def _remote(answer_call):
+    """A mock remote server that starts properly and answers tools/call with `answer_call`."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.method == "DELETE":
+            return httpx.Response(200)
+        msg = json.loads(request.content)
+        if "id" not in msg:
+            return httpx.Response(202)
+        if msg["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": msg["id"], "result": {
+                "protocolVersion": "2025-06-18", "capabilities": {}}})
+        return answer_call(request)
+
+    return httpx.MockTransport(handle)
+
+
+def _raise(exc):
+    def answer(request):
+        raise exc("invented failure", request=request)
+    return answer
+
+
+@pytest.mark.parametrize("answer, expected", [
+    (_raise(httpx.ConnectError), McpNotReached),  # never left the machine
+    (_raise(httpx.ConnectTimeout), McpNotReached),
+    (lambda r: httpx.Response(401), McpNotReached),  # refused before it was handled
+    (lambda r: httpx.Response(404), McpNotReached),
+    (_raise(httpx.ReadError), McpCallLost),  # sent; the answer was lost
+    (_raise(httpx.RemoteProtocolError), McpCallLost),
+    (_raise(httpx.ReadTimeout), McpCallLost),
+    (lambda r: httpx.Response(500), McpCallLost),  # the server failed while handling it
+    (lambda r: httpx.Response(503), McpCallLost),
+])
+def test_remote_failures_after_sending_are_lost_not_unsent(home, answer, expected):
+    cfg = ServerConfig(name="remote", url="https://mcp.invalid/mcp")
+    sent: list = []
+    with McpClient(home, cfg, transport=_remote(answer)) as c:
+        with pytest.raises(McpError) as caught:
+            c.call_tool("note", {}, sent=sent)
+    assert type(caught.value) is expected
+    if expected is McpCallLost:
+        assert sent  # so an approval marks it uncertain and never retries it
 
 
 def test_server_errors_are_reported(home, tmp_path):

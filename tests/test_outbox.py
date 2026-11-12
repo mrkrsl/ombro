@@ -76,6 +76,14 @@ def test_a_send_is_staged_not_done_and_the_role_is_told(run, record):
     assert told and told[0]["outbox"] == "outbox/001-fake-post-message.md" and "Not done" in told[0]["note"]
     assert "staged" in run.actions()
     assert run.meta["outward"] == {"preset": "balanced", "source": "preferences", "allow": [], "stage": []}
+    assert run.meta["outbox"] == {"pending": 1}  # counted when the run ends, before any decision
+
+
+def test_journal_notes_stay_on_one_line(home, staged):
+    a = outbox.actions(staged.run_dir)[0]
+    outbox._journal(staged.run_dir, "outbox_executed", a, '{\n  "updatedRange": "Sheet1!A2:C2"\n}')
+    last = staged.events[-1]
+    assert "\n" not in last["note"] and last["note"].endswith('{ "updatedRange": "Sheet1!A2:C2" }')
 
 
 def test_the_report_lists_staged_actions_from_the_harness_record(run, record):
@@ -126,6 +134,21 @@ def test_refuse_in_tools_md_beats_a_brief_that_allows(home, run, tmp_path):
     assert fake_sent(record) == [] and outbox.actions(run.run_dir) == []
     assert any("refused by the user's settings" in r.get("error", "") for r in tool_replies(run))
     assert "Refused by tools.md (1)" in run.report
+
+
+def test_an_allowed_call_with_no_answer_is_uncertain_and_the_role_is_told_not_to_retry(home, run, tmp_path):
+    record = tmp_path / "sent.jsonl"
+    use_fake_mcp(home, record, server_settings={"timeout": "1s"}, OMBRO_FAKE_MCP_SLEEP=3)
+    write_role(home, "poster", kind="helper", tools=ALL)
+    run(script(add()))  # balanced: add_row is a change, so it runs during the run
+    assert [e["tool"] for e in fake_sent(record)] == ["add_row"]
+    [told] = [r for r in tool_replies(run) if r.get("status") == "uncertain"]
+    assert "Do not try it again" in told["error"]
+    assert "outward_uncertain" in run.actions() and "outward_error" not in run.actions()
+    section = run.report.split("## Outbox", 1)[1].split("## Changes to notes.md")[0]
+    assert "Uncertain: sent during the run, but no answer came back" in section
+    assert "`mcp.fake.add_row` (poster): sheet: Leads" in section
+    assert "service reported an error" not in section
 
 
 def test_preferences_set_the_default(home, run, record):
