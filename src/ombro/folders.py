@@ -92,42 +92,83 @@ def expand(path: str | Path) -> Path:
     return Path(os.path.expanduser(str(path)))
 
 
+def true_path(path: Path) -> Path:
+    """path with symlinks followed and, on macOS, each existing part spelt as it is on
+    disk. A disk that ignores case finds ~/library as ~/Library; Path.resolve() keeps
+    the case as typed, so the fixed rules below would not see it. For a path that does
+    not exist yet, the nearest existing folder is spelt as on disk and the rest kept."""
+    real = Path(os.path.realpath(path))
+    if platform.system() != "Darwin":
+        return real
+    import fcntl
+
+    missing: list[str] = []
+    here = real
+    while True:
+        try:
+            fd = os.open(here, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except OSError:
+            if here.parent == here:
+                return real
+            missing.insert(0, here.name)
+            here = here.parent
+            continue
+        try:
+            on_disk = fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 1024).rstrip(b"\0").decode()
+        except OSError:
+            return real
+        finally:
+            os.close(fd)
+        return Path(on_disk).joinpath(*missing)
+
+
+def _key(p: Path) -> tuple[str, ...]:
+    """Parts to compare, ignoring case on macOS, whose disks normally ignore it."""
+    return tuple(x.casefold() for x in p.parts) if platform.system() == "Darwin" else p.parts
+
+
+def _same_or_inside(p: Path, folder: Path) -> bool:
+    a, b = _key(p), _key(folder)
+    return a[:len(b)] == b
+
+
 def check_place(path: str | Path, home: Home, *, must_exist: bool = True) -> Path:
-    """The real path of a folder that may be shared, or FolderError saying why not.
-    With must_exist=False the folder need not exist yet (a placement's parent)."""
+    """The real path of a folder that may be shared, spelt as on disk, or FolderError
+    saying why not. With must_exist=False the folder need not exist yet (a
+    placement's parent)."""
     raw = expand(path)
     if not raw.is_absolute():
         raise FolderError(f"{path} is not a full path; give one such as ~/Documents/Brand")
-    real = raw.resolve()
+    real = true_path(raw)
     if must_exist and not real.is_dir():
         raise FolderError(f"{path} is not a folder" + ("" if real.exists() else " (it does not exist)"))
     if real == Path("/"):
         raise FolderError("the root folder can never be shared")
-    ombro = home.root.resolve()
-    if real == ombro or real.is_relative_to(ombro):
+    ombro = true_path(home.root)
+    if _same_or_inside(real, ombro):
         raise FolderError(f"{path} is inside Ombro's own home, which holds its settings and secrets")
-    if ombro.is_relative_to(real):
+    if _same_or_inside(ombro, real):
         raise FolderError(f"{path} contains Ombro's own home, which holds its settings and secrets")
-    me = user_home()
+    me = true_path(user_home())
     base = None
-    if real != me and real.is_relative_to(me):
+    if _key(real) != _key(me) and _same_or_inside(real, me):
         base = me
     else:
         for root in mount_roots():
-            r = root.resolve() if root.exists() else root
-            if real != r and real.is_relative_to(r):
+            r = true_path(root) if root.exists() else root
+            if _key(real) != _key(r) and _same_or_inside(real, r):
                 base = r
                 break
     if base is None:
-        if real == me:
+        if _key(real) == _key(me):
             raise FolderError("your whole home folder cannot be shared; share a folder inside it")
         where = ", ".join(str(r) for r in mount_roots())
         raise FolderError(f"{path} is not in your home folder or on a mounted drive ({where}), "
                           "so it cannot be shared")
-    parts = real.relative_to(base).parts
+    parts = real.parts[len(base.parts):]
     if any(p.startswith(".") for p in parts):
         raise FolderError(f"{path} is a hidden folder or inside one, so it cannot be shared")
-    if base == me and parts and parts[0] == "Library":
+    if base == me and parts and _key(Path(parts[0])) == _key(Path("Library")):
         raise FolderError(f"{path} is in ~/Library, which holds your applications' data, so it cannot be shared")
     return real
 
@@ -316,7 +357,7 @@ def for_run(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
         except FolderError as e:
             left.append(f"folder {name!r} was left out: {e}")
             continue
-        if real != written_path(g.path):
+        if _key(real) != _key(written_path(g.path)):
             # Somewhere on the way the path now passes through a symlink (perhaps one a
             # script made), so it would lead to a different folder from the one granted.
             left.append(f"folder {name!r} was left out: {g.path} now leads to {display_path(real)} through a "

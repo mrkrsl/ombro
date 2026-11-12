@@ -57,7 +57,7 @@ def _print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
-def _show(a: outbox.Action) -> None:
+def _show(a: outbox.Action, home: Home | None = None) -> None:
     m = a.meta
     age, days = _age(m.get("staged_at"))
     print(f"{a.ref}   {_status_label(a).upper()}")
@@ -76,6 +76,13 @@ def _show(a: outbox.Action) -> None:
         import os
 
         print(f"  Copies    {m.get('source', '?')} (the copy kept with this action: {m.get('file', '?')})")
+        if home is not None:
+            # Where it would really go, spelt as on disk, so an odd spelling cannot hide the place.
+            try:
+                final, _ = outbox.placement_check(home, a)
+                print(f"  Goes to   {final}")
+            except outbox.OutboxError as e:
+                print(f"  Refused   {e}")
         to = str(a.arguments.get("to") or "")
         if to and os.path.lexists(os.path.expanduser(to)):
             print(f"  Replaces  {to} already exists; " + ("approving replaces it" if a.arguments.get("overwrite")
@@ -121,7 +128,7 @@ def cmd_outbox(args) -> int:
             a = outbox.find(home, refs[0])
             outbox.settle(a.run_dir)
             a = outbox.load(a.path)
-            _print_json(a.as_dict()) if args.json else _show(a)
+            _print_json(a.as_dict()) if args.json else _show(a, home)
             return 0
         if action in ("approve", "decline"):
             return _decide(home, action, refs, args)
@@ -180,7 +187,7 @@ def _decide(home: Home, action: str, refs: list[str], args) -> int:
                            + f", so nothing was {action}d")
     if not args.json:
         for a in items:
-            _show(a)
+            _show(a, home)
             print()
     if not args.yes:
         verb = "Run" if action == "approve" else "Decline"
@@ -266,7 +273,7 @@ def _edit(home: Home, refs: list[str], args) -> int:
     if args.json:
         _print_json(done.as_dict())
         return 0
-    _show(done)
+    _show(done, home)
     print(f"\nSaved. It is still waiting: approve it with `ombro outbox approve {done.ref}`.")
     return 0
 

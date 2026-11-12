@@ -361,3 +361,54 @@ def test_safe_copy_refuses_a_folder_reached_through_a_symlink(user, tmp_path):
     os_link.symlink_to(tmp_path / "elsewhere.txt")
     with pytest.raises(OSError, match="symlink"):
         folders.safe_copy(src, os_link)
+
+
+# ---------------------------------------------------------------------------
+# The fixed rules hold whatever the spelling, on a disk that ignores case
+
+
+def _ignores_case(path) -> bool:
+    import os
+
+    return os.path.exists(str(path).swapcase()) if str(path).swapcase() != str(path) else False
+
+
+def test_the_rules_see_through_a_different_spelling(home, user):
+    if not _ignores_case(user / "Library"):
+        pytest.skip("this disk tells upper and lower case apart, so the spellings are different folders")
+    for spelling in ("~/library/Mail", "~/LIBRARY", "~/Library/../library/Mail"):
+        with pytest.raises(folders.FolderError):
+            folders.check_place(spelling, home, must_exist=False)
+    # A placement's folder that does not exist yet, under a differently spelt ~/Library.
+    with pytest.raises(folders.FolderError, match="Library"):
+        folders.check_place("~/library/LaunchAgents", home, must_exist=False)
+    # An ordinary folder comes back spelt as it is on disk.
+    assert folders.check_place("~/documents/brand", home) == user / "Documents" / "Brand"
+
+
+def test_the_ombro_home_is_refused_whatever_the_spelling(home, user, monkeypatch):
+    if not _ignores_case(user / "Library"):
+        pytest.skip("this disk tells upper and lower case apart")
+    from ombro.home import Home
+
+    visible = Home(user / "OmbroHome")  # a home that is not hidden, so only the home rule stops it
+    visible.root.mkdir()
+    for spelling in ("~/ombrohome", "~/OMBROHOME/crews"):
+        with pytest.raises(folders.FolderError, match="Ombro's own home"):
+            folders.check_place(spelling, visible, must_exist=False)
+
+
+def test_approving_a_placement_rechecks_the_spelling(run, home, user, capsys):
+    if not _ignores_case(user / "Library"):
+        pytest.skip("this disk tells upper and lower case apart")
+    from ombro import outbox_cmd
+
+    (user / "Library" / "LaunchAgents").mkdir()
+    place_run(run, home, user, "~/Documents/Reports/")  # staged somewhere ordinary...
+    (a,) = outbox.actions(run.run_dir)
+    outbox.edit(home, a, {"to": "~/library/LaunchAgents/x.plist", "overwrite": False})  # ...then sent elsewhere
+    outbox_cmd._show(outbox.load(a.path), home)
+    assert "Refused" in capsys.readouterr().out
+    with pytest.raises(outbox.OutboxError, match="Library"):
+        outbox.approve(home, outbox.load(a.path))
+    assert not (user / "Library" / "LaunchAgents" / "x.plist").exists()
