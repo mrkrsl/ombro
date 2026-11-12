@@ -371,3 +371,27 @@ def test_pool_offers_only_named_tools_and_adds_a_reason(home, tmp_path):
     assert by["mcp.fake.find_rows"].reason_key is None
     assert any("no tool named 'nope'" in w for w in warnings)
     assert any("no MCP server named 'other'" in w for w in warnings)
+
+
+def test_a_started_server_gets_a_small_environment(home, monkeypatch):
+    from ombro import keys
+    from ombro import mcp
+    from ombro.mcp import server_env
+
+    monkeypatch.setenv("INVENTED_SHELL_KEY", "sk-invented-shell-key-0000000000")
+    monkeypatch.setenv("INVENTED_WANTED", "yes")
+    keys.set_key(home, "INVENTED_FILE_KEY", "invented-file-key-123")
+    cfg = ServerConfig.from_dict("x", {"command": "invented", "pass_env": ["INVENTED_WANTED"],
+                                       "env": {"TOKEN": "${INVENTED_FILE_KEY}"}})
+    env = server_env(home, cfg)
+    assert "INVENTED_SHELL_KEY" not in env
+    assert env["INVENTED_WANTED"] == "yes" and env["TOKEN"] == "invented-file-key-123"
+    assert env["PATH"] and set(env) <= {*mcp.BASE_ENV, "INVENTED_WANTED", "TOKEN"}
+
+
+def test_pass_env_must_be_a_list_of_names(home):
+    from ombro.settings import ToolSettings
+
+    with pytest.raises(SetupError, match="pass_env"):
+        ToolSettings.from_dict({"servers": {"x": {"command": "y", "pass_env": ["not a name"]}}}, "tools.md")
+    ToolSettings.from_dict({"servers": {"x": {"command": "y", "pass_env": ["UV_CACHE_DIR"]}}}, "tools.md")

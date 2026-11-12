@@ -284,7 +284,9 @@ A remote server that asks for sign-in is connected once with `ombro connect
 <server>`, in the browser; `client_id` gives one from the service's own
 developer settings, for a service that does not let Ombro register itself.
 `env` sets variables for a started server. Write a secret as ${NAME}: it is
-read from secrets/keys.env when the server starts and never logged. Optional `timeout`
+read from secrets/keys.env when the server starts and never logged. A started
+server gets only PATH, HOME, USER, LOGNAME, LANG, LC_ALL, LC_CTYPE and TMPDIR
+from Ombro's own environment; `pass_env: [NAME, ...]` passes others. Optional `timeout`
 for each call, e.g. 60s. For example:
 
   servers:

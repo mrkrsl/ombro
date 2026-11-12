@@ -426,6 +426,9 @@ tools:
 ```
 
 `${NAME}` is read from `secrets/keys.env` when the server starts and is never logged.
+A server Ombro starts gets only `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`,
+`LC_CTYPE` and `TMPDIR` from Ombro's own environment, plus its `env`, so keys kept in
+your shell never reach it; `pass_env: [NAME, ...]` on a server passes others it needs.
 A server's tools are named `mcp.<server>.<tool>`; `ombro tools <server>`
 lists them. A role can use only the ones its `tools:` list names, so a large
 server costs only what a role uses. Ombro speaks MCP itself (tools only),

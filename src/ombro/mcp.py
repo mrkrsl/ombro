@@ -53,6 +53,10 @@ START_TIMEOUT = 30.0
 CALL_TIMEOUT = 60.0
 RESULT_MAX_CHARS = 8_000
 _REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+# What a started server gets from Ombro's own environment: enough to find programs,
+# a home folder, the locale and a temporary folder. Nothing else, so keys kept in a
+# shell never reach a third-party server. `pass_env` in tools.md adds names.
+BASE_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR")
 
 
 class McpError(ToolError):
@@ -83,6 +87,7 @@ class ServerConfig:
     command: str | None = None
     args: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
+    pass_env: tuple[str, ...] = ()
     url: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
     timeout: float = CALL_TIMEOUT
@@ -95,6 +100,7 @@ class ServerConfig:
             command=d.get("command"),
             args=tuple(str(a) for a in d.get("args") or ()),
             env={str(k): str(v) for k, v in (d.get("env") or {}).items()},
+            pass_env=tuple(str(n) for n in d.get("pass_env") or ()),
             url=d.get("url"),
             headers={str(k): str(v) for k, v in (d.get("headers") or {}).items()},
             timeout=float(d.get("timeout") or CALL_TIMEOUT),
@@ -104,6 +110,14 @@ class ServerConfig:
     def key_refs(self) -> list[str]:
         texts = [self.command or "", *self.args, *self.env.values(), self.url or "", *self.headers.values()]
         return sorted({m for t in texts for m in _REF.findall(t)})
+
+
+def server_env(home: Home, cfg: "ServerConfig") -> dict[str, str]:
+    """The environment a started server gets: BASE_ENV and its pass_env from Ombro's
+    own, then its `env` from tools.md with ${NAME} read from secrets/keys.env."""
+    out = {k: os.environ[k] for k in (*BASE_ENV, *cfg.pass_env) if k in os.environ}
+    out.update({k: expand(home, v, cfg.name) for k, v in cfg.env.items()})
+    return out
 
 
 def expand(home: Home, text: str, server: str) -> str:
@@ -162,7 +176,7 @@ def result_text(result: dict[str, Any], max_chars: int = RESULT_MAX_CHARS) -> st
 class _Stdio:
     def __init__(self, home: Home, cfg: ServerConfig, log: Path | None):
         cmd = [expand(home, cfg.command or "", cfg.name), *(expand(home, a, cfg.name) for a in cfg.args)]
-        env = {**os.environ, **{k: expand(home, v, cfg.name) for k, v in cfg.env.items()}}
+        env = server_env(home, cfg)
         # Values from secrets/keys.env, so they can be hidden from anything the server prints.
         self._secrets = [v for v in (keys.get_key(home, n) for n in cfg.key_refs()) if v]
         # The server's own output goes to the run's log, or to a temporary file,

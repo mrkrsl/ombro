@@ -321,7 +321,8 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
 _TOOL_FIELDS = {"provider", "max_calls", "cost_per_call", "class", "permission"}
-_SERVER_FIELDS = {"command", "args", "env", "url", "headers", "timeout", "start_timeout", "class", "client_id"}
+_SERVER_FIELDS = {"command", "args", "env", "pass_env", "url", "headers", "timeout", "start_timeout", "class",
+                  "client_id"}
 TOOL_CLASSES = ("read-only", "internal", "external")
 # A server-wide class covers its tools that are not read-only; reading stays reading.
 SERVER_CLASSES = ("internal", "external")
@@ -421,6 +422,9 @@ class ToolSettings:
                     raise SetupError(f"{where}: `{key}` for server {name} must be a mapping")
             if "args" in cfg and not isinstance(cfg["args"] or [], list):
                 raise SetupError(f"{where}: `args` for server {name} must be a list")
+            if "pass_env" in cfg and (not isinstance(cfg["pass_env"] or [], list) or not all(
+                    isinstance(n, str) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", n) for n in cfg["pass_env"] or [])):
+                raise SetupError(f"{where}: `pass_env` for server {name} must be a list of variable names")
             if "class" in cfg:
                 if cfg["class"] in _OLD_CLASSES:
                     raise SetupError(f"{where}: class {cfg['class']!r} for server {name} has been renamed; use "
