@@ -353,15 +353,16 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
     for r in rows:
         desc = " ".join(r["description"].split())[:50]
         print(f"  {r['tool']:<44} {r['class']:<9} {r['class_from']:<8} {r['permission']:<10} {desc}")
-    print("\nClasses: read changes nothing; work is documents, sheets, databases, files and drafts; external "
-          "reaches people\nor the public, or spends money. FROM: marking (the server's own claim), server or "
-          "tool (set in tools.md),\nor default (a tool that changes something and is not classed counts as "
-          "external).")
+    print("\nClasses: read changes nothing; work is anything in your organisation's own tools, even when "
+          "colleagues see it;\nexternal reaches people outside your organisation, or the public, or spends money. "
+          "FROM: marking (the server's\nown claim), server or tool (set in tools.md), or default (a tool that "
+          "changes something and is not classed\ncounts as external).")
     defaulted = [r["tool"] for r in rows if r["class_from"] == "default"]
     marked = [r for r in rows if r["class_from"] == "marking" and r["class"] != "read"]
     if defaulted:
         print(f"\n{len(defaulted)} tool(s) are external only by default, because the server does not say "
-              "otherwise. Leave any that\nreach people or the public (email, invitations, posts). For one that "
+              "otherwise. Leave any that\ncan reach people outside your organisation (email, invitations, posts). "
+              "For one that "
               f"only does work, add under `tools:` in tools.md:\n    {defaulted[0]}: {{class: work}}")
         if not marked:
             print("If every tool of this server that is not read only does work, one line on its entry under "

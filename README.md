@@ -374,11 +374,19 @@ lines it printed; in a run, all of it is in the run's `mcp-<server>.log`.
 trusted employee's work:
 
 - `read` changes nothing.
-- `work` is your documents, sheets, databases, files and drafts, including
-  overwriting them. It is done, then reported, like an employee who comes
-  back with the finished spreadsheet.
-- `external` reaches people or the public, or spends money: email,
-  messages, posts, publishing, public records, purchases.
+- `work` is anything in your organisation's own tools: documents, sheets,
+  databases, CRMs, Notion, Linear, files and drafts, including overwriting
+  them, and even when colleagues see or are notified of the change. It is
+  done, then reported, like an employee who comes back with the finished
+  spreadsheet.
+- `external` reaches people outside your organisation, or the public, or
+  spends money: email sent, messages to customers, social posts,
+  publishing to the web, public records, purchases. A tool that can reach
+  either side, such as sending email or calendar invitations, counts as
+  external, because it cannot tell who is inside.
+
+The boundary is the organisation, not visibility: a Notion page is work even
+though Notion can publish pages; publishing one to the web would be external.
 
 A tool's class comes from, each overriding the one before: the server's
 markings (`readOnlyHint` makes it read, `openWorldHint: false` makes it

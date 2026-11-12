@@ -3,10 +3,13 @@
 Every tool that reaches a service outside the run comes from an MCP server.
 Each has a class, drawn by who an action reaches:
 - read: changes nothing;
-- work: documents, sheets, databases, files and drafts, including
-  overwriting. Like a trusted employee's work, it is done, then reported;
-- external: reaches people or the public, or spends money (email, messages,
-  posts, publishing, public records, purchases).
+- work: anything in the organisation's own tools (documents, sheets,
+  databases, CRMs, Notion, Linear, files), including overwriting, and even
+  when colleagues see or are notified of it. Like a trusted employee's work,
+  it is done, then reported;
+- external: reaches people outside the organisation, or the public, or
+  spends money (email sent, messages, social posts, publishing, public
+  records, purchases). A tool that can reach either side counts as external.
 A tool's class comes from, each overriding the one before: the server's
 markings (readOnlyHint true: read; openWorldHint false: work; otherwise
 external), `class:` on the server in tools.md (for its tools that do not

@@ -451,7 +451,7 @@ def test_the_brief_records_what_may_happen_without_you(home, record):
 
     purpose = BriefPurpose(home, "default", load_limits(home), "Tweet the top story.")
     ctx = dict(purpose.context())
-    asked = ctx["External tools in the crew (they reach people or the public, or spend money)"]
+    asked = next(v for k, v in ctx.items() if k.startswith("External tools in the crew"))
     assert "mcp.fake.post_message" in asked and "mcp.fake.add_row" not in asked and "find_rows" not in asked
     assert "outward_preset" in json.dumps(purpose.tool())
     answers = {"name": "news-tweet", "title": "Tweet the top story", "done_looks_like": "One tweet staged.",

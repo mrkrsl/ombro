@@ -353,7 +353,7 @@ class BriefPurpose(Purpose):
                 "what it is and why.")
 
     def outward_tools(self) -> list[str]:
-        """The crew's external tools (reaching people or the public): the ones a
+        """The crew's external tools (reaching people outside the organisation, or the public): the ones a
         brief must ask about. Reading and work need no answer."""
         if getattr(self, "_external", None) is None:
             from ombro import outward
@@ -388,7 +388,8 @@ class BriefPurpose(Purpose):
                 default = outward.resolve(self.home, {})["preset"]
             except SetupError:
                 default = outward.DEFAULT_PRESET
-            out.append(("External tools in the crew (they reach people or the public, or spend money)",
+            out.append(("External tools in the crew (they reach people outside the organisation, or the "
+                        "public, or spend money)",
                         "\n".join(f"- {t}" for t in tools)
                         + f"\nThe user's default permission is {default}. Ask what may happen without them."))
         return out

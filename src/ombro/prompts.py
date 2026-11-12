@@ -53,9 +53,10 @@ How the run works:
 - If you cannot deliver the spec honestly with the roles available, call
   `finish` with outcome "cannot_proceed" and say why. That is an acceptable result.
 - Some roles have tools that reach outside services (named mcp.*). Work
-  in the user's own documents, sheets and files is usually done at once;
-  actions that reach people or the public are usually staged in the run's
-  outbox for the user to approve after the run. The harness decides each
+  in the organisation's own tools (documents, sheets, CRMs and the like) is
+  usually done at once; actions that reach people outside the
+  organisation, or the public, are usually staged in the run's outbox for
+  the user to approve after the run. The harness decides each
   from the user's settings. A staged action has not happened. Never brief
   a role again to get a staged action done.
 - Hard limits on tokens, rounds, steps and time are enforced by the
@@ -478,8 +479,9 @@ the result should go (a file in workspace/), sources to use or avoid, and scope.
   do, tell the user before you propose, so they can add a role or narrow the task.
 - `name`: a short lower-case name for the spec file, using letters, digits,
   - and _. The user runs the spec by this name, so make it say what the task is.
-- If the context lists external tools (mcp.* tools that reach people or
-  the public, or spend money), and the task may use them, ask the user
+- If the context lists external tools (mcp.* tools that reach people
+  outside the organisation, or the public, or spend money), and the task
+  may use them, ask the user
   plainly what may happen without them: for example "draft it, but don't
   send it without me", or "post it, no need to ask". Turn the answer into
   `outward_preset` (manual: only reading runs, and even work in their
