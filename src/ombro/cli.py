@@ -25,6 +25,15 @@ def _home(require: bool = True) -> Home:
     home = Home()
     if require and not home.exists():
         raise CliError(f"No Ombro home at {home.root}. Run `ombro init` first.")
+    if home.exists():
+        from ombro import keys
+
+        try:
+            moved = keys.migrate(home)
+        except OSError as e:
+            moved = f"Could not move {home.legacy_env} into {home.env}: {e}. Keys are still read from it."
+        if moved:
+            print(moved, file=sys.stderr)
     return home
 
 
@@ -415,7 +424,7 @@ def cmd_keys(args) -> int:
         return 0
     if action == "remove":
         removed = keys.remove_key(home, name)
-        print(f"Removed {name} from .env." if removed else f"{name} was not in .env.")
+        print(f"Removed {name} from {home.env.name}." if removed else f"{name} was not in {home.env.name}.")
         if os.environ.get(name):
             print(f"Note: {name} is also set in your shell environment, and Ombro will still use that.")
         return 0 if removed else 1

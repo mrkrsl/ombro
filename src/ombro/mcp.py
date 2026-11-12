@@ -4,13 +4,13 @@ Two transports:
 - stdio: Ombro starts the server as a child process (it handles its own
   sign-in) and talks newline-delimited JSON-RPC over its stdin and stdout;
 - http: Ombro posts JSON-RPC to a remote server's address ("streamable HTTP"),
-  with any token taken from .env.
+  with any token taken from secrets/keys.env.
 
 Only what Ombro needs is implemented: initialize, tools/list and tools/call.
 Requests from the server (sampling, roots, elicitation) are refused, since
 Ombro offers none of them; pings are answered.
 
-Values written as ${NAME} in a server's settings are read from .env when the
+Values written as ${NAME} in a server's settings are read from secrets/keys.env when the
 server starts, and are never logged.
 """
 
@@ -133,7 +133,7 @@ class _Stdio:
     def __init__(self, home: Home, cfg: ServerConfig, log: Path | None):
         cmd = [expand(home, cfg.command or "", cfg.name), *(expand(home, a, cfg.name) for a in cfg.args)]
         env = {**os.environ, **{k: expand(home, v, cfg.name) for k, v in cfg.env.items()}}
-        # Values from .env, so they can be hidden from anything the server prints.
+        # Values from secrets/keys.env, so they can be hidden from anything the server prints.
         self._secrets = [v for v in (keys.get_key(home, n) for n in cfg.key_refs()) if v]
         # The server's own output goes to the run's log, or to a temporary file,
         # so a failure to start can show its last lines.
@@ -208,7 +208,7 @@ class _Stdio:
         self._close_log()
 
     def output_tail(self, lines: int = 5, max_chars: int = 600) -> str:
-        """The last lines the server printed since it was started, with .env values hidden."""
+        """The last lines the server printed since it was started, with key values hidden."""
         try:
             self._log.flush()
             if self._log_path:

@@ -23,8 +23,33 @@ class Home:
 
     # Top-level files
     @property
+    def secrets(self) -> Path:
+        """Every secret lives here: keys, key files and sign-ins. Owner-only."""
+        return self.root / "secrets"
+
+    @property
     def env(self) -> Path:
+        """Single keys, one NAME=value per line."""
+        return self.secrets / "keys.env"
+
+    @property
+    def legacy_env(self) -> Path:
+        """Where keys lived before the secrets folder; moved on first use."""
         return self.root / ".env"
+
+    @property
+    def oauth_dir(self) -> Path:
+        """Sign-ins for remote MCP servers, one file per server, written by Ombro."""
+        return self.secrets / "oauth"
+
+    def ensure_secrets(self) -> Path:
+        """The secrets folder, created owner-only if missing."""
+        self.secrets.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self.secrets, 0o700)
+        except OSError:
+            pass
+        return self.secrets
 
     @property
     def limits(self) -> Path:
@@ -189,7 +214,7 @@ prices. Any OpenAI-compatible chat endpoint with tool calling works.
 
 - api: `openai` for an OpenAI-compatible endpoint, or `fake` for a scripted
   model used in tests and dry runs (`script:` names a JSON file of replies).
-- key: the name of the variable in .env that holds the API key. Keys never go in this file.
+- key: the name of the variable in secrets/keys.env that holds the API key. Keys never go in this file.
 - price_per_mtok: optional US dollars per million input and output tokens,
   used only to show an estimated cost in reports. Limits are in tokens.
 - A name can point at another name, as `cheap: default` does.
@@ -225,7 +250,7 @@ Settings for any tool:
   shown in reports. For services that bill in their own units, such as
   Firecrawl credits. Tools are limited by max_calls, not by cost.
 
-providers: settings for each provider. `key` names the variable in .env that
+providers: settings for each provider. `key` names the variable in secrets/keys.env that
 holds its key (set it with `ombro keys set NAME`). `fake` returns invented
 results and records every request in the run's fake-calls.jsonl.
 
@@ -233,7 +258,7 @@ servers: MCP servers, which supply every tool that reaches an outside
 service. Each has either `command` and `args` (a server Ombro starts, which
 handles its own sign-in) or `url` and optional `headers` (a remote server).
 `env` sets variables for a started server. Write a secret as ${NAME}: it is
-read from .env when the server starts and never logged. Optional `timeout`
+read from secrets/keys.env when the server starts and never logged. Optional `timeout`
 for each call, e.g. 60s. For example:
 
   servers:
@@ -332,6 +357,10 @@ def ensure_home(home: Home) -> list[Path]:
         pass
     for sub in ("preferences", "skills", "chats", "crews"):
         (home.root / sub).mkdir(exist_ok=True)
+    home.ensure_secrets()
+    from ombro.keys import migrate
+
+    migrate(home)
     _write_if_missing(home.env, "", created, mode=0o600)
     _write_if_missing(home.limits, mdfile.dump(LIMITS_META, LIMITS_BODY), created)
     _write_if_missing(home.models, mdfile.dump(MODELS_META, MODELS_BODY), created)

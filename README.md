@@ -37,7 +37,7 @@ ombro init                         # creates ~/.config/ombro, connects a model, 
 
 `init` asks for an OpenAI-compatible endpoint (DeepSeek by default), a model
 name and an API key, then makes one test call. The key is typed into a hidden
-prompt and stored in `.env` with owner-only permissions. It is never sent to a
+prompt and stored in `secrets/keys.env` with owner-only permissions. It is never sent to a
 model or written to a journal or report.
 
 Once a model answers, the Lead holds the set-up interview: who you are, how
@@ -124,7 +124,7 @@ to it as `name.previous.md`.
   are Ombro's fixed rules for every Lead, role and interview, so the Lead
   never asks whether you want them.
 - **Keys** are never asked for. Anything you type is scrubbed of the values in
-  `.env` and of common key shapes before it reaches the model or the transcript.
+  `secrets/keys.env` and of common key shapes before it reaches the model or the transcript.
 - Each interview has its own token cap (see Limits) and is saved as a
   transcript in `crews/<crew>/interviews/`. A run started from an interview
   keeps a copy as `interview.md`, and its report shows the interview's tokens
@@ -304,9 +304,13 @@ per call for services that bill in their own units, such as Firecrawl credits.
 It is added to the estimated cost in the report, and is never a limit. Like
 limits, tool settings are fixed when a run starts and recorded in `run.md`.
 
-Keys live in `.env` (owner-only) and are read at the moment of use, so a key
+Every secret lives in one owner-only folder, `secrets/`: single keys in
+`keys.env`, sign-ins for remote MCP servers in `oauth/`, and key files (such
+as a service account's) by name. Keys are read at the moment of use, so a key
 set with `ombro keys set` is picked up on the next call, even in a run already
-going. Keys never reach a model, a journal or a report.
+going. Nothing in `secrets/` ever reaches a model, a journal or a report. A
+`.env` from an earlier version is moved into `secrets/keys.env` the first
+time Ombro runs, and Ombro says so.
 
 ## Outside services: MCP, permissions and the outbox
 
@@ -331,7 +335,7 @@ tools:
 ---
 ```
 
-`${NAME}` is read from `.env` when the server starts and is never logged.
+`${NAME}` is read from `secrets/keys.env` when the server starts and is never logged.
 A server's tools are named `mcp.<server>.<tool>`; `ombro tools <server>`
 lists them. A role can use only the ones its `tools:` list names, so a large
 server costs only what a role uses. Remote servers that need an OAuth
@@ -487,7 +491,8 @@ matter, except the journal, which is JSON Lines:
 
 ```
 ~/.config/ombro/
-  .env  limits.md  models.md  tools.md
+  limits.md  models.md  tools.md
+  secrets/keys.env  secrets/oauth/  secrets/<key file>   owner-only
   preferences/config.md  preferences/instructions.md
   chats/<time>.md                      chat transcripts (never loaded or searched)
   scheduler/tick.md, tick.log, scheduler.log   the last tick and the scheduler's logs

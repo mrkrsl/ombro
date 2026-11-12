@@ -23,7 +23,7 @@ def test_fresh_home_layout(tmp_path):
     h = Home(tmp_path / "h")
     ensure_home(h)
     for rel in (
-        ".env", "limits.md", "models.md", "tools.md",
+        "secrets/keys.env", "limits.md", "models.md", "tools.md",
         "preferences/config.md", "preferences/instructions.md", "skills", "chats",
         "crews/default/crew.md", "crews/default/roles/lead/config.md", "crews/default/roles/lead/soul.md",
         "crews/default/memory/index.md", "crews/default/memory/notes.md",
@@ -31,6 +31,8 @@ def test_fresh_home_layout(tmp_path):
     ):
         assert (h.root / rel).exists(), rel
     assert stat.S_IMODE(os.stat(h.env).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(h.secrets).st_mode) == 0o700
+    assert not h.legacy_env.exists()
     assert h.crews() == ["default"]
     # Every settings file parses as front matter.
     for rel in ("limits.md", "models.md", "tools.md", "preferences/config.md", "crews/default/crew.md"):
@@ -210,3 +212,45 @@ def test_old_limits_files_still_load(home):
 def test_interview_limits_use_their_own_cap(home):
     lim = load_limits(home).for_interview()
     assert lim.max_tokens == 100_000 and lim.max_rounds == 40 and lim.report_reserve == 0
+
+
+def test_an_old_env_moves_into_the_secrets_folder(tmp_path):
+    from ombro import keys
+
+    h = Home(tmp_path / "h")
+    h.root.mkdir()
+    h.legacy_env.write_text("INVENTED_MODEL_KEY=abc12345\nexport INVENTED_SEARCH_KEY=def67890\n")
+    assert keys.get_key(h, "INVENTED_MODEL_KEY") == "abc12345"  # still read before it moves
+    msg = keys.migrate(h)
+    assert "Moved 2 key(s)" in msg and not h.legacy_env.exists()
+    assert keys.read_env(h) == {"INVENTED_MODEL_KEY": "abc12345", "INVENTED_SEARCH_KEY": "def67890"}
+    assert stat.S_IMODE(os.stat(h.env).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(h.secrets).st_mode) == 0o700
+    assert keys.migrate(h) is None  # nothing left to move
+
+
+def test_moving_keeps_keys_already_in_the_secrets_folder(tmp_path):
+    from ombro import keys
+
+    h = Home(tmp_path / "h")
+    h.root.mkdir()
+    keys.set_key(h, "INVENTED_A", "new-value-1")
+    h.legacy_env.write_text("INVENTED_A=old-value-1\nINVENTED_B=old-value-2\n")
+    keys.migrate(h)
+    assert keys.read_env(h) == {"INVENTED_A": "new-value-1", "INVENTED_B": "old-value-2"}
+
+
+def test_any_command_moves_an_old_env_and_says_so(home):
+    import subprocess
+    import sys
+
+    from ombro import keys
+
+    keys.remove_key(home, "DEEPSEEK_API_KEY")
+    home.env.unlink(missing_ok=True)
+    home.legacy_env.write_text("INVENTED_KEY=abc12345\n")
+    r = subprocess.run([sys.executable, "-m", "ombro", "keys"], capture_output=True, text=True,
+                       env={**os.environ, "OMBRO_HOME": str(home.root)})
+    assert r.returncode == 0, r.stderr
+    assert "Moved 1 key(s)" in r.stderr and "abc12345" not in r.stdout + r.stderr
+    assert not home.legacy_env.exists() and keys.read_env(home) == {"INVENTED_KEY": "abc12345"}

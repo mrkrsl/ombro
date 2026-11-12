@@ -2,7 +2,7 @@
 answers yet. Part 2 is the set-up interview with the Lead, which writes
 preferences/instructions.md and the Lead's soul.md, then offers to add roles.
 
-Keys are typed into a hidden prompt and written to .env, before the interview
+Keys are typed into a hidden prompt and written to secrets/keys.env, before the interview
 starts. They never reach a model.
 """
 
@@ -85,7 +85,7 @@ def run_init(
         else:
             say(f"The configured model did not answer: {detail}")
 
-    say("\nConnect a model. Keys are stored in .env with owner-only permissions and are never sent to a model.")
+    say("\nConnect a model. Keys are stored in secrets/keys.env with owner-only permissions and are never sent to a model.")
     while True:
         say("Endpoint:")
         for i, e in enumerate(ENDPOINTS, 1):
@@ -109,7 +109,7 @@ def run_init(
             continue
         key_name = preset["key"]
         if not key_name:
-            key_name = ask("Name for its key in .env, e.g. MY_PROVIDER_API_KEY (Enter if it needs no key): ").strip()
+            key_name = ask("Name for its key in secrets/keys.env, e.g. MY_PROVIDER_API_KEY (Enter if it needs no key): ").strip()
             if key_name and not keys.valid_name(key_name):
                 say("Key names use capitals, digits and underscores, starting with a letter.")
                 continue

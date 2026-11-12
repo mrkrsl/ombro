@@ -113,7 +113,7 @@ class OpenAICompatibleClient:
     def complete(self, messages, *, tools=None, max_output_tokens, timeout) -> ModelReply:
         key = self.key_getter()
         if self.key_required and not key:
-            raise ModelError("no API key is set for this model; run `ombro init` or add it to .env")
+            raise ModelError("no API key is set for this model; run `ombro init` or set it with `ombro keys set`")
         body: dict[str, Any] = {"model": self.model, "messages": messages, "max_tokens": int(max_output_tokens)}
         if tools:
             body["tools"] = tools
