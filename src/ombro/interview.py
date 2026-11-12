@@ -32,35 +32,13 @@ from ombro.gate import Gate, LimitReached
 from ombro.home import Home
 from ombro.journal import utc_now
 from ombro.settings import Limits, ModelSpec, format_tokens, load_models, load_preferences
+from ombro.ui import BLOCK, UI, ConsoleUI, Failure, Field, FileView, LeadSaid, Note, Option, Progress, \
+    ProposalShown, Usage, read_answer  # noqa: F401  (read_answer and BLOCK are used by chat)
 
 # The Lead may make this many model calls in a row without the user answering.
 MAX_CALLS_WITHOUT_ANSWER = 5
 QUIT_WORDS = ("/quit", "/q")
 END_WORD = "/end"
-
-
-BLOCK = '"""'
-
-
-def read_answer(ask: Callable[[str], str], prompt: str) -> str:
-    """One answer. A line that starts with three double quotes opens a block of
-    several lines, closed by a line that ends with them, so a pasted paragraph
-    stays one answer."""
-    raw = ask(prompt) or ""
-    if not raw.strip().startswith(BLOCK):
-        return raw
-    first = raw.strip()[len(BLOCK):]
-    if first.endswith(BLOCK):
-        return first[: -len(BLOCK)]
-    lines = [first] if first.strip() else []
-    while True:
-        line = ask("... ") or ""
-        if line.rstrip().endswith(BLOCK):
-            last = line.rstrip()[: -len(BLOCK)]
-            if last.strip():
-                lines.append(last)
-            return "\n".join(lines)
-        lines.append(line)
 
 
 class ProposalError(ValueError):
@@ -128,7 +106,7 @@ class Purpose:
         """Check final file texts (also after a hand edit). Raise ProposalError to refuse."""
         return proposal
 
-    def before_write(self, proposal: Proposal, ask: Callable[[str], str], say: Callable[[str], None]) -> Proposal:
+    def before_write(self, proposal: Proposal, ui: UI) -> Proposal:
         """Questions only the harness asks once the user has accepted (such as sharing a
         folder). Returns the proposal to write."""
         return proposal
@@ -158,7 +136,7 @@ def editor_command(home: Home) -> list[str] | None:
     return shlex.split(cmd) if cmd else None
 
 
-def open_in_editor(home: Home, paths: list[Path], ask: Callable[[str], str], say: Callable[[str], None]) -> None:
+def open_in_editor(home: Home, paths: list[Path], ui: UI) -> None:
     """Open files in the editor from preferences (or $VISUAL / $EDITOR) and wait.
     With no editor set, show the paths and wait for Enter."""
     cmd = editor_command(home)
@@ -167,11 +145,11 @@ def open_in_editor(home: Home, paths: list[Path], ask: Callable[[str], str], say
             subprocess.run([*cmd, *map(str, paths)], check=False)
             return
         except OSError as e:
-            say(f"Could not start the editor {cmd[0]!r}: {e}")
-    say("No editor is set (`editor` in preferences/config.md, or $EDITOR). Edit these files yourself:")
+            ui.say(f"Could not start the editor {cmd[0]!r}: {e}")
+    ui.say("No editor is set (`editor` in preferences/config.md, or $EDITOR). Edit these files yourself:")
     for p in paths:
-        say(f"  {p}")
-    ask("Press Enter when you have saved them. ")
+        ui.say(f"  {p}")
+    ui.ask(Field("saved", "Press Enter when you have saved them.", "wait"))
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +201,7 @@ class Interview:
         ask: Callable[[str], str] | None = None,
         say: Callable[[str], None] | None = None,
         edit: Callable[[list[Path]], None] | None = None,
+        ui: UI | None = None,
         client_factory: Callable[[ModelSpec], ChatClient] | None = None,
         clock: Callable[[], float] = time.time,
         today: date | None = None,
@@ -233,9 +212,7 @@ class Interview:
         self.home = home
         self.purpose = purpose
         self.crew = crew
-        self.ask = ask or (lambda prompt: input(prompt))
-        self.say = say or (lambda text: print(text, flush=True))
-        self.edit = edit or (lambda paths: open_in_editor(home, paths, self.ask, self.say))
+        self.ui = ui or ConsoleUI(ask=ask, say=say, edit=edit, home=home)
         self.limits = limits.for_interview()
         self.models = load_models(home)
         if model not in self.models:
@@ -259,22 +236,22 @@ class Interview:
             f"- answers from the user: {self.limits.max_rounds}"
         )
 
-    def _input(self, prompt: str) -> str:
+    def _input(self, label: str) -> str:
         """One answer from the user, scrubbed of keys. Raises EOFError/KeyboardInterrupt to quit."""
         while True:
-            raw = read_answer(self.ask, prompt)
+            raw = self.ui.ask(Field("answer", label, "text", multiline=True))
             text, removed = keys.scrub(self.home, (raw or "").strip())
             if removed:
-                self.say(
+                self.ui.say(
                     "(Something that looked like a key was removed before it reached the model. "
                     "Keys are set with `ombro keys set NAME`, never in an interview.)"
                 )
             if text:
                 return text
 
-    def _answer(self, prompt: str = "You: ") -> str | None:
+    def _answer(self, label: str = "You") -> str | None:
         """The user's next answer, counted against the interview's answer cap. None means quit."""
-        text = self._input(prompt)
+        text = self._input(label)
         if text.lower() in QUIT_WORDS:
             return None
         self.gate.check_round()
@@ -301,25 +278,7 @@ class Interview:
         return reply
 
     def _show(self, proposal: Proposal) -> None:
-        for f in proposal.files:
-            exists = f.path.is_file()
-            self.say(f"\n── {f.label} ({'replaces the current file' if exists else 'new file'}) " + "─" * 8)
-            self.say(f.text.rstrip())
-            if exists:
-                old = f.path.read_text(encoding="utf-8")
-                if mdfile.prompt_text(mdfile.parse(old)[1]) and old != f.text:
-                    diff = list(
-                        difflib.unified_diff(
-                            old.splitlines(), f.text.splitlines(), "current", "proposed", lineterm="", n=1
-                        )
-                    )
-                    if diff:
-                        self.say("\n   Changes from the current file:")
-                        for line in diff[2:60]:
-                            self.say("   " + line)
-        for w in proposal.warnings:
-            self.say(f"\nNote: {w}")
-        self.say("─" * 40)
+        self.ui.show(proposal_view(proposal))
 
     # -- the conversation --------------------------------------------------
 
@@ -338,7 +297,7 @@ class Interview:
         )
         opening, removed = keys.scrub(self.home, p.opening())
         messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": opening}]
-        self.say(
+        self.ui.say(
             f"{p.title}" + (f" It is {p.typical}." if p.typical else "")
             + " Type /quit to stop; nothing is written unless you accept it."
             + f" For several lines, start and end with {BLOCK}."
@@ -348,21 +307,21 @@ class Interview:
             outcome = self._loop(messages, tools)
         except LimitReached as e:
             self.transcript.note(f"Stopped by the interview limit {e.limit}: {e.detail}")
-            self.say(f"\nThe interview stopped: {e.detail}. Nothing was written.")
+            self.ui.show(Failure(f"The interview stopped: {e.detail}. Nothing was written."))
             outcome = Outcome("limit", gaps=list(self.gaps), detail=f"{e.limit}: {e.detail}")
         except ModelError as e:
             self.transcript.note(f"The model call failed: {e}")
-            self.say(f"\nThe model call failed: {e}. Nothing was written.")
+            self.ui.show(Failure(f"The model call failed: {e}. Nothing was written."))
             outcome = Outcome("failed", detail=str(e))
         except (KeyboardInterrupt, EOFError):
             self.transcript.note("You stopped the interview.")
-            self.say("\nInterview stopped. Nothing was written.")
+            self.ui.say("Interview stopped. Nothing was written.", spaced=True)
             outcome = Outcome("quit", detail="stopped by you")
         outcome.usage = self.gate.snapshot()
         outcome.answers = list(self.answers)
         outcome.transcript = self._save_transcript(outcome)
-        used = outcome.usage.get("total_tokens", 0)
-        self.say(f"(Interview used {used:,} of {format_tokens(self.limits.max_tokens)} tokens.)")
+        self.ui.show(Usage("interview", self.purpose.kind, outcome.usage.get("total_tokens", 0),
+                           self.limits.max_tokens, sum((outcome.usage.get("tool_calls") or {}).values()), final=True))
         return outcome
 
     def _loop(self, messages: list[dict], tools: list[dict]) -> Outcome:
@@ -378,7 +337,7 @@ class Interview:
             messages.append(reply.as_message())
             text = (reply.content or "").strip()
             if text:
-                self.say(f"\nLead: {text}\n")
+                self.ui.show(LeadSaid(text))
                 self.transcript.lead(text)
             if not reply.tool_calls:
                 if not text:
@@ -450,8 +409,8 @@ class Interview:
             question = "\n" + question
         line = self.progress_line(args)
         if line:
-            self.say(f"\n[{line}]")
-        self.say(f"Lead: {question}\n")
+            self.ui.show(Progress(line))
+        self.ui.show(LeadSaid(question, asks=True))
         self.transcript.lead(question + (f"\n\n_[{line}]_" if line else ""))
         answer = self._answer()
         if answer is None:
@@ -464,11 +423,9 @@ class Interview:
         if not gaps:
             return {"error": "list at least one gap"}, None
         self.gaps = gaps
-        self.say("\nThe Lead says the brief has gaps:")
-        for g in gaps:
-            self.say(f"  - {g}")
+        self.ui.say("The Lead says the brief has gaps:", items=gaps, spaced=True)
         self.transcript.note("The Lead reported gaps: " + "; ".join(gaps))
-        answer = self._answer(f"Answer them now, or type {END_WORD} to end the brief as insufficient: ")
+        answer = self._answer(f"Answer them now, or type {END_WORD} to end the brief as insufficient")
         if answer is None:
             raise KeyboardInterrupt
         if answer.lower() == END_WORD:
@@ -487,21 +444,25 @@ class Interview:
         edited = False
         while True:
             self._show(proposal)
-            choice = self._input(
-                f"[a]ccept and {self.purpose.accept_label_for(proposal)}, ask for a [c]hange, [e]dit by hand, "
-                "or [q]uit? "
-            ).lower()
-            if choice in ("a", "accept", "y", "yes"):
-                proposal = self.purpose.before_write(proposal, self._input, self.say)
+            choice = self.ui.ask(Field(
+                "decision", "", "choice",
+                options=[Option("a", f"accept and {self.purpose.accept_label_for(proposal)}", ("accept", "y", "yes")),
+                         Option("c", "ask for a change", ("change",)),
+                         Option("e", "edit by hand", ("edit",)),
+                         Option("q", "quit", QUIT_WORDS)],
+                invalid="Type a, c, e or q.",
+            ))
+            if choice == "a":
+                proposal = self.purpose.before_write(proposal, self.ui)
                 self.purpose.write(proposal)
                 self.transcript.note("You accepted" + (" your edited version." if edited else " the proposal."))
                 for f in proposal.files:
-                    self.say(f"Wrote {f.path}")
+                    self.ui.say(f"Wrote {f.path}", level="done")
                 return {}, Outcome("confirmed", proposal=proposal, edited=edited)
-            if choice in ("q", "quit", *QUIT_WORDS):
+            if choice == "q":
                 raise KeyboardInterrupt
-            if choice in ("c", "change"):
-                request = self._answer("What should change? ")
+            if choice == "c":
+                request = self._answer("What should change?")
                 if request is None:
                     raise KeyboardInterrupt
                 self.transcript.user(f"(change requested) {request}")
@@ -509,11 +470,8 @@ class Interview:
                 if edited:
                     note["their_edited_version"] = {f.label: f.text for f in proposal.files}
                 return note, None
-            if choice in ("e", "edit"):
-                proposal, ok = self._hand_edit(proposal)
-                edited = edited or ok
-                continue
-            self.say("Type a, c, e or q.")
+            proposal, ok = self._hand_edit(proposal)
+            edited = edited or ok
 
     def _hand_edit(self, proposal: Proposal) -> tuple[Proposal, bool]:
         drafts = Path(tempfile.mkdtemp(prefix="ombro-draft-"))
@@ -523,12 +481,12 @@ class Interview:
                 p = drafts / f"{i + 1}-{f.path.parent.name}-{f.path.name}"
                 p.write_text(f.text, encoding="utf-8")
                 paths.append(p)
-            self.edit(paths)
+            self.ui.edit(paths)
             texts = [p.read_text(encoding="utf-8") for p in paths]
         finally:
             shutil.rmtree(drafts, ignore_errors=True)
         if texts == [f.text for f in proposal.files]:
-            self.say("No changes were made.")
+            self.ui.say("No changes were made.")
             return proposal, False
         edited = Proposal(
             [FileDraft(f.label, f.path, t) for f, t in zip(proposal.files, texts)],
@@ -537,7 +495,7 @@ class Interview:
         try:
             edited = self.purpose.check(edited)
         except ProposalError as e:
-            self.say(f"\nThe edited version cannot be used: {e}\nShowing the previous version again.")
+            self.ui.show(Failure(f"The edited version cannot be used: {e}\nShowing the previous version again."))
             return proposal, False
         self.transcript.proposal(edited, heading="You edited it to")
         return edited, True
@@ -569,6 +527,22 @@ class Interview:
         text, _ = keys.scrub(self.home, text)  # belt and braces: no key is ever saved
         mdfile.write_atomic(path, text)
         return path
+
+
+def proposal_view(proposal: Proposal) -> ProposalShown:
+    """The proposal as data for an interface: each file, whether it replaces one,
+    and the changes from the current file when it has content."""
+    files = []
+    for f in proposal.files:
+        exists = f.path.is_file()
+        diff: list[str] = []
+        if exists:
+            old = f.path.read_text(encoding="utf-8")
+            if mdfile.prompt_text(mdfile.parse(old)[1]) and old != f.text:
+                diff = list(difflib.unified_diff(
+                    old.splitlines(), f.text.splitlines(), "current", "proposed", lineterm="", n=1))[2:60]
+        files.append(FileView(f.label, str(f.path), f.text, exists, diff))
+    return ProposalShown(files, list(proposal.warnings))
 
 
 def _tool_reply(call_id: str, payload: dict) -> dict:

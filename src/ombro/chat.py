@@ -28,7 +28,7 @@ from ombro import keys, mdfile, memory, prompts, runs
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home
-from ombro.interview import read_answer
+from ombro.ui import UI, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option, Usage
 from ombro.journal import utc_now
 from ombro.roles import load_lead
 from ombro.settings import ModelSpec, SetupError, format_tokens, load_limits, load_models, load_preferences, load_tool_settings
@@ -87,6 +87,28 @@ class Transcript:
         self.entries.append(f"_{text.strip()}_")
 
 
+class BriefModeUI(UI):
+    """The chat's interface while a brief is held inside it: every question is
+    asked in Brief mode, and /chat leaves the brief with nothing written."""
+
+    def __init__(self, inner: UI):
+        self.inner = inner
+
+    def show(self, event) -> None:
+        self.inner.show(event)
+
+    def ask(self, f: Field):
+        from dataclasses import replace
+
+        answer = self.inner.ask(replace(f, mode="Brief"))
+        if isinstance(answer, str) and answer.strip().lower() == "/chat":
+            raise KeyboardInterrupt
+        return answer
+
+    def edit(self, paths: list[Path]) -> None:
+        self.inner.edit(paths)
+
+
 class Chat:
     def __init__(
         self,
@@ -96,6 +118,7 @@ class Chat:
         ask: Callable[[str], str] | None = None,
         say: Callable[[str], None] | None = None,
         edit: Callable[[list[Path]], None] | None = None,
+        ui: UI | None = None,
         client_factory: Callable[[ModelSpec], ChatClient] | None = None,
         clock: Callable[[], float] = time.time,
         today: date | None = None,
@@ -107,9 +130,7 @@ class Chat:
         self.crew = crew or prefs.default_crew
         if self.crew not in home.crews():
             raise SetupError(f"no crew named {self.crew!r}; crews: {', '.join(home.crews()) or 'none'}")
-        self.ask = ask or (lambda prompt: input(prompt))
-        self.say = say or (lambda text: print(text, flush=True))
-        self.edit = edit
+        self.ui = ui or ConsoleUI(ask=ask, say=say, edit=edit, home=home)
         self.base_limits = load_limits(home)
         self.limits = self.base_limits.for_chat()
         self.models = load_models(home)
@@ -140,11 +161,13 @@ class Chat:
 
     # -- plumbing ----------------------------------------------------------
 
-    def _input(self, prompt: str) -> str:
-        raw = read_answer(self.ask, prompt)
+    def _input(self, label: str) -> str:
+        return self._scrub(self.ui.ask(Field("message", label, "text", multiline=True, mode="Chat")))
+
+    def _scrub(self, raw: str | None) -> str:
         text, removed = keys.scrub(self.home, (raw or "").strip())
         if removed:
-            self.say("(Something that looked like a key was removed before it went any further. "
+            self.ui.say("(Something that looked like a key was removed before it went any further. "
                      "Keys are set with `ombro keys set NAME`.)")
         return text
 
@@ -204,7 +227,7 @@ class Chat:
             self.exchanges.pop(0)
             self.dropped += 1
             if self.dropped == 1:
-                self.say("(The conversation is long, so its oldest turns are no longer sent to the Lead. "
+                self.ui.say("(The conversation is long, so its oldest turns are no longer sent to the Lead. "
                          "The transcript keeps everything.)")
                 self.transcript.note("From here on, the oldest turns were no longer sent to the Lead.")
         return [{"role": "system", "content": system}] + [m for ex in self.exchanges for m in ex]
@@ -212,51 +235,66 @@ class Chat:
     def _usage_line(self) -> None:
         s = self.gate.snapshot()
         tools = sum((s.get("tool_calls") or {}).values())
-        self.say(f"[{self.mode} · {s['total_tokens']:,} of {format_tokens(self.limits.max_tokens)} tokens · "
-                 f"{tools} tool call(s)]")
+        self.ui.show(Usage("chat", self.mode, s["total_tokens"], self.limits.max_tokens, tools))
 
     # -- the conversation --------------------------------------------------
 
     def run(self) -> "Chat":
-        self.say(
+        """The command line's loop: start, one message at a time, close."""
+        self.start()
+        try:
+            while True:
+                try:
+                    raw = self.ui.ask(Field("message", "You", "text", multiline=True, mode=self.mode))
+                except (EOFError, KeyboardInterrupt):
+                    self.ui.say("")
+                    break
+                if not self.handle(raw):
+                    break
+        finally:
+            self.close()
+        return self
+
+    def start(self) -> None:
+        self.ui.say(
             f"Chat with the Lead (default crew: {self.crew}). Mode: Chat. Read-only: nothing changes unless you "
             f"confirm a /remember. /brief turns this into a task brief, /help lists commands, /quit ends. "
             f"(Up to {format_tokens(self.limits.max_tokens)} tokens.)\n"
         )
+
+    def handle(self, raw: str) -> bool:
+        """One message or command from the user, as typed: anything that looks
+        like a key is removed first. Returns False when the chat has ended
+        (/quit, or its limit)."""
+        text = self._scrub(raw)
+        if not text:
+            return True
+        if not self._command(text):
+            if text.lower() in QUIT_WORDS:
+                return False
+            self._save()  # a remember or a brief is on record at once
+            return True
         try:
-            while True:
-                try:
-                    text = self._input(f"[{self.mode}] You: ")
-                except (EOFError, KeyboardInterrupt):
-                    self.say("")
-                    break
-                if not text:
-                    continue
-                if not self._command(text):
-                    if text.lower() in QUIT_WORDS:
-                        break
-                    self._save()  # a remember or a brief is on record at once
-                    continue
-                try:
-                    request = self._turn(text)
-                except LimitReached as e:
-                    self.ended = f"stopped by the chat limit {e.limit}: {e.detail}"
-                    self.transcript.note(f"The chat stopped: {e.detail}")
-                    self.say(f"\nThe chat has reached its limit: {e.detail}. It ends here.")
-                    break
-                except ModelError as e:
-                    self.exchanges.pop()
-                    self.transcript.note(f"The model call failed: {e}")
-                    self.say(f"\nThe model call failed: {e}. Say it again, or /quit.")
-                    continue
-                self._usage_line()
-                if request:
-                    self._brief(request[0], self.brief_opening("", request[1]))
-                self._save()
-        finally:
-            self._save()
-            self.say(f"Chat saved: {self.path}")
-        return self
+            request = self._turn(text)
+        except LimitReached as e:
+            self.ended = f"stopped by the chat limit {e.limit}: {e.detail}"
+            self.transcript.note(f"The chat stopped: {e.detail}")
+            self.ui.show(Failure(f"The chat has reached its limit: {e.detail}. It ends here."))
+            return False
+        except ModelError as e:
+            self.exchanges.pop()
+            self.transcript.note(f"The model call failed: {e}")
+            self.ui.show(Failure(f"The model call failed: {e}. Say it again, or /quit."))
+            return True
+        self._usage_line()
+        if request:
+            self._brief(request[0], self.brief_opening("", request[1]))
+        self._save()
+        return True
+
+    def close(self) -> None:
+        self._save()
+        self.ui.say(f"Chat saved: {self.path}")
 
     def _command(self, text: str) -> bool:
         """Handle a slash command. Returns True if the text is a message for the Lead."""
@@ -268,9 +306,9 @@ class Chat:
         word, _, rest = text.partition(" ")
         word = word.lower()
         if word == "/help":
-            self.say(HELP)
+            self.ui.say(HELP)
         elif word == "/chat":
-            self.say("You are in Chat mode.")
+            self.ui.say("You are in Chat mode.")
         elif word == "/brief":
             crew, rest = self._crew_arg(rest)
             if crew:
@@ -279,14 +317,14 @@ class Chat:
             crew, rest = self._crew_arg(rest)
             if crew:
                 if not rest.strip():
-                    rest = self._input("[Chat] What should be remembered? ")
+                    rest = self._input("What should be remembered?")
                 if rest.strip():
                     result = self._remember(rest, crew, offered=False)
                     if result.get("status") == "saved":
                         self.pending_note += (f"[Ombro note: the user added this to crew {crew}'s notes.md: "
                                               f"{result['entry']}]\n")
         else:
-            self.say(f"Unknown command {word}. /help lists them.")
+            self.ui.say(f"Unknown command {word}. /help lists them.")
         return False
 
     def _crew_arg(self, rest: str) -> tuple[str | None, str]:
@@ -295,7 +333,7 @@ class Chat:
             return self.crew, rest
         name, _, remainder = rest[1:].partition(" ")
         if name not in self.home.crews():
-            self.say(f"No crew named {name!r}. Crews: {', '.join(self.home.crews())}.")
+            self.ui.say(f"No crew named {name!r}. Crews: {', '.join(self.home.crews())}.")
             return None, remainder
         return name, remainder.strip()
 
@@ -312,7 +350,7 @@ class Chat:
             self.exchanges[-1].append(reply.as_message())
             said = (reply.content or "").strip()
             if said:
-                self.say(f"\nLead: {said}\n")
+                self.ui.show(LeadSaid(said))
                 self.transcript.lead(said)
             if not reply.tool_calls:
                 return None
@@ -325,7 +363,7 @@ class Chat:
                 self.exchanges[-1].append(_tool_msg(tc.id, result))
             if request:
                 return request
-        self.say(f"(The Lead used all {self.limits.chat_calls_per_message} model calls allowed for one message "
+        self.ui.say(f"(The Lead used all {self.limits.chat_calls_per_message} model calls allowed for one message "
                  "without answering. Ask again more narrowly.)")
         self.transcript.note("The Lead used all its model calls for this message without answering.")
         return None
@@ -392,9 +430,8 @@ class Chat:
         crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
                  if str(c) in self.home.crews()]
         which = f" for crew{'s' if len(crews) > 1 else ''} {', '.join(crews)}" if crews else ""
-        self.say(f"\nThe Lead offers to brief this as a task{which}: {summary}")
-        answer = self._input("[Chat] Start a brief now? [y/N] ").lower()
-        if answer in ("y", "yes"):
+        self.ui.say(f"The Lead offers to brief this as a task{which}: {summary}", spaced=True)
+        if self.ui.yes("start_brief", "Start a brief now?", False, mode="Chat"):
             self.transcript.note(f"The Lead offered a brief ({summary}); you accepted.")
             return {"status": "the user accepted; the task interview starts now, so do not reply"}, (crews, summary)
         self.transcript.note(f"The Lead offered a brief ({summary}); you declined.")
@@ -410,13 +447,15 @@ class Chat:
         entry = memory.remember_entry(text, self.today_date)
         who = "The Lead offers to remember this" if offered else "To remember"
         while True:
-            self.say(f"\n{who} in crew {crew}'s notes.md (From you):\n  {entry}")
-            answer = self._input("[Chat] [y]es, [e]dit the wording, [n]o, or @crew for another crew? ")
-            low = answer.lower()
-            if low in ("y", "yes"):
+            self.ui.say(f"{who} in crew {crew}'s notes.md (From you):\n  {entry}", spaced=True)
+            answer = self.ui.ask(Field(
+                "remember", "", "choice", mode="Chat",
+                options=[Option("y", "yes"), Option("e", "edit the wording", ("edit",)), Option("n", "no")],
+                other="@crew for another crew"))
+            if answer == "y":
                 break
-            if low in ("e", "edit"):
-                new = self._input("[Chat] The wording: ")
+            if answer == "e":
+                new = self._input("The wording")
                 if new.strip():
                     entry = memory.remember_entry(new, self.today_date)
                 continue
@@ -425,10 +464,10 @@ class Chat:
                 if name in self.home.crews():
                     crew = name
                 else:
-                    self.say(f"No crew named {name!r}. Crews: {', '.join(self.home.crews())}.")
+                    self.ui.say(f"No crew named {name!r}. Crews: {', '.join(self.home.crews())}.")
                 continue
             self.transcript.note(f"Not remembered: {entry}")
-            self.say("Nothing was written.")
+            self.ui.say("Nothing was written.")
             return {"status": "the user declined; nothing was written"}
 
         cap = self.base_limits.memory_notes_max_chars
@@ -439,42 +478,37 @@ class Chat:
                 memory.save_notes(self.home, crew, new)
                 self.remembered.append({"crew": crew, "entry": entry})
                 self.transcript.note(f"Remembered in crew {crew}'s notes.md: {entry}")
-                self.say(f"Remembered in {memory.notes_path(self.home, crew)}.")
+                self.ui.say(f"Remembered in {memory.notes_path(self.home, crew)}.", level="done")
                 return {"status": "saved", "crew": crew, "entry": entry}
             yours = notes.your_entries()
-            self.say(
-                f"\nThat would make crew {crew}'s notes.md {new.size:,} characters, over the cap of {cap:,}. "
+            self.ui.say(
+                f"That would make crew {crew}'s notes.md {new.size:,} characters, over the cap of {cap:,}. "
                 f"Your part is {len(notes.from_you):,} characters and the Lead's is {len(notes.from_runs):,}."
             )
             if yours:
-                self.say("Your entries:")
+                self.ui.say("Your entries:")
                 for i, ln in enumerate(yours, 1):
-                    self.say(f"  {i}. {_short(ln, 150)}")
-            answer = self._input(
-                "[Chat] Remove your entries by number (e.g. 2 5), [s]horten the wording, [e]dit notes.md by hand, "
-                "or [c]ancel? "
-            ).lower()
+                    self.ui.say(f"  {i}. {_short(ln, 150)}")
+            answer = str(self.ui.ask(Field(
+                "over_cap", "", "choice", mode="Chat",
+                options=[Option("s", "shorten the wording", ("shorten",)),
+                         Option("e", "edit notes.md by hand", ("edit",)), Option("c", "cancel")],
+                other="the numbers of your entries to remove (e.g. 2 5)"))).lower()
             numbers = [int(x) for x in answer.replace(",", " ").split() if x.isdigit()]
             if numbers and len(numbers) == len(answer.replace(",", " ").split()):
                 notes = memory.without_your_entries(notes, numbers)
                 continue
-            if answer in ("s", "shorten"):
-                new_text = self._input("[Chat] The shorter wording: ")
+            if answer == "s":
+                new_text = self._input("The shorter wording")
                 if new_text.strip():
                     entry = memory.remember_entry(new_text, self.today_date)
                 continue
-            if answer in ("e", "edit"):
-                path = memory.notes_path(self.home, crew)
-                if self.edit:
-                    self.edit([path])
-                else:
-                    from ombro.interview import open_in_editor
-
-                    open_in_editor(self.home, [path], self._input, self.say)
+            if answer == "e":
+                self.ui.edit([memory.notes_path(self.home, crew)])
                 notes = memory.read_notes(self.home, crew)
                 continue
             self.transcript.note(f"Not remembered (over the cap): {entry}")
-            self.say("Nothing was written.")
+            self.ui.say("Nothing was written.")
             return {"status": "cancelled: notes.md would have passed its cap; nothing was written"}
 
     # -- brief -------------------------------------------------------------
@@ -505,29 +539,23 @@ class Chat:
 
         self.mode = "Brief"
         which = f" (starting from crew{'s' if len(crews) > 1 else ''} {', '.join(crews)})" if crews else ""
-        self.say(f"\n── Brief mode: a task interview{which}. /chat goes back to Chat with nothing written. ──")
+        self.ui.show(ModeChanged("Brief", f"── Brief mode: a task interview{which}. /chat goes back to Chat "
+                                          "with nothing written. ──"))
         self.transcript.note(f"Switched to Brief mode{which}.")
-
-        def ask(prompt: str) -> str:
-            raw = self.ask(f"[Brief] {prompt}")
-            if (raw or "").strip().lower() == "/chat":
-                raise KeyboardInterrupt
-            return raw
-
         try:
             outcome = start(
                 self.home, BriefPurpose(self.home, self.crew, self.base_limits, opening, crews=crews), self.crew,
                 self.base_limits,
-                ask=ask, say=self.say, edit=self.edit, client_factory=self._client_factory, today=self.today_date,
+                ui=BriefModeUI(self.ui), client_factory=self._client_factory, today=self.today_date,
             )
         except (SetupError, ModelError) as e:
-            self.say(f"The brief could not start: {e}")
+            self.ui.show(Failure(f"The brief could not start: {e}"))
             outcome = None
         self.mode = "Chat"
         if outcome is not None and outcome.confirmed:
             name = outcome.proposal.data["name"]
             self.specs.append(name)
-            self.say(f"\nSpec saved as {name!r}. Run it with:  ombro run --spec {name}")
+            self.ui.say(f"Spec saved as {name!r}. Run it with:  ombro run --spec {name}", spaced=True, level="done")
             self.transcript.note(f"Brief mode ended: spec {name!r} saved (transcript {outcome.transcript}).")
             self.pending_note += (f"[Ombro note: in Brief mode the user confirmed a spec, saved as {name!r}. "
                                   "It has not been run.]\n")
@@ -535,7 +563,7 @@ class Chat:
             detail = outcome.status if outcome is not None else "could not start"
             self.transcript.note(f"Brief mode ended without a spec ({detail}).")
             self.pending_note += "[Ombro note: the user left Brief mode; no spec was saved.]\n"
-        self.say("Back in Chat mode.\n")
+        self.ui.show(ModeChanged("Chat", "Back in Chat mode."))
 
     # -- transcript --------------------------------------------------------
 

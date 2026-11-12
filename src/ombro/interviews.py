@@ -591,7 +591,7 @@ class BriefPurpose(Purpose):
             wanted[name] = access
         return wanted, new
 
-    def before_write(self, proposal: Proposal, ask, say) -> Proposal:
+    def before_write(self, proposal: Proposal, ui) -> Proposal:
         """Folders the spec needs that are not shared yet: the user is asked about each,
         and only a yes shares it. A no leaves it out of the spec."""
         from ombro import folders
@@ -605,33 +605,21 @@ class BriefPurpose(Purpose):
         for f in new:
             if f["name"] not in wanted:
                 continue  # removed in a hand edit
-            say(f"\nThe spec needs {f['path']} ({'read and write' if f['access'] == 'write' else 'read only'})"
-                + (f": {f['why']}" if f["why"] else "") + ".")
-            options = "[w]rite, [r]ead only, or [n]o" if f["access"] == "write" else "[r]ead, or [n]o"
-            while True:
-                choice = ask(f"Share it with Ombro's runs as {f['name']!r}? {options}: ").strip().lower()
-                if choice in ("w", "write") and f["access"] == "write":
-                    access = "write"
-                elif choice in ("r", "read", "y", "yes"):
-                    access = "read"
-                elif choice in ("n", "no"):
-                    access = None
-                else:
-                    say(f"Type {options.replace('[', '').replace(']', '')}.")
-                    continue
-                break
+            ui.say(f"The spec needs {f['path']} ({'read and write' if f['access'] == 'write' else 'read only'})"
+                   + (f": {f['why']}" if f["why"] else "") + ".", spaced=True)
+            access = share_question(ui, f["name"], may_write=f["access"] == "write")
             if access is None:
                 wanted.pop(f["name"], None)
-                say(f"Not shared. The spec leaves {f['path']} out.")
+                ui.say(f"Not shared. The spec leaves {f['path']} out.")
                 continue
             try:
                 g = folders.add(self.home, f["path"], f["name"], access)
             except (folders.FolderError, SetupError) as e:
                 wanted.pop(f["name"], None)
-                say(f"It could not be shared ({e}), so the spec leaves it out.")
+                ui.say(f"It could not be shared ({e}), so the spec leaves it out.")
                 continue
             wanted[g.name] = access
-            say(f"Shared as {g.name!r} ({access}). Backup: {folders.backup_hint(g.path, self.home)}.")
+            ui.say(f"Shared as {g.name!r} ({access}). Backup: {folders.backup_hint(g.path, self.home)}.", level="done")
         if wanted:
             meta["folders"] = wanted
         else:
@@ -702,8 +690,21 @@ class BriefPurpose(Purpose):
 # Starting an interview, and what a brief that could not be settled leaves
 
 
+def share_question(ui, name: str, may_write: bool) -> str | None:
+    """Ask whether to share a folder: "write", "read" or None for no."""
+    from ombro.ui import Field, Option
+
+    options = ([Option("w", "write")] if may_write else []) + [
+        Option("r", "read only" if may_write else "read", ("read", "y", "yes")), Option("n", "no")]
+    choice = ui.ask(Field(
+        "share", f"Share it with Ombro's runs as {name!r}?", "choice", options=options,
+        invalid="Type " + ("write, read only, or no." if may_write else "read, or no."),
+    ))
+    return {"w": "write", "r": "read"}.get(choice)
+
+
 def start(home: Home, purpose: Purpose, crew: str, limits: Limits, **kwargs):
-    """Hold one interview with the Lead. kwargs go to Interview (ask, say, edit, client_factory…)."""
+    """Hold one interview with the Lead. kwargs go to Interview (ui, or ask, say and edit; client_factory…)."""
     from ombro.interview import Interview
     from ombro.settings import load_preferences
 
