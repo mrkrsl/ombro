@@ -384,6 +384,50 @@ def cmd_open(args) -> int:
     return 0
 
 
+def _server_cfg(home: Home, name: str) -> dict:
+    from ombro.settings import load_tool_settings
+
+    settings = load_tool_settings(home)
+    if name not in settings.servers:
+        raise CliError(f"No server named {name!r} in tools.md. Servers: {', '.join(settings.servers) or 'none'}")
+    return settings.servers[name]
+
+
+def cmd_connect(args) -> int:
+    import webbrowser
+
+    from ombro import oauth
+
+    home = _home()
+    cfg = _server_cfg(home, args.server)
+    opener = (lambda url: None) if args.no_browser else webbrowser.open
+    print(f"Waiting up to {oauth.CONNECT_TIMEOUT / 60:.0f} minutes for you to sign in. Ctrl-C cancels.")
+    try:
+        done = oauth.connect(home, args.server, cfg, open_browser=opener)
+    except oauth.SignInError as e:
+        raise CliError(f"Could not connect {args.server}: {e}") from None
+    except KeyboardInterrupt:
+        print("\nCancelled. Nothing was saved.")
+        return 1
+    print(f"Connected {args.server}, signed in with {done.issuer}"
+          + (f" (access: {done.scope})" if done.scope else "") + ".")
+    print("It renews itself, so runs can use it unattended." if done.refreshes else
+          "The service gave no renewal token, so you will need to connect again when it expires.")
+    print(f"The sign-in is kept in {oauth.store_path(home, args.server)}, readable only by you.")
+    return 0
+
+
+def cmd_disconnect(args) -> int:
+    from ombro import oauth
+
+    home = _home()
+    if oauth.disconnect(home, args.server):
+        print(f"Forgot the sign-in for {args.server}, and asked the service to revoke it where it can.")
+    else:
+        print(f"{args.server} has no sign-in.")
+    return 0
+
+
 def cmd_keys(args) -> int:
     home = _home()
     action = args.action or "list"
@@ -404,6 +448,17 @@ def cmd_keys(args) -> int:
                 value = "(not set)"
             print(f"{name:<26} {value:<14} {', '.join(uses.get(name, [])) or '-'}")
         print(f"\nKeys live in {home.env}. Set one with `ombro keys set NAME`.")
+        from ombro import oauth
+        from ombro.settings import load_tool_settings
+
+        try:
+            remote = [n for n, c in load_tool_settings(home).servers.items() if c.get("url")]
+        except Exception:
+            remote = []
+        if remote:
+            print("\nSign-ins for remote MCP servers (`ombro connect <server>`):")
+            for n in remote:
+                print(f"  {n:<24} {oauth.status(home, n)}")
         return 0
     if not args.name:
         raise CliError(f"Give the key's name, e.g. `ombro keys {action} FIRECRAWL_API_KEY`.")
@@ -764,6 +819,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", nargs="?", choices=["list", "set", "remove"], help="default: list")
     s.add_argument("name", nargs="?", help="the key's name, e.g. FIRECRAWL_API_KEY")
     s.set_defaults(func=cmd_keys)
+
+    s = sub.add_parser("connect", help="sign in to a remote MCP server in your browser")
+    s.add_argument("server", help="the server's name under `servers:` in tools.md")
+    s.add_argument("--no-browser", action="store_true", help="print the sign-in address instead of opening it")
+    s.set_defaults(func=cmd_connect)
+
+    s = sub.add_parser("disconnect", help="forget the sign-in for a remote MCP server")
+    s.add_argument("server")
+    s.set_defaults(func=cmd_disconnect)
 
     s = sub.add_parser("schedule", help="list, show, add, enable, disable or remove schedules; install the scheduler")
     s.add_argument("action", nargs="?",

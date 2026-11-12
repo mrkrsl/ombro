@@ -286,7 +286,7 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
 _TOOL_FIELDS = {"provider", "max_calls", "cost_per_call", "class", "permission"}
-_SERVER_FIELDS = {"command", "args", "env", "url", "headers", "timeout", "start_timeout", "class"}
+_SERVER_FIELDS = {"command", "args", "env", "url", "headers", "timeout", "start_timeout", "class", "client_id"}
 TOOL_CLASSES = ("read", "work", "external")
 # A server-wide class covers its tools that do not read; reading stays reading.
 SERVER_CLASSES = ("work", "external")

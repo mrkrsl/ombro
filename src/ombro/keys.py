@@ -162,7 +162,9 @@ def scrub(home: Home, text: str) -> tuple[str, int]:
     refer to), and anything shaped like a common API key. Returns (text, count)."""
     if not text:
         return text, 0
-    values = {v for v in read_env(home).values() if len(v) >= 8}
+    from ombro import oauth
+
+    values = {v for v in read_env(home).values() if len(v) >= 8} | oauth.secret_values(home)
     for name in key_uses(home):
         v = os.environ.get(name)
         if v and len(v) >= 8:

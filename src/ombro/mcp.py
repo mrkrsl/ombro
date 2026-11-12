@@ -252,9 +252,14 @@ def _sse_messages(text: str) -> list[dict]:
 
 class _Http:
     def __init__(self, home: Home, cfg: ServerConfig, transport: httpx.BaseTransport | None):
+        from ombro import oauth
+
+        self.name = cfg.name
         self.url = expand(home, cfg.url or "", cfg.name)
         self.headers = {k: expand(home, v, cfg.name) for k, v in cfg.headers.items()}
         self.client = httpx.Client(transport=transport, follow_redirects=False)
+        # A sign-in from `ombro connect`, if this server has one. Never opens a browser.
+        self.auth = oauth.session_for(home, cfg.name, {"url": self.url, "headers": self.headers}, transport)
         self.session: str | None = None
         self.protocol: str | None = None
         self.pending: list[dict] = []
@@ -267,10 +272,31 @@ class _Http:
             h["MCP-Protocol-Version"] = self.protocol
         return h
 
-    def request(self, msg: dict, timeout: float) -> list[dict]:
+    def _post(self, msg: dict, timeout: float, token: str | None) -> httpx.Response:
+        headers = self._headers()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return self.client.post(self.url, content=json.dumps(msg), headers=headers,
+                                timeout=httpx.Timeout(max(timeout, 0.5), connect=min(max(timeout, 0.5), 15.0)))
+
+    def _token(self, stale: str | None = None) -> str | None:
+        from ombro.oauth import SignInError
+
+        if self.auth is None:
+            return None
         try:
-            r = self.client.post(self.url, content=json.dumps(msg), headers=self._headers(),
-                                 timeout=httpx.Timeout(max(timeout, 0.5), connect=min(max(timeout, 0.5), 15.0)))
+            return self.auth.refresh(stale=stale) if stale else self.auth.token()
+        except SignInError as e:
+            raise ConnectionError(str(e)) from None
+
+    def request(self, msg: dict, timeout: float) -> list[dict]:
+        token = self._token()
+        try:
+            r = self._post(msg, timeout, token)
+            if r.status_code == 401 and token:
+                # Refused before it was handled, so it is safe to send again once renewed.
+                token = self._token(stale=token)
+                r = self._post(msg, timeout, token)
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.UnsupportedProtocol) as e:
             # Nothing left the machine: safe to try again later.
             raise ConnectionError(str(e) or type(e).__name__) from None
@@ -287,8 +313,14 @@ class _Http:
         if r.status_code >= 500:
             # The server failed while handling it; it may have acted first.
             raise _AnswerLost(f"the server answered HTTP {r.status_code}")
+        if r.status_code == 401:
+            raise ConnectionError(f"it needs sign-in: run `ombro connect {self.name}`" if not token else
+                                  f"it refused the sign-in: run `ombro connect {self.name}` again")
+        if r.status_code == 403 and "insufficient_scope" in r.headers.get("www-authenticate", ""):
+            raise ConnectionError(f"it needs more access than the sign-in gave: run `ombro connect {self.name}` "
+                                  "again")
         if r.status_code >= 400:
-            # Refused before it was handled (sign-in, a lost session, a bad address).
+            # Refused before it was handled (a lost session, a bad address).
             raise ConnectionError(f"HTTP {r.status_code}")
         ctype = r.headers.get("content-type", "")
         if "text/event-stream" in ctype:
@@ -309,8 +341,15 @@ class _Http:
 
     def close(self) -> None:
         if self.session:
+            headers = self._headers()
             try:
-                self.client.delete(self.url, headers=self._headers(), timeout=5.0)
+                token = self._token()
+            except ConnectionError:
+                token = None
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            try:
+                self.client.delete(self.url, headers=headers, timeout=5.0)
             except httpx.HTTPError:
                 pass
         self.client.close()

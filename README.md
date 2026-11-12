@@ -326,8 +326,11 @@ servers:
     args: [--with, "mcp==1.30.0", "mcp-google-sheets==0.6.3", --include-tools, "get_sheet_data,update_cells"]
     env: {SERVICE_ACCOUNT_PATH: "${SHEETS_KEY_FILE}", DRIVE_FOLDER_ID: "<a folder shared with the account>"}
     start_timeout: 120s                   # the first start downloads the package
+  notes:
+    url: https://mcp.example.invalid/mcp  # a remote server you sign in to: `ombro connect notes`
+    class: work
   remote:
-    url: https://mcp.example.invalid/mcp  # a remote server
+    url: https://other.example.invalid/mcp  # a remote server with a fixed token instead
     headers: {Authorization: "Bearer ${REMOTE_TOKEN}"}
 tools:
   mcp.sheets.update_cells: {max_calls: 10}
@@ -338,9 +341,25 @@ tools:
 `${NAME}` is read from `secrets/keys.env` when the server starts and is never logged.
 A server's tools are named `mcp.<server>.<tool>`; `ombro tools <server>`
 lists them. A role can use only the ones its `tools:` list names, so a large
-server costs only what a role uses. Remote servers that need an OAuth
-sign-in are not supported yet. Ombro speaks MCP itself (tools only), rather
-than through the SDK.
+server costs only what a role uses. Ombro speaks MCP itself (tools only),
+rather than through the SDK.
+
+**Signing in to a remote server.** A remote server that asks for sign-in is
+connected once, in your browser:
+
+```
+ombro connect notes          # opens the browser; sign in and allow access
+ombro keys                   # lists keys, and each remote server's sign-in
+ombro disconnect notes       # forgets it, and asks the service to revoke it
+```
+
+Ombro follows MCP's authorization standard: it finds the server's sign-in
+service from the server itself, registers itself as a native app (or uses
+a `client_id` you give the server in `tools.md`), and signs in with PKCE,
+binding the token to that server's address. The sign-in is kept in
+`secrets/oauth/<server>.json`, readable only by you, and renews itself. A
+run never opens a browser: if a sign-in has lapsed, that server's tools are
+left out, the report says to connect again, and staged actions keep waiting.
 
 **Pin what a server runs.** A package runner such as `uvx` downloads and
 runs the server's code, so name an exact version (`==0.6.3`, never

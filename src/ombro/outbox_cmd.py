@@ -316,6 +316,10 @@ def cmd_tools(args) -> int:
         print("  none yet. Add one under `servers:` in tools.md, then see its tools with `ombro tools <server>`.")
     for r in rows["servers"]:
         how = r["url"] or " ".join([r["command"] or "", *map(str, r["args"])])
+        if r["url"]:
+            from ombro import oauth
+
+            how += f"  ({oauth.status(home, r['server'])})"
         print(f"  {r['server']:<18}{how}")
     print(f"\nOutward permissions by default: {outward.describe(pref)}.")
     print("  " + "; ".join(f"{p}: {', '.join(f'{c} {v}' for c, v in outward.PRESETS[p].items())}"
@@ -354,9 +358,16 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
           "tool (set in tools.md),\nor default (a tool that changes something and is not classed counts as "
           "external).")
     defaulted = [r["tool"] for r in rows if r["class_from"] == "default"]
+    marked = [r for r in rows if r["class_from"] == "marking" and r["class"] != "read"]
     if defaulted:
-        print(f"\n{len(defaulted)} tool(s) are external only by default. If this server's tools only do work, "
-              f"add to its entry\nunder `servers:` in tools.md:\n    class: work\nor set one tool under "
-              f"`tools:`:\n    {defaulted[0]}: {{class: work}}")
+        print(f"\n{len(defaulted)} tool(s) are external only by default, because the server does not say "
+              "otherwise. Leave any that\nreach people or the public (email, invitations, posts). For one that "
+              f"only does work, add under `tools:` in tools.md:\n    {defaulted[0]}: {{class: work}}")
+        if not marked:
+            print("If every tool of this server that is not read only does work, one line on its entry under "
+                  "`servers:` covers them all:\n    class: work")
+        else:
+            print("This server marks some tools itself, so its tools are of mixed kinds: set them one by one, "
+                  "not with `class:` on the server.")
     print("\nGive a role a tool by naming it in its config.md `tools:` list.")
     return 0

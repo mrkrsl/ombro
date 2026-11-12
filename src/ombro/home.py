@@ -257,6 +257,9 @@ results and records every request in the run's fake-calls.jsonl.
 servers: MCP servers, which supply every tool that reaches an outside
 service. Each has either `command` and `args` (a server Ombro starts, which
 handles its own sign-in) or `url` and optional `headers` (a remote server).
+A remote server that asks for sign-in is connected once with `ombro connect
+<server>`, in the browser; `client_id` gives one from the service's own
+developer settings, for a service that does not let Ombro register itself.
 `env` sets variables for a started server. Write a secret as ${NAME}: it is
 read from secrets/keys.env when the server starts and never logged. Optional `timeout`
 for each call, e.g. 60s. For example:
