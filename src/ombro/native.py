@@ -297,8 +297,12 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
     except folders.FolderError as e:
         raise ToolInputError(f"{to} cannot be a destination: {e}") from None
     shown_dest = folders.display_path(final)
-    action, duplicate = outbox.stage_placement(ctx.run_dir, source=src.resolve(), shown_source=shown_src,
-                                               to=shown_dest, overwrite=overwrite, reason=reason, role=ctx.role)
+    try:
+        action, duplicate = outbox.stage_placement(ctx.run_dir, source=src.resolve(), shown_source=shown_src,
+                                                   to=shown_dest, overwrite=overwrite, reason=reason, role=ctx.role)
+    except outbox.OutboxBusy:
+        raise ToolError("the outbox is busy with a decision the user is making, so this was not staged; "
+                        "try it once more later") from None
     rel = f"outbox/{action.path.name}"
     if duplicate:
         ctx.record("staged_duplicate", f"workspace.place: same as {action.ref}", tool="workspace.place",

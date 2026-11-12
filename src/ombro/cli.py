@@ -335,16 +335,20 @@ def cmd_report(args) -> int:
     home = _home()
     _reap(home)
     run_dir = _resolve_run(home, args.run_id, args.crew)
+    path = run_dir / "report.md"
     if args.json:
         from ombro import views
 
-        return _print_json(views.report(home, run_dir))
-    path = run_dir / "report.md"
+        data = views.report(home, run_dir)
+        if path.is_file():
+            runs.mark_seen(run_dir)
+        return _print_json(data)
     if not path.is_file():
         meta, _ = runs.read_run(run_dir)
         print(f"Run {run_dir.name} has no report yet (status {meta.get('status')}).")
         return 1
     print(path.read_text(encoding="utf-8"), end="")
+    runs.mark_seen(run_dir)
     return 0
 
 
@@ -423,6 +427,9 @@ def cmd_summary(args) -> int:
     print()
     print(", ".join([f"{n(c['crews_ready'], 'crew')} ready to work", n(c["active_runs"], "active run"),
                      n(c["scheduled_runs"], "scheduled run"), n(c["waiting"], "item") + " to approve"]))
+    if s["unseen"]:
+        print(f"\nFinished, and not yet looked at: " + ", ".join(r["run_id"] for r in s["unseen"])
+              + ". See one with `ombro report <run_id>`.")
     return 0
 
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import secrets as _random
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -162,11 +164,50 @@ def read_run(run_dir: Path) -> tuple[dict[str, Any], str]:
     return mdfile.read(Path(run_dir) / "run.md")
 
 
+@contextmanager
+def run_lock(run_dir: Path):
+    """Held while run.md is read, changed and written back. The run, outbox
+    decisions and interfaces all change run.md; under the lock none of their
+    changes is lost. Each holds it only for a moment, so waiting is fine."""
+    with open(Path(run_dir) / ".run.lock", "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
 def update_run(run_dir: Path, **fields: Any) -> dict[str, Any]:
-    meta, body = read_run(run_dir)
-    meta.update(fields)
-    mdfile.write(Path(run_dir) / "run.md", meta, body or RUN_BODY)
+    with run_lock(run_dir):
+        meta, body = read_run(run_dir)
+        meta.update(fields)
+        mdfile.write(Path(run_dir) / "run.md", meta, body or RUN_BODY)
     return meta
+
+
+def mark_seen(run_dir: Path) -> bool:
+    """Record that a finished run's report, or the notice that it ended, has been
+    shown. Only the first time counts. Returns True if it was not seen before."""
+    with run_lock(run_dir):
+        meta, body = read_run(run_dir)
+        if meta.get("seen_at") or meta.get("status") == "running":
+            return False
+        meta["seen_at"] = utc_now()
+        mdfile.write(Path(run_dir) / "run.md", meta, body or RUN_BODY)
+    return True
+
+
+def unseen_runs(home: Home) -> list[Path]:
+    """Finished runs whose report has not been shown yet, oldest first."""
+    out = []
+    for d in all_runs(home):
+        try:
+            meta, _ = read_run(d)
+        except (OSError, mdfile.FrontMatterError):
+            continue
+        if meta.get("status") != "running" and not meta.get("seen_at") and (d / "report.md").is_file():
+            out.append(d)
+    return out
 
 
 def all_runs(home: Home, crew: str | None = None) -> list[Path]:

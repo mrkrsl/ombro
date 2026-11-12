@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -205,11 +206,22 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:50] or "action"
 
 
+# How long staging waits for a decision in progress (which may be running a tool call) to finish.
+STAGE_WAIT = 120.0
+
+
 def stage(run_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str,
           input_schema: dict | None) -> tuple[Action, bool]:
-    """Write one staged action. Returns (action, duplicate): an exact duplicate
-    of an action already staged in this run is not staged again."""
-    run_dir = Path(run_dir)
+    """Write one staged action, under the outbox lock, since decisions can be made
+    while the run is going. Returns (action, duplicate): an exact duplicate of an
+    action already staged in this run is not staged again."""
+    with lock(run_dir, wait=STAGE_WAIT):
+        return _stage_locked(Path(run_dir), tool=tool, effect=effect, arguments=arguments, reason=reason,
+                             role=role, input_schema=input_schema)
+
+
+def _stage_locked(run_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str,
+                  input_schema: dict | None) -> tuple[Action, bool]:
     run_id = run_dir.name
     existing = actions(run_dir)
     fp = fingerprint(arguments)
@@ -264,17 +276,18 @@ def stage_placement(run_dir: Path, *, source: Path, shown_source: str, to: str, 
 
     run_dir = Path(run_dir)
     sha = _file_sha(source)
-    for a in actions(run_dir):
-        if a.tool == PLACE_TOOL and a.meta.get("file_sha256") == sha and isinstance(a.arguments, dict) \
-                and a.arguments.get("to") == to:
-            return a, True
-    arguments = {"to": to, "overwrite": overwrite}
-    a, _ = stage(run_dir, tool=PLACE_TOOL, effect="internal", arguments=arguments, reason=reason, role=role,
-                 input_schema=PLACE_SCHEMA)
-    keep = a.path.with_suffix("") / source.name
-    keep.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, keep)
-    _save(a, source=shown_source, file=keep.relative_to(run_dir).as_posix(), file_sha256=sha)
+    with lock(run_dir, wait=STAGE_WAIT):
+        for a in actions(run_dir):
+            if a.tool == PLACE_TOOL and a.meta.get("file_sha256") == sha and isinstance(a.arguments, dict) \
+                    and a.arguments.get("to") == to:
+                return a, True
+        arguments = {"to": to, "overwrite": overwrite}
+        a, _ = _stage_locked(run_dir, tool=PLACE_TOOL, effect="internal", arguments=arguments, reason=reason,
+                             role=role, input_schema=PLACE_SCHEMA)
+        keep = a.path.with_suffix("") / source.name
+        keep.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, keep)
+        _save(a, source=shown_source, file=keep.relative_to(run_dir).as_posix(), file_sha256=sha)
     return a, False
 
 
@@ -333,22 +346,28 @@ def _approve_place(home: Home, a: Action) -> Action:
 
 
 # ---------------------------------------------------------------------------
-# Deciding (after a run)
+# Deciding (during a run or after it)
 
 
 @contextmanager
-def lock(run_dir: Path):
-    """One outbox command at a time per run. Raises OutboxBusy if another holds it."""
+def lock(run_dir: Path, wait: float = 0.0):
+    """One change to a run's outbox at a time: staging by the run, or a decision.
+    Waits up to `wait` seconds, then raises OutboxBusy."""
     folder = outbox_dir(run_dir)
     folder.mkdir(exist_ok=True)
     import fcntl
 
     with open(folder / ".lock", "a") as f:
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise OutboxBusy(f"another outbox command is working on run {Path(run_dir).name}; "
-                             "wait for it to finish") from None
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise OutboxBusy(f"another outbox command is working on run {Path(run_dir).name}; "
+                                     "wait for it to finish") from None
+                time.sleep(0.1)
         try:
             yield
         finally:
@@ -408,12 +427,6 @@ def _record(run_dir: Path, a: Action | None = None, line: str | None = None) -> 
         mdfile.write_atomic(report, text)
 
 
-def _check_run(run_dir: Path) -> None:
-    meta, _ = runs.read_run(run_dir)
-    if meta.get("status") == "running" and not runs.is_dead(meta):
-        raise OutboxError(f"run {Path(run_dir).name} is still running; decide once it has finished")
-
-
 def _reload(a: Action) -> Action:
     return load(a.path)
 
@@ -449,7 +462,6 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
     with lock(run_dir):
         _settle_locked(run_dir)
         a = _reload(a)
-        _check_run(run_dir)
         if a.status != "pending":
             raise OutboxError(f"{a.ref} is {a.status}, so it cannot be approved"
                               + (" (settle it with `ombro outbox resolve`)" if a.status == "uncertain" else ""))

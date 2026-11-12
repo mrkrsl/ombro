@@ -562,8 +562,14 @@ class Engine:
             return {"error": problem}
         args_note = _short(_canonical(args, ""), 120)
         if decision == "stage":
-            action, duplicate = outbox.stage(self.run_dir, tool=name, effect=tool.effect or "external", arguments=args,
-                                             reason=reason, role=role.name, input_schema=tool.input_schema)
+            try:
+                action, duplicate = outbox.stage(self.run_dir, tool=name, effect=tool.effect or "external",
+                                                 arguments=args, reason=reason, role=role.name,
+                                                 input_schema=tool.input_schema)
+            except outbox.OutboxBusy as e:
+                self.journal.write(role.name, "tool_error", f"{name}: {e}", tool=name)
+                return {"error": "The outbox is busy with a decision the user is making, so this was not staged. "
+                        "Try it once more later; if it fails again, say so in did_not_do."}
             rel = f"outbox/{action.path.name}"
             if duplicate:
                 self.journal.write(role.name, "staged_duplicate", f"{name}: same as {action.ref}", tool=name,
@@ -573,7 +579,7 @@ class Engine:
             self.journal.write(role.name, "staged", f"{action.ref} {name} {args_note}", tool=name, ref=action.ref,
                                path=rel, effect=tool.effect, reason=reason, arguments=args)
             return {"status": "staged", "outbox": rel,
-                    "note": "Not done yet. It waits for the user to approve after the run. Do not stage it "
+                    "note": "Not done yet. It waits for the user's decision. Do not stage it "
                     "again; mention it in your summary as staged, not done."}
         # allowed: it runs now
         ctx = self._context(role, name)

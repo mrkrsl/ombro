@@ -151,6 +151,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "spec": spec_body.strip(),
         "limits": meta.get("limits") or {},
         "usage": usage,
+        "outbox_now": _outbox_now(run_dir),
         "briefs": briefs,
         "in_progress": in_progress,
         "limit": limit,
@@ -176,6 +177,26 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "not_shared": not_shared,
         "workspace": str(workspace),
     }
+
+
+def _outbox_now(run_dir: Path) -> dict[str, str]:
+    """Each staged action's status as it stands now: decisions can be made during a run."""
+    from ombro import outbox
+
+    try:
+        return {a.ref: a.status for a in outbox.actions(run_dir)}
+    except (OSError, mdfile.FrontMatterError):
+        return {}
+
+
+def _still_waiting(f: dict[str, Any], staged: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Staged actions split into those still waiting and those decided during the run."""
+    now = f.get("outbox_now") or {}
+    waiting = [ev for ev in staged if now.get(ev.get("ref"), "pending") in ("pending", "uncertain", "executing")]
+    return waiting, [ev for ev in staged if ev not in waiting]
+
+
+DECIDED = {"executed": "approved and done", "declined": "declined", "failed": "approved, but it failed"}
 
 
 def _resolve_deliverable(run_dir: Path, d: dict) -> dict[str, Any]:
@@ -211,9 +232,11 @@ def narrative_input(facts: dict[str, Any]) -> str:
         lines.append(f"You called finish ({facts['finish']['outcome']}): {facts['finish']['summary']}")
     ow = facts.get("outward") or {}
     if ow.get("staged") or ow.get("done") or ow.get("uncertain"):
+        waiting, decided = _still_waiting(facts, ow.get("staged") or [])
         lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the run "
                      "(internal changes, or external actions the user allowed), "
-                     f"{len(ow.get('staged') or [])} staged and waiting for the user's approval"
+                     f"{len(waiting)} staged and waiting for the user's approval"
+                     + (f", {len(decided)} staged and already decided by the user" if decided else "")
                      + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)"
                         if ow.get("uncertain") else "") + ".")
     if facts.get("code_runs"):
@@ -455,6 +478,14 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     if sent:
         lines.append(f"Sent during the run, as your permissions allow ({len(sent)}):")
         lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in sent]
+        lines.append("")
+    staged, decided = _still_waiting(f, staged)
+    now = f.get("outbox_now") or {}
+    if decided:
+        lines.append(f"Staged, and decided by you while the run was going ({len(decided)}):")
+        for ev in decided:
+            what = DECIDED.get(now.get(ev.get("ref"), ""), now.get(ev.get("ref"), "decided"))
+            lines.append(f"- **{ev.get('ref')}** `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}: {what}")
         lines.append("")
     if staged:
         lines.append(f"Staged, waiting for you ({len(staged)}). Nothing here has happened:")

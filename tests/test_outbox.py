@@ -320,10 +320,43 @@ def test_a_hand_edit_is_noticed_and_checked(home, staged, record):
     assert fake_sent(record) == [] and outbox.load(a1.path).status == "pending"
 
 
-def test_nothing_is_decided_while_the_run_is_going(home, staged):
+def test_a_decision_can_be_made_while_the_run_is_going(home, staged, record):
     runs.update_run(staged.run_dir, status="running", pid=os.getpid())
-    with pytest.raises(outbox.OutboxError, match="still running"):
-        outbox.approve(home, outbox.actions(staged.run_dir)[0])
+    a1, a2 = outbox.actions(staged.run_dir)[:2]
+    assert outbox.approve(home, a1).status == "executed"
+    assert outbox.decline(home, a2).status == "declined"
+    assert [s["arguments"]["text"] for s in fake_sent(record)] == ["one"]
+
+
+def test_decisions_during_the_run_are_in_its_report_and_the_role_is_not_told(home, run, record):
+    decided = []
+
+    def approve_the_first(messages, tools):
+        """The user approves the staged post while the role is still working."""
+        (a,) = outbox.actions(run.run_dir)
+        decided.append(outbox.approve(home, a).status)
+        return post("two")
+
+    assert run(script(post("one"), approve_the_first)) == "completed"
+    assert decided == ["executed"]
+    assert [s["arguments"]["text"] for s in fake_sent(record)] == ["one"]
+    a1, a2 = outbox.actions(run.run_dir)
+    assert (a1.status, a2.status) == ("executed", "pending")
+    report = run.report
+    assert "decided by you while the run was going (1)" in report and "approved and done" in report
+    assert "Staged, waiting for you (1)" in report
+    assert not any("approved" in json.dumps(r) for r in tool_replies(run))  # the role was not told
+
+
+def test_staging_waits_for_a_decision_in_progress(home, staged, monkeypatch):
+    monkeypatch.setattr(outbox, "STAGE_WAIT", 0.3)
+    with outbox.lock(staged.run_dir):  # a decision is being made
+        with pytest.raises(outbox.OutboxBusy):
+            outbox.stage(staged.run_dir, tool=POST, effect="external", arguments={"channel": "news", "text": "x"},
+                         reason="r", role="poster", input_schema={})
+    a, dup = outbox.stage(staged.run_dir, tool=POST, effect="external", arguments={"channel": "news", "text": "x"},
+                          reason="r", role="poster", input_schema={})
+    assert not dup and a.status == "pending"
 
 
 def test_a_server_that_cannot_be_reached_leaves_the_action_waiting(home, staged, record):

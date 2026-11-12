@@ -52,7 +52,8 @@ def test_the_summary_counts_what_is_going_on(home):
     assert s["name"] == "Ada" and s["lead"]["title"] == "Lead"
     assert [c["title"] for c in s["crews"]] == ["Default Crew"]
     assert [r["title"] for r in s["crews"][0]["roles"]] == ["Researcher"]  # the test home's role
-    assert s["counts"] == {"crews": 1, "crews_ready": 1, "active_runs": 0, "scheduled_runs": 0, "waiting": 0}
+    assert s["counts"] == {"crews": 1, "crews_ready": 1, "active_runs": 0, "scheduled_runs": 0, "waiting": 0,
+                           "unseen_runs": 0}
     cli.main(["crew", "add", "legal", "--title", "Legal Team"])  # no roles yet: not ready
     assert views.summary(home)["counts"]["crews_ready"] == 1
 
@@ -152,3 +153,52 @@ def test_a_confirmed_brief_can_be_run_at_once(home, monkeypatch, capsys):
     monkeypatch.setattr(cli, "main", lambda argv: started.append(argv) or 0)
     assert real_main(["brief"]) == 0
     assert started == [["run", "--spec", "invented-spec", "--detach"]]
+
+
+# -- seen_at and the run.md lock -----------------------------------------------------
+
+
+def test_showing_a_report_marks_the_run_seen_once(run, home, capsys):
+    run_dir = _a_run_with_a_deliverable(run, home)
+    assert views.since_last(home)["finished"] == 1
+    assert [r["run_id"] for r in views.summary(home)["unseen"]] == [run_dir.name]
+    assert cli.main(["report", run_dir.name]) == 0
+    first = runs.read_run(run_dir)[0]["seen_at"]
+    assert first and views.since_last(home) == {"finished": 0, "waiting": 0, "runs": []}
+    assert runs.mark_seen(run_dir) is False and runs.read_run(run_dir)[0]["seen_at"] == first
+
+
+def test_a_running_run_is_never_marked_seen(run, home):
+    run_dir = _a_run_with_a_deliverable(run, home)
+    runs.update_run(run_dir, status="running")
+    assert runs.mark_seen(run_dir) is False and not runs.read_run(run_dir)[0].get("seen_at")
+
+
+def test_report_json_also_marks_it_seen(run, home, capsys):
+    run_dir = _a_run_with_a_deliverable(run, home)
+    assert cli.main(["report", "--json"]) == 0
+    assert runs.read_run(run_dir)[0]["seen_at"]
+
+
+def test_no_change_to_run_md_is_lost(run, home):
+    """The run saving its usage and a decision recording its counts, from two processes at once."""
+    import multiprocessing
+
+    run_dir = _a_run_with_a_deliverable(run, home)
+    ctx = multiprocessing.get_context("spawn")
+    procs = [ctx.Process(target=_bump, args=(str(run_dir), f"field_{i}")) for i in range(4)]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(60)
+    meta = runs.read_run(run_dir)[0]
+    assert [meta.get(f"field_{i}") for i in range(4)] == [50] * 4
+
+
+def _bump(run_dir: str, field: str) -> None:
+    from pathlib import Path
+
+    from ombro import runs as r
+
+    for i in range(1, 51):
+        r.update_run(Path(run_dir), **{field: i})

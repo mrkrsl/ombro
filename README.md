@@ -57,9 +57,9 @@ ombro run --spec my-spec.md --detach   # keeps going after the terminal closes
 ombro runs                             # list runs
 ombro status [run_id]                  # limits and usage
 ombro journal [run_id] [--follow]      # the event log, readable; --follow shows new events as they come
-ombro report [run_id]                  # the final report
+ombro report [run_id]                  # the final report; marks the run as seen
 ombro chat                             # talk with the Lead about past work; /brief, /remember, /new inside
-ombro summary                          # who you are, the crew, and what is running, scheduled and waiting
+ombro summary                          # who you are, the crew, what is running and waiting, and runs not yet seen
 ombro preferences [edit]               # your name, theme, default crew, editor and outward preset
 ombro stop <run_id>                    # stop a run; it writes its report first
 ombro open [run_id]                    # open a run's workspace folder
@@ -603,6 +603,13 @@ time, a status), tells the role it was staged, and never stages an identical
 call twice in a run. Staging counts towards the tool's `max_calls`. The
 report's Outward actions section lists work done, sends allowed, and
 everything staged, from the harness's own record.
+
+You can decide while the run is still going. Staging and every decision take
+the run's outbox lock, so the two never cross. An action you approve during
+the run is carried out by the approval, not by the run: the role is not told,
+and nothing it returns reaches the run. The report shows each staged action
+as it stood when the report was written (waiting, or decided by you), and
+decisions made after that are added at the end.
 
 You decide on named actions only; there is no "approve all":
 

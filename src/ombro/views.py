@@ -282,8 +282,22 @@ def summary(home: Home) -> dict[str, Any]:
             "active_runs": sum(1 for r in run_rows if r["active"]),
             "scheduled_runs": enabled,
             "waiting": sum(r["waiting"] for r in run_rows),
+            "unseen_runs": len(unseen := [r for r in run_rows if _unseen(r)]),
         },
+        "unseen": [{k: r[k] for k in ("run_id", "status", "brief", "finished_at", "waiting")} for r in unseen],
     }
+
+
+def _unseen(row: dict[str, Any]) -> bool:
+    return row["status"] != "running" and not row["seen_at"] and Path(row["path"], "report.md").is_file()
+
+
+def since_last(home: Home) -> dict[str, Any]:
+    """What an interface says on opening: runs finished that you have not seen, and
+    actions waiting. Showing it does not mark anything seen; showing a run's
+    report or its notice does."""
+    s = summary(home)
+    return {"finished": s["counts"]["unseen_runs"], "waiting": s["counts"]["waiting"], "runs": s["unseen"]}
 
 
 def load_lead_model(home: Home) -> str | None:
