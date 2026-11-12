@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from ombro import mdfile, prompts
-from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home
+from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home, tidy_title
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
-from ombro.roles import KINDS, NAME, RoleError, crew_roles, load_lead, load_role
+from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role
 from ombro.settings import Limits, SetupError, format_duration, format_tokens, load_models, load_tool_settings
 
 
@@ -211,7 +211,7 @@ class RolePurpose(Purpose):
 
     def opening(self) -> str:
         if self.name:
-            return f"The user wants to add a role called {self.name!r}. Begin the interview."
+            return f"The user wants to add a role titled {self.name!r}. Begin the interview."
         return "The user wants to add a role. Begin the interview."
 
     def context(self) -> list[tuple[str, str]]:
@@ -229,7 +229,8 @@ class RolePurpose(Purpose):
             "Propose the new role's config.md and soul.md. The harness checks them, shows them, and creates the "
             "role only if the user accepts.",
             {
-                "name": {"type": "string"},
+                "title": {"type": "string", "description": "The role's title as the user wants it shown, e.g. "
+                          "Marketing Assistant. Its folder name is made from it."},
                 "kind": {"type": "string", "enum": ["specialist", "helper"]},
                 "description": {"type": "string", "description": "What kind of work it does and what it returns. "
                                 "No details of any one task."},
@@ -239,16 +240,20 @@ class RolePurpose(Purpose):
                 "max_steps": {"type": "integer", "description": "Model calls per brief; leave out for the default."},
                 "soul": {"type": "string", "description": "The role's prompt, second person. General: no task details."},
             },
-            ["name", "kind", "description", "tools", "soul"],
+            ["title", "kind", "description", "tools", "soul"],
         )
 
     def folder(self, name: str) -> Path:
         return self.home.roles_dir(self.crew) / name
 
     def build(self, args: dict) -> Proposal:
-        name = _text(args, "name").lower()
+        title = " ".join(_text(args, "title").split())
+        name = folder_name(title) if title else _text(args, "name").lower()
+        if not title:
+            title = tidy_title(name)
         kind = _text(args, "kind") or "specialist"
-        meta: dict[str, Any] = {"name": name, "kind": kind, "description": _text(args, "description")}
+        meta: dict[str, Any] = {"name": name, "title": title, "kind": kind,
+                                "description": _text(args, "description")}
         model = _text(args, "model")
         if model:
             meta["model"] = model
@@ -264,7 +269,7 @@ class RolePurpose(Purpose):
             meta["max_steps"] = args["max_steps"]
         soul = _text(args, "soul")
         if not NAME.match(name):
-            raise ProposalError("the name must use lower-case letters, digits, - and _")
+            raise ProposalError("give the role a title made of letters or digits, such as Marketing Assistant")
         folder = self.folder(name)
         return Proposal(
             [

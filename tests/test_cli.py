@@ -165,9 +165,13 @@ def test_init_connects_after_a_failed_test_call(tmp_path):
             return r
 
     said = []
-    ask = ScriptedPrompts(["1", "", "1", "deepseek-chat", "n"])
+    ask = ScriptedPrompts(["Ada Invented", "1", "", "1", "deepseek-chat", "n"])
     secret = ScriptedPrompts(["sk-test-INVENTED-wrong", "sk-test-INVENTED-right", ""])
     assert run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
+    assert ask.asked[0].startswith("Your name, used only to greet you")  # asked first, before any model
+    from ombro.settings import load_preferences
+
+    assert load_preferences(home).name == "Ada Invented"
     out = "\n".join(said)
     assert "test call failed" in out and "Connected" in out
     assert keys.get_key(home, "DEEPSEEK_API_KEY") == "sk-test-INVENTED-right"
@@ -188,7 +192,7 @@ def test_init_other_endpoint_without_key(tmp_path):
             return ModelReply(content="OK")
 
     said = []
-    ask = ScriptedPrompts(["2", "http://localhost:11434/v1", "invented-local-model", "", "n"])
+    ask = ScriptedPrompts(["", "2", "http://localhost:11434/v1", "invented-local-model", "", "n"])
     secret = ScriptedPrompts([""])
     run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
     spec = connected_model(home)
@@ -204,7 +208,7 @@ def test_init_offers_firecrawl_when_a_search_key_is_saved(tmp_path):
             return ModelReply(content="OK")
 
     said = []
-    ask = ScriptedPrompts(["1", "deepseek-chat", "y", "n"])
+    ask = ScriptedPrompts(["", "1", "deepseek-chat", "y", "n"])
     secret = ScriptedPrompts(["sk-test-INVENTED-model", "fc-test-INVENTED-search"])
     assert run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
     assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-test-INVENTED-search"

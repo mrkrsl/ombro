@@ -506,18 +506,36 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
 # Preferences
 
 
+THEMES = ("auto", "light", "dark")
+
+
 @dataclass
 class Preferences:
+    name: str = ""
+    theme: str = "auto"
     default_crew: str = DEFAULT_CREW
     editor: str = ""
     instructions: str = ""
     outward: Any = None
 
 
+def set_preference(home: Home, key: str, value: Any) -> None:
+    """Change one setting in preferences/config.md, keeping the rest and its notes."""
+    from ombro.home import PREFERENCES_BODY
+
+    path = home.preferences_config
+    meta, body = mdfile.read(path) if path.is_file() else ({}, PREFERENCES_BODY)
+    meta[key] = value
+    mdfile.write(path, meta, body)
+
+
 def load_preferences(home: Home) -> Preferences:
     prefs = Preferences()
     if home.preferences_config.is_file():
         meta, _ = mdfile.read(home.preferences_config)
+        prefs.name = " ".join(str(meta.get("name") or "").split())[:60]
+        theme = str(meta.get("theme") or "auto").strip().lower()
+        prefs.theme = theme if theme in THEMES else "auto"
         prefs.default_crew = str(meta.get("default_crew") or DEFAULT_CREW)
         prefs.editor = str(meta.get("editor") or "")
         prefs.outward = meta.get("outward")

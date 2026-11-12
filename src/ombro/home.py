@@ -339,9 +339,12 @@ Whether other calls run or wait in the outbox is set by `outward:` in
 preferences/config.md and in each spec.
 """
 
-PREFERENCES_META = {"default_crew": DEFAULT_CREW, "editor": "", "outward": "balanced"}
+PREFERENCES_META = {"name": "", "theme": "auto", "default_crew": DEFAULT_CREW, "editor": "", "outward": "balanced"}
 
 PREFERENCES_BODY = """\
+- name: your name, used only to greet you. Empty is fine.
+- theme: auto, light or dark, for the terminal interface. auto follows the
+  terminal's background, then the system's appearance.
 - default_crew: the crew commands use when --crew is not given.
 - editor: command used to open files for editing. Empty means $EDITOR.
 - outward: what outward (MCP) tools may do without you, unless a spec says
@@ -359,8 +362,25 @@ context. Comments like this one are not sent to the model.
 -->
 """
 
+def tidy_title(name: str) -> str:
+    """A display title from a folder name: market-researcher becomes Market Researcher."""
+    words = [w for w in name.replace("_", "-").split("-") if w]
+    return " ".join(w[:1].upper() + w[1:] for w in words) or name
+
+
+def crew_title(home: "Home", crew: str) -> str:
+    """A crew's title from crew.md, or its name tidied, followed by Crew."""
+    path = home.crew_dir(crew) / "crew.md"
+    try:
+        title = str((mdfile.read(path)[0] if path.is_file() else {}).get("title") or "").strip()
+    except mdfile.FrontMatterError:
+        title = ""
+    return title or f"{tidy_title(crew)} Crew"
+
+
 LEAD_CONFIG = {
     "name": "lead",
+    "title": "Lead",
     "kind": "lead",
     "description": "The one Lead, above every crew. Briefs the crews' roles, keeps the run to the spec and writes "
                    "the report.",
@@ -376,6 +396,7 @@ ASSISTANT_NAME = "general-assistant"
 
 ASSISTANT_CONFIG = {
     "name": ASSISTANT_NAME,
+    "title": "General Assistant",
     "kind": "specialist",
     "description": "A capable generalist for everyday tasks that no other role fits. Researches, summarises, "
                    "compares, drafts and organises, working from the web and the workspace, with short Python "
@@ -426,14 +447,15 @@ def _write_if_missing(path: Path, text: str, created: list[Path], mode: int | No
     created.append(path)
 
 
-def ensure_crew(home: Home, crew: str, description: str = "") -> list[Path]:
+def ensure_crew(home: Home, crew: str, description: str = "", title: str = "") -> list[Path]:
     created: list[Path] = []
     cdir = home.crew_dir(crew)
     for sub in ("roles", "memory"):
         (cdir / sub).mkdir(parents=True, exist_ok=True)
     _write_if_missing(
         cdir / "crew.md",
-        mdfile.dump({"name": crew, "description": description or f"The {crew} crew."}),
+        mdfile.dump({"name": crew, "title": title.strip() or f"{tidy_title(crew)} Crew",
+                     "description": description or f"The {crew} crew."}),
         created,
     )
     _write_if_missing(cdir / "memory/index.md", "# Index\n", created)

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from ombro import mdfile
-from ombro.home import Home
+from ombro.home import Home, tidy_title
 from ombro.settings import Limits, SetupError
 
 KINDS = ("lead", "specialist", "helper")
@@ -32,6 +32,13 @@ class Role:
     tools: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     crew: str = ""  # empty for the Lead
+    title: str = ""  # the display name, e.g. Market Researcher
+
+
+def folder_name(title: str) -> str:
+    """The folder name made from a title: Marketing Assistant becomes marketing-assistant."""
+    slug = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")
+    return slug[:63].rstrip("-")
 
 
 def _str_list(value, label: str, where: Path) -> list[str]:
@@ -82,6 +89,7 @@ def load_role(folder: Path, limits: Limits) -> Role:
         max_steps=steps,
         tools=_str_list(meta.get("tools"), "tools", cfg),
         skills=_str_list(meta.get("skills"), "skills", cfg),
+        title=str(meta.get("title") or "").strip() or tidy_title(name),
     )
 
 

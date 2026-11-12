@@ -373,7 +373,7 @@ def test_init_holds_the_setup_interview_and_offers_a_role(tmp_path):
         fake.call("propose", ROLE),
     ])
     said = []
-    ask = Answers(["1", "deepseek-chat", "", "An invented baker.", "a", "y", "Check facts.", "a", "n", "n"])
+    ask = Answers(["", "1", "deepseek-chat", "", "An invented baker.", "a", "y", "Check facts.", "a", "n", "n"])
     secret = Answers(["sk-test-INVENTED-model", ""])
     assert run_init(h, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, home: client)
     assert "invented bakery" in h.instructions.read_text()

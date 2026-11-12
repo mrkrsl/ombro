@@ -73,6 +73,7 @@ def run_init(
     ui = ui or ConsoleUI(ask=ask, ask_secret=ask_secret, say=say, edit=edit, home=home)
     created = ensure_home(home)
     ui.say(f"Ombro home: {home.root}" + (" (created)" if created else ""))
+    ask_name(home, ui)
 
     spec = connected_model(home)
     if spec is not None:
@@ -101,6 +102,21 @@ def run_init(
     _offer_search_key(home, ui)
     _set_up(home, ui, client_factory)
     return True
+
+
+def name_field(current: str = "") -> Field:
+    return Field("name", "Your name, used only to greet you (Enter to skip)", default=current or None)
+
+
+def ask_name(home: Home, ui: UI) -> str:
+    """The first question of set-up, before any model: what to call you. It can be skipped."""
+    from ombro.settings import load_preferences, set_preference
+
+    current = load_preferences(home).name
+    name = " ".join(str(ui.ask(name_field(current)) or "").split())[:60]
+    if name != current:
+        set_preference(home, "name", name)
+    return name
 
 
 def endpoint_field() -> Field:

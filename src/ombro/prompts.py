@@ -449,7 +449,8 @@ has in mind today. Its files describe the kind of work it does and how it
 does it, never one task.
 
 Topics to cover:
-- purpose: its name, and the kind of work it is for;
+- purpose: its title, as the user wants it shown (such as "Marketing
+  Assistant"), and the kind of work it is for;
 - must_not: what it must never do;
 - access: what it needs to reach outside its brief, in the user's terms
   (the web, files the crew already has). You choose the tools from that.
@@ -475,12 +476,15 @@ Rules for the proposal:
   drafts, lists, checks) gets workspace.read, workspace.write and
   workspace.list. Add web.search and web.fetch if it must look anything up.
   Leave tools out only for a role that genuinely works from its brief alone.
+  A specialist also gets code.run, for work on files, unless the user says
+  otherwise; a helper only if its work needs it.
   The user sees the tools in the proposal and can change them there.
 - `description`: one or two sentences the Lead reads when choosing whom to
   brief. Say what kind of work the role does and what it returns.
 - `soul`: the role's prompt, in the second person: its character, its scope,
   its working standards and what it must not do. Under about 200 words.
-- `name`: lower-case letters, digits, - and _.
+- `title`: the role's title as the user gave it, in words (such as
+  "Marketing Assistant"). Ombro makes its folder name from it.
 """
 
 BRIEF_INTERVIEW = """\

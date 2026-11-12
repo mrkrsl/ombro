@@ -702,15 +702,13 @@ def _confirm(label: str) -> bool:
 
 
 def _set_default_crew(home: Home, crew: str) -> None:
-    from ombro.home import PREFERENCES_BODY
+    from ombro.settings import set_preference
 
-    meta, body = mdfile.read(home.preferences_config) if home.preferences_config.is_file() else ({}, PREFERENCES_BODY)
-    meta["default_crew"] = crew
-    mdfile.write(home.preferences_config, meta, body)
+    set_preference(home, "default_crew", crew)
 
 
 def cmd_crew(args) -> int:
-    from ombro.home import ensure_crew
+    from ombro.home import crew_title, ensure_crew
     from ombro.roles import NAME
 
     home = _home()
@@ -724,7 +722,7 @@ def cmd_crew(args) -> int:
             rdir = home.roles_dir(crew)
             n = len([p for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")]) if rdir.is_dir() else 0
             mark = "*" if crew == default else " "
-            print(f"{mark} {crew:<16} {n} role(s)  {meta.get('description', '')}")
+            print(f"{mark} {crew:<16} {crew_title(home, crew):<24} {n} role(s)  {meta.get('description', '')}")
         print("\n* the default crew")
         return 0
     if not args.name:
@@ -735,8 +733,8 @@ def cmd_crew(args) -> int:
     if action == "add":
         if home.crew_dir(name).exists():
             raise CliError(f"A crew named {name} already exists.")
-        ensure_crew(home, name, args.description or "")
-        print(f"Created crew {name}. The Lead can brief its roles once it has some: "
+        ensure_crew(home, name, args.description or "", args.title or "")
+        print(f"Created crew {name} ({crew_title(home, name)}). The Lead can brief its roles once it has some: "
               f"add them with `ombro role add --crew {name}`.")
         return 0
     if action == "use":
@@ -872,6 +870,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", nargs="?", choices=["list", "add", "use"], help="default: list")
     s.add_argument("name", nargs="?")
     s.add_argument("--description", help="for crew add")
+    s.add_argument("--title", help="for crew add: the title shown, e.g. \"Legal Crew\" (default: the name, then Crew)")
     s.set_defaults(func=cmd_crew)
 
     s = sub.add_parser("limits", help="show the limits in force, or set the allowance level")

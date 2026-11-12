@@ -227,13 +227,13 @@ def test_connecting_a_model_is_a_form_with_a_hidden_key(tmp_path):
             return ModelReply(content="OK")
 
     home = Home(tmp_path / "fresh")
-    ui = ScriptedUI(["2", "https://models.invalid/v1", "invented-model", "INVENTED_API_KEY",
+    ui = ScriptedUI(["", "2", "https://models.invalid/v1", "invented-model", "INVENTED_API_KEY",
                      "sk-test-INVENTED-0123456789", "", False])
     assert run_init(home, ui=ui, client_factory=lambda s, h: Client())
     kinds = [(f.name, f.kind) for f in ui.fields]
-    assert kinds[:5] == [("endpoint", "choice"), ("url", "text"), ("model", "text"), ("key_name", "text"),
+    assert kinds[:6] == [("name", "text"), ("endpoint", "choice"), ("url", "text"), ("model", "text"), ("key_name", "text"),
                          ("key", "secret")]
-    assert ui.fields[0].options[0].label.startswith("DeepSeek")
+    assert ui.fields[1].options[0].label.startswith("DeepSeek")
     assert keys.get_key(home, "INVENTED_API_KEY") == "sk-test-INVENTED-0123456789"
     assert connected_model(home).model == "invented-model"
     assert "INVENTED-0123456789" not in _shown_text(ui)
