@@ -395,3 +395,21 @@ def test_pass_env_must_be_a_list_of_names(home):
     with pytest.raises(SetupError, match="pass_env"):
         ToolSettings.from_dict({"servers": {"x": {"command": "y", "pass_env": ["not a name"]}}}, "tools.md")
     ToolSettings.from_dict({"servers": {"x": {"command": "y", "pass_env": ["UV_CACHE_DIR"]}}}, "tools.md")
+
+
+def test_a_key_on_the_command_line_is_warned_about():
+    on_argv = ServerConfig.from_dict("x", {"command": "invented", "args": ["--token", "${INVENTED_TOKEN}"]})
+    assert "INVENTED_TOKEN" in on_argv.argv_warning() and "env" in on_argv.argv_warning()
+    in_env = ServerConfig.from_dict("x", {"command": "invented", "env": {"T": "${INVENTED_TOKEN}"}})
+    assert in_env.argv_warning() is None
+
+
+def test_a_run_journals_the_command_line_warning(home, run, tmp_path):
+    from conftest import LEAD_REPORT, write_role
+    from ombro import fake
+
+    record = tmp_path / "sent.jsonl"
+    use_fake_mcp(home, record, server_settings={"args": ["-m", "ombro.fake_mcp", "${INVENTED_TOKEN}"]})
+    write_role(home, "poster", kind="helper", tools=["mcp.fake.find_rows"])
+    run([fake.finish(), LEAD_REPORT])
+    assert any(e["action"] == "warning" and "process list" in e["note"] for e in run.events)

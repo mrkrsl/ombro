@@ -107,6 +107,18 @@ class ServerConfig:
             start_timeout=float(d.get("start_timeout") or START_TIMEOUT),
         )
 
+    def argv_key_refs(self) -> list[str]:
+        """${NAME} values in `command` or `args`: on the command line, which other users of
+        this machine can read in the process list. `env` is the place for them."""
+        return sorted({m for t in [self.command or "", *self.args] for m in _REF.findall(t)})
+
+    def argv_warning(self) -> str | None:
+        refs = self.argv_key_refs()
+        if not refs:
+            return None
+        return (f"server {self.name} puts {', '.join(refs)} on its command line (`command` or `args` in tools.md), "
+                "where other users of this machine can see it in the process list. Pass it in `env` instead.")
+
     def key_refs(self) -> list[str]:
         texts = [self.command or "", *self.args, *self.env.values(), self.url or "", *self.headers.values()]
         return sorted({m for t in texts for m in _REF.findall(t)})

@@ -286,7 +286,9 @@ developer settings, for a service that does not let Ombro register itself.
 `env` sets variables for a started server. Write a secret as ${NAME}: it is
 read from secrets/keys.env when the server starts and never logged. A started
 server gets only PATH, HOME, USER, LOGNAME, LANG, LC_ALL, LC_CTYPE and TMPDIR
-from Ombro's own environment; `pass_env: [NAME, ...]` passes others. Optional `timeout`
+from Ombro's own environment; `pass_env: [NAME, ...]` passes others. Put
+secrets in `env`, not `command` or `args`: other users of this machine can
+read a command line in the process list. Optional `timeout`
 for each call, e.g. 60s. For example:
 
   servers:

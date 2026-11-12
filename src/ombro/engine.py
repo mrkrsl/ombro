@@ -140,6 +140,13 @@ class Engine:
         if not names:
             return
         self.pool = outward.McpPool(self.home, self.tool_settings, log_dir=self.run_dir)
+        from ombro.mcp import ServerConfig
+
+        for server in sorted({p[0] for n in names if (p := outward.split_name(n))}):
+            cfg = self.tool_settings.servers.get(server)
+            warning = cfg and ServerConfig.from_dict(server, cfg).argv_warning()
+            if warning:
+                self.journal.write("harness", "warning", warning)
         tools, warnings = self.pool.tools(names)
         # `permission: refuse` beats everything, whatever a tool's class: a refused
         # tool is not offered at all (and _role_tool refuses it again if called).

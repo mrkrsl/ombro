@@ -360,6 +360,9 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
     name = args.server
     if name not in settings.servers:
         raise cli.CliError(f"No server named {name!r} in tools.md. Servers: {', '.join(settings.servers) or 'none'}")
+    warning = ServerConfig.from_dict(name, settings.servers[name]).argv_warning()
+    if warning and not args.json:
+        print(f"Warning: {warning}\n")
     try:
         with McpClient(home, ServerConfig.from_dict(name, settings.servers[name])) as c:
             listed = c.list_tools()
