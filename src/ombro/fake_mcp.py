@@ -39,7 +39,8 @@ TOOLS = [
             "properties": {"sheet": {"type": "string"}, "values": {"type": "array", "items": {"type": "string"}}},
             "required": ["sheet", "values"],
         },
-        "annotations": {"readOnlyHint": False, "destructiveHint": False},
+        # Work: the server says it reaches nothing outside the sheet.
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
     },
     {
         "name": "post_message",

@@ -13,7 +13,7 @@ def assert_reported(run, status: str, limit: str | None = None, by_lead: bool = 
     assert run.meta["status"] == status
     assert f"**Status:** {status}" in report
     for section in ("## What was asked", "## What was done", "## What was not done and why",
-                    "## Decisions for you", "## Deliverables", "## Outbox", "## Changes to notes.md", "## Cost"):
+                    "## Decisions for you", "## Deliverables", "## Outward actions", "## Changes to notes.md", "## Cost"):
         assert section in report, section
     if limit:
         assert run.meta["limit_hit"] == limit

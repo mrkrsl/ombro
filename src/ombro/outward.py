@@ -1,11 +1,17 @@
 """Outward tools: MCP tools, their class, and the permission each call gets.
 
 Every tool that reaches a service outside the run comes from an MCP server.
-Each has a class:
-- read: changes nothing (the server marks it read-only);
-- change: changes something but, by the server's marking, destroys nothing;
-- send: anything else, including any tool the server does not mark.
-The markings are the server's own claims; `class:` in tools.md wins.
+Each has a class, drawn by who an action reaches:
+- read: changes nothing;
+- work: documents, sheets, databases, files and drafts, including
+  overwriting. Like a trusted employee's work, it is done, then reported;
+- external: reaches people or the public, or spends money (email, messages,
+  posts, publishing, public records, purchases).
+A tool's class comes from, each overriding the one before: the server's
+markings (readOnlyHint true: read; openWorldHint false: work; otherwise
+external), `class:` on the server in tools.md (for its tools that do not
+read), then `class:` on the tool in tools.md. A tool that changes something
+and is not classed is external: the safe default.
 
 A call's permission is allow (it runs), stage (it waits in the outbox) or
 refuse. A preset gives the defaults by class. Layers, each overriding the one
@@ -29,9 +35,9 @@ from ombro.settings import TOOL_CLASSES, SetupError, ToolSettings, load_preferen
 from ombro.tools import Tool, ToolContext
 
 PRESETS: dict[str, dict[str, str]] = {
-    "manual": {"read": "allow", "change": "stage", "send": "stage"},
-    "balanced": {"read": "allow", "change": "allow", "send": "stage"},
-    "auto": {"read": "allow", "change": "allow", "send": "allow"},
+    "manual": {"read": "allow", "work": "stage", "external": "stage"},
+    "balanced": {"read": "allow", "work": "allow", "external": "stage"},
+    "auto": {"read": "allow", "work": "allow", "external": "allow"},
 }
 DEFAULT_PRESET = "balanced"
 PERMISSIONS = ("allow", "stage", "refuse")
@@ -112,15 +118,32 @@ def describe(setting: dict[str, Any]) -> str:
     return text
 
 
-def classify(annotations: dict[str, Any] | None, override: str | None = None) -> str:
+def classify_with_source(annotations: dict[str, Any] | None, override: str | None = None,
+                         server_class: str | None = None) -> tuple[str, str]:
+    """A tool's class and where it came from: tool (tools.md), server (tools.md),
+    marking (the server's own claim) or default."""
     if override in TOOL_CLASSES:
-        return override
+        return override, "tool"
     a = annotations or {}
     if a.get("readOnlyHint") is True:
-        return "read"
-    if a.get("destructiveHint") is False:
-        return "change"
-    return "send"
+        return "read", "marking"
+    if server_class in TOOL_CLASSES:
+        return server_class, "server"
+    if a.get("openWorldHint") is False:
+        return "work", "marking"
+    return "external", "default"
+
+
+def classify(annotations: dict[str, Any] | None, override: str | None = None,
+             server_class: str | None = None) -> str:
+    return classify_with_source(annotations, override, server_class)[0]
+
+
+def tool_class(settings: ToolSettings, name: str, annotations: dict[str, Any] | None) -> tuple[str, str]:
+    """The class of mcp.<server>.<tool> under these settings, and its source."""
+    parts = split_name(name)
+    server_class = settings.servers.get(parts[0], {}).get("class") if parts else None
+    return classify_with_source(annotations, settings.tools.get(name, {}).get("class"), server_class)
 
 
 def decide(setting: dict[str, Any] | None, name: str, effect: str, tool_settings: ToolSettings) -> str:
@@ -132,7 +155,9 @@ def decide(setting: dict[str, Any] | None, name: str, effect: str, tool_settings
         return "allow"
     if name in (setting.get("stage") or []):
         return "stage"
-    return PRESETS.get(setting.get("preset") or DEFAULT_PRESET, PRESETS[DEFAULT_PRESET]).get(effect, "stage")
+    # An unknown class is treated as external.
+    preset = PRESETS.get(setting.get("preset") or DEFAULT_PRESET, PRESETS[DEFAULT_PRESET])
+    return preset.get(effect, preset["external"])
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +209,7 @@ def make_tool(server: str, remote: str, description: str, schema: dict[str, Any]
         params.setdefault("type", "object")
     else:
         params, reason_key = _with_reason(schema)
-    label = {"read": "Reads from", "change": "Changes something in", "send": "Acts on"}[effect]
+    label = {"read": "Reads from", "work": "Works in", "external": "Acts outside the run, through"}[effect]
     text = f"{label} {server} (an outside service). {description}".strip()
 
     def handler(args: dict, ctx: ToolContext) -> dict[str, Any]:
@@ -196,6 +221,35 @@ def make_tool(server: str, remote: str, description: str, schema: dict[str, Any]
 
     return Tool(name=f"mcp.{server}.{remote}", description=text[:1000], parameters=params, handler=handler,
                 outward=True, effect=effect, input_schema=schema, reason_key=reason_key)
+
+
+def external_tools(home: Home, settings: ToolSettings, names: list[str]) -> list[str]:
+    """Which of these mcp.* tools are external, so a brief must ask what may happen
+    without the user. Servers are asked for their markings only where tools.md does
+    not settle it; a server that cannot be reached counts all its tools as external."""
+    out: list[str] = []
+    need: dict[str, list[str]] = {}
+    for name in dict.fromkeys(names):
+        parts = split_name(name)
+        if parts is None or parts[0] not in settings.servers:
+            continue  # not a tool any run will be offered
+        own = settings.tools.get(name, {}).get("class")
+        if own:
+            if own == "external":
+                out.append(name)
+            continue
+        if settings.servers[parts[0]].get("class") == "work":
+            continue  # read or work: neither is external
+        need.setdefault(parts[0], []).append(name)
+    for server, wanted in need.items():
+        try:
+            with McpClient(home, ServerConfig.from_dict(server, settings.servers[server])) as c:
+                listed = {f"mcp.{server}.{t.name}": t for t in c.list_tools()}
+        except McpError:
+            out += wanted
+            continue
+        out += [n for n in wanted if n in listed and tool_class(settings, n, listed[n].annotations)[0] == "external"]
+    return sorted(out)
 
 
 class McpPool:
@@ -251,7 +305,7 @@ class McpPool:
                     warnings.append(f"MCP server {server} has no tool named {remote!r}")
                     continue
                 name = f"mcp.{server}.{remote}"
-                effect = classify(t.annotations, self.settings.tools.get(name, {}).get("class"))
+                effect = tool_class(self.settings, name, t.annotations)[0]
                 out.append(make_tool(server, remote, t.description, t.input_schema, effect,
                                      lambda r, a, timeout, s=server: self.call(s, r, a, timeout)))
         return out, warnings

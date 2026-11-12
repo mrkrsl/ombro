@@ -286,8 +286,11 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
 _TOOL_FIELDS = {"provider", "max_calls", "cost_per_call", "class", "permission"}
-_SERVER_FIELDS = {"command", "args", "env", "url", "headers", "timeout", "start_timeout"}
-TOOL_CLASSES = ("read", "change", "send")
+_SERVER_FIELDS = {"command", "args", "env", "url", "headers", "timeout", "start_timeout", "class"}
+TOOL_CLASSES = ("read", "work", "external")
+# A server-wide class covers its tools that do not read; reading stays reading.
+SERVER_CLASSES = ("work", "external")
+_OLD_CLASSES = {"change": "work", "send": "external"}  # stage 6 names
 SERVER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,30}$")
 
 
@@ -345,6 +348,9 @@ class ToolSettings:
                     raise SetupError(f"{where}: class and permission apply only to MCP tools (mcp.<server>.<tool>), "
                                      f"not {name}")
             if "class" in cfg:
+                if cfg["class"] in _OLD_CLASSES:
+                    raise SetupError(f"{where}: class {cfg['class']!r} for {name} has been renamed; use "
+                                     f"{_OLD_CLASSES[cfg['class']]!r} (classes are read, work and external)")
                 if cfg["class"] not in TOOL_CLASSES:
                     raise SetupError(f"{where}: class for {name} must be one of {', '.join(TOOL_CLASSES)}")
                 out["class"] = cfg["class"]
@@ -379,6 +385,13 @@ class ToolSettings:
                     raise SetupError(f"{where}: `{key}` for server {name} must be a mapping")
             if "args" in cfg and not isinstance(cfg["args"] or [], list):
                 raise SetupError(f"{where}: `args` for server {name} must be a list")
+            if "class" in cfg:
+                if cfg["class"] in _OLD_CLASSES:
+                    raise SetupError(f"{where}: class {cfg['class']!r} for server {name} has been renamed; use "
+                                     f"{_OLD_CLASSES[cfg['class']]!r}")
+                if cfg["class"] not in SERVER_CLASSES:
+                    raise SetupError(f"{where}: class for server {name} must be work or external (it covers the "
+                                     "server's tools that do not read)")
             for key in ("timeout", "start_timeout"):
                 if key in cfg:
                     try:

@@ -190,7 +190,8 @@ def narrative_input(facts: dict[str, Any]) -> str:
         lines.append(f"You called finish ({facts['finish']['outcome']}): {facts['finish']['summary']}")
     ow = facts.get("outward") or {}
     if ow.get("staged") or ow.get("done") or ow.get("uncertain"):
-        lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the run, "
+        lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the run "
+                     "(work, or external actions the user allowed), "
                      f"{len(ow.get('staged') or [])} staged and waiting for the user's approval"
                      + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)"
                         if ow.get("uncertain") else "") + ".")
@@ -349,7 +350,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         out += [f"- {d['name']} ({d['role']}): {_line(d['inline'], 300)}" for d in f["inline_notes"]]
     out += ["", f"Workspace: {f['workspace']}", ""]
 
-    out += ["## Outbox", "", *outbox_lines(f), ""]
+    out += ["## Outward actions", "", *outbox_lines(f), ""]
     out += ["## Changes to notes.md", "", *notes_lines(f.get("notes")), ""]
 
     cur = f["display_currency"]
@@ -418,13 +419,23 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     errors, refused, dups = ow.get("errors") or [], ow.get("refused") or [], ow.get("duplicates") or []
     uncertain = ow.get("uncertain") or []
     if not any((staged, done, errors, refused, uncertain)):
-        return ["Nothing staged."]
+        return ["None: nothing was done outside the run, and nothing is staged."]
+    work = [ev for ev in done if ev.get("effect") in ("work", "read")]
+    sent = [ev for ev in done if ev not in work]
     lines: list[str] = []
     setting = f.get("outward_setting") or {}
     if setting:
         from ombro.outward import describe
 
         lines += [f"Permissions for this run: {describe(setting)}.", ""]
+    if work:
+        lines.append(f"Work done during the run ({len(work)}):")
+        lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in work]
+        lines.append("")
+    if sent:
+        lines.append(f"Sent during the run, as your permissions allow ({len(sent)}):")
+        lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in sent]
+        lines.append("")
     if staged:
         lines.append(f"Staged, waiting for you ({len(staged)}). Nothing here has happened:")
         for ev in staged:
@@ -435,10 +446,6 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
             lines.append(f"- ({len(dups)} identical repeat(s) were not staged again.)")
         lines += ["", "See them with `ombro outbox`; approve or decline each by its reference, e.g. "
                   f"`ombro outbox show {staged[0].get('ref')}`.", ""]
-    if done:
-        lines.append(f"Done during the run, as your permissions allow ({len(done)}):")
-        lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in done]
-        lines.append("")
     if uncertain:
         lines.append(f"Uncertain: sent during the run, but no answer came back, so it may or may not have "
                      f"happened ({len(uncertain)}). Check the service:")

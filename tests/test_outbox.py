@@ -68,7 +68,7 @@ def test_a_send_is_staged_not_done_and_the_role_is_told(run, record):
     assert run(script(post())) == "completed"
     assert fake_sent(record) == []  # nothing reached the service
     [a] = outbox.actions(run.run_dir)
-    assert a.status == "pending" and a.tool == "mcp.fake.post_message" and a.meta["class"] == "send"
+    assert a.status == "pending" and a.tool == "mcp.fake.post_message" and a.meta["class"] == "external"
     assert a.arguments == {"channel": "news", "text": "Invented reservoir news."}  # the reason is kept apart
     assert a.meta["reason"] == "The spec asks for one post." and a.meta["role"] == "poster"
     assert a.path.name == "001-fake-post-message.md"
@@ -88,11 +88,11 @@ def test_journal_notes_stay_on_one_line(home, staged):
 
 def test_the_report_lists_staged_actions_from_the_harness_record(run, record):
     run(script(post(), add()))
-    section = run.report.split("## Outbox", 1)[1].split("## Changes to notes.md")[0]
+    section = run.report.split("## Outward actions", 1)[1].split("## Changes to notes.md")[0]
     ref = outbox.actions(run.run_dir)[0].ref
     assert f"**{ref}** `mcp.fake.post_message` (poster)" in section
     assert "Reason: The spec asks for one post." in section
-    assert "Done during the run, as your permissions allow (1):" in section  # add_row is a change: allowed
+    assert "Work done during the run (1):" in section  # add_row is work: it runs
     assert "`mcp.fake.add_row` (poster): sheet: Leads" in section
     assert "Permissions for this run: balanced (from preferences)" in section
     assert "ombro outbox show" in section
@@ -145,7 +145,7 @@ def test_an_allowed_call_with_no_answer_is_uncertain_and_the_role_is_told_not_to
     [told] = [r for r in tool_replies(run) if r.get("status") == "uncertain"]
     assert "Do not try it again" in told["error"]
     assert "outward_uncertain" in run.actions() and "outward_error" not in run.actions()
-    section = run.report.split("## Outbox", 1)[1].split("## Changes to notes.md")[0]
+    section = run.report.split("## Outward actions", 1)[1].split("## Changes to notes.md")[0]
     assert "Uncertain: sent during the run, but no answer came back" in section
     assert "`mcp.fake.add_row` (poster): sheet: Leads" in section
     assert "service reported an error" not in section
@@ -431,9 +431,13 @@ def test_a_process_killed_mid_approval_leaves_it_uncertain_never_resent(home, ru
 def test_ombro_tools_lists_a_servers_tools_with_their_permission(home, record):
     r = ombro(home, "tools", "fake")
     assert r.returncode == 0, r.stderr
-    lines = {ln.split()[0]: ln.split()[1:3] for ln in r.stdout.splitlines() if ln.strip().startswith("mcp.")}
-    assert lines == {"mcp.fake.find_rows": ["read", "allow"], "mcp.fake.add_row": ["change", "allow"],
-                     "mcp.fake.post_message": ["send", "stage"], "mcp.fake.fire_hook": ["send", "stage"]}
+    lines = {ln.split()[0]: ln.split()[1:4] for ln in r.stdout.splitlines()
+             if ln.strip().startswith("mcp.") and not ln.split()[0].endswith(":")}
+    assert lines == {"mcp.fake.find_rows": ["read", "marking", "allow"],
+                     "mcp.fake.add_row": ["work", "marking", "allow"],
+                     "mcp.fake.post_message": ["external", "default", "stage"],
+                     "mcp.fake.fire_hook": ["external", "default", "stage"]}
+    assert "class: work" in r.stdout  # it says how to class the defaulted ones
     assert "fake" in ombro(home, "tools").stdout
 
 
@@ -447,7 +451,8 @@ def test_the_brief_records_what_may_happen_without_you(home, record):
 
     purpose = BriefPurpose(home, "default", load_limits(home), "Tweet the top story.")
     ctx = dict(purpose.context())
-    assert "mcp.fake.post_message" in ctx["Outward tools in the crew (they reach outside services)"]
+    asked = ctx["External tools in the crew (they reach people or the public, or spend money)"]
+    assert "mcp.fake.post_message" in asked and "mcp.fake.add_row" not in asked and "find_rows" not in asked
     assert "outward_preset" in json.dumps(purpose.tool())
     answers = {"name": "news-tweet", "title": "Tweet the top story", "done_looks_like": "One tweet staged.",
                "users": "Me, to approve.", "binding_constraint": "Accuracy.", "waste": "A wrong story.",
@@ -459,6 +464,44 @@ def test_the_brief_records_what_may_happen_without_you(home, record):
     meta, _ = mdfile.parse(proposal.files[0].text)
     assert meta["outward"] == {"preset": "balanced", "stage": ["mcp.fake.post_message"]}
     assert any("outward tools: balanced (from spec); staged: mcp.fake.post_message" in w for w in proposal.warnings)
+
+
+def test_a_crew_that_only_reads_and_works_is_not_asked_about_permissions(home, tmp_path):
+    from ombro.interviews import BriefPurpose
+    from ombro.settings import load_limits
+
+    use_fake_mcp(home, tmp_path / "sent.jsonl")
+    write_role(home, "poster", kind="helper", tools=["mcp.fake.find_rows", "mcp.fake.add_row"])
+    purpose = BriefPurpose(home, "default", load_limits(home), "Fill in the sheet.")
+    assert not any(k.startswith("External tools") for k, _ in purpose.context())
+    assert "outward_preset" not in json.dumps(purpose.tool())
+    answers = {"name": "fill-sheet", "title": "Fill in the sheet", "done_looks_like": "Rows added.",
+               "users": "Me.", "binding_constraint": "Accuracy.", "waste": "Wrong rows.", "non_goals": "Charts."}
+    meta, _ = mdfile.parse(purpose.check(purpose.build(answers)).files[0].text)
+    assert "outward" not in meta
+
+
+def test_class_work_on_a_server_makes_its_tools_run_and_be_reported_as_work(home, run, tmp_path):
+    record = tmp_path / "sent.jsonl"
+    use_fake_mcp(home, record, server_settings={"class": "work"})
+    write_role(home, "poster", kind="helper", tools=ALL)
+    run(script(post(), add()))  # balanced, and no outward line in the spec
+    assert [e["tool"] for e in fake_sent(record)] == ["post_message", "add_row"]
+    assert outbox.actions(run.run_dir) == []
+    section = run.report.split("## Outward actions", 1)[1].split("## Changes to notes.md")[0]
+    assert "Work done during the run (2):" in section and "Staged" not in section
+
+
+def test_an_allowed_external_call_is_reported_as_sent(run, record):
+    run(script(post()), spec_meta=spec_with("auto"))
+    section = run.report.split("## Outward actions", 1)[1].split("## Changes to notes.md")[0]
+    assert "Sent during the run, as your permissions allow (1):" in section and "Work done" not in section
+
+
+def test_manual_stages_work_too(run, record):
+    run(script(add()), spec_meta=spec_with("manual"))
+    [a] = outbox.actions(run.run_dir)
+    assert a.tool == "mcp.fake.add_row" and a.meta["class"] == "work"
 
 
 def test_whole_flow_on_the_command_line(home, record):

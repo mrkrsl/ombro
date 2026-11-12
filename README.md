@@ -347,16 +347,37 @@ server can limit the tools it offers (here `--include-tools`), offer only
 those your roles use. When a server fails to start, Ombro shows the last
 lines it printed; in a run, all of it is in the run's `mcp-<server>.log`.
 
-**Classes.** Each tool is `read` (the server marks it read-only), `change`
-(it changes something but, by the server's marking, destroys nothing) or
-`send` (anything else, including unmarked tools). The markings are the
-server's own claims: `class:` in `tools.md` overrides them, and `ombro tools
-<server>` shows what each tool is.
+**Classes.** Each tool is classed by who it reaches, as you would judge a
+trusted employee's work:
+
+- `read` changes nothing.
+- `work` is your documents, sheets, databases, files and drafts, including
+  overwriting them. It is done, then reported, like an employee who comes
+  back with the finished spreadsheet.
+- `external` reaches people or the public, or spends money: email,
+  messages, posts, publishing, public records, purchases.
+
+A tool's class comes from, each overriding the one before: the server's
+markings (`readOnlyHint` makes it read, `openWorldHint: false` makes it
+work), `class:` on the server in `tools.md` (for all its tools that do not
+read), then `class:` on the tool. A tool that changes something and is not
+classed counts as `external`, the safe default. Most servers do not mark
+tools this way, so a sheets or documents server usually needs one line:
+
+```yaml
+servers:
+  sheets:
+    command: uvx
+    class: work          # its tools that do not read are work
+```
+
+`ombro tools <server>` shows each tool's class, where it came from, and the
+line to add where a tool is external only by default.
 
 **Permissions.** Every outward call is allowed (it runs, and is recorded),
 staged (it waits in the outbox) or refused:
 
-| `outward` | read | change | send |
+| `outward` | read | work | external |
 |---|---|---|---|
 | `manual` | allow | stage | stage |
 | `balanced` (default) | allow | allow | stage |
@@ -366,11 +387,12 @@ Set your default with `outward:` in `preferences/config.md`. A spec
 overrides it, with a preset and, if wanted, particular tools:
 
 ```yaml
-outward: {preset: balanced, allow: [mcp.sheets.add_rows], stage: [mcp.social.post]}
+outward: {preset: balanced, allow: [mcp.mail.send_message], stage: [mcp.sheets.update_cells]}
 ```
 
 The task interview asks what may happen without you whenever the crew has
-outward tools, and writes the answer into the spec. `permission: refuse` in
+external tools, and writes the answer into the spec. A crew whose tools only
+read and work needs no answer. `permission: refuse` in
 `tools.md` beats everything. Permissions are fixed when a run starts and
 recorded in `run.md`; scheduled runs follow them like any other.
 
@@ -378,8 +400,8 @@ recorded in `run.md`; scheduled runs follow them like any other.
 run's `outbox/` as one file (tool, arguments, the role and its reason, the
 time, a status), tells the role it was staged, and never stages an identical
 call twice in a run. Staging counts towards the tool's `max_calls`. The
-report's Outbox section lists everything done and staged, from the harness's
-own record.
+report's Outward actions section lists work done, sends allowed, and
+everything staged, from the harness's own record.
 
 You decide on named actions only; there is no "approve all":
 

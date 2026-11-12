@@ -52,11 +52,12 @@ How the run works:
   Do not re-brief the same task unchanged.
 - If you cannot deliver the spec honestly with the roles available, call
   `finish` with outcome "cannot_proceed" and say why. That is an acceptable result.
-- Some roles have tools that reach outside services (named mcp.*). The
-  harness decides, from the user's settings, whether each such action is
-  done at once or staged in the run's outbox for the user to approve after
-  the run. A staged action has not happened. Never brief a role again to
-  get a staged action done.
+- Some roles have tools that reach outside services (named mcp.*). Work
+  in the user's own documents, sheets and files is usually done at once;
+  actions that reach people or the public are usually staged in the run's
+  outbox for the user to approve after the run. The harness decides each
+  from the user's settings. A staged action has not happened. Never brief
+  a role again to get a staged action done.
 - Hard limits on tokens, rounds, steps and time are enforced by the
   harness, not by you. When one is reached the run stops and you will be asked
   for the report.
@@ -175,7 +176,9 @@ def role_system(role: Role, skills: list[tuple[str, str]], tool_names: list[str]
                 " Tools named mcp.* reach outside services. A call that changes or sends something needs a"
                 " one-sentence reason. Depending on the user's settings it is done at once, or staged for the"
                 " user to approve after the run: the result says which. A staged action has not happened, so"
-                " never stage it twice or report it as done; list it in your summary as staged."
+                " never stage it twice or report it as done; list it in your summary as staged. Where a tool"
+                " takes many items at once (for example many rows in one range), use one call for many items"
+                " rather than one call per item."
             )
         tools_line += " Each tool has a call limit for the run, so search and fetch only what the task needs."
     else:
@@ -475,15 +478,15 @@ the result should go (a file in workspace/), sources to use or avoid, and scope.
   do, tell the user before you propose, so they can add a role or narrow the task.
 - `name`: a short lower-case name for the spec file, using letters, digits,
   - and _. The user runs the spec by this name, so make it say what the task is.
-- If the context lists outward tools (mcp.*, which reach outside services),
-  and the task may use them, ask the user plainly what may happen without
-  them: for example "draft it, but don't post it without me", or "add the
-  rows, no need to ask". Turn the answer into `outward_preset` (manual:
-  only reading runs, everything else waits for the user; balanced: reading
-  and changes the service marks as safe run, anything else waits; auto:
-  everything runs) and, if they single out tools, `outward_allow` or
-  `outward_stage`. Say back what it means before you propose. Never choose
-  auto unless the user has said so in their own words.
+- If the context lists external tools (mcp.* tools that reach people or
+  the public, or spend money), and the task may use them, ask the user
+  plainly what may happen without them: for example "draft it, but don't
+  send it without me", or "post it, no need to ask". Turn the answer into
+  `outward_preset` (manual: only reading runs, and even work in their
+  documents waits for them; balanced: reading and work run, anything
+  external waits; auto: everything runs) and, if they single out tools,
+  `outward_allow` or `outward_stage`. Say back what it means before you
+  propose. Never choose auto unless the user has said so in their own words.
 """
 
 PROGRESS = ("just started", "about a third of the way", "about halfway", "nearly done", "ready to propose")

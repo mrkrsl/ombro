@@ -42,7 +42,7 @@ def available_tools(home: Home) -> dict[str, str]:
     # MCP tools: each server in tools.md is asked for its tools. A server that
     # cannot be reached is left out; `ombro tools <server>` says why.
     from ombro.mcp import McpClient, McpError, ServerConfig
-    from ombro.outward import classify
+    from ombro.outward import tool_class
 
     for server, cfg in settings.servers.items():
         try:
@@ -52,7 +52,7 @@ def available_tools(home: Home) -> dict[str, str]:
             continue
         for t in listed:
             name = f"mcp.{server}.{t.name}"
-            effect = classify(t.annotations, settings.tools.get(name, {}).get("class"))
+            effect = tool_class(settings, name, t.annotations)[0]
             out[name] = f"({effect}; reaches {server}) " + _first_sentence(t.description)
     return out
 
@@ -353,11 +353,24 @@ class BriefPurpose(Purpose):
                 "what it is and why.")
 
     def outward_tools(self) -> list[str]:
-        try:
-            _, roles = load_crew(self.home, self.crew, self.limits)
-        except (RoleError, SetupError):
-            return []
-        return sorted({t for r in roles.values() for t in r.tools if t.startswith("mcp.")})
+        """The crew's external tools (reaching people or the public): the ones a
+        brief must ask about. Reading and work need no answer."""
+        if getattr(self, "_external", None) is None:
+            from ombro import outward
+            from ombro.settings import load_tool_settings
+
+            try:
+                _, roles = load_crew(self.home, self.crew, self.limits)
+            except (RoleError, SetupError):
+                roles = {}
+            names = sorted({t for r in roles.values() for t in r.tools if t.startswith("mcp.")})
+            try:
+                settings = load_tool_settings(self.home)
+            except (SetupError, mdfile.FrontMatterError):
+                self._external = names  # cannot tell: ask
+            else:
+                self._external = outward.external_tools(self.home, settings, names) if names else []
+        return self._external
 
     def context(self) -> list[tuple[str, str]]:
         L = self.limits
@@ -375,7 +388,7 @@ class BriefPurpose(Purpose):
                 default = outward.resolve(self.home, {})["preset"]
             except SetupError:
                 default = outward.DEFAULT_PRESET
-            out.append(("Outward tools in the crew (they reach outside services)",
+            out.append(("External tools in the crew (they reach people or the public, or spend money)",
                         "\n".join(f"- {t}" for t in tools)
                         + f"\nThe user's default permission is {default}. Ask what may happen without them."))
         return out
@@ -434,7 +447,7 @@ class BriefPurpose(Purpose):
                 raise ProposalError(str(e)) from None
             meta["outward"] = setting
         elif self.outward_tools():
-            raise ProposalError("the crew has outward tools: ask the user what may happen without them, "
+            raise ProposalError("the crew has external tools: ask the user what may happen without them, "
                                 "and give outward_preset")
         text = mdfile.dump(meta, "\n".join(lines))
         return Proposal([FileDraft(f"crews/{self.crew}/specs/{name}.md", self.path(name), text)], data={"name": name})

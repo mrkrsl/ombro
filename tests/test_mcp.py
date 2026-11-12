@@ -160,17 +160,22 @@ def test_server_errors_are_reported(home, tmp_path):
 
 
 def test_tools_md_servers_and_mcp_settings_are_checked(home):
-    good = {"servers": {"sheets": {"command": "uvx", "args": ["invented-sheets"], "env": {"K": "${K}"}}},
-            "tools": {"mcp.sheets.add_rows": {"class": "send", "max_calls": 3},
+    good = {"servers": {"sheets": {"command": "uvx", "args": ["invented-sheets"], "env": {"K": "${K}"},
+                                   "class": "work"}},
+            "tools": {"mcp.sheets.add_rows": {"class": "external", "max_calls": 3},
                       "mcp.sheets.delete_sheet": {"permission": "refuse"}}}
     s = ToolSettings.from_dict(good)
-    assert s.servers["sheets"]["command"] == "uvx" and s.tools["mcp.sheets.add_rows"]["class"] == "send"
+    assert s.servers["sheets"]["command"] == "uvx" and s.tools["mcp.sheets.add_rows"]["class"] == "external"
+    assert s.servers["sheets"]["class"] == "work"
     for bad, msg in [
         ({"servers": {"x": {}}}, "either `command`"),
         ({"servers": {"x": {"command": "a", "url": "https://b"}}}, "not both"),
         ({"servers": {"Bad Name": {"command": "a"}}}, "server name"),
         ({"tools": {"mcp.x.y": {"permission": "allow"}}}, "only be `refuse`"),
         ({"tools": {"mcp.x.y": {"class": "write"}}}, "class for"),
+        ({"tools": {"mcp.x.y": {"class": "send"}}}, "renamed; use 'external'"),  # stage 6 names
+        ({"tools": {"mcp.x.y": {"class": "change"}}}, "renamed; use 'work'"),
+        ({"servers": {"x": {"command": "a", "class": "read"}}}, "work or external"),
         ({"tools": {"web.search": {"class": "read"}}}, "only to MCP tools"),
     ]:
         with pytest.raises(SetupError, match=msg):
@@ -180,19 +185,29 @@ def test_tools_md_servers_and_mcp_settings_are_checked(home):
 # -- permissions ---------------------------------------------------------------
 
 
-def test_classes_follow_the_servers_markings_unless_tools_md_says_otherwise():
-    assert outward.classify({"readOnlyHint": True}) == "read"
-    assert outward.classify({"readOnlyHint": False, "destructiveHint": False}) == "change"
-    assert outward.classify({}) == "send"  # unmarked counts as send
-    assert outward.classify({"destructiveHint": True}) == "send"
-    assert outward.classify({"readOnlyHint": True}, "send") == "send"
+def test_classes_follow_markings_then_the_server_then_the_tool():
+    c = outward.classify_with_source
+    assert c({"readOnlyHint": True}) == ("read", "marking")
+    assert c({"openWorldHint": False}) == ("work", "marking")  # the server says it reaches nothing outside
+    assert c({}) == ("external", "default")  # changes something, not classed: the safe default
+    assert c({"readOnlyHint": False, "destructiveHint": False}) == ("external", "default")  # destructive is not the test
+    assert c({}, server_class="work") == ("work", "server")
+    assert c({"openWorldHint": False}, server_class="external") == ("external", "server")
+    assert c({"readOnlyHint": True}, server_class="external") == ("read", "marking")  # reading stays reading
+    assert c({"readOnlyHint": True}, "external", "work") == ("external", "tool")  # the tool's own line wins
+    assert c({}, "work") == ("work", "tool")
+    s = ToolSettings.from_dict({"servers": {"sheets": {"command": "x", "class": "work"}},
+                                "tools": {"mcp.sheets.share": {"class": "external"}}})
+    assert outward.tool_class(s, "mcp.sheets.update_cells", {"destructiveHint": True}) == ("work", "server")
+    assert outward.tool_class(s, "mcp.sheets.share", {}) == ("external", "tool")
+    assert outward.tool_class(s, "mcp.other.x", {}) == ("external", "default")
 
 
 def test_presets_by_class():
     s = ToolSettings()
     for preset, expect in [("manual", ("allow", "stage", "stage")), ("balanced", ("allow", "allow", "stage")),
                            ("auto", ("allow", "allow", "allow"))]:
-        got = tuple(outward.decide({"preset": preset}, "mcp.x.t", c, s) for c in ("read", "change", "send"))
+        got = tuple(outward.decide({"preset": preset}, "mcp.x.t", c, s) for c in ("read", "work", "external"))
         assert got == expect, preset
 
 
@@ -212,15 +227,16 @@ def test_layers_default_then_preferences_then_spec(home):
 
 def test_refuse_in_tools_md_beats_every_layer(home):
     s = ToolSettings.from_dict({"tools": {"mcp.x.post": {"permission": "refuse"}}})
-    assert outward.decide({"preset": "auto", "allow": ["mcp.x.post"]}, "mcp.x.post", "send", s) == "refuse"
-    assert outward.decide({"preset": "auto"}, "mcp.x.other", "send", s) == "allow"
+    assert outward.decide({"preset": "auto", "allow": ["mcp.x.post"]}, "mcp.x.post", "external", s) == "refuse"
+    assert outward.decide({"preset": "auto"}, "mcp.x.other", "external", s) == "allow"
 
 
 def test_spec_choices_beat_the_preset():
     s = ToolSettings()
     setting = {"preset": "balanced", "allow": ["mcp.x.post"], "stage": ["mcp.x.add"]}
-    assert outward.decide(setting, "mcp.x.post", "send", s) == "allow"
-    assert outward.decide(setting, "mcp.x.add", "change", s) == "stage"
+    assert outward.decide(setting, "mcp.x.post", "external", s) == "allow"
+    assert outward.decide(setting, "mcp.x.add", "work", s) == "stage"
+    assert outward.decide({"preset": "balanced"}, "mcp.x.odd", "unknown", s) == "stage"  # unknown counts as external
 
 
 def test_pool_offers_only_named_tools_and_adds_a_reason(home, tmp_path):
@@ -234,7 +250,7 @@ def test_pool_offers_only_named_tools_and_adds_a_reason(home, tmp_path):
     by = {t.name: t for t in tools}
     assert set(by) == {"mcp.fake.post_message", "mcp.fake.find_rows"}
     post = by["mcp.fake.post_message"]
-    assert post.effect == "send" and post.reason_key == "reason"
+    assert post.effect == "external" and post.reason_key == "reason"
     assert "reason" in post.parameters["required"] and "reason" not in post.input_schema["properties"]
     assert by["mcp.fake.find_rows"].reason_key is None
     assert any("no tool named 'nope'" in w for w in warnings)

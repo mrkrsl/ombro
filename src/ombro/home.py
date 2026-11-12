@@ -245,7 +245,11 @@ for each call, e.g. 60s. For example:
 A server's tools are named mcp.<server>.<tool>; `ombro tools <server>` lists
 them. A role uses only the ones its `tools:` list names. Per-tool settings
 for MCP tools, as well as max_calls and cost_per_call:
-- class: read, change or send, when the server's own marking is wrong.
+- class: read, work or external, when the server's marking is wrong or
+  missing. read changes nothing; work is documents, sheets, databases, files
+  and drafts; external reaches people or the public, or spends money. A tool
+  that changes something and is not classed counts as external. `class:`
+  on a server (work or external) covers all its tools that do not read.
 - permission: refuse, a hard limit that no preference or spec can lift.
 Whether other calls run or wait in the outbox is set by `outward:` in
 preferences/config.md and in each spec.
@@ -259,9 +263,10 @@ PREFERENCES_BODY = """\
 - display_currency: optional, e.g. `{code: GBP, rate: 0.79}`. Shown alongside
   US dollars; never used for enforcement.
 - outward: what outward (MCP) tools may do without you, unless a spec says
-  otherwise. manual: only reading runs; everything else waits in the outbox.
-  balanced: reading, and changes the service marks as not destructive, run;
-  the rest waits. auto: everything runs. Waiting actions are reviewed with
+  otherwise. manual: only reading runs; work and external actions wait in
+  the outbox. balanced: reading and work (your documents, sheets, files)
+  run; external actions (reaching people or the public, or spending money)
+  wait. auto: everything runs. Waiting actions are reviewed with
   `ombro outbox`.
 """
 

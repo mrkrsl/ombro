@@ -438,7 +438,7 @@ class Engine:
         name = tool.name
         args = dict(arguments)
         reason = str(args.pop(tool.reason_key, "") or "").strip() if tool.reason_key else ""
-        decision = outward.decide(self.outward, name, tool.effect or "send", self.tool_settings)
+        decision = outward.decide(self.outward, name, tool.effect or "external", self.tool_settings)
         if decision == "refuse":
             self.journal.write(role.name, "tool_refused", f"{name}: refused by tools.md", tool=name,
                                permission="refuse")
@@ -453,7 +453,7 @@ class Engine:
             return {"error": problem}
         args_note = _short(_canonical(args, ""), 120)
         if decision == "stage":
-            action, duplicate = outbox.stage(self.run_dir, tool=name, effect=tool.effect or "send", arguments=args,
+            action, duplicate = outbox.stage(self.run_dir, tool=name, effect=tool.effect or "external", arguments=args,
                                              reason=reason, role=role.name, input_schema=tool.input_schema)
             rel = f"outbox/{action.path.name}"
             if duplicate:

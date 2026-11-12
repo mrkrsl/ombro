@@ -265,7 +265,7 @@ def test_only_workspace_files_are_listed_as_deliverables(run, home):
         ]),
         fake.finish(), fake.keep_notes(), LEAD_REPORT,
     ])
-    deliverables = run.report.split("## Deliverables")[1].split("## Outbox")[0]
+    deliverables = run.report.split("## Deliverables")[1].split("## Outward actions")[0]
     ws, sc = (run.run_dir / "workspace").resolve(), (run.run_dir / "scratch").resolve()
     assert f"- list (researcher): {ws / 'list.md'}" in deliverables
     assert "list again" not in deliverables

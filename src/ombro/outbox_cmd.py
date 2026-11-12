@@ -338,19 +338,25 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
     rows = []
     for t in listed:
         full = f"mcp.{name}.{t.name}"
-        own = settings.tools.get(full, {})
-        effect = outward.classify(t.annotations, own.get("class"))
-        rows.append({"tool": full, "class": effect, "class_from": "tools.md" if own.get("class") else "server",
+        effect, source = outward.tool_class(settings, full, t.annotations)
+        rows.append({"tool": full, "class": effect, "class_from": source,
                      "permission": outward.decide(pref, full, effect, settings), "description": t.description})
     if args.json:
         _print_json(rows)
         return 0
     print(f"Tools of {name} ({len(rows)}), with the permission each gets under {pref['preset']}:\n")
-    print(f"  {'TOOL':<44} {'CLASS':<8} {'PERMISSION':<10} DESCRIPTION")
+    print(f"  {'TOOL':<44} {'CLASS':<9} {'FROM':<8} {'PERMISSION':<10} DESCRIPTION")
     for r in rows:
-        cls = r["class"] + ("*" if r["class_from"] == "tools.md" else "")
-        desc = " ".join(r["description"].split())[:60]
-        print(f"  {r['tool']:<44} {cls:<8} {r['permission']:<10} {desc}")
-    print("\nClasses come from the server's own markings (* = set in tools.md, which wins). Unmarked tools "
-          "count as send.\nGive a role a tool by naming it in its config.md `tools:` list.")
+        desc = " ".join(r["description"].split())[:50]
+        print(f"  {r['tool']:<44} {r['class']:<9} {r['class_from']:<8} {r['permission']:<10} {desc}")
+    print("\nClasses: read changes nothing; work is documents, sheets, databases, files and drafts; external "
+          "reaches people\nor the public, or spends money. FROM: marking (the server's own claim), server or "
+          "tool (set in tools.md),\nor default (a tool that changes something and is not classed counts as "
+          "external).")
+    defaulted = [r["tool"] for r in rows if r["class_from"] == "default"]
+    if defaulted:
+        print(f"\n{len(defaulted)} tool(s) are external only by default. If this server's tools only do work, "
+              f"add to its entry\nunder `servers:` in tools.md:\n    class: work\nor set one tool under "
+              f"`tools:`:\n    {defaulted[0]}: {{class: work}}")
+    print("\nGive a role a tool by naming it in its config.md `tools:` list.")
     return 0
