@@ -30,6 +30,10 @@ def cmd_folders(args) -> int:
     action = args.action or "list"
     try:
         if action == "list":
+            if getattr(args, "json", False):
+                from ombro import views
+
+                return cli._print_json(views.folder_list(home))
             return _list(home)
         if action == "add":
             if not args.target:

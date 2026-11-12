@@ -48,6 +48,7 @@ notes, specs and deliverables, and search the web, but it changes nothing.
 
   /brief [@crew] [text]     brief a task (Brief mode); the chat so far is its starting point
   /chat                     back to Chat mode from a brief (nothing is written)
+  /new                      save this chat and start a fresh one; nothing carries over
   /remember [@crew] text    add a dated lesson to a crew's notes.md, after you confirm the wording
   /help                     this list
   /quit                     end the chat (it is saved in chats/)
@@ -156,8 +157,30 @@ class Chat:
         self.refused: list[str] = []
         self.remembered: list[dict[str, str]] = []
         self.specs: list[str] = []
+        self._fresh()
+
+    def _fresh(self) -> None:
+        """Everything one chat keeps: none of it carries into the next."""
+        self.gate = Gate(self.limits, self.clock)
+        self.mode = "Chat"
+        self.exchanges = []
+        self.user_said = []
+        self.dropped = 0
+        self.pending_note = ""
+        self.transcript = Transcript()
+        self.refused = []
+        self.remembered = []
+        self.specs = []
         self.ended = "you ended the chat"
         self.path = self._transcript_path()
+
+    def new_chat(self) -> None:
+        """/new: save this chat and start a fresh one, with its own token cap."""
+        self.ended = "you started a new chat"
+        self._save()
+        old = self.path
+        self._fresh()
+        self.ui.say(f"Chat saved: {old}. This is a new chat; nothing from the last one is sent to the Lead.")
 
     # -- plumbing ----------------------------------------------------------
 
@@ -309,6 +332,8 @@ class Chat:
             self.ui.say(HELP)
         elif word == "/chat":
             self.ui.say("You are in Chat mode.")
+        elif word == "/new":
+            self.new_chat()
         elif word == "/brief":
             crew, rest = self._crew_arg(rest)
             if crew:

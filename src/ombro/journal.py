@@ -48,6 +48,43 @@ def read(path: Path) -> list[dict]:
     return events
 
 
+class Follower:
+    """Reads a journal as it grows. Each call to new_events() returns the events
+    written since the last call. A last line still being written (no newline
+    yet) is left until it is complete; a line that is not JSON is skipped."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.offset = 0
+        self._partial = b""
+
+    def new_events(self) -> list[dict]:
+        try:
+            with self.path.open("rb") as f:
+                f.seek(self.offset)
+                chunk = f.read()
+        except FileNotFoundError:
+            return []
+        if not chunk:
+            return []
+        self.offset += len(chunk)
+        data = self._partial + chunk
+        lines = data.split(b"\n")
+        self._partial = lines.pop()  # empty when the chunk ended with a newline
+        out = []
+        for raw in lines:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                ev = json.loads(raw.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                continue
+            if isinstance(ev, dict):
+                out.append(ev)
+        return out
+
+
 def format_event(ev: dict) -> str:
     ts = str(ev.get("ts", ""))
     clock = ts[11:19] if len(ts) >= 19 else ts

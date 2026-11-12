@@ -36,8 +36,9 @@ uv run pytest
 ombro init                         # creates ~/.config/ombro, connects a model, then the set-up interview
 ```
 
-`init` asks for an OpenAI-compatible endpoint (DeepSeek by default), a model
-name and an API key, then makes one test call. The key is typed into a hidden
+`init` first asks your name, used only to greet you (Enter skips it). Then it
+asks for an OpenAI-compatible endpoint (DeepSeek by default), a model
+name and an API key, and makes one test call. The key is typed into a hidden
 prompt and stored in `secrets/keys.env` with owner-only permissions. It is never sent to a
 model or written to a journal or report.
 
@@ -47,17 +48,19 @@ and its own `soul.md`, and writes them only if you accept. Then it offers to
 add the first roles.
 
 ```bash
-ombro role add [name]                  # the Lead interviews you and proposes the role's files
-ombro brief "find three bakeries"      # the Lead interviews you and saves a spec in specs/
+ombro role add ["Marketing Assistant"] # the Lead interviews you and proposes the role's files
+ombro brief "find three bakeries"      # the Lead interviews you and saves a spec; offers to run it
 ombro specs                            # saved specs, by name
 ombro run --spec find-bakeries         # run a saved spec (by name or by path)
 ombro run                              # brief a task, then run it as soon as you accept the spec
 ombro run --spec my-spec.md --detach   # keeps going after the terminal closes
 ombro runs                             # list runs
 ombro status [run_id]                  # limits and usage
-ombro journal [run_id]                 # the event log, readable
+ombro journal [run_id] [--follow]      # the event log, readable; --follow shows new events as they come
 ombro report [run_id]                  # the final report
-ombro chat                             # talk with the Lead about past work; /brief, /remember inside
+ombro chat                             # talk with the Lead about past work; /brief, /remember, /new inside
+ombro summary                          # who you are, the crew, and what is running, scheduled and waiting
+ombro preferences [edit]               # your name, theme, default crew, editor and outward preset
 ombro stop <run_id>                    # stop a run; it writes its report first
 ombro open [run_id]                    # open a run's workspace folder
 ombro limits                           # what runs and interviews may use
@@ -82,12 +85,24 @@ ombro folders add ~/Documents/Brand    # share one; asks read or write
 ombro folders remove brand
 ombro keys remove FIRECRAWL_API_KEY
 ombro role list [--crew <crew>]        # the Lead, then each crew's roles
-ombro role add [name] --crew <crew>    # a role joins one crew
+ombro role add [title] --crew <crew>   # a role joins one crew
 ombro role edit | remove <crew>/<role> # or the role's own name, where only one crew has it
 ombro role edit lead                   # the one Lead's files
 ombro crew list | add <name> | use <name>   # a new crew starts empty; `use` sets the default crew
+ombro crew add legal --title "Legal Team"   # the title shown; without one, "Legal Crew"
 ombro run --spec <spec> --crew ops     # --crew gives the crews when the spec names none
 ```
+
+Every command that lists or shows something takes `--json`, for an interface
+to read: `runs`, `status`, `report` (with its deliverables as `file://`
+links), `journal` (with `--follow`, one event a line), `keys` (names and
+whether each is set, never a value), `specs`, `role list`, `crew list`,
+`limits`, `schedule`, `folders`, `summary` and `preferences`.
+
+Roles and crews have a display title as well as a folder name. The role
+interview asks for the title ("Marketing Assistant") and makes the folder
+name from it (`marketing-assistant`); a role or crew without a `title:`
+shows its name tidied.
 
 Set `OMBRO_HOME` to use a home directory other than `~/.config/ombro`.
 Example roles and specs are in [`examples/`](examples); a spec can also be
@@ -223,6 +238,8 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   (your own messages, most recent first, up to 4,000 characters) and the
   Lead's one-line summary if you accepted its offer. It saves a spec, which
   you run with `ombro run --spec <name>`. `/chat` goes back with nothing written.
+- **`/new`** saves the chat and starts a fresh one, with its own token cap.
+  Nothing from the old one is sent to the Lead.
 - **`/remember [@crew] <text>`** adds a dated line to a crew's notes.md
   ("From you"); the default crew unless you name one, or `ombro chat --crew
   <name>` sets it for the session. The Lead can offer to remember something
@@ -603,7 +620,7 @@ You decide on named actions only; there is no "approve all":
   or `not-sent`.
 - Outcomes are recorded in the action's file, the run's journal, run.md and
   an "Outbox decisions" section added to the report.
-- Every outbox command takes `--json`, and `approve` and `decline` take
+- Every outbox command takes `--json` (as do the other listing commands), and `approve` and `decline` take
   `--yes`, for an interface that has already shown and selected the actions.
 
 `ombro-fake-mcp` is a fake MCP server, with one tool of each class, that

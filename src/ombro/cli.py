@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import getpass
 import os
 import shutil
@@ -66,6 +67,11 @@ def _reap(home: Home) -> None:
 
 # ---------------------------------------------------------------------------
 # init
+
+
+def _print_json(data) -> int:
+    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+    return 0
 
 
 def cmd_init(args) -> int:
@@ -137,6 +143,10 @@ def _spec_crews_or_none(home: Home, path: Path) -> list[str]:
 def cmd_specs(args) -> int:
     home = _home()
     crew = _crew(home, args.crew) if args.crew else None
+    if args.json:
+        from ombro import views
+
+        return _print_json(views.spec_list(home, crew))
     rows = saved_specs(home, crew)
     if not rows:
         print("No specs saved" + (f" that name crew {crew}" if crew else "") + ". Make one with `ombro brief`.")
@@ -250,7 +260,12 @@ def cmd_exec(args) -> int:
 def cmd_runs(args) -> int:
     home = _home()
     _reap(home)
-    rows = runs.all_runs(home, _crew(home, args.crew) if args.crew else None)
+    crew = _crew(home, args.crew) if args.crew else None
+    if args.json:
+        from ombro import views
+
+        return _print_json(views.run_list(home, crew))
+    rows = runs.all_runs(home, crew)
     if not rows:
         print("No runs yet.")
         return 0
@@ -274,6 +289,10 @@ def cmd_status(args) -> int:
     home = _home()
     _reap(home)
     run_dir = _resolve_run(home, args.run_id, args.crew)
+    if args.json:
+        from ombro import views
+
+        return _print_json(views.status(run_dir))
     meta, _ = runs.read_run(run_dir)
     lim, sp = meta.get("limits") or {}, runs.usage(meta)
     reserve = lim.get("report_reserve", 0)
@@ -316,6 +335,10 @@ def cmd_report(args) -> int:
     home = _home()
     _reap(home)
     run_dir = _resolve_run(home, args.run_id, args.crew)
+    if args.json:
+        from ombro import views
+
+        return _print_json(views.report(home, run_dir))
     path = run_dir / "report.md"
     if not path.is_file():
         meta, _ = runs.read_run(run_dir)
@@ -329,6 +352,12 @@ def cmd_journal(args) -> int:
     home = _home()
     _reap(home)
     run_dir = _resolve_run(home, args.run_id, args.crew)
+    if args.follow:
+        return _follow_journal(run_dir, args)
+    if args.json:
+        from ombro import views
+
+        return _print_json(views.journal_events(run_dir, args.all))
     events = journal.read(run_dir / "journal.jsonl")
     if not events:
         print("The journal is empty.")
@@ -336,6 +365,90 @@ def cmd_journal(args) -> int:
         if ev.get("action") == "model_call" and not args.all:
             continue
         print(journal.format_event(ev))
+    return 0
+
+
+def _follow_journal(run_dir: Path, args, poll: float = 0.5, clock=time.time, sleep=time.sleep) -> int:
+    """`ombro journal --follow`: the events so far, then new ones as they are written,
+    until the run has ended and nothing more comes. With --json, one JSON object a line."""
+    home = _home()
+    follower = journal.Follower(run_dir / "journal.jsonl")
+
+    def show(events: list[dict]) -> None:
+        for ev in events:
+            if ev.get("action") == "model_call" and not args.all:
+                continue
+            print(json.dumps(ev, ensure_ascii=False, default=str) if args.json else journal.format_event(ev),
+                  flush=True)
+
+    try:
+        while True:
+            show(follower.new_events())
+            meta, _ = runs.read_run(run_dir)
+            if meta.get("status") != "running" or runs.is_dead(meta):
+                if runs.is_dead(meta):
+                    runs.reap_dead_runs(home)
+                show(follower.new_events())
+                if not args.json:
+                    print(f"(The run has ended: {runs.read_run(run_dir)[0].get('status')}.)")
+                return 0
+            sleep(poll)
+    except KeyboardInterrupt:
+        return 0
+
+
+def cmd_summary(args) -> int:
+    from ombro import views
+
+    home = _home()
+    _reap(home)
+    s = views.summary(home)
+    if args.json:
+        return _print_json(s)
+    c = s["counts"]
+
+    def n(count: int, word: str) -> str:
+        return f"{count} {word}" + ("" if count == 1 else "s")
+
+    print(f"Ombro v{s['version']}" + (f", working with {s['name']}" if s["name"] else ""))
+    print(f"Model: {s['model'] or '(none connected)'}   Outward: {s['outward']}")
+    print()
+    print(s["lead"]["title"])
+    for crew in s["crews"]:
+        print(f"└ {crew['title']}" + ("  (default)" if crew["default"] else ""))
+        for role in crew["roles"]:
+            print(f"   └ {role['title']}" + ("  (has a problem: see `ombro role list`)" if "problem" in role else ""))
+        if not crew["roles"]:
+            print("   (no roles yet)")
+    print()
+    print(", ".join([f"{n(c['crews_ready'], 'crew')} ready to work", n(c["active_runs"], "active run"),
+                     n(c["scheduled_runs"], "scheduled run"), n(c["waiting"], "item") + " to approve"]))
+    return 0
+
+
+def cmd_preferences(args) -> int:
+    from ombro import views
+
+    home = _home()
+    if args.action == "edit":
+        from ombro.interview import open_in_editor
+        from ombro.ui import ConsoleUI
+
+        open_in_editor(home, [home.preferences_config, home.instructions], ConsoleUI(home=home))
+        load_preferences(home)  # read back, so a mistake shows now rather than at the next run
+        print("Saved. They are used from the next chat, interview or run.")
+        return 0
+    p = views.preferences(home)
+    if args.json:
+        return _print_json(p)
+    print(f"Name          {p['name'] or '(not set)'}")
+    print(f"Theme         {p['theme']}")
+    print(f"Default crew  {p['default_crew']}")
+    print(f"Editor        {p['editor'] or '(from $VISUAL or $EDITOR)'}")
+    print(f"Outward       {p['outward']}")
+    print(f"About you     {'set' if p['instructions_set'] else 'not set (the set-up interview writes it)'}")
+    print(f"\nFiles: {p['files']['config']}\n       {p['files']['instructions']}")
+    print("Change them with `ombro preferences edit`.")
     return 0
 
 
@@ -450,6 +563,10 @@ def cmd_disconnect(args) -> int:
 def cmd_keys(args) -> int:
     home = _home()
     action = args.action or "list"
+    if action == "list" and args.json:
+        from ombro import views
+
+        return _print_json(views.key_list(home))
     if action == "list":
         stored = keys.read_env(home)
         uses = keys.key_uses(home)
@@ -524,6 +641,8 @@ def cmd_brief(args) -> int:
     if outcome.confirmed:
         name = outcome.proposal.data["name"]
         print(f"\nSpec saved as {name!r} ({outcome.proposal.files[0].path}).")
+        if _confirm("Run it now? It runs in the background; follow it with `ombro journal --follow`."):
+            return main(["run", "--spec", name, "--detach"])
         print(f"Run it with:   ombro run --spec {name}")
         print("List saved specs with `ombro specs`.")
         return 0
@@ -581,6 +700,13 @@ def _find_role(home: Home, name: str, crew: str | None) -> tuple[str, Path]:
 def cmd_role(args) -> int:
     home = _home()
     action = args.action
+    if action == "list" and args.json:
+        from ombro import views
+
+        team = views.crews(home)
+        if args.crew:
+            team["crews"] = [c for c in team["crews"] if c["name"] == _crew(home, args.crew)]
+        return _print_json(team)
     if action == "list":
         crews = [_crew(home, args.crew)] if args.crew else home.crews()
         lead_model = "?"
@@ -612,14 +738,17 @@ def cmd_role(args) -> int:
 
         crew = _crew(home, args.crew)
         _require_model(home)
-        name = (args.name or "").strip().lower() or None
-        if name and not NAME.match(name):
-            raise CliError("Role names use lower-case letters, digits, - and _.")
+        from ombro.roles import folder_name
+
+        title = " ".join((args.name or "").split()) or None
+        name = folder_name(title) if title else None
+        if title and not (name and NAME.match(name)):
+            raise CliError("Give the role a title made of letters or digits, such as \"Marketing Assistant\".")
         if name and home.roles_dir(crew).joinpath(name).exists():
             raise CliError(f"Crew {crew} already has a role named {name}. "
                            f"Change it with `ombro role edit {crew}/{name}`.")
         limits = load_limits(home)
-        outcome = start(home, RolePurpose(home, crew, limits, name), crew, limits)
+        outcome = start(home, RolePurpose(home, crew, limits, title), crew, limits)
         if outcome.confirmed:
             print(f"\nAdded {outcome.proposal.data['name']} to crew {crew}.")
             return 0
@@ -714,6 +843,10 @@ def cmd_crew(args) -> int:
     home = _home()
     action = args.action or "list"
     default = load_preferences(home).default_crew
+    if action == "list" and args.json:
+        from ombro import views
+
+        return _print_json(views.crews(home))
     if action == "list":
         for crew in home.crews():
             meta = {}
@@ -750,6 +883,10 @@ def cmd_limits(args) -> int:
     from ombro.settings import ALLOWANCES, LEVEL_KEYS, RETIRED_LIMITS
 
     home = _home()
+    if args.action != "set" and args.json:
+        from ombro import views
+
+        return _print_json(views.limit_values(home))
     if args.action == "set":
         level = (args.level or "").strip().lower()
         if level not in ALLOWANCES:
@@ -858,12 +995,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("specs", help="list saved specs")
     s.add_argument("--crew")
+    s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_specs)
 
     s = sub.add_parser("role", help="list, add, edit or remove roles")
     s.add_argument("action", choices=["list", "add", "edit", "remove"])
-    s.add_argument("name", nargs="?")
+    s.add_argument("name", nargs="?", help="for add: the role's title, e.g. \"Marketing Assistant\"")
     s.add_argument("--crew")
+    s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_role)
 
     s = sub.add_parser("crew", help="list or add crews, or set the default")
@@ -871,16 +1010,28 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("name", nargs="?")
     s.add_argument("--description", help="for crew add")
     s.add_argument("--title", help="for crew add: the title shown, e.g. \"Legal Crew\" (default: the name, then Crew)")
+    s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_crew)
 
     s = sub.add_parser("limits", help="show the limits in force, or set the allowance level")
     s.add_argument("action", nargs="?", choices=["show", "set"], default="show")
     s.add_argument("level", nargs="?", help="conservative, moderate, generous or unlimited")
+    s.add_argument("--json", action="store_true", help="for show: print JSON, for interfaces")
     s.set_defaults(func=cmd_limits)
 
     s = sub.add_parser("runs", help="list runs and their status")
     s.add_argument("--crew")
+    s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_runs)
+
+    s = sub.add_parser("summary", help="who you are, the crew, and what is running, scheduled and waiting")
+    s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
+    s.set_defaults(func=cmd_summary)
+
+    s = sub.add_parser("preferences", help="show your preferences, or edit them")
+    s.add_argument("action", nargs="?", choices=["show", "edit"], default="show")
+    s.add_argument("--json", action="store_true", help="for show: print JSON, for interfaces")
+    s.set_defaults(func=cmd_preferences)
 
     for name, func, helptext in (
         ("status", cmd_status, "limits and usage for a run"),
@@ -890,8 +1041,10 @@ def build_parser() -> argparse.ArgumentParser:
         s = sub.add_parser(name, help=helptext)
         s.add_argument("run_id", nargs="?", help="run ID or a unique prefix (default: latest)")
         s.add_argument("--crew")
+        s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
         if name == "journal":
             s.add_argument("--all", action="store_true", help="include every model call")
+            s.add_argument("--follow", "-f", action="store_true", help="keep showing new events until the run ends")
         s.set_defaults(func=func)
 
     s = sub.add_parser("stop", help="stop a run; it writes its report first")
@@ -908,6 +1061,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("keys", help="list keys (masked), or set or remove one")
     s.add_argument("action", nargs="?", choices=["list", "set", "remove"], help="default: list")
     s.add_argument("name", nargs="?", help="the key's name, e.g. FIRECRAWL_API_KEY")
+    s.add_argument("--json", action="store_true", help="for list: print JSON (names only, never values)")
     s.set_defaults(func=cmd_keys)
 
     s = sub.add_parser("connect", help="sign in to a remote MCP server in your browser")
@@ -949,6 +1103,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--run-timeout", help="for add: the runs' time limit, e.g. 15m")
     s.add_argument("--grace", help="for add: how late a slot may still start, e.g. 10m")
     s.add_argument("--disabled", action="store_true", help="for add: save it switched off")
+    s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_schedule)
 
     s = sub.add_parser("outbox", help="staged outward actions: list, show, approve, decline, edit, resolve")
@@ -974,6 +1129,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--name", help="the name runs and specs use for it (add)")
     s.add_argument("--access", choices=["read", "write"], help="read, or write to let roles change files (add)")
     s.add_argument("--yes", action="store_true", help="do not ask (add): read unless --access write")
+    s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_folders)
 
     s = sub.add_parser("tick", help="start due scheduled runs (called each minute by the system scheduler)")

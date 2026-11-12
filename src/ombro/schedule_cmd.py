@@ -293,7 +293,12 @@ def cmd_schedule(args) -> int:
     home = cli._home()
     action = args.action or "list"
     if action == "list":
-        return cmd_list(home, cli._crew(home, args.crew) if args.crew else None)
+        crew = cli._crew(home, args.crew) if args.crew else None
+        if getattr(args, "json", False):
+            from ombro import views
+
+            return cli._print_json(views.schedule_list(home, crew))
+        return cmd_list(home, crew)
     if action == "install":
         return _install(home, scheduler.make_installer(home))
     if action == "uninstall":
