@@ -566,7 +566,8 @@ def listing(home: Home, crew: str | None = None, run_id: str | None = None) -> d
             raise ReadRefused(str(e)) from None
         meta, _ = runs.read_run(run_dir)
         ws = run_dir / "workspace"
-        files = sorted(_rel(home, f) for f in ws.rglob("*") if f.is_file() and not f.is_symlink()) if ws.is_dir() else []
+        files = sorted(_rel(home, f) for f in ws.rglob("*") if f.is_file() and not f.is_symlink()) \
+            if ws.is_dir() and not ws.is_symlink() else []
         return {
             "run_id": run_dir.name,
             "crew": meta.get("crew"),

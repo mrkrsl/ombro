@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 from pathlib import Path
 from typing import Any
 
 from ombro import folders, sandbox
 from ombro.settings import format_duration, format_size
-from ombro.tools import Tool, ToolContext, ToolError, ToolInputError
+from ombro.tools import LayoutChanged, Tool, ToolContext, ToolError, ToolInputError, area_path, checked_shared
 
 CODE_MAX_CHARS = 100_000
 CHANGES_SHOWN = 50
@@ -57,11 +58,20 @@ def _cut(text: str, limit: int) -> tuple[str, bool]:
 
 
 def _roots(ctx: ToolContext) -> dict[str, Path]:
-    roots = {"workspace": (ctx.run_dir / "workspace").resolve(), "scratch": (ctx.run_dir / "scratch").resolve()}
+    """The folders a script may change, at their fixed paths. LayoutChanged if any is no
+    longer a real folder there: the sandbox would otherwise be given whatever it led to."""
+    roots = {"workspace": ctx.area("workspace"), "scratch": ctx.area("scratch")}
     for f in ctx.shared.values():
         if f.writable:
-            roots[f"shared/{f.name}"] = f.path
+            roots[f"shared/{f.name}"] = checked_shared(f)
     return roots
+
+
+def _check_layout(ctx: ToolContext) -> None:
+    """Every folder a script was given, read-only ones too, is still a real folder."""
+    _roots(ctx)
+    for f in ctx.shared.values():
+        checked_shared(f)
 
 
 def _snapshot(roots: dict[str, Path]) -> dict[str, Any]:
@@ -108,6 +118,7 @@ def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     out_chars = limits.code_output_chars if limits else 8_000
     purpose = " ".join(str(args.get("purpose") or "").split())[:200]
 
+    _check_layout(ctx)  # before anything is written: a replaced folder is never handed to a script
     code_dir = ctx.run_dir / "code"
     code_dir.mkdir(exist_ok=True)
     n = _next_number(code_dir)
@@ -126,16 +137,21 @@ def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     roots = _roots(ctx)
     before = _snapshot(roots)
     box = sandbox.Box(
-        run_dir=ctx.run_dir.resolve(),
+        run_dir=Path(os.path.realpath(ctx.run_dir)),
         script=script,
         write=[roots["workspace"], roots["scratch"], *(f.path for f in ctx.shared.values() if f.writable)],
         read=[f.path for f in ctx.shared.values() if not f.writable],
-        mounts={ctx.run_dir.resolve() / "shared" / f.name: f.path for f in ctx.shared.values()},
+        mounts={area_path(ctx.run_dir, "shared") / f.name: f.path for f in ctx.shared.values()},
         temp=roots["scratch"] / TEMP,
     )
     outcome = sandbox.run(box, timeout=timeout, cpu_seconds=math.ceil(timeout) + 1, max_memory=memory,
                           cancelled=ctx.cancelled)
-    after = _snapshot(roots)
+    try:
+        _check_layout(ctx)
+        layout_problem = None
+    except LayoutChanged as e:  # the sandbox should prevent this; never carry on regardless
+        layout_problem = str(e)
+    after = _snapshot(roots)  # manifest() never follows a root that has become a symlink
     ch = changes(before, after)
 
     text = outcome.output.decode("utf-8", errors="replace")
@@ -173,9 +189,12 @@ def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     if was_cut or outcome.output_total > len(outcome.output):
         result["output_note"] = (f"the output was {outcome.output_total:,} bytes; the middle was cut. Print less, "
                                  "or write long results to a file in scratch/ and read the part you need.")
+    if layout_problem:
+        ctx.record("layout_changed", f"after {rel}: {layout_problem}", tool="code.run", script=rel)
+        result["error"] = layout_problem + " Further tool calls on that folder will be refused."
     if limit_text:
         result["stopped"] = limit_text
-    elif outcome.exit_code:
+    elif outcome.exit_code and not layout_problem:
         result["error"] = "the script ended with an error; the end of the output shows it"
     return result
 

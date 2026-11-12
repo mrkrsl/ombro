@@ -15,6 +15,7 @@ from ombro import mdfile, runs
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
 from ombro.settings import format_duration, format_tokens, load_preferences
+from ombro.tools import area_path
 
 NARRATIVE_INPUT_CAP = 24_000
 PER_BRIEF_CAP = 2_000
@@ -114,8 +115,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         except (KeyError, ValueError):
             pass
 
-    workspace = (run_dir / "workspace").resolve()
-    scratch = (run_dir / "scratch").resolve()
+    workspace = area_path(run_dir, "workspace")
+    scratch = area_path(run_dir, "scratch")
     # Only files in workspace/ are deliverables. Working files in scratch/ and
     # inline notes are listed apart, so the list says what the run produced.
     deliverables, working, inline, missing = [], [], [], []
@@ -133,7 +134,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             elif str(entry.get("inline") or "").strip():
                 inline.append(entry)
     other = []
-    if workspace.is_dir():
+    if workspace.is_dir() and not workspace.is_symlink():
         for f in sorted(workspace.rglob("*")):
             if f.is_file() and not f.is_symlink() and str(f.resolve()) not in seen:
                 other.append(str(f.resolve()))
@@ -186,7 +187,9 @@ def _resolve_deliverable(run_dir: Path, d: dict) -> dict[str, Any]:
         first = path.split("/", 1)[0]
         area = first if first in ("workspace", "scratch") and "/" in path else "workspace"
         rel = path.split("/", 1)[1] if area == first and "/" in path else path
-        root = (run_dir / area).resolve()
+        root = area_path(run_dir, area)
+        if root.is_symlink():  # replaced during the run: nothing in it is listed as a file
+            return {"name": name, "path": None, "inline": None, "missing": path}
         candidate = (root / rel).resolve()
         if candidate.is_relative_to(root) and candidate.is_file():
             return {"name": name, "path": str(candidate), "inline": None}

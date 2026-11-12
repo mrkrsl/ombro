@@ -112,6 +112,10 @@ def macos_profile(box: Box, exe: Path, prefix: Path) -> str:
         lines.append("(allow file-read* " + " ".join(f"(subpath {_sb(p)})" for p in box.read) + ")")
     if box.write:
         lines.append("(allow file-read* file-write* " + " ".join(f"(subpath {_sb(p)})" for p in box.write) + ")")
+        # A subpath includes the folder itself. A script may change what is inside
+        # each folder, never the folder: not rename, remove or replace it (for
+        # example with a symlink), nor change its own mode. Later rules win.
+        lines.append("(deny file-write* " + " ".join(f"(literal {_sb(p)})" for p in box.write) + ")")
     return "\n".join(lines) + "\n"
 
 

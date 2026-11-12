@@ -377,6 +377,9 @@ def cmd_open(args) -> int:
     home = _home()
     run_dir = _resolve_run(home, args.run_id, args.crew)
     folder = run_dir / "workspace"
+    if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
+        raise CliError(f"{folder} is not a real folder (it has been replaced, for example by a symlink), so Ombro "
+                       "will not open it. Look at it with care before opening anything in it.")
     folder.mkdir(exist_ok=True)
     print(folder)
     if not args.print_only and not _launch(folder):

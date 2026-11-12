@@ -24,7 +24,8 @@ from ombro.providers.duckduckgo import DuckDuckGoProvider
 from ombro.providers.fake import FakeProvider
 from ombro.providers.firecrawl import DEFAULT_ENDPOINT, FirecrawlProvider
 from ombro.settings import ToolSettings
-from ombro.tools import NotGranted, Tool, ToolContext, ToolError, ToolInputError, ToolRegistry
+from ombro.tools import (NotGranted, Tool, ToolContext, ToolError, ToolInputError, ToolRegistry, area_path,
+                         checked_shared)
 
 AREAS = ("workspace", "scratch")
 WRITE_MAX_CHARS = 1_000_000
@@ -72,7 +73,7 @@ def _absolute(ctx: ToolContext, p: str, write: bool) -> Path:
         if real == f.path or real.is_relative_to(f.path):
             return resolve_path(ctx, "/".join(["shared", f.name, *real.relative_to(f.path).parts]), write=write)
     for area in AREAS:
-        root = (ctx.run_dir / area).resolve()
+        root = area_path(ctx.run_dir, area)
         if real == root or real.is_relative_to(root):
             return resolve_path(ctx, "/".join([area, *real.relative_to(root).parts]), write=write)
     raise _not_granted(p, ctx)
@@ -102,9 +103,10 @@ def resolve_path(ctx: ToolContext, path: Any, *, write: bool = False) -> Path:
         if write and not f.writable:
             raise ToolInputError(f"shared/{f.name} is shared read-only with this run, so nothing in it can be "
                                  "changed. To save a file there, write it in workspace/ and use workspace.place.")
-        root, rest, label = f.path, parts[2:], f"shared/{f.name}"
+        root, rest, label = checked_shared(f), parts[2:], f"shared/{f.name}"
     elif parts and parts[0] in AREAS:
-        root, rest, label = (ctx.run_dir / parts[0]).resolve(), parts[1:], parts[0]
+        # The fixed path, never followed: see ombro.tools.area_path.
+        root, rest, label = ctx.area(parts[0]), parts[1:], parts[0]
     else:
         raise ToolInputError("paths must start with workspace/ (deliverables), scratch/ (working notes)"
                              + (" or shared/<name>/ (a shared folder)" if ctx.shared else ""))
@@ -121,7 +123,7 @@ def _display(ctx: ToolContext, path: Path) -> str:
             rel = path.relative_to(f.path).as_posix()
             return f"shared/{f.name}" if rel == "." else f"shared/{f.name}/{rel}"
     for area in AREAS:
-        root = (ctx.run_dir / area).resolve()
+        root = area_path(ctx.run_dir, area)
         if path == root or path.is_relative_to(root):
             rel = path.relative_to(root).as_posix()
             return area if rel == "." else f"{area}/{rel}"

@@ -6,6 +6,8 @@ servers tools.md lists (ombro.outward). Every call passes through the gate first
 
 from __future__ import annotations
 
+import os
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -35,15 +37,52 @@ class NotGranted(ToolInputError):
         self.path = path
 
 
+class LayoutChanged(ToolInputError):
+    """A run folder (workspace/, scratch/) or a shared folder's root is no longer
+    a real folder at the path fixed when the run started. Nothing is done there."""
+
+
 @dataclass(frozen=True)
 class SharedFolder:
     name: str
-    path: Path  # the real path
+    path: Path  # the real path, fixed when the run started
     access: str  # read or write
 
     @property
     def writable(self) -> bool:
         return self.access == "write"
+
+
+# The run's own folders and each shared folder have one path, fixed when the run
+# starts. Tools never work a root out again by following symlinks: a script may
+# change what is inside a folder, and if the folder itself were ever replaced,
+# following it would lead anywhere. So every use checks the root is still a real
+# folder at its fixed path, and refuses if it is not.
+
+
+def area_path(run_dir: Path, area: str) -> Path:
+    """The fixed path of workspace/ or scratch/. The run folder's own path cannot be
+    changed by a role, so resolving it is safe; the area itself is never followed."""
+    return Path(os.path.realpath(run_dir)) / area
+
+
+def _check_root(root: Path, label: str) -> Path:
+    try:
+        st = os.lstat(root)
+    except FileNotFoundError:
+        return root  # not made yet; nothing can lead out through it
+    if not stat.S_ISDIR(st.st_mode):  # lstat: a symlink is never a folder here
+        raise LayoutChanged(f"{label}/ is no longer a real folder (it has been replaced, for example by a "
+                            "symlink), so it cannot be used. Nothing was done. Say so in did_not_do.")
+    return root
+
+
+def checked_area(run_dir: Path, area: str) -> Path:
+    return _check_root(area_path(run_dir, area), area)
+
+
+def checked_shared(folder: SharedFolder) -> Path:
+    return _check_root(folder.path, f"shared/{folder.name}")
 
 
 @dataclass
@@ -59,6 +98,10 @@ class ToolContext:
     def record(self, action: str, note: str, **fields: Any) -> None:
         if self.event is not None:
             self.event(action, note, **fields)
+
+    def area(self, name: str) -> Path:
+        """workspace/ or scratch/ at its fixed path; LayoutChanged if it is not a real folder."""
+        return checked_area(self.run_dir, name)
 
     @property
     def workspace(self) -> Path:

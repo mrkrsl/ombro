@@ -201,6 +201,15 @@ def suggest_name(path: str | Path, taken: set[str] = frozenset()) -> str:
     return name
 
 
+def written_path(path: str | Path) -> Path:
+    """A grant's path as written, made absolute without following any symlink.
+    `~/x` is taken from the real home folder, as display_path writes it."""
+    text = str(path)
+    if text == "~" or text.startswith("~/"):
+        return user_home() / text[2:]
+    return Path(os.path.abspath(os.path.expanduser(text)))
+
+
 def display_path(real: Path) -> str:
     """~/x for a folder in the home folder, the full path otherwise."""
     me = user_home()
@@ -307,6 +316,12 @@ def for_run(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
         except FolderError as e:
             left.append(f"folder {name!r} was left out: {e}")
             continue
+        if real != written_path(g.path):
+            # Somewhere on the way the path now passes through a symlink (perhaps one a
+            # script made), so it would lead to a different folder from the one granted.
+            left.append(f"folder {name!r} was left out: {g.path} now leads to {display_path(real)} through a "
+                        "symlink. Check it, then share the folder again with `ombro folders add`")
+            continue
         final = "read" if "read" in (access, g.access) else "write"
         out.append({"name": name, "path": str(real), "access": final})
     return out, left
@@ -381,8 +396,8 @@ def manifest(root: Path, skip: tuple[str, ...] = ()) -> dict[str, tuple[int, int
     time, or None if there are more than MANIFEST_MAX_FILES."""
     out: dict[str, tuple[int, int]] = {}
     root = Path(root)
-    if not root.is_dir():
-        return out
+    if root.is_symlink() or not root.is_dir():
+        return out  # a root that has become a symlink is never followed
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         here = Path(dirpath)
         rel_dir = here.relative_to(root).as_posix()
