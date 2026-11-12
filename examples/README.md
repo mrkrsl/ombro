@@ -15,6 +15,12 @@ Generic roles and specs for trying Ombro.
 - `specs/post-update.md`: the writer drafts two posts and the publisher
   posts them. Under `outward: balanced` the posts are staged for you.
 
+- `roles/organiser`: a helper that renames and tidies files in a shared
+  folder with `code.run` scripts, planning first and never deleting.
+- `specs/rename-photos.md`: the organiser renames the photos in a folder
+  shared as `photos`, by date. The run clones the folder first (where the
+  disk allows), and the report lists every file created and removed.
+
 - `schedules/library-hours-weekly.md`: runs the research spec every Monday
   morning, unattended, under a conservative allowance. Saved disabled.
 
@@ -48,3 +54,11 @@ Copy `roles/writer` and `roles/publisher` into the crew, then:
     ombro run --spec examples/specs/post-update.md
     ombro outbox                       # the two staged posts
     ombro outbox approve <ref>         # only the ones you name reach the fake file
+
+To try code and shared folders, make a test folder with a few copies of
+photos (never your only copies), share it, and copy `roles/organiser` into
+the crew:
+
+    ombro folders add ~/Pictures/ombro-test --name photos --access write
+    ombro run --spec examples/specs/rename-photos.md
+    ombro report                       # the Code and Shared folders sections

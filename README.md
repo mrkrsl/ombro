@@ -12,7 +12,8 @@ memory and chat: the home directory, roles and crews, a model connection,
 the set-up, role and task interviews, the Lead loop, the guardrail gate, the
 result contract, the journal, reports, web search and fetch, workspace files,
 secrets, the run index, standing notes, memory search, `ombro chat`,
-schedules, and outside services through MCP with permissions and an outbox.
+schedules, outside services through MCP with permissions and an outbox, and
+Python scripts in the operating system's sandbox, with folders you share.
 
 ## Install
 
@@ -74,6 +75,9 @@ ombro outbox approve ab12-1 ab12-3     # run the named ones (each at most once);
 ombro outbox decline ab12-2            # drop it for good
 ombro outbox edit ab12-3               # change its arguments; it waits for approval again
 ombro tools [server]                   # tools and MCP servers; a server's tools and their permission
+ombro folders                          # folders shared with runs, and whether each can be backed up
+ombro folders add ~/Documents/Brand    # share one; asks read or write
+ombro folders remove brand
 ombro keys remove FIRECRAWL_API_KEY
 ombro role list | edit <name> | remove <name>
 ombro crew list | add <name> | use <name>
@@ -267,7 +271,9 @@ A role gets only the tools its `config.md` lists:
 |---|---|
 | `web.search` | Web search through a provider. Returns titles, URLs and snippets. |
 | `web.fetch` | Reads one page as text or Markdown through a provider. |
-| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the run's `workspace/` and `scratch/` folders. |
+| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the run's `workspace/` and `scratch/` folders, and in folders shared with the run. |
+| `workspace.place` | Copies a workspace file outside the run: at once into a folder shared for writing, staged in the outbox anywhere else. |
+| `code.run` | Runs a Python script the role writes, in the operating system's sandbox. See Code and shared folders. |
 | `memory.search` | The Lead only: passages from this crew's past reports. |
 
 Workspace paths start with `workspace/` (deliverables) or `scratch/` (working
@@ -311,6 +317,87 @@ set with `ombro keys set` is picked up on the next call, even in a run already
 going. Nothing in `secrets/` ever reaches a model, a journal or a report. A
 `.env` from an earlier version is moved into `secrets/keys.env` the first
 time Ombro runs, and Ombro says so.
+
+## Code and shared folders
+
+**Code.** A role that names `code.run` can write a Python script and run it,
+for work on files: renaming, sorting, converting, editing in bulk, counting
+and checking. Ombro does not try to judge code by reading it, because a
+list of "dangerous commands" is easy to get round. Instead every script runs
+in the operating system's own sandbox, which limits what any code can reach:
+
+- **macOS:** the system sandbox (`sandbox-exec`), with a profile that
+  denies everything it does not name.
+- **Linux:** bubblewrap (`bwrap`; install it with your package manager, for
+  example `sudo apt install bubblewrap`). The script starts in an empty
+  file system with no network, holding only what is bound into it.
+- Anywhere the sandbox cannot be set up, `code.run` is left out of the run
+  and the report says why. Code never runs unconfined.
+
+A script can read and write the run's `workspace/` and `scratch/`, and the
+folders shared with the run as granted. It can read what Python needs to
+start, and nothing else: not the rest of the Ombro home (secrets, settings,
+roles, memory, other runs, this run's journal, `run.md` or report), not the
+rest of your files, and not the network. It runs on the Python Ombro runs
+on, isolated, with the standard library only. It cannot start other
+programs. Its environment holds no keys.
+
+Each script is limited by `code_timeout` (60s, never more than the run has
+left), CPU time, `code_max_memory` (1 GB; on macOS by watching the script),
+5 MB for any one file, and `code_output_chars` (8,000 characters of output
+shown to the role: the start and end, with the middle cut). `code.run` has
+10 calls a run unless `tools.md` says otherwise. The role is told the exit
+status, the output, the time, any limit that stopped it, and which files
+were created, changed or removed, worked out by the harness. Each script and
+its output are kept in the run's `code/` folder, which scripts cannot write
+to. The journal has a `code_run` event for each, and the report a Code
+section.
+
+**Shared folders.** A run reaches only its own `workspace/` and `scratch/`
+unless you share a folder. Grants live in `folders.md`, by name:
+
+```yaml
+---
+folders:
+  brand:  {path: /Volumes/Studio/Brand, access: read}
+  photos: {path: ~/Pictures/2026 trip, access: write}
+declined: [~/Projects/site]
+---
+```
+
+- **Only you grant.** `ombro folders add <path>` asks read or write. When
+  `ombro brief` (or `ombro run` without a spec) starts in a folder that is
+  not shared, Ombro asks once whether to share it; a "no" is remembered in
+  `declined`. In the brief interview the Lead asks which folders the task
+  needs; a folder not yet shared is put to you when you accept the spec.
+  A model can suggest a folder but never shares one.
+- **What can be shared:** folders inside your home folder, and mounted
+  drives and server shares (`/Volumes/...` on macOS; `/mnt`, `/media` and
+  `/run/media` on Linux). Never the root, system folders, your home folder
+  itself, hidden folders, `~/Library`, or the Ombro home.
+- **A spec chooses.** Grants apply to every crew, and a spec names the ones
+  its run uses (`folders: [brand, photos]`, or `folders: {photos: read}` to
+  lower write to read). A spec cannot add a folder that is not shared; one
+  that is no longer shared is left out and the report says so. Folders are
+  fixed when a run starts and recorded in `run.md`. Runs never stop to ask.
+- **Inside a grant** roles work as you would: `shared/<name>/...` through
+  the workspace tools and in scripts. Changes there are internal and run
+  without approval; the grant is the permission, and presets do not change it.
+- **Backup.** Before a run that can write to a shared folder starts, Ombro
+  clones it into the run's `backup/` if the disk allows (APFS on macOS,
+  reflinks on Linux). A clone is near-instant and takes almost no space until
+  files change. A server share usually cannot be cloned: it stays writable,
+  `ombro folders` says no backup will be taken, and the server's own
+  backups are the remedy. The report lists every file created, changed and
+  removed, from a before-and-after comparison by the harness.
+- **Somewhere not shared.** To save a file in a folder that is not shared
+  for writing, a role writes it in `workspace/` and calls `workspace.place`.
+  The copy waits in the outbox with a copy of the file as it was; `ombro
+  outbox approve` checks the destination again, and never replaces a file
+  unless the action says `overwrite: true`. Approving a placement does not
+  share the folder. Reading a folder that is not shared is refused, and the
+  report lists the paths refused, so you can share the folder before the
+  next run.
 
 ## Outside services: MCP, permissions and the outbox
 
@@ -495,6 +582,7 @@ which wins over the level. Even `unlimited` keeps every other cap:
 | `max_output_tokens` | each model call |
 | `outward` | each outward call: allowed, staged or refused (see above) |
 | `loop_threshold` | the same tool with the same arguments repeated |
+| `code_timeout`, `code_max_memory`, `code_output_chars` | each script `code.run` runs |
 | `interview_max_tokens`, `interview_max_turns` | each interview |
 | `chat_max_tokens`, `chat_tool_max_calls`, `chat_calls_per_message` | each chat |
 
@@ -528,7 +616,7 @@ matter, except the journal, which is JSON Lines:
 
 ```
 ~/.config/ombro/
-  limits.md  models.md  tools.md
+  limits.md  models.md  tools.md  folders.md
   secrets/keys.env  secrets/oauth/  secrets/<key file>   owner-only
   preferences/config.md  preferences/instructions.md
   chats/<time>.md                      chat transcripts (never loaded or searched)
@@ -542,7 +630,8 @@ matter, except the journal, which is JSON Lines:
     interviews/<time>-<kind>.md
     removed/<role>/                  roles removed with `ombro role remove`
     removed/schedules/<name>.md      schedules removed with `ombro schedule remove`
-    runs/<run_id>/run.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/
+    runs/<run_id>/run.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/,
+                  code/ (scripts and their output), backup/ (clones of writable shared folders)
 ```
 
 A role is a folder with `config.md` (name, kind, description, model, tools,
@@ -557,3 +646,7 @@ MCP server for outward tools. The test suite uses the same fakes, scripted answe
 transports for the real providers, so every guardrail, interview and tool is
 tested without a network connection or spend. Schedules are tested with a fake
 clock and a fake scheduler installer; no test touches launchctl or crontab.
+Code is tested in the real sandbox of the system the tests run on, with
+invented files in temporary folders; the network test only tries to reach a
+listener on the machine's own loopback address. The other system's sandbox
+tests are skipped.
