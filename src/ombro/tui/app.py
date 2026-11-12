@@ -158,7 +158,7 @@ class HeaderBlock(Widget):
         show_logo = which == "wide" and width - chart_w - stats_w - 4 >= look.LOGO_WIDTH + 2
         grid = Table.grid(expand=True, padding=(0, 2))
         if show_logo:
-            grid.add_column(ratio=1, justify="center", vertical="middle", min_width=look.LOGO_WIDTH, no_wrap=True)
+            grid.add_column(ratio=1, justify="left", vertical="middle", min_width=look.LOGO_WIDTH, no_wrap=True)
         grid.add_column(width=chart_w)
         grid.add_column(width=stats_w)
         from rich.align import Align

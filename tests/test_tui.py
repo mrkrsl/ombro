@@ -87,6 +87,28 @@ def test_the_logo_is_the_wordmark_with_its_shadow():
     assert look.LOGO_ART[0].index("██") == look.LOGO_ART[2].index("██████")
 
 
+def test_the_logo_keeps_its_columns_on_screen(home):
+    """Each row starts where it is drawn: no row is centred on its own."""
+    from rich.console import Console
+
+    from ombro.tui.app import HeaderBlock
+
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(130, 40)) as pilot:
+            await pilot.pause()
+            hb = app.query_one(HeaderBlock)
+            c = Console(width=hb.size.width, record=True, file=open("/dev/null", "w"))
+            c.print(hb.render())
+            lines = c.export_text().splitlines()
+            rows = [next(ln for ln in lines if art.strip() in ln) for art in look.LOGO_ART]
+            starts = {ln.index(art.strip()) - (len(art) - len(art.lstrip())) for ln, art in zip(rows, look.LOGO_ART)}
+            assert len(starts) == 1, starts
+
+    run(go())
+
+
 def test_the_chart_says_ombro_lead():
     assert look.lead_label("Lead") == "Ombro Lead"
     assert look.lead_label("Chief of Staff") == "Chief of Staff"

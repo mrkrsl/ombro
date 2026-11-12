@@ -182,7 +182,9 @@ def logo_text(dark: bool):
     from rich.style import Style
     from rich.text import Text
 
-    out = Text(no_wrap=True, overflow="crop")  # never wrapped: a wrapped line breaks the letters apart
+    # Never wrapped (a wrapped line breaks the letters apart), and left-justified: centred,
+    # each row would be centred on its own once its trailing spaces were trimmed.
+    out = Text(no_wrap=True, overflow="crop", justify="left")
     for i, row in enumerate(logo_cells(dark)):
         if i:
             out.append("\n")
