@@ -305,7 +305,7 @@ def placement_check(home: Home, a: Action) -> tuple[Path, str | None]:
 
 
 def _approve_place(home: Home, a: Action) -> Action:
-    import shutil
+    from ombro import folders
 
     run_dir = a.run_dir
     final, warning = placement_check(home, a)
@@ -316,9 +316,7 @@ def _approve_place(home: Home, a: Action) -> Action:
     _journal(run_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
     try:
         final.parent.mkdir(parents=True, exist_ok=True)
-        tmp = final.parent / f".{final.name}.ombro-tmp"
-        shutil.copy2(kept, tmp)
-        os.replace(tmp, final)
+        folders.safe_copy(kept, final)
     except OSError as e:
         _save(a, status="failed", error=str(e)[:RESULT_CHARS], decided_at=utc_now())
         _journal(run_dir, "outbox_failed", a, str(e)[:300])

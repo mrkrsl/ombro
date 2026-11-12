@@ -335,6 +335,50 @@ def granted_names(home: Home) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Copying a file into place
+
+
+def safe_copy(src: Path, final: Path) -> None:
+    """Copy src to final without ever writing through a symlink.
+
+    The copy is made in a temporary file with a random name, created afresh
+    (never an existing file or a symlink), filled and given src's mode and times
+    through the open file, then renamed over final. Raises OSError if src or
+    final's folder is not what it should be."""
+    import stat
+    import tempfile
+
+    final = Path(final)
+    parent = final.parent
+    if os.path.realpath(parent) != str(parent) or not parent.is_dir():
+        raise OSError(f"{parent} is not a real folder at that path (a symlink is on the way)")
+    if final.is_symlink() or final.is_dir():
+        raise OSError(f"{final} is a symlink or a folder")
+    src_fd = os.open(src, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        st = os.fstat(src_fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"{src} is not a file")
+        # mkstemp opens with O_CREAT | O_EXCL: it never reuses a name already there.
+        fd, tmp = tempfile.mkstemp(dir=parent, prefix=f".{final.name}.", suffix=".ombro-tmp")
+        try:
+            with os.fdopen(fd, "wb") as out, os.fdopen(os.dup(src_fd), "rb") as inp:
+                shutil.copyfileobj(inp, out, 1 << 20)
+                out.flush()
+                os.fchmod(out.fileno(), stat.S_IMODE(st.st_mode))
+                os.utime(out.fileno(), ns=(st.st_atime_ns, st.st_mtime_ns))
+            os.replace(tmp, final)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+            raise
+    finally:
+        os.close(src_fd)
+
+
+# ---------------------------------------------------------------------------
 # Backups
 
 

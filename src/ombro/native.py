@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -283,9 +282,10 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
             if final.exists() and final.is_dir():
                 raise ToolInputError(f"{_display(ctx, final)} is a folder")
             parent.mkdir(parents=True, exist_ok=True)
-            tmp = parent / f".{final.name}.ombro-tmp"
-            shutil.copy2(src, tmp)
-            os.replace(tmp, final)
+            try:
+                folders.safe_copy(src, final)
+            except OSError as e:
+                raise ToolError(f"{_display(ctx, final)} could not be written: {e.strerror or e}") from None
             shown = _display(ctx, final)
             ctx.record("placed", f"{shown_src} -> {shown}", tool="workspace.place", source=shown_src,
                        destination=str(final), reason=reason)

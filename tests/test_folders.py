@@ -313,3 +313,51 @@ def test_the_brief_refuses_a_folder_that_can_never_be_shared(home, user):
     )
     assert "hidden" in talk.tool_replies()[0]
     assert folders.load(home)[0] == {}
+
+
+# ---------------------------------------------------------------------------
+# Copying into place never writes through a symlink
+
+
+def test_a_placement_never_writes_through_a_planted_symlink(home, user, tmp_path):
+    victim = tmp_path / "victim.txt"
+    victim.write_text("the user's own file\n")
+    run_dir = runs.create_run(home, "default", {}, "# x", load_limits(home), source="test")
+    trip = user / "Pictures" / "Trip"
+    # What a script in an earlier run, or this one, could have left in the shared folder.
+    for name in (".summary.md.ombro-tmp", ".summary.md.tmp", "summary.md.ombro-tmp"):
+        (trip / name).symlink_to(victim)
+    (run_dir / "workspace" / "summary.md").write_text("Invented summary.\n")
+    ctx = ToolContext(run_dir, "researcher", shared={"photos": SharedFolder("photos", trip, "write")})
+    out = native_registry(home).get("workspace.place").handler(
+        {"from": "workspace/summary.md", "to": "shared/photos/summary.md", "reason": "invented"}, ctx)
+    assert out["status"] == "done"
+    assert victim.read_text() == "the user's own file\n"
+    assert (trip / "summary.md").read_text() == "Invented summary.\n" and not (trip / "summary.md").is_symlink()
+    assert not [p for p in trip.iterdir() if p.name.endswith(".ombro-tmp") and not p.is_symlink()]
+
+
+def test_approving_a_placement_never_writes_through_a_planted_symlink(run, home, user, tmp_path):
+    reports = user / "Documents" / "Reports"
+    reports.mkdir()
+    victim = tmp_path / "victim.txt"
+    victim.write_text("the user's own file\n")
+    place_run(run, home, user, "~/Documents/Reports/")
+    (reports / ".summary.md.ombro-tmp").symlink_to(victim)
+    (a,) = outbox.actions(run.run_dir)
+    outbox.approve(home, a)
+    assert victim.read_text() == "the user's own file\n"
+    assert (reports / "summary.md").read_text() == "Invented summary.\n"
+
+
+def test_safe_copy_refuses_a_folder_reached_through_a_symlink(user, tmp_path):
+    src = tmp_path / "src.txt"
+    src.write_text("x")
+    (user / "Pictures" / "via").symlink_to(user / "Documents")
+    with pytest.raises(OSError, match="symlink"):
+        folders.safe_copy(src, user / "Pictures" / "via" / "x.txt")
+    assert not (user / "Documents" / "x.txt").exists()
+    os_link = user / "Pictures" / "Trip" / "link.txt"
+    os_link.symlink_to(tmp_path / "elsewhere.txt")
+    with pytest.raises(OSError, match="symlink"):
+        folders.safe_copy(src, os_link)
