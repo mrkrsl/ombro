@@ -76,15 +76,22 @@ def test_width_tiers(w, h, expected):
     assert look.tier(w, h) == expected
 
 
-def test_the_logo_has_its_word_on_a_full_row_and_a_shadow():
+def test_the_logo_is_the_wordmark_with_its_shadow():
     for dark in (False, True):
         p = look.palette(dark)
-        rows = look.logo_cells(dark)
-        word_rows = [r for r in rows if "".join(c for c, _, _ in r).find("ombro") >= 0]
-        assert len(word_rows) == 1
-        colours = {fg for r in rows for _, fg, _ in r} | {bg for r in rows for _, _, bg in r}
-        assert p.logo_box in colours and p.logo_shadow in colours
-        assert len({len(r) for r in rows}) == 1
+        full = look.logo_cells(dark, "full")
+        half = look.logo_cells(dark, "half")
+        assert len(full) == 7 and len(half) == 4
+        assert {len(r) for r in full} == {len(r) for r in half} == {48}
+        for rows in (full, half):
+            colours = {fg for r in rows for _, fg, _ in r} | {bg for r in rows for _, _, bg in r}
+            assert p.logo_box in colours and p.logo_shadow in colours
+        assert any(ch == "░" for r in full for ch, _, _ in r)
+
+
+def test_the_chart_says_ombro_lead():
+    assert look.lead_label("Lead") == "Ombro Lead"
+    assert look.lead_label("Chief of Staff") == "Chief of Staff"
 
 
 def test_theme_detection():
@@ -144,7 +151,7 @@ def test_opens_with_the_header_and_the_greeting(home):
             assert any("What would you like to get done today?" in t for t in texts)
             shot = _screen(app)
             assert "Hey Ada, welcome to Ombro" in shot and "Working with Ada" in shot
-            assert "└ Default Crew" in shot and "└ Researcher" in shot and "Usage: 0%" in shot and "Balanced" in shot
+            assert "Ombro Lead" in shot and "└ Default Crew" in shot and "└ Researcher" in shot and "Usage: 0%" in shot and "Balanced" in shot
 
     run(go())
 

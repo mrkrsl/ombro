@@ -81,9 +81,14 @@ def team_chart(lead: str, crews: list[tuple[str, list[str]]], max_lines: int = C
     return out
 
 
+def lead_label(title: str) -> str:
+    """The chart's first line: "Ombro Lead" for the stock title, any other title as typed."""
+    return "Ombro Lead" if title.strip() in ("", "Lead") else title
+
+
 def chart_from_summary(s: dict[str, Any]) -> list[str]:
     crews = [(c["title"], [r["title"] for r in c["roles"]]) for c in s["crews"]]
-    return team_chart(s["lead"]["title"], crews)
+    return team_chart(lead_label(s["lead"]["title"]), crews)
 
 
 # ---------------------------------------------------------------------------
@@ -149,86 +154,64 @@ def tier(width: int, height: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# The logo: "ombro" on a block, tilted by eighth-cell steps, with its shadow
+# The logo: the "ombro" wordmark, with its shadow
 #
-# Each cell is eight slots tall. The box's top and bottom edges rise from left to
-# right by LOGO_RISE slots (a slight anticlockwise turn); a cell on an edge is
-# drawn with a lower-eighths block (▁▂▃▄▅▆▇), its lower part in one colour and its
-# upper part in another. The shadow is the same shape, offset right and down.
+# Drawn in text: █ is the letters, ░ their shadow. LOGO_STYLE "full" shows it as
+# drawn, seven rows tall, the shadow as a shade pattern. "half" packs two rows
+# into each cell with half blocks (▀ ▄), four rows tall; the shadow is then a
+# solid lighter colour, since a cell cannot hold half a block and half a shade.
 
-LOGO_WORD = "ombro"
-LOGO_WIDTH = 19  # cells
-LOGO_HEIGHT = 22  # eighths of a cell
-LOGO_RISE = 6  # eighths, from the left edge to the right
-SHADOW_DX, SHADOW_DY = 2, 6  # cells right, eighths down
-LOWER = " ▁▂▃▄▅▆▇█"
-
-
-def _top(x: int) -> int:
-    return round(LOGO_RISE * (1 - x / (LOGO_WIDTH - 1)))
-
-
-def _slot_colour(x: int, slot: int) -> str | None:
-    """'b' for the box, 's' for its shadow, None for the background, at one eighth-slot."""
-    if 0 <= x < LOGO_WIDTH and _top(x) <= slot < _top(x) + LOGO_HEIGHT:
-        return "b"
-    sx = x - SHADOW_DX
-    if 0 <= sx < LOGO_WIDTH and _top(sx) + SHADOW_DY <= slot < _top(sx) + SHADOW_DY + LOGO_HEIGHT:
-        return "s"
-    return None
+LOGO_ART = [
+    "                        ██░",
+    "  ██████   ██████████   ██░     ██████  ██████",
+    " ██░░░░██  ░██░░██░░██░ ██████  ░██░░█░██░░░░██",
+    " ██░   ██░  ██░ ██░ ██░ ██░░░██░ ██░ ░ ██░   ██░",
+    " ██░   ██░  ██░ ██░ ██░ ██░  ██░ ██░   ██░   ██░",
+    "  ██████░░ ███░ ██░ ██░ ██████░░███░    ██████░░",
+    "   ░░░░░░   ░░░  ░░  ░░  ░░░░░░  ░░░     ░░░░░░",
+]
+LOGO_STYLE = "full"
 
 
-def _split(slots: list[str | None]) -> tuple[str | None, str | None, int]:
-    """The two colours and the split that best draw eight slots (top first):
-    (upper colour, lower colour, how many slots the lower colour fills)."""
-    best = None
-    for k in range(9):
-        upper, lower = slots[: 8 - k], slots[8 - k:]
-        uc = max(set(upper), key=upper.count) if upper else None
-        lc = max(set(lower), key=lower.count) if lower else None
-        miss = sum(1 for c in upper if c != uc) + sum(1 for c in lower if c != lc)
-        if best is None or miss < best[0]:
-            best = (miss, uc, lc, k)
-    return best[1], best[2], best[3]
-
-
-def logo_cells(dark: bool) -> list[list[tuple[str, str | None, str | None]]]:
-    """Rows of (character, foreground, background). The word sits on a row that is
-    box all the way across."""
+def logo_cells(dark: bool, style: str | None = None) -> list[list[tuple[str, str | None, str | None]]]:
+    """Rows of (character, foreground, background) for the logo."""
     p = palette(dark)
-    colour = {"b": p.logo_box, "s": p.logo_shadow, None: None}
-    width = LOGO_WIDTH + SHADOW_DX
-    rows_needed = (LOGO_RISE + SHADOW_DY + LOGO_HEIGHT + 7) // 8
+    ink, shade = p.logo_box, p.logo_shadow
+    width = max(len(r) for r in LOGO_ART)
+    art = [r.ljust(width) for r in LOGO_ART]
+    if (style or LOGO_STYLE) == "full":
+        return [[(ch, ink if ch == "█" else shade if ch == "░" else None, None) for ch in row] for row in art]
+    colour = {"█": ink, "░": shade}
+    if len(art) % 2:
+        art.append(" " * width)
     rows = []
-    for row in range(rows_needed):
+    for top_row, bottom_row in zip(art[0::2], art[1::2]):
         cells = []
-        for x in range(width):
-            upper, lower, k = _split([_slot_colour(x, row * 8 + i) for i in range(8)])
-            if k == 0 or upper == lower:
-                c = colour[upper if k == 0 else lower]
-                cells.append(("█", c, None) if c else (" ", None, None))
-            elif lower is None:  # the box or shadow's bottom edge: draw the gap below in the page colour
-                cells.append((LOWER[k], p.background, colour[upper]))
+        for t, b in zip(top_row, bottom_row):
+            top, bottom = colour.get(t), colour.get(b)
+            if top and top == bottom:
+                cells.append(("█", top, None))
+            elif top and bottom:
+                cells.append(("▀", top, bottom))
+            elif top:
+                cells.append(("▀", top, None))
+            elif bottom:
+                cells.append(("▄", bottom, None))
             else:
-                cells.append((LOWER[k], colour[lower], colour[upper]))
+                cells.append((" ", None, None))
         rows.append(cells)
-    text_row = next(r for r in range(rows_needed)
-                    if all(_slot_colour(x, r * 8 + i) == "b" for x in range(LOGO_WIDTH) for i in range(8)))
-    start = (LOGO_WIDTH - len(LOGO_WORD)) // 2
-    for i, ch in enumerate(LOGO_WORD):
-        rows[text_row][start + i] = (ch, p.logo_text, p.logo_box)
     return rows
 
 
-def logo_text(dark: bool):
+def logo_text(dark: bool, style: str | None = None):
     """The logo as a Rich Text."""
     from rich.style import Style
     from rich.text import Text
 
     out = Text()
-    for i, row in enumerate(logo_cells(dark)):
+    for i, row in enumerate(logo_cells(dark, style)):
         if i:
             out.append("\n")
         for ch, fg, bg in row:
-            out.append(ch, Style(color=fg, bgcolor=bg, bold=ch.isalpha()))
+            out.append(ch, Style(color=fg, bgcolor=bg))
     return out
