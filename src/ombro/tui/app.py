@@ -152,15 +152,19 @@ class HeaderBlock(Widget):
             if i:
                 stats.append("\n")
             stats.append(line, style=f"bold {p.strong}" if i == 0 else p.muted)
+        chart_w = max(28, max(len(x) for x in look.chart_from_summary(s)) + 2)
+        stats_w = 26
+        # The logo only where all of it fits beside the chart and the stats.
+        show_logo = which == "wide" and width - chart_w - stats_w - 4 >= look.LOGO_WIDTH + 2
         grid = Table.grid(expand=True, padding=(0, 2))
-        if which == "wide":
-            grid.add_column(ratio=1, justify="center", vertical="middle")
-        grid.add_column(width=max(28, max(len(x) for x in look.chart_from_summary(s)) + 2))
-        grid.add_column(width=26)
+        if show_logo:
+            grid.add_column(ratio=1, justify="center", vertical="middle", min_width=look.LOGO_WIDTH, no_wrap=True)
+        grid.add_column(width=chart_w)
+        grid.add_column(width=stats_w)
         from rich.align import Align
 
         logo = Align.center(look.logo_text(app.dark), vertical="middle")
-        cells = ([logo] if which == "wide" else []) + [chart, stats]
+        cells = ([logo] if show_logo else []) + [chart, stats]
         grid.add_row(*cells)
         return Group(rule, Text(""), grid, Text(""), Text("─" * width, style=p.dim))
 

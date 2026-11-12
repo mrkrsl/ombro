@@ -81,6 +81,7 @@ def test_the_logo_is_the_wordmark_with_its_shadow():
         p = look.palette(dark)
         rows = look.logo_cells(dark)
         assert len(rows) == 7 and {len(r) for r in rows} == {47}
+        assert look.logo_text(dark).no_wrap
         assert {fg for r in rows for _, fg, _ in r} == {p.logo_box, p.logo_shadow, None}
     # the b's stem stands on the letters below it
     assert look.LOGO_ART[0].index("██") == look.LOGO_ART[2].index("██████")
@@ -260,6 +261,21 @@ def test_without_a_key_it_says_set_up_is_needed(home):
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             assert any("ombro init" in t for t in _texts(app))
+
+    run(go())
+
+
+@pytest.mark.parametrize("width, expect", [(130, True), (100, False)])
+def test_the_logo_shows_only_where_it_fits_whole(home, width, expect):
+    app, _ = _app(home)
+
+    async def go():
+        if True:
+            async with app.run_test(size=(width, 40)) as pilot:
+                await pilot.pause()
+                shot = _screen(app)
+                assert ("██░░░░██" in shot) is expect, width
+                assert "Ombro Lead" in shot
 
     run(go())
 

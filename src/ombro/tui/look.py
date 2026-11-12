@@ -31,10 +31,10 @@ class Palette:
 
 LIGHT = Palette(background="#FFFFFF", text=OMBRO[700], strong=OMBRO[500], muted=OMBRO[500], dim=OMBRO[300],
                 band=OMBRO[200], band_text=OMBRO[500], logo_box=OMBRO[500], logo_text=OMBRO[100],
-                logo_shadow=OMBRO[300])
+                logo_shadow=OMBRO[400])
 DARK = Palette(background=OMBRO[700], text=OMBRO[100], strong=OMBRO[300], muted=OMBRO[300], dim=OMBRO[500],
                band=OMBRO[500], band_text=OMBRO[200], logo_box=OMBRO[100], logo_text=OMBRO[700],
-               logo_shadow=OMBRO[500])
+               logo_shadow=OMBRO[400])
 
 
 def palette(dark: bool) -> Palette:
@@ -157,15 +157,16 @@ def tier(width: int, height: int) -> str:
 # The logo: the "ombro" wordmark, with its shadow, drawn in text as given:
 # █ is the letters, ░ their shadow.
 
-LOGO_ART = [
-    "                       ██",
-    " ██████   ██████████   ██░     ██████  ██████",
+LOGO_ART = [  # exactly as drawn, spaces included
+    "                       ██                     ",
+    " ██████   ██████████   ██░     ██████  ██████ ",
     "██░░░░██  ░██░░██░░██░ ██████  ░██░░█░██░░░░██",
     "██░   ██░  ██░ ██░ ██░ ██░░░██░ ██░ ░ ██░   ██░",
     "██░   ██░  ██░ ██░ ██░ ██░  ██░ ██░   ██░   ██░",
     " ██████░░ ███░ ██░ ██░ ██████░░███░    ██████░░",
-    "   ░░░░░    ░░░  ░░  ░░  ░░░░░░  ░░░     ░░░░░",
+    "   ░░░░░    ░░░  ░░  ░░  ░░░░░░  ░░░     ░░░░░ ",
 ]
+LOGO_WIDTH = max(len(r) for r in LOGO_ART)
 
 
 def logo_cells(dark: bool) -> list[list[tuple[str, str | None, str | None]]]:
@@ -181,7 +182,7 @@ def logo_text(dark: bool):
     from rich.style import Style
     from rich.text import Text
 
-    out = Text()
+    out = Text(no_wrap=True, overflow="crop")  # never wrapped: a wrapped line breaks the letters apart
     for i, row in enumerate(logo_cells(dark)):
         if i:
             out.append("\n")
