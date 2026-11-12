@@ -218,7 +218,10 @@ def resource_metadata(client: httpx.Client, url: str, hint: str | None) -> dict[
         data = _get_json(client, t)
         if data and data.get("authorization_servers"):
             res = data.get("resource")
-            if res and canonical(res) != canonical(url):
+            if not res:
+                raise SignInError("the server's sign-in details do not say which server they are for "
+                                  "(no `resource`), so they cannot be checked; refusing them")
+            if canonical(str(res)) != canonical(url):
                 raise SignInError(f"the server's sign-in details are for {res}, not {url}")
             return data
     raise SignInError("the server asks for sign-in but publishes no sign-in details "
@@ -248,6 +251,8 @@ def server_metadata(client: httpx.Client, issuer: str) -> dict[str, Any]:
             if not data.get(key):
                 raise SignInError(f"the sign-in service's details have no {key}")
             _require_https(data[key], f"the sign-in service's {key}")
+        if data.get("revocation_endpoint"):  # tokens are sent there on `ombro disconnect`
+            _require_https(data["revocation_endpoint"], "the sign-in service's revocation_endpoint")
         if "S256" not in (data.get("code_challenge_methods_supported") or []):
             raise SignInError("the sign-in service does not support PKCE with S256, which MCP requires")
         return data
@@ -271,7 +276,12 @@ def register(client: httpx.Client, meta: dict[str, Any], redirect_uri: str) -> d
     if r.status_code not in (200, 201):
         raise SignInError(f"the sign-in service refused to register Ombro (HTTP {r.status_code}): "
                           f"{_oauth_error(r)}")
-    data = r.json()
+    try:
+        data = r.json()
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        raise SignInError("the sign-in service's answer to registering Ombro was not JSON")
     if not data.get("client_id"):
         raise SignInError("the sign-in service registered Ombro but gave no client_id")
     return {"client_id": data["client_id"], "client_secret": data.get("client_secret"),
@@ -298,6 +308,8 @@ class Receiver:
     def __init__(self):
         received: dict[str, str] = {}
         done = threading.Event()
+        expected: dict[str, str] = {}
+        self._expected = expected
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
@@ -306,8 +318,17 @@ class Receiver:
                     self.send_response(404)
                     self.end_headers()
                     return
+                answer = {k: v[0] for k, v in urllib.parse.parse_qs(parts.query).items()}
+                if expected.get("state") and answer.get("state") != expected["state"]:
+                    # Not the answer to this sign-in (another program, or an old tab): ignore it
+                    # and keep waiting, so it cannot end the sign-in.
+                    self.send_response(400)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(b"This is not the answer Ombro is waiting for.")
+                    return
                 if not done.is_set():
-                    received.update({k: v[0] for k, v in urllib.parse.parse_qs(parts.query).items()})
+                    received.update(answer)
                     done.set()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -321,6 +342,10 @@ class Receiver:
         self._received, self._done = received, done
         self.redirect_uri = f"http://127.0.0.1:{self._server.server_address[1]}/callback"
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
+
+    def expect(self, state: str) -> None:
+        """Only an answer carrying this state is taken."""
+        self._expected["state"] = state
 
     def wait(self, timeout: float) -> dict[str, str]:
         if not self._done.wait(timeout):
@@ -372,6 +397,8 @@ def connect(home: Home, server: str, cfg: dict[str, Any], *, open_browser: Calla
                 scope += " offline_access"
             verifier, code_challenge = _pkce()
             state = secrets.token_urlsafe(24)
+            if hasattr(rec, "expect"):
+                rec.expect(state)
             params = {"response_type": "code", "client_id": client_info["client_id"],
                       "redirect_uri": rec.redirect_uri, "code_challenge": code_challenge,
                       "code_challenge_method": "S256", "state": state, "resource": resource}
@@ -510,6 +537,11 @@ def disconnect(home: Home, server: str, transport: httpx.BaseTransport | None = 
         return False
     endpoint = data.get("revocation_endpoint")
     tok = data.get("tokens") or {}
+    try:
+        if endpoint:
+            _require_https(endpoint, "the revocation address")
+    except SignInError:
+        endpoint = None  # never send tokens in the clear; forgetting them locally still happens
     if endpoint:
         try:
             with httpx.Client(transport=transport, follow_redirects=False) as client:

@@ -253,3 +253,85 @@ def test_challenges_and_addresses_are_read_correctly():
     assert ch == {"realm": "OAuth", "resource_metadata": "https://x.invalid/a", "scope": "a b"}
     assert oauth.parse_www_authenticate('Bearer error=insufficient_scope')["error"] == "insufficient_scope"
     assert oauth.canonical("HTTPS://MCP.Example.invalid/mcp/") == "https://mcp.example.invalid/mcp"
+
+
+# -- edge cases (stage 9) --------------------------------------------------------
+
+
+class _Changed(World):
+    """A World whose answers for one address are replaced."""
+
+    def __init__(self, url, answer, **kw):
+        super().__init__(**kw)
+        self._url, self._answer = url, answer
+
+    def handle(self, request):
+        if str(request.url).split("?")[0] == self._url:
+            return self._answer(super().handle(request))
+        return super().handle(request)
+
+
+def _json_without(key):
+    def change(resp):
+        data = resp.json()
+        data.pop(key, None)
+        return httpx.Response(resp.status_code, json=data)
+    return change
+
+
+def _json_with(**extra):
+    def change(resp):
+        return httpx.Response(resp.status_code, json={**resp.json(), **extra})
+    return change
+
+
+@pytest.mark.parametrize("world, msg", [
+    (_Changed("https://mcp.invalid/.well-known/oauth-protected-resource/mcp", _json_without("resource")),
+     "no `resource`"),
+    (_Changed(f"{ISSUER}/.well-known/oauth-authorization-server",
+              _json_with(revocation_endpoint="http://auth.invalid/revoke")), "revocation_endpoint"),
+    (_Changed(f"{ISSUER}/register", lambda r: httpx.Response(201, text="<html>registered</html>")), "not JSON"),
+])
+def test_unchecked_or_unsafe_sign_in_details_are_refused(home, world, msg):
+    with pytest.raises(oauth.SignInError, match=msg):
+        connect(home, world)
+    assert oauth.load(home, "notes") is None
+
+
+def test_disconnect_never_sends_tokens_to_a_plain_http_address(home):
+    world = World()
+    connect(home, world)
+    data = oauth.load(home, "notes")
+    oauth.save(home, "notes", {**data, "revocation_endpoint": "http://auth.invalid/revoke"})
+    sent = []
+    assert oauth.disconnect(home, "notes", transport=httpx.MockTransport(lambda r: sent.append(r) or
+                                                                         httpx.Response(200)))
+    assert sent == [] and oauth.load(home, "notes") is None
+
+
+def test_the_callback_ignores_an_answer_for_another_sign_in(monkeypatch):
+    import _socket
+    import socket
+
+    rec = oauth.Receiver()
+    try:
+        rec.expect("the-right-state")
+        port = int(rec.redirect_uri.rsplit(":", 1)[1].split("/")[0])
+
+        def get(query):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            _socket.socket.connect(s, ("127.0.0.1", port))  # this machine only
+            s.sendall(f"GET /callback?{query} HTTP/1.0\r\n\r\n".encode())
+            data = b""
+            while chunk := s.recv(4096):
+                data += chunk
+            s.close()
+            return data
+
+        assert b" 400 " in get("code=from-elsewhere&state=wrong").split(b"\r\n", 1)[0] + b" "
+        with pytest.raises(oauth.SignInError, match="no answer"):
+            rec.wait(0.2)  # still waiting: the wrong answer did not end the sign-in
+        get("code=invented-code&state=the-right-state")
+        assert rec.wait(2) == {"code": "invented-code", "state": "the-right-state"}
+    finally:
+        rec.close()
