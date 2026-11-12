@@ -79,7 +79,7 @@ def test_width_tiers(w, h, expected):
 def test_the_logo_is_the_wordmark_with_its_shadow():
     for dark in (False, True):
         p = look.palette(dark)
-        rows = look.logo_cells(dark)
+        rows = look.logo_cells(dark, "Apple_Terminal")
         assert len(rows) == 7 and {len(r) for r in rows} == {47}
         assert look.logo_text(dark).no_wrap
         assert {fg for r in rows for _, fg, _ in r} == {p.logo_box, p.logo_shadow, None}
@@ -107,6 +107,13 @@ def test_the_logo_keeps_its_columns_on_screen(home):
             assert len(starts) == 1, starts
 
     run(go())
+
+
+def test_the_shadow_is_hatched_in_ghostty_and_shaded_elsewhere():
+    ghostty = {ch for r in look.logo_cells(True, "ghostty") for ch, _, _ in r}
+    other = {ch for r in look.logo_cells(True, "Apple_Terminal") for ch, _, _ in r}
+    assert look.HATCH in ghostty and "░" not in ghostty
+    assert "░" in other and look.HATCH not in other
 
 
 def test_the_chart_says_ombro_lead():

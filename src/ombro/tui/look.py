@@ -32,8 +32,8 @@ class Palette:
 LIGHT = Palette(background="#FFFFFF", text=OMBRO[700], strong=OMBRO[500], muted=OMBRO[500], dim=OMBRO[300],
                 band=OMBRO[200], band_text=OMBRO[500], logo_box=OMBRO[500], logo_text=OMBRO[100],
                 logo_shadow=OMBRO[400])
-DARK = Palette(background=OMBRO[700], text=OMBRO[100], strong=OMBRO[300], muted=OMBRO[300], dim=OMBRO[500],
-               band=OMBRO[500], band_text=OMBRO[200], logo_box=OMBRO[100], logo_text=OMBRO[700],
+DARK = Palette(background=OMBRO[700], text=OMBRO[200], strong=OMBRO[300], muted=OMBRO[300], dim=OMBRO[500],
+               band=OMBRO[500], band_text=OMBRO[200], logo_box=OMBRO[200], logo_text=OMBRO[700],
                logo_shadow=OMBRO[400])
 
 
@@ -169,12 +169,26 @@ LOGO_ART = [  # exactly as drawn, spaces included
 LOGO_WIDTH = max(len(r) for r in LOGO_ART)
 
 
-def logo_cells(dark: bool) -> list[list[tuple[str, str | None, str | None]]]:
+# Ghostty draws block characters itself, and its ░ is a fine dot pattern that reads
+# as a flat block. There the shadow is drawn with U+1FB99 instead: diagonal lines,
+# which Ghostty also draws itself. Elsewhere ░ comes from the font, which hatches it.
+HATCH = "\U0001FB99"
+
+
+def shade_char(term_program: str | None = None) -> str:
+    import os
+
+    program = (term_program if term_program is not None else os.environ.get("TERM_PROGRAM", "")).lower()
+    return HATCH if program == "ghostty" else "░"
+
+
+def logo_cells(dark: bool, term_program: str | None = None) -> list[list[tuple[str, str | None, str | None]]]:
     """Rows of (character, foreground, background) for the logo."""
     p = palette(dark)
+    shade = shade_char(term_program)
     width = max(len(r) for r in LOGO_ART)
-    return [[(ch, p.logo_box if ch == "█" else p.logo_shadow if ch == "░" else None, None) for ch in row.ljust(width)]
-            for row in LOGO_ART]
+    return [[(shade if ch == "░" else ch, p.logo_box if ch == "█" else p.logo_shadow if ch == "░" else None, None)
+             for ch in row.ljust(width)] for row in LOGO_ART]
 
 
 def logo_text(dark: bool):
