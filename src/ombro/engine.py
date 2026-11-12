@@ -413,7 +413,7 @@ class Engine:
         if tc.arguments is None:
             self.journal.write(role.name, "tool_refused", f"{name}: arguments were not a JSON object")
             return {"error": "the arguments were not a JSON object"}
-        if tool.outward and tool.effect != "read":
+        if tool.outward and tool.effect != "read-only":
             return self._outward_call(role, tool, tc.arguments)
         cost = self.limits.cost_for(name)
         ctx = ToolContext(self.run_dir, role.name, timeout=self._tool_timeout())

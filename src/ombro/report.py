@@ -191,7 +191,7 @@ def narrative_input(facts: dict[str, Any]) -> str:
     ow = facts.get("outward") or {}
     if ow.get("staged") or ow.get("done") or ow.get("uncertain"):
         lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the run "
-                     "(work, or external actions the user allowed), "
+                     "(internal changes, or external actions the user allowed), "
                      f"{len(ow.get('staged') or [])} staged and waiting for the user's approval"
                      + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)"
                         if ow.get("uncertain") else "") + ".")
@@ -420,7 +420,7 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     uncertain = ow.get("uncertain") or []
     if not any((staged, done, errors, refused, uncertain)):
         return ["None: nothing was done outside the run, and nothing is staged."]
-    work = [ev for ev in done if ev.get("effect") in ("work", "read")]
+    work = [ev for ev in done if ev.get("effect") in ("internal", "read-only")]
     sent = [ev for ev in done if ev not in work]
     lines: list[str] = []
     setting = f.get("outward_setting") or {}
@@ -429,7 +429,7 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
 
         lines += [f"Permissions for this run: {describe(setting)}.", ""]
     if work:
-        lines.append(f"Work done during the run ({len(work)}):")
+        lines.append(f"Internal changes made during the run ({len(work)}):")
         lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in work]
         lines.append("")
     if sent:

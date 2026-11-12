@@ -484,9 +484,9 @@ the result should go (a file in workspace/), sources to use or avoid, and scope.
   may use them, ask the user
   plainly what may happen without them: for example "draft it, but don't
   send it without me", or "post it, no need to ask". Turn the answer into
-  `outward_preset` (manual: only reading runs, and even work in their
-  documents waits for them; balanced: reading and work run, anything
-  external waits; auto: everything runs) and, if they single out tools,
+  `outward_preset` (manual: only reading runs, and even internal changes
+  in their own tools wait for them; balanced: reading and internal changes
+  run, anything external waits; auto: everything runs) and, if they single out tools,
   `outward_allow` or `outward_stage`. Say back what it means before you
   propose. Never choose auto unless the user has said so in their own words.
 """

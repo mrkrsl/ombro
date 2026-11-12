@@ -1,27 +1,22 @@
 """Outward tools: MCP tools, their class, and the permission each call gets.
 
 Every tool that reaches a service outside the run comes from an MCP server.
-Each has a class, drawn by who an action reaches:
-- read: changes nothing;
-- work: anything in the organisation's own tools (documents, sheets,
-  databases, CRMs, Notion, Linear, files), including overwriting, and even
-  when colleagues see or are notified of it. Like a trusted employee's work,
-  it is done, then reported;
+Each has a class, drawn by who an action reaches. The boundary is the
+organisation, not visibility:
+- read-only: changes nothing;
+- internal: changes things in the organisation's own tools (documents,
+  sheets, databases, CRMs, Notion, Linear, files), including overwriting and
+  trashing, and even when colleagues see or are notified of it. Like a
+  trusted employee's work, it is done, then reported. Internal does not mean
+  harmless: it runs without approval because the role is trusted;
 - external: reaches people outside the organisation, or the public, or
   spends money (email sent, messages, social posts, publishing, public
   records, purchases). A tool that can reach either side counts as external.
 A tool's class comes from, each overriding the one before: the server's
-markings (readOnlyHint true: read; openWorldHint false: work; otherwise
-external), `class:` on the server in tools.md (for its tools that do not
-read), then `class:` on the tool in tools.md. A tool that changes something
-and is not classed is external: the safe default.
-
-A call's permission is allow (it runs), stage (it waits in the outbox) or
-refuse. A preset gives the defaults by class. Layers, each overriding the one
-before: the built-in default, `outward:` in preferences/config.md, then
-`outward:` in the spec. `permission: refuse` in tools.md beats every layer.
-The result is fixed when a run starts and recorded in its run.md.
-"""
+markings (readOnlyHint true: read-only; openWorldHint false: internal;
+otherwise external), `class:` on the server in tools.md (for its tools that
+are not read-only), then `class:` on the tool in tools.md. A tool that
+changes something and is not classed is external: the safe default."""
 
 from __future__ import annotations
 
@@ -38,9 +33,9 @@ from ombro.settings import TOOL_CLASSES, SetupError, ToolSettings, load_preferen
 from ombro.tools import Tool, ToolContext
 
 PRESETS: dict[str, dict[str, str]] = {
-    "manual": {"read": "allow", "work": "stage", "external": "stage"},
-    "balanced": {"read": "allow", "work": "allow", "external": "stage"},
-    "auto": {"read": "allow", "work": "allow", "external": "allow"},
+    "manual": {"read-only": "allow", "internal": "stage", "external": "stage"},
+    "balanced": {"read-only": "allow", "internal": "allow", "external": "stage"},
+    "auto": {"read-only": "allow", "internal": "allow", "external": "allow"},
 }
 DEFAULT_PRESET = "balanced"
 PERMISSIONS = ("allow", "stage", "refuse")
@@ -129,11 +124,11 @@ def classify_with_source(annotations: dict[str, Any] | None, override: str | Non
         return override, "tool"
     a = annotations or {}
     if a.get("readOnlyHint") is True:
-        return "read", "marking"
+        return "read-only", "marking"
     if server_class in TOOL_CLASSES:
         return server_class, "server"
     if a.get("openWorldHint") is False:
-        return "work", "marking"
+        return "internal", "marking"
     return "external", "default"
 
 
@@ -207,12 +202,13 @@ def make_tool(server: str, remote: str, description: str, schema: dict[str, Any]
               call: Any) -> Tool:
     """An Ombro tool for one MCP tool. `call(remote, args, timeout)` runs it on the server."""
     schema = schema if isinstance(schema, dict) else {"type": "object", "properties": {}}
-    if effect == "read":
+    if effect == "read-only":
         params, reason_key = copy.deepcopy(schema), None
         params.setdefault("type", "object")
     else:
         params, reason_key = _with_reason(schema)
-    label = {"read": "Reads from", "work": "Works in", "external": "Acts outside the run, through"}[effect]
+    label = {"read-only": "Reads from", "internal": "Changes things in",
+             "external": "Reaches outside the organisation, through"}[effect]
     text = f"{label} {server} (an outside service). {description}".strip()
 
     def handler(args: dict, ctx: ToolContext) -> dict[str, Any]:
@@ -241,8 +237,8 @@ def external_tools(home: Home, settings: ToolSettings, names: list[str]) -> list
             if own == "external":
                 out.append(name)
             continue
-        if settings.servers[parts[0]].get("class") == "work":
-            continue  # read or work: neither is external
+        if settings.servers[parts[0]].get("class") == "internal":
+            continue  # read-only or internal: neither is external
         need.setdefault(parts[0], []).append(name)
     for server, wanted in need.items():
         try:

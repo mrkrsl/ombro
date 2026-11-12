@@ -273,14 +273,17 @@ for each call, e.g. 60s. For example:
 A server's tools are named mcp.<server>.<tool>; `ombro tools <server>` lists
 them. A role uses only the ones its `tools:` list names. Per-tool settings
 for MCP tools, as well as max_calls and cost_per_call:
-- class: read, work or external, when the server's marking is wrong or
-  missing. read changes nothing; work is anything in your organisation's
-  own tools (documents, sheets, databases, CRMs, Notion, Linear, files),
-  even when colleagues see it; external reaches people outside your
-  organisation, or the public, or spends money (email sent, social posts,
-  publishing, purchases). A tool that changes something and is not classed
-  counts as external. `class:`
-  on a server (work or external) covers all its tools that do not read.
+- class: read-only, internal or external, when the server's marking is
+  wrong or missing. read-only changes nothing. internal changes things in
+  your organisation's own tools (documents, sheets, databases, CRMs,
+  Notion, Linear, files), even when colleagues see it; it runs without
+  approval because the role is trusted, which is not the same as harmless.
+  external reaches people outside your organisation, or the public, or
+  spends money (email sent, social posts, publishing, purchases); a tool
+  that can reach either side counts as external. A tool that changes
+  something and is not classed counts as external. `class:` on a server
+  (internal or external) covers all its tools that are not read-only; a
+  tool's own line wins, so a team chat can be made internal if you wish.
 - permission: refuse, a hard limit that no preference or spec can lift.
 Whether other calls run or wait in the outbox is set by `outward:` in
 preferences/config.md and in each spec.
@@ -294,9 +297,9 @@ PREFERENCES_BODY = """\
 - display_currency: optional, e.g. `{code: GBP, rate: 0.79}`. Shown alongside
   US dollars; never used for enforcement.
 - outward: what outward (MCP) tools may do without you, unless a spec says
-  otherwise. manual: only reading runs; work and external actions wait in
-  the outbox. balanced: reading and work (your organisation's own tools)
-  run; external actions (reaching people outside your organisation, or the
+  otherwise. manual: only read-only calls run; internal and external
+  actions wait in the outbox. balanced: read-only and internal (changes in
+  your organisation's own tools) run; external actions (reaching people outside your organisation, or the
   public, or spending money) wait. auto: everything runs. Waiting actions are reviewed with
   `ombro outbox`.
 """

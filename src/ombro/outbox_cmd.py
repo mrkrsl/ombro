@@ -351,24 +351,25 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
         return 0
     print(f"Tools of {name} ({len(rows)}; it speaks MCP {version}), with the permission each gets under "
           f"{pref['preset']}:\n")
-    print(f"  {'TOOL':<44} {'CLASS':<9} {'FROM':<8} {'PERMISSION':<10} DESCRIPTION")
+    print(f"  {'TOOL':<44} {'CLASS':<10} {'FROM':<8} {'PERMISSION':<10} DESCRIPTION")
     for r in rows:
         desc = " ".join(r["description"].split())[:50]
-        print(f"  {r['tool']:<44} {r['class']:<9} {r['class_from']:<8} {r['permission']:<10} {desc}")
-    print("\nClasses: read changes nothing; work is anything in your organisation's own tools, even when "
-          "colleagues see it;\nexternal reaches people outside your organisation, or the public, or spends money. "
-          "FROM: marking (the server's\nown claim), server or tool (set in tools.md), or default (a tool that "
-          "changes something and is not classed\ncounts as external).")
+        print(f"  {r['tool']:<44} {r['class']:<10} {r['class_from']:<8} {r['permission']:<10} {desc}")
+    print("\nClasses: read-only changes nothing. internal changes things in your organisation's own tools, "
+          "even when\ncolleagues see it; it runs without approval because the role is trusted, which is not the "
+          "same as harmless.\nexternal reaches people outside your organisation, or the public, or spends "
+          "money. FROM: marking (the\nserver's own claim), server or tool (set in tools.md), or default (a tool "
+          "that changes something and is not\nclassed counts as external).")
     defaulted = [r["tool"] for r in rows if r["class_from"] == "default"]
-    marked = [r for r in rows if r["class_from"] == "marking" and r["class"] != "read"]
+    marked = [r for r in rows if r["class_from"] == "marking" and r["class"] != "read-only"]
     if defaulted:
         print(f"\n{len(defaulted)} tool(s) are external only by default, because the server does not say "
               "otherwise. Leave any that\ncan reach people outside your organisation (email, invitations, posts). "
               "For one that "
-              f"only does work, add under `tools:` in tools.md:\n    {defaulted[0]}: {{class: work}}")
+              f"stays inside, add under `tools:` in tools.md:\n    {defaulted[0]}: {{class: internal}}")
         if not marked:
-            print("If every tool of this server that is not read only does work, one line on its entry under "
-                  "`servers:` covers them all:\n    class: work")
+            print("If every tool of this server that is not read-only stays inside, one line on its entry "
+                  "under `servers:` covers them all:\n    class: internal")
         else:
             print("This server marks some tools itself, so its tools are of mixed kinds: set them one by one, "
                   "not with `class:` on the server.")

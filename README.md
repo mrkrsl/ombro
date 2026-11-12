@@ -328,7 +328,7 @@ servers:
     start_timeout: 120s                   # the first start downloads the package
   notes:
     url: https://mcp.example.invalid/mcp  # a remote server you sign in to: `ombro connect notes`
-    class: work
+    class: internal
   remote:
     url: https://other.example.invalid/mcp  # a remote server with a fixed token instead
     headers: {Authorization: "Bearer ${REMOTE_TOKEN}"}
@@ -378,25 +378,30 @@ lines it printed; in a run, all of it is in the run's `mcp-<server>.log`.
 **Classes.** Each tool is classed by who it reaches, as you would judge a
 trusted employee's work:
 
-- `read` changes nothing.
-- `work` is anything in your organisation's own tools: documents, sheets,
-  databases, CRMs, Notion, Linear, files and drafts, including overwriting
-  them, and even when colleagues see or are notified of the change. It is
-  done, then reported, like an employee who comes back with the finished
-  spreadsheet.
+- `read-only` changes nothing.
+- `internal` changes things in your organisation's own tools: documents,
+  sheets, databases, CRMs, Notion, Linear, files and drafts, including
+  overwriting and trashing, and even when colleagues see or are notified of
+  the change. It is done, then reported, like an employee who comes back
+  with the finished spreadsheet. Internal is not the same as harmless: it
+  runs without approval because the role is trusted, and backups and
+  version history are the remedy if it goes wrong.
 - `external` reaches people outside your organisation, or the public, or
   spends money: email sent, messages to customers, social posts,
   publishing to the web, public records, purchases. A tool that can reach
   either side, such as sending email or calendar invitations, counts as
   external, because it cannot tell who is inside.
 
-The boundary is the organisation, not visibility: a Notion page is work even
-though Notion can publish pages; publishing one to the web would be external.
+The boundary is the organisation, not visibility: a Notion page is internal
+even though Notion can publish pages; publishing one to the web would be
+external. The class is a default you can change: a team chat whose tool
+could reach outside counts as external, and `class: internal` makes it
+internal if you know it stays inside.
 
 A tool's class comes from, each overriding the one before: the server's
-markings (`readOnlyHint` makes it read, `openWorldHint: false` makes it
-work), `class:` on the server in `tools.md` (for all its tools that do not
-read), then `class:` on the tool. A tool that changes something and is not
+markings (`readOnlyHint` makes it read-only, `openWorldHint: false` makes it
+internal), `class:` on the server in `tools.md` (for all its tools that are
+not read-only), then `class:` on the tool. A tool that changes something and is not
 classed counts as `external`, the safe default. Most servers do not mark
 tools this way, so a sheets or documents server usually needs one line:
 
@@ -404,7 +409,7 @@ tools this way, so a sheets or documents server usually needs one line:
 servers:
   sheets:
     command: uvx
-    class: work          # its tools that do not read are work
+    class: internal      # its tools that are not read-only are internal
 ```
 
 `ombro tools <server>` shows each tool's class, where it came from, and the
@@ -413,7 +418,7 @@ line to add where a tool is external only by default.
 **Permissions.** Every outward call is allowed (it runs, and is recorded),
 staged (it waits in the outbox) or refused:
 
-| `outward` | read | work | external |
+| `outward` | read-only | internal | external |
 |---|---|---|---|
 | `manual` | allow | stage | stage |
 | `balanced` (default) | allow | allow | stage |
@@ -427,8 +432,8 @@ outward: {preset: balanced, allow: [mcp.mail.send_message], stage: [mcp.sheets.u
 ```
 
 The task interview asks what may happen without you whenever the crew has
-external tools, and writes the answer into the spec. A crew whose tools only
-read and work needs no answer. `permission: refuse` in
+external tools, and writes the answer into the spec. A crew whose tools are
+only read-only and internal needs no answer. `permission: refuse` in
 `tools.md` beats everything. Permissions are fixed when a run starts and
 recorded in `run.md`; scheduled runs follow them like any other.
 

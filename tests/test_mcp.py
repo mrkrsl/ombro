@@ -274,12 +274,12 @@ def test_server_errors_are_reported(home, tmp_path):
 
 def test_tools_md_servers_and_mcp_settings_are_checked(home):
     good = {"servers": {"sheets": {"command": "uvx", "args": ["invented-sheets"], "env": {"K": "${K}"},
-                                   "class": "work"}},
+                                   "class": "internal"}},
             "tools": {"mcp.sheets.add_rows": {"class": "external", "max_calls": 3},
                       "mcp.sheets.delete_sheet": {"permission": "refuse"}}}
     s = ToolSettings.from_dict(good)
     assert s.servers["sheets"]["command"] == "uvx" and s.tools["mcp.sheets.add_rows"]["class"] == "external"
-    assert s.servers["sheets"]["class"] == "work"
+    assert s.servers["sheets"]["class"] == "internal"
     for bad, msg in [
         ({"servers": {"x": {}}}, "either `command`"),
         ({"servers": {"x": {"command": "a", "url": "https://b"}}}, "not both"),
@@ -287,9 +287,12 @@ def test_tools_md_servers_and_mcp_settings_are_checked(home):
         ({"tools": {"mcp.x.y": {"permission": "allow"}}}, "only be `refuse`"),
         ({"tools": {"mcp.x.y": {"class": "write"}}}, "class for"),
         ({"tools": {"mcp.x.y": {"class": "send"}}}, "renamed; use 'external'"),  # stage 6 names
-        ({"tools": {"mcp.x.y": {"class": "change"}}}, "renamed; use 'work'"),
-        ({"servers": {"x": {"command": "a", "class": "read"}}}, "work or external"),
-        ({"tools": {"web.search": {"class": "read"}}}, "only to MCP tools"),
+        ({"tools": {"mcp.x.y": {"class": "change"}}}, "renamed; use 'internal'"),
+        ({"tools": {"mcp.x.y": {"class": "work"}}}, "renamed; use 'internal'"),  # names before the rename
+        ({"tools": {"mcp.x.y": {"class": "read"}}}, "renamed; use 'read-only'"),
+        ({"servers": {"x": {"command": "a", "class": "work"}}}, "renamed; use 'internal'"),
+        ({"servers": {"x": {"command": "a", "class": "read-only"}}}, "internal or external"),
+        ({"tools": {"web.search": {"class": "read-only"}}}, "only to MCP tools"),
     ]:
         with pytest.raises(SetupError, match=msg):
             ToolSettings.from_dict(bad)
@@ -300,18 +303,18 @@ def test_tools_md_servers_and_mcp_settings_are_checked(home):
 
 def test_classes_follow_markings_then_the_server_then_the_tool():
     c = outward.classify_with_source
-    assert c({"readOnlyHint": True}) == ("read", "marking")
-    assert c({"openWorldHint": False}) == ("work", "marking")  # the server says it reaches nothing outside
+    assert c({"readOnlyHint": True}) == ("read-only", "marking")
+    assert c({"openWorldHint": False}) == ("internal", "marking")  # the server says it reaches nothing outside
     assert c({}) == ("external", "default")  # changes something, not classed: the safe default
     assert c({"readOnlyHint": False, "destructiveHint": False}) == ("external", "default")  # destructive is not the test
-    assert c({}, server_class="work") == ("work", "server")
+    assert c({}, server_class="internal") == ("internal", "server")
     assert c({"openWorldHint": False}, server_class="external") == ("external", "server")
-    assert c({"readOnlyHint": True}, server_class="external") == ("read", "marking")  # reading stays reading
-    assert c({"readOnlyHint": True}, "external", "work") == ("external", "tool")  # the tool's own line wins
-    assert c({}, "work") == ("work", "tool")
-    s = ToolSettings.from_dict({"servers": {"sheets": {"command": "x", "class": "work"}},
+    assert c({"readOnlyHint": True}, server_class="external") == ("read-only", "marking")  # reading stays reading
+    assert c({"readOnlyHint": True}, "external", "internal") == ("external", "tool")  # the tool's own line wins
+    assert c({}, "internal") == ("internal", "tool")
+    s = ToolSettings.from_dict({"servers": {"sheets": {"command": "x", "class": "internal"}},
                                 "tools": {"mcp.sheets.share": {"class": "external"}}})
-    assert outward.tool_class(s, "mcp.sheets.update_cells", {"destructiveHint": True}) == ("work", "server")
+    assert outward.tool_class(s, "mcp.sheets.update_cells", {"destructiveHint": True}) == ("internal", "server")
     assert outward.tool_class(s, "mcp.sheets.share", {}) == ("external", "tool")
     assert outward.tool_class(s, "mcp.other.x", {}) == ("external", "default")
 
@@ -320,7 +323,7 @@ def test_presets_by_class():
     s = ToolSettings()
     for preset, expect in [("manual", ("allow", "stage", "stage")), ("balanced", ("allow", "allow", "stage")),
                            ("auto", ("allow", "allow", "allow"))]:
-        got = tuple(outward.decide({"preset": preset}, "mcp.x.t", c, s) for c in ("read", "work", "external"))
+        got = tuple(outward.decide({"preset": preset}, "mcp.x.t", c, s) for c in ("read-only", "internal", "external"))
         assert got == expect, preset
 
 
@@ -348,7 +351,7 @@ def test_spec_choices_beat_the_preset():
     s = ToolSettings()
     setting = {"preset": "balanced", "allow": ["mcp.x.post"], "stage": ["mcp.x.add"]}
     assert outward.decide(setting, "mcp.x.post", "external", s) == "allow"
-    assert outward.decide(setting, "mcp.x.add", "work", s) == "stage"
+    assert outward.decide(setting, "mcp.x.add", "internal", s) == "stage"
     assert outward.decide({"preset": "balanced"}, "mcp.x.odd", "unknown", s) == "stage"  # unknown counts as external
 
 

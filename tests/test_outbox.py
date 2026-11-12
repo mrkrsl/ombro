@@ -92,7 +92,7 @@ def test_the_report_lists_staged_actions_from_the_harness_record(run, record):
     ref = outbox.actions(run.run_dir)[0].ref
     assert f"**{ref}** `mcp.fake.post_message` (poster)" in section
     assert "Reason: The spec asks for one post." in section
-    assert "Work done during the run (1):" in section  # add_row is work: it runs
+    assert "Internal changes made during the run (1):" in section  # add_row is internal: it runs
     assert "`mcp.fake.add_row` (poster): sheet: Leads" in section
     assert "Permissions for this run: balanced (from preferences)" in section
     assert "ombro outbox show" in section
@@ -433,11 +433,11 @@ def test_ombro_tools_lists_a_servers_tools_with_their_permission(home, record):
     assert r.returncode == 0, r.stderr
     lines = {ln.split()[0]: ln.split()[1:4] for ln in r.stdout.splitlines()
              if ln.strip().startswith("mcp.") and not ln.split()[0].endswith(":")}
-    assert lines == {"mcp.fake.find_rows": ["read", "marking", "allow"],
-                     "mcp.fake.add_row": ["work", "marking", "allow"],
+    assert lines == {"mcp.fake.find_rows": ["read-only", "marking", "allow"],
+                     "mcp.fake.add_row": ["internal", "marking", "allow"],
                      "mcp.fake.post_message": ["external", "default", "stage"],
                      "mcp.fake.fire_hook": ["external", "default", "stage"]}
-    assert "class: work" in r.stdout  # it says how to class the defaulted ones
+    assert "class: internal" in r.stdout  # it says how to class the defaulted ones
     assert "fake" in ombro(home, "tools").stdout
 
 
@@ -466,7 +466,7 @@ def test_the_brief_records_what_may_happen_without_you(home, record):
     assert any("outward tools: balanced (from spec); staged: mcp.fake.post_message" in w for w in proposal.warnings)
 
 
-def test_a_crew_that_only_reads_and_works_is_not_asked_about_permissions(home, tmp_path):
+def test_a_crew_with_only_read_only_and_internal_tools_is_not_asked_about_permissions(home, tmp_path):
     from ombro.interviews import BriefPurpose
     from ombro.settings import load_limits
 
@@ -481,27 +481,27 @@ def test_a_crew_that_only_reads_and_works_is_not_asked_about_permissions(home, t
     assert "outward" not in meta
 
 
-def test_class_work_on_a_server_makes_its_tools_run_and_be_reported_as_work(home, run, tmp_path):
+def test_class_internal_on_a_server_makes_its_tools_run_and_be_reported(home, run, tmp_path):
     record = tmp_path / "sent.jsonl"
-    use_fake_mcp(home, record, server_settings={"class": "work"})
+    use_fake_mcp(home, record, server_settings={"class": "internal"})
     write_role(home, "poster", kind="helper", tools=ALL)
     run(script(post(), add()))  # balanced, and no outward line in the spec
     assert [e["tool"] for e in fake_sent(record)] == ["post_message", "add_row"]
     assert outbox.actions(run.run_dir) == []
     section = run.report.split("## Outward actions", 1)[1].split("## Changes to notes.md")[0]
-    assert "Work done during the run (2):" in section and "Staged" not in section
+    assert "Internal changes made during the run (2):" in section and "Staged" not in section
 
 
 def test_an_allowed_external_call_is_reported_as_sent(run, record):
     run(script(post()), spec_meta=spec_with("auto"))
     section = run.report.split("## Outward actions", 1)[1].split("## Changes to notes.md")[0]
-    assert "Sent during the run, as your permissions allow (1):" in section and "Work done" not in section
+    assert "Sent during the run, as your permissions allow (1):" in section and "Internal changes" not in section
 
 
-def test_manual_stages_work_too(run, record):
+def test_manual_stages_internal_changes_too(run, record):
     run(script(add()), spec_meta=spec_with("manual"))
     [a] = outbox.actions(run.run_dir)
-    assert a.tool == "mcp.fake.add_row" and a.meta["class"] == "work"
+    assert a.tool == "mcp.fake.add_row" and a.meta["class"] == "internal"
 
 
 def test_whole_flow_on_the_command_line(home, record):
