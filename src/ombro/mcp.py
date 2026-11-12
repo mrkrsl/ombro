@@ -52,6 +52,8 @@ _HEADER_TOKEN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 START_TIMEOUT = 30.0
 CALL_TIMEOUT = 60.0
 RESULT_MAX_CHARS = 8_000
+ANSWER_MAX_BYTES = 4_000_000  # the most of one answer Ombro reads, over HTTP or stdio
+TOO_LARGE = "_ombro_answer_too_large"  # stdio: stands for a message that was over the cap
 _REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 # What a started server gets from Ombro's own environment: enough to find programs,
 # a home folder, the locale and a temporary folder. Nothing else, so keys kept in a
@@ -210,7 +212,17 @@ class _Stdio:
 
     def _read(self) -> None:
         assert self.proc.stdout is not None
-        for raw in self.proc.stdout:
+        out = self.proc.stdout
+        while True:
+            raw = out.readline(ANSWER_MAX_BYTES + 1)
+            if not raw:
+                break
+            if len(raw) > ANSWER_MAX_BYTES and not raw.endswith(b"\n"):
+                # Over the cap: skip the rest of this line and say so, never hold it.
+                while (more := out.readline(1 << 20)) and not more.endswith(b"\n"):
+                    pass
+                self.inbox.put({TOO_LARGE: True})
+                continue
             line = raw.strip()
             if not line:
                 continue
@@ -351,11 +363,20 @@ class _Http:
         return h
 
     def _post(self, msg: dict, timeout: float, token: str | None) -> httpx.Response:
+        """Post one message and read at most ANSWER_MAX_BYTES of the answer."""
         headers = self._headers(msg)
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        return self.client.post(self.url, content=json.dumps(msg), headers=headers,
-                                timeout=httpx.Timeout(max(timeout, 0.5), connect=min(max(timeout, 0.5), 15.0)))
+        with self.client.stream("POST", self.url, content=json.dumps(msg), headers=headers,
+                                timeout=httpx.Timeout(max(timeout, 0.5), connect=min(max(timeout, 0.5), 15.0))) as r:
+            body = bytearray()
+            for chunk in r.iter_bytes():
+                body += chunk
+                if len(body) > ANSWER_MAX_BYTES:
+                    raise _AnswerLost(f"the answer was larger than {ANSWER_MAX_BYTES:,} bytes, so it was not read")
+            kept = {k: v for k, v in r.headers.items() if k.lower() not in ("content-encoding", "content-length",
+                                                                               "transfer-encoding")}
+            return httpx.Response(r.status_code, headers=kept, content=bytes(body), request=r.request)
 
     def _token(self, stale: str | None = None) -> str | None:
         from ombro.oauth import SignInError
@@ -628,6 +649,9 @@ class McpClient:
                 raise McpCallLost(f"server {self.cfg.name} did not answer {method} within {timeout:.0f}s") from None
             if msg is None:
                 raise McpCallLost(f"server {self.cfg.name} stopped before answering {method}")
+            if msg.get(TOO_LARGE):
+                raise McpCallLost(f"server {self.cfg.name} sent an answer to {method} larger than "
+                                  f"{ANSWER_MAX_BYTES:,} bytes, so it was not read")
             if "method" in msg and "id" in msg:
                 self._answer_server(msg)
                 continue

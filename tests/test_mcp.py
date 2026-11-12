@@ -413,3 +413,42 @@ def test_a_run_journals_the_command_line_warning(home, run, tmp_path):
     write_role(home, "poster", kind="helper", tools=["mcp.fake.find_rows"])
     run([fake.finish(), LEAD_REPORT])
     assert any(e["action"] == "warning" and "process list" in e["note"] for e in run.events)
+
+
+def test_an_oversized_remote_answer_is_not_read_and_counts_as_lost(home, monkeypatch):
+    from ombro import mcp
+
+    monkeypatch.setattr(mcp, "ANSWER_MAX_BYTES", 10_000)
+    big = {"jsonrpc": "2.0", "id": 99, "result": {"content": [{"type": "text", "text": "x" * 50_000}]}}
+    cfg = ServerConfig(name="remote", url="https://mcp.invalid/mcp")
+    sent: list = []
+    with McpClient(home, cfg, transport=_remote(lambda r: httpx.Response(200, json=big))) as c:
+        with pytest.raises(McpCallLost, match="larger than"):
+            c.call_tool("note", {}, sent=sent)
+    assert sent  # it was sent, so it is uncertain, never retried
+
+
+def test_an_oversized_stdio_answer_is_not_read_and_counts_as_lost(home, tmp_path, monkeypatch):
+    from ombro import mcp
+
+    monkeypatch.setattr(mcp, "ANSWER_MAX_BYTES", 10_000)
+    server = tmp_path / "big_server.py"  # an invented server: legacy, one tool, an enormous answer
+    server.write_text(
+        "import json, sys\n"
+        "for line in sys.stdin:\n"
+        "    m = json.loads(line)\n"
+        "    if 'id' not in m: continue\n"
+        "    if m['method'] == 'initialize':\n"
+        "        r = {'protocolVersion': '2025-06-18', 'capabilities': {}}\n"
+        "    elif m['method'] == 'server/discover':\n"
+        "        print(json.dumps({'jsonrpc': '2.0', 'id': m['id'], 'error': {'code': -32601, 'message': 'no'}}),"
+        " flush=True); continue\n"
+        "    else:\n"
+        "        r = {'content': [{'type': 'text', 'text': 'x' * 50000}]}\n"
+        "    print(json.dumps({'jsonrpc': '2.0', 'id': m['id'], 'result': r}), flush=True)\n")
+    cfg = ServerConfig(name="big", command=sys.executable, args=(str(server),))
+    sent: list = []
+    with McpClient(home, cfg) as c:
+        with pytest.raises(McpCallLost, match="larger than"):
+            c.call_tool("note", {}, sent=sent)
+    assert sent
