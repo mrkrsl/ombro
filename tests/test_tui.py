@@ -691,3 +691,32 @@ def test_limits_shows_and_sets_the_one_level(home):
 
     drive(go())
     assert load_limits(home).allowance == "generous" and load_limits(home).max_tokens == 2_000_000
+
+
+def test_slash_run_offers_a_saved_spec_again(home, monkeypatch):
+    from ombro import mdfile
+
+    (home.specs_dir).mkdir(parents=True, exist_ok=True)
+    mdfile.write(home.specs_dir / "old-task.md", {"name": "old-task", "crews": ["default"],
+                                                   "roles": ["general-assistant"]}, "# An invented old task\n")
+    mdfile.write(home.specs_dir / "new-task.md", {"name": "new-task", "crews": ["default"]}, "# An invented task\n")
+    app, _ = _app(home)
+    started = []
+    monkeypatch.setattr(app.commands, "start_run", lambda name: started.append(name) or None)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/run old-task")
+            await answer(pilot, app, "y")
+            await settle(pilot, app)
+            texts = "\n".join(_texts(app))
+            assert "Saved spec old-task: An invented old task" in texts
+            assert "the work goes to: general-assistant" in texts
+            await command(pilot, app, "/run")
+            await answer(pilot, app, "1")
+            await answer(pilot, app, "n")
+            await settle(pilot, app)
+
+    drive(go())
+    assert started == ["old-task"]

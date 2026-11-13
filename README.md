@@ -137,6 +137,8 @@ The `/` commands do what their `ombro` commands do:
 
 - `/brief`, `/chat`, `/new`, `/remember`: as in `ombro chat`. When a brief is
   confirmed, it offers to run the spec at once, in the background.
+- `/run [spec]`: run a saved spec again, with no interview (no name: choose
+  from the saved specs, newest first).
 - `/runs`, `/report [run_id]` (deliverables as links that open the file),
   `/stop <run_id>`, `/open [run_id]`.
 - `/outbox`, `/outbox show | approve | decline <ref>...`,
@@ -229,6 +231,12 @@ accept. In a run with more than one crew, roles are named `crew/role`
 the crews has it. Runs, specs, schedules and interview transcripts belong to
 no crew.
 
+A spec can also say who does the work (`roles: [marketing-researcher]`),
+which the brief interview records when you name a role. The Lead then briefs
+those roles for the work itself, and others only for side tasks such as a
+check; the report says who the spec named and who else was briefed. Without
+`roles:`, the Lead chooses from the roles' descriptions.
+
 ## How a run works
 
 1. Ombro loads the Lead, the roles of the crews the spec names, the limits,
@@ -298,6 +306,12 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   (your own messages, most recent first, up to 4,000 characters) and the
   Lead's one-line summary if you accepted its offer. It saves a spec, which
   you run with `ombro run --spec <name>`. `/chat` goes back with nothing written.
+- **Saved specs.** Ask to restart a task you briefed before and the Lead
+  offers to run its saved spec again; Ombro shows the spec and asks first.
+  Ask for a change (another role, a narrower scope) and the Lead offers to
+  change the saved spec: the interview starts from its text, asks only about
+  the change, and shows it as a diff (the old text is kept as
+  `<name>.previous.md`).
 - **`/new`** saves the chat and starts a fresh one, with its own token cap
   and usage from zero. Nothing from the old one is sent to the Lead.
 - **`/remember [@crew] <text>`** adds a dated line to a crew's notes.md

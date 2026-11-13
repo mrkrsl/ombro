@@ -44,7 +44,7 @@ MEMORY_TOOLS = {"memory__search": "memory.search", "memory__read": "memory.read"
 WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
 FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write",
                 "folders__set_aside": "folders.set_aside"}
-OFFERS = ("offer_brief", "offer_remember")
+OFFERS = ("offer_brief", "offer_remember", "offer_run")
 
 HELP = """\
 Chat mode is a conversation with the Lead. It can look at every crew's reports,
@@ -164,6 +164,7 @@ class Chat:
         self.refused: list[str] = []
         self.remembered: list[dict[str, str]] = []
         self.specs: list[str] = []
+        self.run_offers: list[str] = []  # saved specs the Lead offered to run; the interface asks the user
         self._fresh()
 
     def _fresh(self) -> None:
@@ -305,6 +306,8 @@ class Chat:
                     break
                 if not self.handle(raw):
                     break
+                while self.run_offers:  # the command line asks here; an interface asks in its own way
+                    self._run_offered(self.run_offers.pop())
         finally:
             self.close()
         return self
@@ -343,7 +346,8 @@ class Chat:
             return True
         self._usage_line()
         if request:
-            self._brief(request[0], self.brief_opening("", request[1]))
+            revise = request[2] if len(request) > 2 else None
+            self._brief(request[0], self.brief_opening("", request[1]), revise=revise)
         self._save()
         return True
 
@@ -462,6 +466,8 @@ class Chat:
             return {"error": "the arguments were not a JSON object"}, None
         if name == "offer_brief":
             return self._offer_brief(args)
+        if name == "offer_run":
+            return self._offer_run(args), None
         if name == "offer_remember":
             crew = str(args.get("crew") or self.crew)
             if crew not in self.home.crews():
@@ -570,16 +576,61 @@ class Chat:
                             "(folders: " + ", ".join(f"shared/{n} ({f.access})" for n, f in ctx.shared.items())
                             + ")")
 
-    def _offer_brief(self, args: dict) -> tuple[dict, tuple[list[str], str] | None]:
+    def _saved_spec(self, name: Any) -> Path | None:
+        name = str(name or "").strip().removesuffix(".md").removeprefix("specs/")
+        path = self.home.specs_dir / f"{name}.md"
+        return path if name and "/" not in name and path.is_file() else None
+
+    def _offer_run(self, args: dict) -> dict[str, Any]:
+        """The Lead offers to run a saved spec again. The interface shows the spec and asks;
+        nothing starts without the user's yes (specification 10.4)."""
+        path = self._saved_spec(args.get("spec"))
+        if path is None:
+            from ombro.cli import saved_specs
+
+            names = [n for n, _ in saved_specs(self.home)][:15]
+            return {"error": f"there is no saved spec called {args.get('spec')!r}. Saved specs, newest first: "
+                             + (", ".join(names) or "none")}
+        self.run_offers.append(path.stem)
+        self.transcript.note(f"The Lead offered to run saved spec {path.stem!r}.")
+        return {"status": f"Ombro now shows the user spec {path.stem!r} and asks whether to run it. Do not say "
+                          "it has started; say only that you have offered it. If the user wants it changed first, "
+                          "call offer_brief with revise instead."}
+
+    def _run_offered(self, spec: str) -> None:
+        """The command line's way of asking about a run the Lead offered."""
+        if not self.ui.yes("run_now", f"Run the saved spec {spec!r} now? It runs in the background.", False):
+            self.ui.say(f"Not started. Run it later with `ombro run --spec {spec}`.")
+            return
+        from ombro.cli import main
+
+        main(["run", "--spec", spec, "--detach"])
+
+    def _offer_brief(self, args: dict) -> tuple[dict, tuple | None]:
         summary = _short(args.get("summary") or "", 300)
+        revise = None
+        if args.get("revise"):
+            path = self._saved_spec(args.get("revise"))
+            if path is None:
+                return {"error": f"there is no saved spec called {args.get('revise')!r} to revise"}, None
+            revise = path.stem
         raw = args.get("crews") or args.get("crew") or []
         crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
                  if str(c) in self.home.crews()]
-        which = f" for crew{'s' if len(crews) > 1 else ''} {', '.join(crews)}" if crews else ""
-        self.ui.say(f"The Lead offers to brief this as a task{which}: {summary}", spaced=True)
-        if self.ui.yes("start_brief", "Start a brief now?", False, mode="Chat"):
+        if revise and not crews:
+            had = mdfile.read(self.home.specs_dir / f"{revise}.md")[0].get("crews") or []
+            crews = [str(c) for c in ([had] if isinstance(had, str) else had) if str(c) in self.home.crews()]
+        which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
+        if revise:
+            self.ui.say(f"The Lead offers to change your saved spec {revise!r}: {summary}", spaced=True)
+            question = "Change it now? You'll see the changes before anything is saved."
+        else:
+            self.ui.say(f"The Lead offers to brief this as a task{which}: {summary}", spaced=True)
+            question = "Start a brief now?"
+        if self.ui.yes("start_brief", question, False, mode="Chat"):
             self.transcript.note(f"The Lead offered a brief ({summary}); you accepted.")
-            return {"status": "the user accepted; the task interview starts now, so do not reply"}, (crews, summary)
+            return ({"status": "the user accepted; the task interview starts now, so do not reply"},
+                    (crews, summary, revise))
         self.transcript.note(f"The Lead offered a brief ({summary}); you declined.")
         return {"status": "the user declined; carry on the conversation and do not offer again for this"}, None
 
@@ -681,7 +732,7 @@ class Chat:
             parts.append(f"The Lead's one-line summary in the chat, which the user accepted: {summary}")
         return "\n\n".join(parts)
 
-    def _brief(self, crews: list[str], opening: str) -> None:
+    def _brief(self, crews: list[str], opening: str, revise: str | None = None) -> None:
         from ombro.interviews import BriefPurpose, start
 
         self.mode = "Brief"
@@ -691,7 +742,8 @@ class Chat:
         self.transcript.note(f"Switched to Brief mode{which}.")
         try:
             outcome = start(
-                self.home, BriefPurpose(self.home, self.crew, self.base_limits, opening, crews=crews), self.crew,
+                self.home, BriefPurpose(self.home, self.crew, self.base_limits, opening, crews=crews, revise=revise),
+                self.crew,
                 self.base_limits,
                 ui=BriefModeUI(self.ui), client_factory=self._client_factory, today=self.today_date,
             )

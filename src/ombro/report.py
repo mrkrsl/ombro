@@ -59,11 +59,14 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     placed: list[dict[str, Any]] = []
     not_shared: list[str] = []
     material_flags: list[dict[str, Any]] = []
+    spec_roles: list[str] = []
     set_aside: list[str] = []
     tainted: list[str] = []
     for ev in events:
         action = ev.get("action")
-        if action == "material_flag":
+        if action == "spec_roles":
+            spec_roles = [str(r) for r in ev.get("roles") or []]
+        elif action == "material_flag":
             material_flags.append({"source": ev.get("source", "?"), "signs": ev.get("signs") or [],
                                    "role": ev.get("reader", "")})
         elif action in ("set_aside", "archived"):
@@ -186,6 +189,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "placed": placed,
         "not_shared": not_shared,
         "material_flags": material_flags,
+        "spec_roles": spec_roles,
         "set_aside": set_aside,
         "tainted_staged": tainted,
         "workspace": str(workspace),
@@ -387,6 +391,15 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
             out.append(f"   - {_line(b['result'].get('summary', ''), 500)}")
         if b.get("reason"):
             out.append(f"   - {_line(b['reason'], 500)}")
+    if f.get("spec_roles"):
+        chosen = f["spec_roles"]
+        others = sorted({b["role"] for b in f["briefs"]} - set(chosen))
+        unused = [r for r in chosen if r not in {b["role"] for b in f["briefs"]}]
+        out += ["", f"The spec gave the work to {', '.join(chosen)}."]
+        if others:
+            out.append(f"Also briefed, outside the spec's roles: {', '.join(others)}. The Lead's account says why.")
+        if unused:
+            out.append(f"Not briefed, though the spec named them: {', '.join(unused)}.")
     out.append("")
 
     out += ["## Deliverables", ""]

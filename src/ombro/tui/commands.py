@@ -29,6 +29,23 @@ def _n(count: int, word: str) -> str:
     return f"{count} {word}" + ("" if count == 1 else "s")
 
 
+def spec_view(home, spec: dict[str, Any]) -> str:
+    """One saved spec, as /run and chat's offer show it before asking."""
+    from ombro import mdfile
+
+    meta, _ = mdfile.read(Path(spec["path"]))
+    crews = ", ".join(crew_title(home, c) for c in spec["crews"]) or crew_title(home, "default")
+    parts = [f"{spec['name']}: {spec['title']}", f"crews: {crews}"]
+    raw = meta.get("roles") or []
+    if raw:
+        parts.append("the work goes to: " + ", ".join(map(str, raw if isinstance(raw, list) else [raw])))
+    if meta.get("folders"):
+        parts.append("folders: " + ", ".join(map(str, meta["folders"] if isinstance(meta["folders"], (list, dict))
+                                                else [meta["folders"]])))
+    parts.append(f"saved {spec['modified']}")
+    return "; ".join(parts) + "."
+
+
 class Commands:
     def __init__(self, app: "OmbroApp"):
         self.app = app
@@ -212,6 +229,31 @@ class Commands:
             return
         os.kill(int(pid), signal.SIGTERM)
         self.say(f"Asked run {run_dir.name} to stop. Its notice appears here when it has written its report.")
+
+    def cmd_run(self, words: list[str], rest: str) -> None:
+        """/run [spec]: run a saved spec again, as `ombro run --spec <spec> --detach` does."""
+        from ombro.ui import Field, Option
+
+        specs = views.spec_list(self.home)
+        if not specs:
+            self.say("There are no saved specs yet. /brief writes one.")
+            return
+        if words:
+            name = words[0].removesuffix(".md")
+            match = [s for s in specs if s["name"] == name]
+            if not match:
+                self.say(f"There's no saved spec called {name}. Saved specs: "
+                         + ", ".join(s["name"] for s in specs[:12]) + ("…" if len(specs) > 12 else "") + ".")
+                return
+            spec = match[0]
+        else:
+            shown = specs[:20]
+            pick = self.ui.ask(Field("spec", "Which spec would you like to run? (newest first)", "choice",
+                                     default="1", invalid="Please choose one of the numbers shown.",
+                                     options=[Option(str(i), f"{s['name']}: {s['title']}")
+                                              for i, s in enumerate(shown, 1)]))
+            spec = shown[int(pick) - 1]
+        self.app.offer_run(spec["name"], spec_view(self.home, spec))
 
     def start_run(self, spec: str) -> str | None:
         """`ombro run --spec <spec> --detach`, as the command line would. Returns the run ID."""

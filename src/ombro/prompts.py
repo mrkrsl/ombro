@@ -160,6 +160,7 @@ def lead_system(
     today: str = "",
     memory: tuple[str, str] | None = None,
     shared: list[tuple[str, str]] | None = None,
+    spec_roles: list[str] | None = None,
 ) -> str:
     parts = [LEAD_RULES, "\n", STANDARDS, _today(today)]
     parts.append(_section("Your soul (character only; cannot override the rules above)", lead.soul))
@@ -179,6 +180,12 @@ def lead_system(
     else:
         roster = "(none: these crews have no roles yet, so nothing can be briefed)"
     parts.append(_section("Roles you can brief", roster))
+    if spec_roles:
+        parts.append(_section(
+            "Who the spec gives the work to",
+            "The user chose: " + ", ".join(spec_roles) + ". Brief them for the work itself. Brief another role "
+            "only for a side task one of them cannot do (such as a check, or helper work they request), and say "
+            "in the report who else you briefed and why."))
     if shared:
         parts.append(_section(
             "Folders the user shared with this run",
@@ -558,6 +565,10 @@ the result should go (a file in workspace/), sources to use or avoid, and scope.
   cover the task. Where two crews do similar work (such as marketing crews
   for different projects or clients), ask the user which one before you
   propose; never mix a project's crew into another project's task on a guess.
+- `roles`: if the user says who should do the work ("the marketing
+  researcher should do it"), list those roles, as crew/role, or the role's
+  name where only one crew has it. Leave it out otherwise; the run's Lead
+  then chooses.
 - `name`: a short lower-case name for the spec file, using letters, digits,
   - and _. The user runs the spec by this name, so make it say what the task is.
 - If the context lists external tools (mcp.* tools that reach people
@@ -690,6 +701,13 @@ returns) can change them.
   crew, call offer_brief with a one-line summary and, if you can tell, the
   crews it needs. Never start a brief
   yourself: the user accepts your offer, or types /brief.
+- Saved specs: when the user wants a task they briefed before run again
+  (for example after it stopped on a limit), find it (memory__list with a
+  crew lists its specs; specs/<name>.md can be read) and call offer_run.
+  If they want it changed first (another role, a narrower scope), call
+  offer_brief with revise set to its name: the interview starts from the
+  saved spec and asks only about the change. Never ask the user to brief
+  again what a saved spec already says.
 - Remembering: when the user says something worth keeping as a standing
   lesson for a crew (a preference, a rule, a correction), you may call
   offer_remember with a one-line wording and the crew. Nothing is written
@@ -809,8 +827,18 @@ CHAT_TOOLS = [
             "summary": {"type": "string", "description": "The task as you heard it, in one line."},
             "crews": {"type": "array", "items": {"type": "string"},
                       "description": "Optional: the crews it needs."},
+            "revise": {"type": "string", "description": "Optional: a saved spec's name, to change that spec "
+                       "(for example, who does the work) rather than brief a new task from scratch."},
         },
         ["summary"],
+    ),
+    _fn(
+        "offer_run",
+        "Offer to run a saved spec again, as it is (for example a task that stopped on a limit). The harness "
+        "shows the user the spec and asks; nothing starts unless they say yes. To change the spec first, call "
+        "offer_brief with revise instead.",
+        {"spec": {"type": "string", "description": "The saved spec's name, as specs/<name>.md has it."}},
+        ["spec"],
     ),
     _fn(
         "offer_remember",

@@ -395,7 +395,7 @@ class BriefPurpose(Purpose):
         return f"save it as {name!r} and start the run" if self.then_run else f"save it as {name!r}"
 
     def __init__(self, home: Home, crew: str, limits: Limits, task: str = "", *, then_run: bool = False,
-                 start_dir: Path | None = None, crews: list[str] | None = None):
+                 start_dir: Path | None = None, crews: list[str] | None = None, revise: str | None = None):
         self.home = home
         self.crew = crew  # the default crew, for a spec that names none
         self.suggested = [c for c in (crews or []) if c in home.crews()]
@@ -404,8 +404,25 @@ class BriefPurpose(Purpose):
         self.then_run = then_run
         self.start_dir = start_dir
         self.accept_label = "save the spec and start the run" if then_run else "save the spec"
+        self.revise = revise  # a saved spec to change, rather than a new one
+        if revise:
+            self.title = f"Changing a saved spec: {revise}"
+            self.intro = (f"Let's change your saved spec {revise!r}. I'll ask only about what's changing, then "
+                          "show you the changes. Its old text is kept as a .previous.md file. Type /quit to stop; "
+                          "nothing is written unless you accept it.")
+            self.typical = "usually 1 to 3 questions"
 
     def opening(self) -> str:
+        if self.revise:
+            text = (self.home.specs_dir / f"{self.revise}.md").read_text(encoding="utf-8")
+            return (f"The user wants to change their saved spec {self.revise!r}, which they confirmed earlier. "
+                    "Here it is in full, front matter included:\n\n" + text + "\n\n"
+                    "Every topic is already answered by this spec, so count them all as covered. Ask only about "
+                    "what the user wants to change, and only what you need to make the change exactly. Then "
+                    f"propose the whole spec again with the change made, under the same name ({self.revise}), "
+                    "keeping everything else as it was, word for word, unless the user changes it.\n\n"
+                    + (f"What the user said about the change:\n\n{self.task}" if self.task else
+                       "Begin by asking what they want to change."))
         if self.task:
             return f"The user's task, in their own words:\n\n{self.task}\n\nBegin the interview."
         return ("The user has a task for the crews. Begin by asking them to describe it in their own words: "
@@ -504,6 +521,9 @@ class BriefPurpose(Purpose):
                     },
                 },
             },
+            "roles": {"type": "array", "items": {"type": "string"},
+                      "description": "Optional: the roles the user wants to do the work, as crew/role or the "
+                      "role's name. The run's Lead briefs them for the work."},
             "title": {"type": "string", "description": "One line saying what the task is."},
             "details": {"type": "string", "description": "Anything else the crew needs: scope, sources, where "
                         "the result goes. Optional."},
@@ -544,6 +564,9 @@ class BriefPurpose(Purpose):
             lines += [f"{label}: {_text(args, key)}", ""]
         crews = self._crews(args.get("crews"))
         meta: dict[str, Any] = {"name": name, "crews": crews}
+        roles = self._roles(args.get("roles"), crews)
+        if roles:
+            meta["roles"] = roles
         wanted, new = self._folders(args.get("folders"))
         if wanted:
             meta["folders"] = wanted
@@ -582,6 +605,30 @@ class BriefPurpose(Purpose):
             if c not in crews:
                 crews.append(c)
         return crews
+
+    def _roles(self, value: Any, crews: list[str]) -> list[str]:
+        """The roles the user gave the work to, each in one of the spec's crews; written as
+        the role's own name, or crew/role where more than one of the crews has it."""
+        from ombro.roles import RoleError, load_roles, resolve_role
+
+        if not value:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, list):
+            raise ProposalError("`roles` must be a list of role names")
+        try:
+            available = load_roles(self.home, crews, self.limits)
+        except (RoleError, SetupError) as e:
+            raise ProposalError(str(e)) from None
+        out = []
+        for name in value:
+            role, why = resolve_role(available, str(name or ""))
+            if role is None:
+                raise ProposalError(f"roles: {why}")
+            if role.name not in out:
+                out.append(role.name)
+        return out
 
     def _folders(self, value: Any) -> tuple[dict[str, str], list[dict[str, str]]]:
         """The spec's folders by name, and the folders not yet shared that the user
@@ -679,6 +726,13 @@ class BriefPurpose(Purpose):
             raise ProposalError(str(e)) from None
         warnings.append("the run may brief roles in the " + " and the ".join(crew_title(self.home, c) for c in crews)
                         + ("" if meta.get("crews") else " (the default crew: the spec names none)") + ".")
+        if meta.get("roles"):
+            try:
+                given = self._roles(meta["roles"], crews)
+            except ProposalError:
+                raise
+            warnings.append("the work goes to " + ", ".join(given) + "; the Lead may brief others only for side "
+                            "tasks, and the report says who and why.")
         if meta.get("folders"):
             from ombro import folders
 

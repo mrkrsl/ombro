@@ -35,6 +35,7 @@ SLASH = [
     ("/chat", "back to Chat from a brief"),
     ("/new", "save this chat and start a fresh one"),
     ("/brief", "brief a task: the Lead interviews you for a spec"),
+    ("/run", "run a saved spec again"),
     ("/runs", "runs and their status"),
     ("/report", "a run's report and its deliverables"),
     ("/stop", "stop a run; it writes its report first"),
@@ -56,7 +57,8 @@ SLASH = [
     ("/quit", "leave Ombro"),
 ]
 CHAT_COMMANDS = ("/chat", "/new", "/brief", "/remember")  # handled by chat itself
-TUI_COMMANDS = ("/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model", "/models",
+TUI_COMMANDS = ("/run", "/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model",
+                "/models",
                 "/keys", "/folder", "/folders", "/limits",
                 "/tools", "/preferences")
 QUIT_AGAIN_SECONDS = 2.5
@@ -702,10 +704,20 @@ class OmbroApp(App):
             self.call_from_thread(self.leave)
             return
         if len(self.chat.specs) > specs_before:
-            self._offer_run(self.chat.specs[-1])
+            self.offer_run(self.chat.specs[-1])
+        elif self.chat.run_offers:
+            name = self.chat.run_offers.pop()
+            from ombro.tui.commands import spec_view
 
-    def _offer_run(self, spec: str) -> None:
-        """After a confirmed brief: run it now, detached (specification 10.3). Chat itself never starts it."""
+            match = [s for s in views.spec_list(self.home) if s["name"] == name]
+            if match:
+                self.offer_run(name, spec_view(self.home, match[0]))
+
+    def offer_run(self, spec: str, shown: str | None = None) -> None:
+        """Run a saved spec now, detached, after the user's yes: after a confirmed brief, on /run, or when the
+        Lead in chat offers to run one again (specification 10.3, 10.4)."""
+        if shown:
+            self.bridge.say(f"Saved spec {shown}")
         if not self.bridge.yes("run_now", "Run it now? It runs in the background, and its progress shows here."):
             self.bridge.say(f"Run it later with `ombro run --spec {spec}`.")
             return

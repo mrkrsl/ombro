@@ -142,8 +142,20 @@ class Engine:
                 self.journal.write(
                     "harness", "warning", f"{role.name} lists skills that do not exist: {', '.join(missing_skills)}"
                 )
-        _, spec_body = mdfile.read(self.run_dir / "spec.md")
+        spec_meta, spec_body = mdfile.read(self.run_dir / "spec.md")
         self.spec_body = spec_body.strip()
+        # `roles:` in the spec: who the work goes to (soft: the Lead may brief others for side tasks).
+        self.spec_roles: list[str] = []
+        raw = spec_meta.get("roles") or []
+        for name in [raw] if isinstance(raw, str) else (raw if isinstance(raw, list) else []):
+            role, why = resolve_role(self.roles, str(name))
+            if role is None:
+                self.journal.write("harness", "warning", f"the spec gives the work to {name!r}, but {why}")
+            elif role.name not in self.spec_roles:
+                self.spec_roles.append(role.name)
+        if self.spec_roles:
+            self.journal.write("harness", "spec_roles", "the spec gives the work to " + ", ".join(self.spec_roles),
+                               roles=self.spec_roles)
         if not self.spec_body:
             raise SetupError("the spec is empty")
 
@@ -362,6 +374,7 @@ class Engine:
                     self.lead, self.instructions, self.roles, self.limits, self.today,
                     memory=memory.lead_context(self.home, self.crews, self.limits),
                     shared=[(f.name, f.access) for f in self.shared.values()],
+                    spec_roles=getattr(self, "spec_roles", []),
                 ),
             },
             {"role": "user", "content": self.spec_body},
