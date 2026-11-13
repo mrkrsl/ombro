@@ -7,6 +7,7 @@ import json
 import pytest
 
 from conftest import LEAD_REPORT, SPEC, write_role
+from ombro.material import unfence
 from ombro import fake, memory, mdfile, runs
 from ombro.home import ensure_crew
 from ombro.interviews import BriefPurpose, record_insufficient_brief
@@ -156,7 +157,7 @@ def test_a_write_over_the_cap_is_refused_and_the_lead_condenses(run, home):
     long = "".join(f"- Lesson {i}: an invented and fairly wordy lesson.\n" for i in range(60))
     run(a_run(notes=[fake.write_notes(long), fake.write_notes("- One condensed invented lesson.")]),
         limits={"memory_notes_max_chars": 1000})
-    refusal = json.loads(run.client.calls[-2]["messages"][-1]["content"])
+    refusal = json.loads(unfence(run.client.calls[-2]["messages"][-1]["content"]))
     assert "over the cap of 1,000" in refusal["error"] and "your part must be at most" in refusal["error"]
     assert memory.read_notes(home, "default").run_lines() == ["- One condensed invented lesson."]
     assert memory.notes_path(home, "default").stat().st_size <= 1000
@@ -212,7 +213,7 @@ def test_the_lead_searches_past_reports_in_its_own_crew_only(run, home):
     status = run([fake.call("memory__search", {"query": "Copperkettle teapot"}), fake.finish("Used memory."),
                   LEAD_REPORT])
     assert status == "completed"
-    result = json.loads(run.client.calls[1]["messages"][-1]["content"])
+    result = json.loads(unfence(run.client.calls[1]["messages"][-1]["content"]))
     ids = [r["run_id"] for r in result["results"]]
     assert ids[0] == teapots and secret not in ids and run.meta["run_id"] not in ids
     assert "Copperkettle" in result["results"][0]["text"]
@@ -226,7 +227,7 @@ def test_memory_search_has_a_call_cap(run, home):
     past_run(run, home, "Found invented teapots.")
     run([fake.call("memory__search", {"query": "teapots"}), fake.call("memory__search", {"query": "kettles"}),
          fake.finish(), LEAD_REPORT], limits={"tool_max_calls": {"memory.search": 1}})
-    second = json.loads(run.client.calls[2]["messages"][-1]["content"])
+    second = json.loads(unfence(run.client.calls[2]["messages"][-1]["content"]))
     assert "has used all 1 calls" in second["error"]
 
 

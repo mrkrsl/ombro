@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from conftest import LEAD_REPORT, use_fake_tools, write_role
+from ombro.material import unfence
 from ombro import fake, mdfile, memory
 from ombro.chat import Chat
 from ombro.fake import ScriptedClient
@@ -58,7 +59,7 @@ class ChatSession:
             for m in c["messages"]:
                 if m["role"] == "tool" and m["tool_call_id"] not in seen:
                     seen.add(m["tool_call_id"])
-                    out.append(json.loads(m["content"]))
+                    out.append(json.loads(unfence(m["content"])))
         return out
 
     @property

@@ -79,3 +79,18 @@ def test_a_new_role_is_asked_its_model_only_when_there_is_a_choice(home):
     ui = ScriptedUI([lambda f: next(o.key for o in f.options if o.label.startswith("invented-pro"))])
     models.offer_role_model(home, ui, "default/researcher", "Researcher")
     assert mdfile.read(home.roles_dir("default") / "researcher" / "config.md")[0]["model"] == "invented-pro"
+
+
+def test_the_command_line_lists_and_sets_models(home, capsys, monkeypatch):
+    from ombro.cli import main
+
+    write_role(home, "researcher")
+    models.add_models(home, ENDPOINT, "TEST_MODEL_KEY", ["invented-chat", "invented-pro"])
+    assert main(["models"]) == 0
+    out = capsys.readouterr().out
+    assert "invented-pro" in out and "(the default)" in out
+    assert main(["model", "default/researcher", "invented-pro"]) == 0
+    assert models.current_model(home, "default/researcher") == "invented-pro"
+    assert main(["models", "default", "invented-chat"]) == 0
+    assert load_models(home)["default"].model == "invented-chat"
+    assert main(["model", "nobody/here", "invented-pro"]) == 1

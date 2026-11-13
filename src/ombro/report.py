@@ -58,8 +58,18 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     folder_changes: dict[str, dict[str, Any]] = {}
     placed: list[dict[str, Any]] = []
     not_shared: list[str] = []
+    material_flags: list[dict[str, Any]] = []
+    set_aside: list[str] = []
+    tainted: list[str] = []
     for ev in events:
         action = ev.get("action")
+        if action == "material_flag":
+            material_flags.append({"source": ev.get("source", "?"), "signs": ev.get("signs") or [],
+                                   "role": ev.get("reader", "")})
+        elif action == "set_aside":
+            set_aside.append(str(ev.get("note") or ""))
+        elif action == "staged" and ev.get("tainted"):
+            tainted.append(str(ev.get("ref") or ev.get("tool") or ""))
         if action == "briefed":
             current = {"role": ev.get("target", "?"), "task": ev.get("task", ""), "status": "in_progress"}
             briefs.append(current)
@@ -175,6 +185,9 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "folder_changes": folder_changes,
         "placed": placed,
         "not_shared": not_shared,
+        "material_flags": material_flags,
+        "set_aside": set_aside,
+        "tainted_staged": tainted,
         "workspace": str(workspace),
     }
 
@@ -402,6 +415,11 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         out += ["## Code", "", *code_lines(f), ""]
     if f.get("folders") or f.get("not_shared") or f.get("folders_left_out"):
         out += ["## Shared folders", "", *folder_lines(f), ""]
+        if f.get("set_aside"):
+            out += ["Set aside, not deleted (only you empty these folders):", ""]
+            out += [f"- {x}" for x in f["set_aside"]] + [""]
+    if f.get("material_flags") or f.get("tainted_staged"):
+        out += ["## Material", "", *material_lines(f), ""]
     out += ["## Changes to notes.md", "", *all_notes_lines(f.get("notes")), ""]
 
     out += ["## Usage", ""]
@@ -513,6 +531,28 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     while lines and not lines[-1]:
         lines.pop()
     return lines
+
+
+def material_lines(f: dict[str, Any]) -> list[str]:
+    """Signs of injected instructions found in what roles read, and external calls staged
+    because of it. Flags never stopped anything; they say what to check."""
+    out = []
+    flags = f.get("material_flags") or []
+    if flags:
+        out.append(f"Text that looked written to steer a model was found {len(flags)} time"
+                   f"{'s' if len(flags) != 1 else ''}. Nothing was done because of it; check these sources:")
+        out.append("")
+        for x in flags[:30]:
+            who = f" (read by {x['role']})" if x.get("role") and x["role"] != "lead" else ""
+            out.append(f"- {_line(x['source'], 200)}{who}: {', '.join(x['signs'])}")
+        if len(flags) > 30:
+            out.append(f"- and {len(flags) - 30} more in the journal")
+    if f.get("tainted_staged"):
+        if out:
+            out.append("")
+        out.append("Staged because the role had read material in that brief, though the run's permissions "
+                   "would have allowed them: " + ", ".join(f["tainted_staged"]) + ".")
+    return out
 
 
 def code_lines(f: dict[str, Any]) -> list[str]:

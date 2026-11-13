@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from conftest import LEAD_REPORT, SPEC, fake_sent, use_fake_mcp, write_role
+from ombro.material import unfence
 from ombro import fake, mdfile, outbox, runs, schedules
 from ombro.engine import Engine
 from ombro.fake import ScriptedClient
@@ -54,7 +55,7 @@ def tool_replies(run):
         for m in call["messages"]:
             if m.get("role") == "tool" and m["content"] not in out:
                 out.append(m["content"])
-    return [json.loads(x) for x in out if x.startswith("{")]
+    return [json.loads(unfence(x)) for x in out if unfence(x).startswith("{")]
 
 
 def spec_with(outward_setting):

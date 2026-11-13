@@ -68,6 +68,7 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
     "memory_search_max_chars": 4_000,
     "chat_max_tokens": 150_000,
     "chat_history_chars": 30_000,
+    "fetch_max_query": 200,
     "chat_calls_per_message": 8,
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
                             "web.fetch": 15, "folders.list": 30, "folders.read": 40, "folders.write": 10,
@@ -135,6 +136,7 @@ class Limits:
     memory_search_max_chars: int = 4_000
     chat_max_tokens: int | None = 150_000
     chat_history_chars: int = 30_000
+    fetch_max_query: int = 200  # characters after ? in an address web.fetch will fetch (7.1)
     chat_calls_per_message: int = 8
     chat_tool_max_calls: dict[str, int] = field(default_factory=dict)
     schedule_grace: float = 600.0
@@ -212,6 +214,7 @@ class Limits:
             memory_search_max_chars=pos_num("memory_search_max_chars", d["memory_search_max_chars"], integer=True),
             chat_max_tokens=token_cap("chat_max_tokens", d["chat_max_tokens"]),
             chat_history_chars=pos_num("chat_history_chars", d["chat_history_chars"], integer=True),
+            fetch_max_query=pos_num("fetch_max_query", d["fetch_max_query"], integer=True),
             chat_calls_per_message=pos_num("chat_calls_per_message", d["chat_calls_per_message"], integer=True),
             chat_tool_max_calls=chat_calls,
             schedule_grace=pos_num("schedule_grace", parse_duration(d["schedule_grace"])),

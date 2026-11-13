@@ -256,7 +256,7 @@ def test_code_run_is_left_out_where_no_sandbox_can_be_set_up(run, home, monkeypa
     ])
     assert status == "completed"
     offered = {t["function"]["name"] for t in run.client.calls[1]["tools"]}
-    assert offered == {"workspace__write"}
+    assert offered == {"workspace__write", "workspace__set_aside"}  # a role that writes can set a file aside
     assert "code.run is left out of this run: bubblewrap is not installed (invented)" in run.report
     assert not (run.run_dir / "code").exists()
     assert not any(e["action"] == "code_run" for e in run.events)

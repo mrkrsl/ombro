@@ -220,3 +220,130 @@ def offer_role_model(home: Home, ui, who: str, title: str) -> None:
     if name != current:
         set_role_model(home, who, name)
     ui.say(f"The {title} will use {name}.", level="done")
+
+
+# ---------------------------------------------------------------------------
+# The flows /models, /model, `ombro models` and `ombro model` share
+
+
+def listing_lines(home: Home) -> list[str]:
+    items = []
+    for c in connections(home):
+        items.append((c["endpoint"] or c["api"]) + (f" (key {c['key']})" if c["key"] else ""))
+        for m in c["models"]:
+            who = f": {', '.join(m['used_by'])}" if m["used_by"] else ""
+            items.append(f"   {m['name']}" + ("  (the default)" if m["default"] else "") + who)
+    return items or ["none yet"]
+
+
+def default_flow(home: Home, ui, name: str | None = None) -> int:
+    if not name:
+        f = choice_field(home, "default_model", "Which model should be the default?",
+                         default_name(home))
+        if f is None:
+            have = names(home)
+            ui.say(f"There's only one model, {have[0] if have else 'none'}. `models refresh` or `models add` "
+                   "finds more.")
+            return 1
+        name = chosen(home, ui.ask(f))
+    try:
+        set_default(home, name)
+    except SetupError as e:
+        ui.say(str(e))
+        return 1
+    ui.say(f"The default model is now {name}. The Lead and roles without a model of their own use it.",
+           level="done")
+    return 0
+
+
+def refresh_flow(home: Home, ui, client_factory=None) -> int:
+    from ombro.client import ModelError, make_client
+    from ombro.settings import ModelSpec
+
+    factory = client_factory or make_client
+    for c in connections(home):
+        if c["api"] != "openai":
+            continue
+        spec = ModelSpec(name="default", api="openai", model="", endpoint=c["endpoint"], key=c["key"])
+        try:
+            ids = factory(spec, home).list_models()
+        except (ModelError, AttributeError) as e:
+            ui.say(f"{c['endpoint']} did not list its models: {e}")
+            continue
+        before = {m["name"] for m in c["models"]}
+        added = [n for n in add_models(home, c["endpoint"], c["key"], ids) if n not in before]
+        ui.say(f"{c['endpoint']}: {len(ids)} model{'s' if len(ids) != 1 else ''}"
+               + (f", added {', '.join(added)}." if added else ", nothing new."))
+    return 0
+
+
+def add_flow(home: Home, ui, client_factory=None) -> int:
+    from ombro.client import make_client
+    from ombro.init_cmd import connect_model, test_connection
+
+    factory = client_factory or make_client
+    old_default = default_name(home)
+    endpoint, model, _ = connect_model(home, ui, factory)
+    specs = load_models(home)
+    ok, detail = test_connection(home, specs.get(entry_name(model)) or specs["default"], factory)
+    if not ok:
+        ui.say(f"The test call to {model} failed: {detail}")
+    if old_default and old_default != entry_name(model) and not ui.yes(
+            "make_default", f"Make {model} your default model, in place of {old_default}?"):
+        set_default(home, old_default)
+    ui.say(f"Connected {endpoint}.", level="done")
+    return 0
+
+
+def people(home: Home) -> list[tuple[str, str]]:
+    """Who can be given a model: ('lead', 'the Lead'), then ('crew/role', 'Title (Crew Title)')."""
+    from ombro.home import crew_title
+
+    out = [("lead", "the Lead")]
+    for crew in home.crews():
+        rdir = home.roles_dir(crew)
+        if not rdir.is_dir():
+            continue
+        for p in sorted(rdir.iterdir()):
+            if not p.is_dir() or p.name.startswith(".") or not (p / "config.md").is_file():
+                continue
+            try:
+                title = str(mdfile.read(p / "config.md")[0].get("title") or p.name)
+            except mdfile.FrontMatterError:
+                title = p.name
+            out.append((f"{crew}/{p.name}", f"{title} ({crew_title(home, crew)})"))
+    return out
+
+
+def model_flow(home: Home, ui, who: str | None = None, name: str | None = None) -> int:
+    """Show who uses which model; then set one, asking for what is not given."""
+    everyone = people(home)
+    if not who:
+        ui.say("Who uses which model:", items=[f"{label}: {current_model(home, w)}" for w, label in everyone])
+        if len(names(home)) < 2:
+            ui.say("There's only one model so far. `models refresh` or `models add` finds more.")
+            return 0
+        pick = ui.ask(Field("who", "Whose model would you like to change?", "choice", default="1",
+                            options=[Option(str(i), label) for i, (_, label) in enumerate(everyone, 1)],
+                            invalid="Please choose one of the numbers shown."))
+        who, label = everyone[int(pick) - 1]
+    else:
+        match = [(w, lb) for w, lb in everyone if w == who]
+        if not match:
+            ui.say(f"There's no one called {who}. Use `lead`, or crew/role: "
+                   + ", ".join(w for w, _ in everyone[1:]) + ".")
+            return 1
+        who, label = match[0]
+    if not name:
+        f = choice_field(home, "model", f"Which model should {label} use?", current_model(home, who))
+        if f is None:
+            ui.say(f"{label[0].upper() + label[1:]} uses {current_model(home, who)}, the only model.")
+            return 0
+        name = chosen(home, ui.ask(f))
+    try:
+        set_role_model(home, who, name)
+    except SetupError as e:
+        ui.say(str(e))
+        return 1
+    ui.say(f"{label[0].upper() + label[1:]} will use {name} from the next chat, interview or run.", level="done")
+    return 0

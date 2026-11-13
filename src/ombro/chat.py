@@ -26,7 +26,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import keys, mdfile, memory, prompts, runs
+from ombro import keys, material, mdfile, memory, prompts, runs
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home, crew_title, find_crew
@@ -42,7 +42,8 @@ BRIEF_CONTEXT_CHARS = 4_000
 
 MEMORY_TOOLS = {"memory__search": "memory.search", "memory__read": "memory.read", "memory__list": "memory.list"}
 WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
-FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write"}
+FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write",
+                "folders__set_aside": "folders.set_aside"}
 OFFERS = ("offer_brief", "offer_remember")
 
 HELP = """\
@@ -70,10 +71,12 @@ def _short(text: str, n: int = 120) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def _tool_msg(call_id: str, payload: Any) -> dict:
+def _tool_msg(call_id: str, payload: Any, src: str | None = None) -> dict:
     content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     if len(content) > TOOL_RESULT_CAP:
         content = content[:TOOL_RESULT_CAP] + "…[truncated]"
+    if src:
+        content = material.fence(content, src)  # from outside: assessed, never obeyed (7.1)
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 
 
@@ -409,7 +412,12 @@ class Chat:
                     result = {"error": "ignored: the brief is starting"}
                 else:
                     result, request = self._tool(tc)
-                self.exchanges[-1].append(_tool_msg(tc.id, result))
+                src = None
+                if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside") and not (
+                        isinstance(result, dict) and ("error" in result or "declined" in result)):
+                    src = material.source(MEMORY_TOOLS.get(tc.name) or WEB_TOOLS.get(tc.name)
+                                          or FOLDER_TOOLS.get(tc.name) or tc.name, tc.arguments)
+                self.exchanges[-1].append(_tool_msg(tc.id, result, src))
             if request:
                 return request
         self.ui.say(f"(The Lead used all {self.limits.chat_calls_per_message} model calls allowed for one message "
@@ -506,6 +514,18 @@ class Chat:
         if internal == "folders.read":
             return native._read({"path": path, "offset": args.get("offset") or 0,
                                  "max_chars": args.get("max_chars") or memory.READ_DEFAULT_CHARS}, ctx)
+        if internal == "folders.set_aside":
+            target = native.resolve_path(ctx, path, write=True)
+            shelf = native.SET_ASIDE.get(str(args.get("as") or "for-deletion"), "For deletion")
+            why = " ".join(str(args.get("why") or "").split())
+            self.ui.say(f"I'd like to move {native._display(ctx, target.resolve())} into {shelf}/: {why}",
+                        level="lead")
+            if not self.ui.yes("folder_set_aside", "Go ahead?", False):
+                return {"declined": "The user said no, so nothing was moved."}
+            out = native._set_aside({"path": path, "as": args.get("as") or "for-deletion", "why": why}, ctx)
+            self.transcript.note(f"Moved {out['from']} to {out['to']}, with the user's yes.")
+            self.ui.say(f"Moved it to {out['to']}.", level="done")
+            return out
         # folders.write: the user sees what will be written, and says yes, before anything changes.
         target = native.resolve_path(ctx, path, write=True)
         content = args.get("content")

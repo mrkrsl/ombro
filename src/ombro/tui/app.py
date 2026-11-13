@@ -433,7 +433,10 @@ class OmbroApp(App):
     def tick_thinking(self) -> None:
         """The thinking glyph: one cell that turns while the core works and nothing is
         being asked, so a pause reads as work rather than a hang."""
-        box = self.query_one("#thinking", Static)
+        try:
+            box = self.query_one("#thinking", Static)
+        except Exception:  # noqa: BLE001 - the screen is closing
+            return
         on = self.busy and self.pending is None
         if on:
             self.thinking_frame = (self.thinking_frame + 1) % len(THINKING_FRAMES)

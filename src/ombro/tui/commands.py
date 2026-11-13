@@ -29,14 +29,6 @@ def _n(count: int, word: str) -> str:
     return f"{count} {word}" + ("" if count == 1 else "s")
 
 
-def models_spec(home, model: str):
-    from ombro import models
-    from ombro.settings import load_models
-
-    specs = load_models(home)
-    return specs.get(models.entry_name(model)) or specs["default"]
-
-
 class Commands:
     def __init__(self, app: "OmbroApp"):
         self.app = app
@@ -343,103 +335,27 @@ class Commands:
 
     def cmd_models(self, words: list[str], rest: str) -> None:
         from ombro import models
-        from ombro.client import ModelError, make_client
-        from ombro.init_cmd import connect_model, test_connection
-        from ombro.settings import SetupError
 
         action = words[0].lower() if words else "list"
+        factory = self.app.init_client_factory
         if action == "list":
-            items = []
-            for c in models.connections(self.home):
-                where = c["endpoint"] or c["api"]
-                items.append(f"{where}" + (f" (key {c['key']})" if c["key"] else ""))
-                for m in c["models"]:
-                    who = f": {', '.join(m['used_by'])}" if m["used_by"] else ""
-                    items.append(f"   {m['name']}" + ("  (the default)" if m["default"] else "") + who)
-            self.say("Models, by connection:", items=items or ["none yet"])
+            self.say("Models, by connection:", items=models.listing_lines(self.home))
             self.say("/model changes who uses which. /models default chooses the default, /models refresh asks "
                      "each connection for its models, and /models add connects another provider.")
-            return
-        if action == "default":
-            have = models.names(self.home)
-            if len(words) > 1:
-                name = words[1]
-            else:
-                f = models.choice_field(self.home, "default_model", "Which model should be the default?")
-                if f is None:
-                    self.say(f"There's only one model, {have[0] if have else 'none'}. /models refresh or "
-                             "/models add finds more.")
-                    return
-                name = models.chosen(self.home, self.ui.ask(f))
-            try:
-                models.set_default(self.home, name)
-            except SetupError as e:
-                self.fail(str(e))
-                return
-            self.say(f"The default model is now {name}. The Lead and roles without a model of their own use it.",
-                     level="done")
-            return
-        if action == "refresh":
-            from ombro.settings import ModelSpec
-
-            for c in models.connections(self.home):
-                if c["api"] != "openai":
-                    continue
-                spec = ModelSpec(name="default", api="openai", model="", endpoint=c["endpoint"], key=c["key"])
-                try:
-                    ids = make_client(spec, self.home).list_models()
-                except ModelError as e:
-                    self.say(f"{c['endpoint']} did not list its models: {e}")
-                    continue
-                before = {m["name"] for m in c["models"]}
-                added = [n for n in models.add_models(self.home, c["endpoint"], c["key"], ids) if n not in before]
-                self.say(f"{c['endpoint']}: {len(ids)} model{'s' if len(ids) != 1 else ''}"
-                         + (f", added {', '.join(added)}." if added else ", nothing new."))
-            return
-        if action == "add":
-            old_default = models.default_name(self.home)
-            endpoint, model, _ = connect_model(self.home, self.ui,
-                                               self.app.init_client_factory or make_client)
-            ok, detail = test_connection(self.home, models_spec(self.home, model),
-                                         self.app.init_client_factory or make_client)
-            if not ok:
-                self.fail(f"The test call to {model} failed: {detail}")
-            if old_default and old_default != models.entry_name(model) and not self.ui.yes(
-                    "make_default", f"Make {model} your default model, in place of {old_default}?"):
-                models.set_default(self.home, old_default)
-            self.say(f"Connected {endpoint}. /models lists its models.", level="done")
-            return
-        self.usage("/models, /models default [name], /models refresh, /models add")
+        elif action == "default":
+            models.default_flow(self.home, self.ui, words[1] if len(words) > 1 else None)
+        elif action == "refresh":
+            models.refresh_flow(self.home, self.ui, factory)
+        elif action == "add":
+            models.add_flow(self.home, self.ui, factory)
+        else:
+            self.usage("/models, /models default [name], /models refresh, /models add")
 
     def cmd_model(self, words: list[str], rest: str) -> None:
         """Who uses which model: the Lead or a role, then the model."""
         from ombro import models
-        from ombro.ui import Field, Option
 
-        people = [("lead", "the Lead")]
-        for crew in self.home.crews():
-            rdir = self.home.roles_dir(crew)
-            if rdir.is_dir():
-                from ombro.init_cmd import _role_title
-
-                people += [(f"{crew}/{p.name}", f"{_role_title(self.home, crew, p.name)} "
-                            f"({crew_title(self.home, crew)})")
-                           for p in sorted(rdir.iterdir()) if p.is_dir() and not p.name.startswith(".")]
-        lines = [f"{label}: {models.current_model(self.home, who)}" for who, label in people]
-        self.say("Who uses which model:", items=lines)
-        if len(models.names(self.home)) < 2:
-            self.say("There's only one model so far. /models refresh or /models add finds more.")
-            return
-        pick = self.ui.ask(Field("who", "Whose model would you like to change?", "choice", default="1",
-                                 options=[Option(str(i), label) for i, (_, label) in enumerate(people, 1)],
-                                 invalid="Please choose one of the numbers shown."))
-        who, label = people[int(pick) - 1]
-        f = models.choice_field(self.home, "model", f"Which model should {label} use?",
-                                models.current_model(self.home, who))
-        name = models.chosen(self.home, self.ui.ask(f))
-        models.set_role_model(self.home, who, name)
-        self.say(f"{label[0].upper() + label[1:]} will use {name} from the next chat, interview or run.",
-                 level="done")
+        models.model_flow(self.home, self.ui, words[0] if words else None, words[1] if len(words) > 1 else None)
 
     def cmd_folders(self, words: list[str], rest: str) -> None:  # the old name, kept working
         self.cmd_folder(words, rest)

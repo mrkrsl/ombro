@@ -37,15 +37,20 @@ ombro init                         # creates ~/.config/ombro, connects a model, 
 ```
 
 `init` first asks your name, used only to greet you (Enter skips it). Then it
-asks for an OpenAI-compatible endpoint (DeepSeek by default), a model
-name and an API key, and makes one test call. The key is typed into a hidden
-prompt and stored in `secrets/keys.env` with owner-only permissions. It is never sent to a
+asks for an OpenAI-compatible endpoint (DeepSeek by default) and its API key,
+asks the endpoint which models the key can use, and offers them as a choice
+for your default (an endpoint that does not list its models is asked for a
+name). Every listed model goes into `models.md`, so roles can use any of
+them. It then makes one test call. The key is typed into a hidden prompt and
+stored in `secrets/keys.env` with owner-only permissions. It is never sent to a
 model or written to a journal or report.
 
 Once a model answers, the Lead holds the set-up interview: who you are, how
 you work and how you want reports. It proposes `preferences/instructions.md`
-and its own `soul.md`, and writes them only if you accept. Then it offers to
-add the first roles.
+and a "Working with you" section of its `soul.md` (its character is kept),
+and writes them only if you accept. Then it offers to keep, rename or add a
+crew, to add the first roles (each asked its model when there is a choice),
+and to brief a first task.
 
 ```bash
 ombro role add ["Marketing Assistant"] # the Lead interviews you and proposes the role's files
@@ -80,9 +85,12 @@ ombro outbox edit ab12-3               # change its arguments; it waits for appr
 ombro tools [server]                   # tools and MCP servers; a server's tools and their permission
 ombro server add <name>                # add an MCP server to tools.md; asks for any secret hidden
 ombro server remove <name>
-ombro folder                           # folders shared with runs, and whether each can be backed up
-ombro folder add ~/Documents/Brand    # share one; asks read or write
+ombro folder                           # shared folders, and whether each can be backed up
+ombro folder add ~/Documents/Brand     # share one; asks read or write
 ombro folder remove brand
+ombro models                           # model connections, their models, the default, and who uses each
+ombro models default | refresh | add   # choose the default; ask each endpoint for its models; connect another
+ombro model [lead | <crew>/<role>] [name]   # which model the Lead or a role uses
 ombro keys remove FIRECRAWL_API_KEY
 ombro role list [--crew <crew>]        # the Lead, then each crew's roles
 ombro role add [title] --crew <crew>   # a role joins one crew
@@ -97,12 +105,13 @@ Every command that lists or shows something takes `--json`, for an interface
 to read: `runs`, `status`, `report` (with its deliverables as `file://`
 links), `journal` (with `--follow`, one event a line), `keys` (names and
 whether each is set, never a value), `specs`, `role list`, `crew list`,
-`limits`, `schedule`, `folders`, `summary` and `preferences`.
+`limits`, `schedule`, `folder`, `models`, `summary` and `preferences`.
 
 Roles and crews have a display title as well as a folder name. The role
 interview asks for the title ("Marketing Assistant") and makes the folder
 name from it (`marketing-assistant`); a role or crew without a `title:`
-shows its name tidied.
+shows its name tidied. Everything shown to you uses titles, and a crew's
+title works wherever its name does (`ombro crew use "Marketing Team"`).
 
 Set `OMBRO_HOME` to use a home directory other than `~/.config/ombro`.
 Example roles and specs are in [`examples/`](examples); a spec can also be
@@ -134,10 +143,16 @@ The `/` commands do what their `ombro` commands do:
   `/outbox resolve <ref> sent | not-sent`; decisions work while a run is going.
 - `/role`, `/role add [title] [--crew <crew>]`, `/role edit <name>`;
   `/crew`, `/crew add <name> [title]`, `/crew use <name>`.
+- `/model` (who uses which model, and changing one); `/models`,
+  `/models default | refresh | add`.
 - `/keys`, `/keys set <NAME>` (hidden); `/folder`, `/folder add <path>`,
   `/folder remove <name>`; `/schedule`, `/schedule enable | disable <name>`;
   `/tools`, `/tools add [name]`, `/tools remove <name>`; `/preferences`,
   `/preferences edit`; `/theme`, `/help`, `/quit`.
+
+Enter sends; Shift+Return (or Option+Return, Ctrl+J, or `\` then Return)
+starts a new line. While the Lead is working a small glyph turns beneath the
+conversation. `/new` clears the screen and starts a fresh chat.
 
 A run started here shows its progress as it goes (who was briefed, who
 returned). When any run ends while the interface is open, scheduled runs
@@ -267,19 +282,23 @@ every model: `memory_notes_max_chars`, `memory_index_entries`,
 `ombro chat` is a conversation with the Lead, with two modes; the current one
 is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
 
-- **Chat** is read-only and sees every crew: it is the same one Lead. It can search and read
+- **Chat** sees every crew: it is the same one Lead. It can search and read
   reports, specs, notes, indexes and workspace files, and use web search and
-  fetch. It cannot brief roles, start runs, approve the outbox, write files or
-  use outward tools; those calls are refused. Chat transcripts, journals,
-  keys and settings cannot be read.
+  fetch. It knows which folders you have shared, lists and reads them all as
+  `shared/<name>/...`, and can write a file in one shared for writing: it
+  shows you what it will write, and nothing changes until you say yes. It
+  never deletes; a file that should go is set aside (below), also after your
+  yes. It cannot brief roles, start runs, approve the outbox or use outward
+  tools; those calls are refused. Chat transcripts, journals, keys and
+  settings cannot be read.
 - **Brief** is the task interview. When the Lead hears a task it offers to
   brief it, and never switches on its own. Accept, or type `/brief [@crew]
   [text]` at any point: the interview starts from what you said in the chat
   (your own messages, most recent first, up to 4,000 characters) and the
   Lead's one-line summary if you accepted its offer. It saves a spec, which
   you run with `ombro run --spec <name>`. `/chat` goes back with nothing written.
-- **`/new`** saves the chat and starts a fresh one, with its own token cap.
-  Nothing from the old one is sent to the Lead.
+- **`/new`** saves the chat and starts a fresh one, with its own token cap
+  and usage from zero. Nothing from the old one is sent to the Lead.
 - **`/remember [@crew] <text>`** adds a dated line to a crew's notes.md
   ("From you"); the default crew unless you name one, or `ombro chat --crew
   <name>` sets it for the session. The Lead can offer to remember something
@@ -475,6 +494,13 @@ declined: [~/Projects/site]
 - **Inside a grant** roles work as you would: `shared/<name>/...` through
   the workspace tools and in scripts. Changes there are internal and run
   without approval; the grant is the permission, and presets do not change it.
+  The Lead in chat reaches every grant too, writing only after your yes.
+- **Nothing is deleted.** No role, the Lead included, deletes a file in a
+  shared folder. To get rid of one, `workspace.set_aside` (given to every role
+  that can write) moves it into `For deletion/`, or into `Archive/` when a
+  newer file replaces it, at the top of the same folder, with a line in that
+  folder's `README.md` saying why. The report lists what was set aside. Only
+  you empty either folder.
 - **Backup.** Before a run that can write to a shared folder starts, Ombro
   clones it into the run's `backup/` if the disk allows (APFS on macOS,
   reflinks on Linux). A clone is near-instant and takes almost no space until
@@ -490,6 +516,30 @@ declined: [~/Projects/site]
   share the folder. Reading a folder that is not shared is refused, and the
   report lists the paths refused, so you can share the folder before the
   next run.
+
+## Untrusted material
+
+Anything a model reads that came from neither you nor Ombro (web pages, MCP
+results, file contents, script output, what roles return) is **material**,
+and may try to steer the model. Ombro's defence does not depend on the model
+noticing:
+
+- What a role can do (its tools, folders, crews, permissions and limits) is
+  fixed before it reads anything. Material cannot add to it.
+- Material reaches a model fenced, between `⟪material <id> from <source>⟫`
+  and `⟪end material <id>⟫`, with a random id for each call; text inside that
+  copies a fence is neutralised. The fixed rules say fenced text is assessed,
+  never obeyed.
+- Once a role has read material in a brief, its external calls in that brief
+  are staged in the outbox even under `auto`, unless the spec allows that tool
+  by name. The report says which were staged for this reason.
+- `web.fetch` refuses an address with more than `fetch_max_query` (200)
+  characters after `?`, so a page cannot have a role send data out in a link.
+- Secrets never enter a prompt, code has no network, and nothing is deleted.
+- Common signs of injected instructions ("ignore previous instructions",
+  text addressed to an AI, hidden characters, requests to send or delete
+  files) are flagged in the report's Material section, with where they came
+  from. A flag never stops a run; it tells you what to check.
 
 ## Outside services: MCP, permissions and the outbox
 

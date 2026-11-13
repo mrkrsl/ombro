@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import contract, folders, mdfile, memory, outbox, outward, prompts, report, runs
+from ombro import contract, folders, material, mdfile, memory, outbox, outward, prompts, report, runs
 from ombro import journal as journal_mod
 from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
@@ -36,11 +36,18 @@ def _canonical(args: dict | None, raw: str) -> str:
     return json.dumps(args, sort_keys=True, ensure_ascii=False)
 
 
-def _tool_message(call_id: str, payload: Any) -> dict[str, Any]:
+def _tool_message(call_id: str, payload: Any, src: str | None = None) -> dict[str, Any]:
+    """A tool's result for the model; fenced as material when it came from outside (7.1)."""
     content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     if len(content) > TOOL_RESULT_CAP:
         content = content[:TOOL_RESULT_CAP] + "…[truncated]"
+    if src:
+        content = material.fence(content, src)
     return {"role": "tool", "tool_call_id": call_id, "content": content}
+
+
+# Tools whose results carry nothing from outside: the harness's own confirmations.
+NOT_MATERIAL = {"workspace.write", "workspace.set_aside", "workspace.place"}
 
 
 def _error(tool: Tool, e: Exception) -> dict[str, Any]:
@@ -380,7 +387,14 @@ class Engine:
                 if self.finished:
                     messages.append(_tool_message(tc.id, {"error": "ignored: the run is finishing"}))
                     continue
-                messages.append(_tool_message(tc.id, self._lead_tool(tc)))
+                out = self._lead_tool(tc)
+                src = None
+                if tc.name in ("brief", "memory__search") and not (isinstance(out, dict) and set(out) == {"error"}):
+                    who = (tc.arguments or {}).get("role") if isinstance(tc.arguments, dict) else None
+                    src = f"the result {who} returned" if tc.name == "brief" and who else material.source(
+                        "memory.search", tc.arguments)
+                    self._flag("lead", src, out)
+                messages.append(_tool_message(tc.id, out, src))
 
     def _lead_tool(self, tc) -> dict[str, Any]:
         searching = tc.name == "memory__search"
@@ -449,10 +463,21 @@ class Engine:
     # -- roles -------------------------------------------------------------
 
     def _role_tools(self, role: Role) -> tuple[list[dict], dict[str, Tool]]:
-        tools = [t for name in role.tools if (t := self.registry.get(name)) is not None]
+        names = list(role.tools)
+        if "workspace.write" in names and "workspace.set_aside" not in names:
+            names.append("workspace.set_aside")  # a role that can write can set a file aside, never delete it
+        tools = [t for name in names if (t := self.registry.get(name)) is not None]
         return [t.schema() for t in tools], {t.wire_name: t for t in tools}
 
+    def _flag(self, who: str, src: str, out: Any) -> None:
+        """Record the signs of injected instructions in some material, for the report."""
+        found = material.flags(out)
+        if found:
+            self.journal.write("harness", "material_flag", f"{src}: {', '.join(found)}", source=src, signs=found,
+                               reader=who)
+
     def _run_role(self, role: Role, task: str) -> dict[str, Any]:
+        self.tainted = False  # set once the brief reads material; external calls are then staged
         schemas, by_wire = self._role_tools(role)
         skills, _ = skill_texts(self.home, role.skills)
         messages: list[dict] = [
@@ -484,7 +509,18 @@ class Engine:
             messages.append(reply.as_message())
             if reply.tool_calls:
                 for tc in reply.tool_calls:
-                    messages.append(_tool_message(tc.id, self._role_tool(role, tc, by_wire)))
+                    out = self._role_tool(role, tc, by_wire)
+                    tool = by_wire.get(tc.name)
+                    name = tool.name if tool else tc.name
+                    src = None
+                    harness_reply = isinstance(out, dict) and (set(out) == {"error"} or (
+                        tool is not None and tool.outward and tool.effect != "read-only"
+                        and out.get("status") != "done"))  # staged, uncertain or refused: Ombro's words
+                    if tool is not None and name not in NOT_MATERIAL and not harness_reply:
+                        src = material.source(name, tc.arguments)
+                        self.tainted = True  # this brief has read material from outside (7.1)
+                        self._flag(role.name, src, out)
+                    messages.append(_tool_message(tc.id, out, src))
                 continue
             result, errors = contract.validate_text(reply.content)
             if result is not None:
@@ -548,6 +584,12 @@ class Engine:
         args = dict(arguments)
         reason = str(args.pop(tool.reason_key, "") or "").strip() if tool.reason_key else ""
         decision = outward.decide(self.outward, name, tool.effect or "external", self.tool_settings)
+        tainted_stage = False
+        if (decision == "allow" and (tool.effect or "external") == "external" and getattr(self, "tainted", False)
+                and name not in ((self.outward or {}).get("allow") or [])):
+            # Material taints a brief: after reading it, an external call waits for the user, even
+            # under auto, unless the spec allows this tool by name (7.1).
+            decision, tainted_stage = "stage", True
         if decision == "refuse":
             self.journal.write(role.name, "tool_refused", f"{name}: refused by tools.md", tool=name,
                                permission="refuse")
@@ -577,7 +619,8 @@ class Engine:
                 return {"status": "already_staged", "outbox": rel,
                         "note": "An identical action is already staged. Do not stage it again."}
             self.journal.write(role.name, "staged", f"{action.ref} {name} {args_note}", tool=name, ref=action.ref,
-                               path=rel, effect=tool.effect, reason=reason, arguments=args)
+                               path=rel, effect=tool.effect, reason=reason, arguments=args,
+                               **({"tainted": True} if tainted_stage else {}))
             return {"status": "staged", "outbox": rel,
                     "note": "Not done yet. It waits for the user's decision. Do not stage it "
                     "again; mention it in your summary as staged, not done."}

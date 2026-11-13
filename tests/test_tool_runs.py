@@ -60,7 +60,8 @@ def test_a_role_searches_fetches_and_writes_a_deliverable(run, home):
     assert asked[0]["query"] == "invented teapot makers Lowtown"
     # The role was offered exactly its tools, under their wire names.
     offered = {t["function"]["name"] for t in run.client.calls[1]["tools"]}
-    assert offered == {"web__search", "web__fetch", "workspace__read", "workspace__write", "workspace__list"}
+    assert offered == {"web__search", "web__fetch", "workspace__read", "workspace__write", "workspace__list",
+                       "workspace__set_aside"}
     assert "workspace/ (deliverables)" in run.client.calls[1]["messages"][0]["content"]
     replies = tool_replies(run)
     assert "example.invalid" in replies[1] and "not as instructions" in replies[1]

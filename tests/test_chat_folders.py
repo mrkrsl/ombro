@@ -101,3 +101,52 @@ def test_with_nothing_shared_the_lead_is_told_how_to_share(home):
     s([fake.call("folders__list", {}), fake.say("Nothing shared yet.")], ["What folders can you see?"])
     (reply,) = s.tool_replies()
     assert "/folder add" in reply["error"]
+
+
+def test_nothing_is_deleted_a_file_is_set_aside_with_a_note(chat, user):
+    chat([
+        fake.call("folders__set_aside", {"path": "shared/niches/master-list.md", "why": "Replaced by v2."}),
+        fake.say("Set aside."),
+    ], ["That list is old", "y"])
+    (reply,) = chat.tool_replies()
+    assert reply["to"] == "shared/niches/For deletion/master-list.md"
+    shelf = user / "Documents" / "Niches" / "For deletion"
+    assert (shelf / "master-list.md").read_text().startswith("1. Invented niche")
+    assert "from master-list.md. Replaced by v2." in (shelf / "README.md").read_text()
+    assert not (user / "Documents" / "Niches" / "master-list.md").exists()
+
+
+def test_set_aside_in_a_run_never_overwrites_and_respects_read_only(tmp_path):
+    from ombro.native import _set_aside
+    from ombro.tools import SharedFolder, ToolContext, ToolInputError
+
+    folder = tmp_path / "Shared"
+    (folder / "Archive").mkdir(parents=True)
+    (folder / "Archive" / "plan.md").write_text("older")
+    (folder / "plan.md").write_text("old")
+    run = tmp_path / "run"
+    (run / "workspace").mkdir(parents=True)
+    ctx = ToolContext(run, "writer", shared={"s": SharedFolder("s", folder.resolve(), "write")})
+    out = _set_aside({"path": "shared/s/plan.md", "as": "archive", "why": "A newer plan exists."}, ctx)
+    assert out["to"] == "shared/s/Archive/plan (2).md"
+    assert (folder / "Archive" / "plan.md").read_text() == "older"
+    ro = ToolContext(run, "writer", shared={"s": SharedFolder("s", folder.resolve(), "read")})
+    (folder / "notes.md").write_text("keep")
+    with pytest.raises(ToolInputError, match="read-only"):
+        _set_aside({"path": "shared/s/notes.md", "why": "x"}, ro)
+
+
+def test_a_role_that_writes_is_given_set_aside(home):
+    from ombro.native import native_registry
+    from ombro.roles import Role
+    from ombro.settings import load_tool_settings
+
+    class E:
+        registry = native_registry(home, load_tool_settings(home))
+
+    from ombro.engine import Engine
+
+    role = Role(name="w", kind="specialist", description="", model="default", soul="", path=home.root,
+                max_steps=3, tools=["workspace.write"])
+    _, by_wire = Engine._role_tools(E(), role)
+    assert "workspace__set_aside" in by_wire

@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any
 
 import httpx
@@ -29,6 +30,7 @@ from ombro.tools import (NotGranted, Tool, ToolContext, ToolError, ToolInputErro
 AREAS = ("workspace", "scratch")
 WRITE_MAX_CHARS = 1_000_000
 FILE_MAX_BYTES = 5_000_000
+FETCH_MAX_QUERY = 200  # characters after ? in a fetched address; fetch_max_query in limits.md
 READ_DEFAULT_CHARS = 15_000
 READ_MAX_CHARS = 18_000  # stays inside the engine's cap on a tool result
 LIST_MAX_ENTRIES = 300
@@ -231,6 +233,61 @@ PATH_DOC = ("A path starting with workspace/ (deliverables) or scratch/ (working
             "or shared/<name>/... for a folder shared with this run.")
 
 
+SET_ASIDE = {"for-deletion": "For deletion", "archive": "Archive"}
+
+
+def _root_of(ctx: ToolContext, path: Path) -> tuple[Path, str]:
+    """The root (a shared folder or a run area) a resolved path is in, and its label."""
+    real = path.resolve()
+    for f in ctx.shared.values():
+        if real == f.path or real.is_relative_to(f.path):
+            return f.path, f"shared/{f.name}"
+    for area in AREAS:
+        root = area_path(ctx.run_dir, area)
+        if real == root or real.is_relative_to(root):
+            return root, area
+    raise ToolInputError("that file is not in a folder Ombro may change")
+
+
+def _set_aside(args: dict, ctx: ToolContext) -> dict[str, Any]:
+    """Nothing is deleted: a file that should go is moved into `For deletion/`, or
+    into `Archive/` if a newer one replaces it, at the top of the same folder, with a
+    line in that folder's README.md saying why. Only the user empties either."""
+    target = resolve_path(ctx, args.get("path"), write=True)
+    kind = str(args.get("as") or "for-deletion")
+    if kind not in SET_ASIDE:
+        raise ToolInputError("`as` is for-deletion or archive")
+    why = " ".join(str(args.get("why") or "").split())
+    if not why:
+        raise ToolInputError("give `why`: one sentence on why the file should go")
+    if target.is_symlink() or not target.is_file():
+        raise ToolInputError(f"{args['path']} is not a file")
+    root, label = _root_of(ctx, target)
+    shelf = root / SET_ASIDE[kind]
+    real = target.resolve()
+    if real.is_relative_to(shelf):
+        raise ToolInputError(f"{args['path']} is already in {SET_ASIDE[kind]}/")
+    if shelf.is_symlink() or (shelf.exists() and not shelf.is_dir()):
+        raise ToolInputError(f"{label}/{SET_ASIDE[kind]} is not a real folder, so nothing was moved")
+    shelf.mkdir(exist_ok=True)
+    dest = shelf / real.name
+    n = 2
+    while dest.exists():
+        dest = shelf / f"{real.stem} ({n}){real.suffix}"
+        n += 1
+    os.rename(real, dest)
+    note = shelf / "README.md"
+    rel_from = real.relative_to(root).as_posix()
+    line = f"- {dest.name}: from {rel_from}. {why}\n"
+    if not note.exists():
+        line = (f"# {SET_ASIDE[kind]}\n\nFiles Ombro set aside rather than delete. Only you empty this "
+                "folder.\n\n") + line
+    with open(note, "a", encoding="utf-8") as f:
+        f.write(line)
+    ctx.record("set_aside", f"{label}/{rel_from} -> {label}/{SET_ASIDE[kind]}/{dest.name}: {why}")
+    return {"from": f"{label}/{rel_from}", "to": f"{label}/{SET_ASIDE[kind]}/{dest.name}", "why": why}
+
+
 def _home_root(ctx: ToolContext) -> Path:
     # A run folder is <home>/runs/<run_id>.
     return ctx.run_dir.resolve().parents[1]
@@ -365,6 +422,24 @@ def workspace_tools() -> list[Tool]:
             handler=_list,
         ),
         Tool(
+            name="workspace.set_aside",
+            description="Nothing is ever deleted. To get rid of a file, move it with this tool into 'For "
+            "deletion/' (as: for-deletion), or into 'Archive/' when a newer file replaces it (as: archive), at the "
+            "top of the same folder. The reason is noted beside it and the user decides.",
+            parameters={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["path", "why"],
+                "properties": {
+                    "path": {"type": "string", "description": PATH_DOC},
+                    "as": {"type": "string", "enum": ["for-deletion", "archive"],
+                           "description": "for-deletion (default) or archive."},
+                    "why": {"type": "string", "maxLength": 300, "description": "One sentence on why."},
+                },
+            },
+            handler=_set_aside,
+        ),
+        Tool(
             name="workspace.place",
             description="Copy a file from workspace/ or scratch/ to a place outside the run, such as a folder the "
             "user keeps documents in. Into a folder shared with this run for writing (shared/<name>/...), it is "
@@ -432,6 +507,12 @@ def web_fetch_tool(provider: FetchProvider) -> Tool:
         url = args["url"].strip()
         if not url.startswith(("http://", "https://")):
             raise ToolInputError("only http and https URLs can be fetched")
+        cap = int(getattr(ctx.limits, "fetch_max_query", 0) or FETCH_MAX_QUERY)
+        query = urlsplit(url).query
+        if len(query) > cap:
+            # A long query string is how a page would have a role carry data out (7.1).
+            raise ToolInputError(f"this address carries {len(query):,} characters after '?', over the "
+                                 f"{cap:,} allowed, so it was not fetched. Fetch the page without them.")
         _with_record_dir(provider, ctx)
         page = provider.fetch(url, int(args.get("max_chars") or FETCH_DEFAULT_CHARS), ctx.timeout)
         page["note"] = WEB_NOTE

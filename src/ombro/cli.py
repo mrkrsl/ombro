@@ -567,6 +567,35 @@ def cmd_disconnect(args) -> int:
     return 0
 
 
+def cmd_models(args) -> int:
+    from ombro import models
+    from ombro.ui import ConsoleUI
+
+    home = _home()
+    action = args.action or "list"
+    if action == "list":
+        if args.json:
+            return _print_json(models.connections(home))
+        print("Models, by connection:")
+        for line in models.listing_lines(home):
+            print("  " + line)
+        print("\nChange who uses which with `ombro model`, and the default with `ombro models default`.")
+        return 0
+    ui = ConsoleUI()
+    if action == "default":
+        return models.default_flow(home, ui, args.name)
+    if action == "refresh":
+        return models.refresh_flow(home, ui)
+    return models.add_flow(home, ui)
+
+
+def cmd_model(args) -> int:
+    from ombro import models
+    from ombro.ui import ConsoleUI
+
+    return models.model_flow(_home(), ConsoleUI(), args.who, args.name)
+
+
 def cmd_keys(args) -> int:
     home = _home()
     action = args.action or "list"
@@ -1071,6 +1100,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--crew")
     s.add_argument("--print", dest="print_only", action="store_true", help="only print the folder's path")
     s.set_defaults(func=cmd_open)
+
+    s = sub.add_parser("models", help="model connections and their models: list, default, refresh, add")
+    s.add_argument("action", nargs="?", choices=["list", "default", "refresh", "add"], help="default: list")
+    s.add_argument("name", nargs="?", help="for default: the model's name in models.md")
+    s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
+    s.set_defaults(func=cmd_models)
+
+    s = sub.add_parser("model", help="which model the Lead or a role uses: show, or set one")
+    s.add_argument("who", nargs="?", help="lead, or crew/role")
+    s.add_argument("name", nargs="?", help="the model's name in models.md")
+    s.set_defaults(func=cmd_model)
 
     s = sub.add_parser("keys", help="list keys (masked), or set or remove one")
     s.add_argument("action", nargs="?", choices=["list", "set", "remove"], help="default: list")
