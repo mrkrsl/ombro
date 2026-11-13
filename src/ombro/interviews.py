@@ -110,12 +110,18 @@ def crews_roster(home: Home, limits: Limits) -> str:
 
 class SetupPurpose(Purpose):
     kind = "setup"
-    title = ("Set-up interview: who you are and how you like to work, for every task. "
-             "Tasks themselves are briefed later, with `ombro brief`.")
+    title = "Set-up interview"
+    intro = ("Set-up interview: I'll ask you to tell me more about who you are, how you like to work, and how "
+             "you'd like me to work with you on different tasks. (You'll brief actual tasks later.) The interview "
+             "is usually four to six questions. Type /quit to stop; nothing is saved unless you accept it at the "
+             "end.")
+    proposal_intro = ("Great, I think I've got everything I need. Here's how I've written up your instructions, "
+                      "and my own character as your Lead. Have a read through. You can then choose one of the "
+                      "options at the end to save them, ask me to change them, or edit them yourself.")
     rules = prompts.SETUP_INTERVIEW
     typical = "usually 4 to 6 questions"
-    topics = [("name", "your name"), ("work", "what you do"), ("working_style", "how you work"),
-              ("reports", "reports"), ("standing_rules", "standing rules")]
+    topics = [("work", "what you do"), ("working_style", "how you work"), ("reports", "reports"),
+              ("standing_rules", "standing rules")]
 
     def __init__(self, home: Home, crew: str = "default"):
         self.home = home
@@ -129,7 +135,11 @@ class SetupPurpose(Purpose):
         soul = self.soul_path.read_text(encoding="utf-8").strip() if self.soul_path.is_file() else ""
         if soul == LEAD_SOUL.strip():
             soul = f"{soul}\n(This is the default soul that ships with Ombro.)"
+        from ombro.settings import load_preferences
+
+        name = load_preferences(self.home).name
         return [
+            ("The user's name", name or "(they chose not to give one: do not ask for it)"),
             ("Current preferences/instructions.md", instructions or "(empty: nothing is known about the user yet)"),
             ("Current Lead soul.md", soul),
         ]
@@ -143,23 +153,25 @@ class SetupPurpose(Purpose):
             "preferences/instructions.md and shows both; nothing is written unless the user accepts. "
             "No details of any one task.",
             {
-                "name": field("What to call the user."),
                 "work": field("What they do, in the first person: role or field. No task details."),
                 "working_style": field("How they like to work with the crew, in the first person."),
                 "reports": field("How they want reports, in the first person."),
                 "standing_rules": field("Rules that hold for every task, as a Markdown list. May be empty."),
                 "soul": field("Your soul.md: character and manner, second person. Nothing about any task."),
             },
-            ["name", "work", "working_style", "reports", "soul"],
+            ["work", "working_style", "reports", "soul"],
         )
 
     def build(self, args: dict) -> Proposal:
-        missing = [k for k in ("name", "work", "reports", "soul") if not _text(args, k)]
+        missing = [k for k in ("work", "reports", "soul") if not _text(args, k)]
         if missing:
-            hint = " Ask the user's name." if "name" in missing else ""
-            raise ProposalError(f"these are empty: {', '.join(missing)}.{hint}")
+            raise ProposalError(f"these are empty: {', '.join(missing)}.")
+        from ombro.settings import load_preferences
+
+        name = load_preferences(self.home).name or _text(args, "name")
+        about = (f"My name is {name}.\n\n" if name else "") + _text(args, "work")
         sections = [
-            ("About me", f"My name is {_text(args, 'name')}.\n\n{_text(args, 'work')}"),
+            ("About me", about),
             ("How I like to work", _text(args, "working_style")),
             ("How I want reports", _text(args, "reports")),
             ("Standing rules", _text(args, "standing_rules")),
@@ -192,12 +204,17 @@ class SetupPurpose(Purpose):
 
 class RolePurpose(Purpose):
     kind = "role"
-    title = ("Role interview: a crew member reused across many tasks, so it describes the kind of work, "
-             "not today's task.")
+    title = "Role interview"
+    intro = ("Role interview: a team member is reused across many tasks, so describe the kind of work you want "
+             "them to do, not one particular task. It's usually 3 to 5 questions. Type /quit to stop; nothing is "
+             "written unless you accept it.")
+    proposal_intro = ("Okay, here's my definition of the role you've described. Have a read through. You can "
+                      "then choose one of the options at the end to save it, ask me to change it, or edit it "
+                      "yourself.")
     rules = prompts.ROLE_INTERVIEW
     accept_label = "create the role"
     typical = "usually 3 to 5 questions"
-    topics = [("purpose", "what it is for"), ("must_not", "what it must not do"), ("access", "what it needs"),
+    topics = [("purpose", "what the role is"), ("must_not", "what it must not do"), ("access", "what it needs"),
               ("kind", "specialist or helper")]
 
     def __init__(self, home: Home, crew: str, limits: Limits, name: str | None = None):
@@ -356,6 +373,11 @@ SPEC_FIELDS = [
 class BriefPurpose(Purpose):
     kind = "brief"
     title = "Task brief: the Lead will ask about one task and write a spec for it."
+    intro = ("Task brief: I'll ask you about this one piece of work, then write a spec the crew can work from "
+             "without needing to ask you anything. It's usually 5 to 8 questions. Type /quit to stop; nothing is "
+             "written unless you accept it.")
+    proposal_intro = ("Here's the spec I've written for this task. Have a read through. You can then choose one "
+                      "of the options at the end to save it, ask me to change it, or edit it yourself.")
     rules = prompts.BRIEF_INTERVIEW
     can_report_gaps = True
     typical = "usually 5 to 8 questions"

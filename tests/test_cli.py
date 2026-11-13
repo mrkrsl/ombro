@@ -168,12 +168,12 @@ def test_init_connects_after_a_failed_test_call(tmp_path):
     ask = ScriptedPrompts(["Ada Invented", "1", "", "1", "deepseek-chat", "n"])
     secret = ScriptedPrompts(["sk-test-INVENTED-wrong", "sk-test-INVENTED-right", ""])
     assert run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
-    assert ask.asked[0].startswith("Your name, used only to greet you")  # asked first, before any model
+    assert ask.asked[0].startswith("What's your name? It's only used to greet you.")  # asked first, before any model
     from ombro.settings import load_preferences
 
     assert load_preferences(home).name == "Ada Invented"
     out = "\n".join(said)
-    assert "test call failed" in out and "Connected" in out
+    assert "test call failed" in out and "connected" in out
     assert keys.get_key(home, "DEEPSEEK_API_KEY") == "sk-test-INVENTED-right"
     assert "INVENTED" not in out  # keys are never echoed
     assert stat.S_IMODE(os.stat(home.env).st_mode) == 0o600

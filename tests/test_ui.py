@@ -168,7 +168,7 @@ def test_an_interview_speaks_only_in_events(home):
     assert all(f.replaces for f in proposal.files)
     decision = ui.fields[-1]
     assert decision.kind == "choice" and [o.key for o in decision.options] == ["a", "c", "e", "q"]
-    assert any(n.level == "done" and n.text.startswith("Wrote ") for n in ui.of(Note))
+    assert any(n.level == "done" and n.text.startswith("Saved ") for n in ui.of(Note))
     usages = ui.of(Usage)
     assert [u.final for u in usages] == [False, False, True]  # live after each model call, then the total
     assert all(u.scope == "interview" for u in usages) and usages[-1].total_tokens >= usages[0].total_tokens > 0
@@ -291,3 +291,33 @@ def test_granting_a_folder_from_an_interface(home, tmp_path, monkeypatch):
     (g,) = folders.load(home)[0].values()
     assert g.access == "write" and g.path == "~/Invented Brand"
     assert add_flow(home, str(target), "again", None, False, ScriptedUI(["n"])) == 1
+
+
+# -- the set-up script and the crew step ---------------------------------------------
+
+
+def test_the_crew_step_can_keep_rename_or_start_a_crew(home):
+    from ombro.home import crew_title
+    from ombro.init_cmd import _crew_step
+    from ombro.settings import load_preferences
+
+    assert _crew_step(home, ScriptedUI([""]), "default") == "default"  # Enter keeps it
+    assert crew_title(home, "default") == "Default Crew"
+
+    assert _crew_step(home, ScriptedUI(["2", "Studio Crew"]), "default") == "default"
+    assert crew_title(home, "default") == "Studio Crew"
+
+    ui = ScriptedUI(["3", "Marketing", True])
+    assert _crew_step(home, ui, "default") == "marketing"
+    assert crew_title(home, "marketing") == "Marketing" and load_preferences(home).default_crew == "marketing"
+    told = " ".join(n.text for n in ui.of(Note))
+    assert "There's one crew in your Ombro team at the moment, the Studio Crew" in told
+
+
+def test_progress_words_follow_the_count_and_proposals_read_cleanly():
+    from ombro.interview import how_far, readable
+
+    assert [how_far(c, 4) for c in range(5)] == ["just started", "about a third of the way", "about halfway",
+                                                 "nearly done", "ready to wrap up"]
+    assert readable("---\n---\n\n<!--\nA hidden note.\n-->\n\n# About me\n\nHello.\n") == "# About me\n\nHello."
+    assert readable("---\nname: x\n---\nBody\n").startswith("---\nname: x")  # real settings are kept

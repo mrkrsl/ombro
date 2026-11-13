@@ -322,7 +322,7 @@ class ConsoleUI(UI):
     def ask(self, f: Field) -> Any:
         prompt = prompt_text(f)
         if numbered(f):
-            self._say(f"{f.label}:")
+            self._say(f.label if f.label.endswith(("?", ":")) else f"{f.label}:")
             for o in f.options:
                 self._say(f"  {o.key}) {o.label}")
         while True:

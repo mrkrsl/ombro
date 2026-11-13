@@ -249,7 +249,7 @@ def test_theme_switches_and_is_saved(home):
 
 
 def test_the_slash_menu_filters_and_takes_a_command(home):
-    from textual.widgets import Input, OptionList
+    from textual.widgets import OptionList
 
     app, _ = _app(home)
 
@@ -260,7 +260,7 @@ def test_the_slash_menu_filters_and_takes_a_command(home):
             menu = app.query_one("#slash", OptionList)
             assert menu.display and menu.option_count == 1
             await pilot.press("tab")
-            assert app.query_one("#input", Input).value == "/theme "
+            assert app.query_one("#input").text == "/theme "
 
     drive(go())
 
@@ -287,6 +287,7 @@ async def answer(pilot, app, text: str) -> None:
             break
         await pilot.pause(0.02)
     assert app.pending is not None, "nothing was asked"
+    await pilot.pause(0.02)  # the focus moves to the hidden field for a secret
     if text:
         await pilot.press(*text)
     await pilot.press("enter")
@@ -307,7 +308,7 @@ def test_a_fresh_home_is_set_up_inside_the_interface(home):
             await answer(pilot, app, "1")  # DeepSeek
             await answer(pilot, app, "")  # the model name: its default
             assert app.pending.field.kind == "secret"
-            assert app.query_one("#input").password
+            assert app.query_one("#secret").display and not app.query_one("#input").display
             await answer(pilot, app, "sk-test-INVENTED-0123456789")
             await answer(pilot, app, "")  # no search key
             await answer(pilot, app, "n")  # no set-up interview now
@@ -316,6 +317,7 @@ def test_a_fresh_home_is_set_up_inside_the_interface(home):
                 if not app.busy:
                     break
             texts = _texts(app)
+            assert texts[0].startswith("• Welcome. I'm the Ombro Lead.")  # set-up speaks in the Lead's voice
             assert not any("INVENTED-0123456789" in t for t in texts)
             assert any("What would you like to get done today?" in t for t in texts)
 
@@ -520,3 +522,18 @@ def test_settings_commands(home):
     drive(go())
     assert keys.get_key(home, "INVENTED_KEY") == "sk-test-INVENTED-9876543210"
     assert crew_title(home, "legal") == "Legal Team"
+
+
+def test_the_input_box_wraps_and_grows(home):
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(80, 40)) as pilot:
+            await pilot.pause()
+            box = app.query_one("#input")
+            assert box.size.height == 1
+            await pilot.press(*("A long, invented message that goes on " * 6))
+            await pilot.pause()
+            assert 1 < box.size.height <= 6 and box.soft_wrap
+
+    drive(go())

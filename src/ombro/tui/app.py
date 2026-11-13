@@ -19,7 +19,8 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widget import Widget
-from textual.widgets import Input, OptionList, Static
+from textual.message import Message
+from textual.widgets import Input, OptionList, Static, TextArea
 from textual.widgets.option_list import Option as ListOption
 
 from ombro import runs, views
@@ -182,6 +183,45 @@ class HeaderBlock(Widget):
         return Group(rule, Text(""), grid, Text(""), Text("─" * width, style=p.dim))
 
 
+class PromptArea(TextArea):
+    """The input box: wraps, grows to a few lines, and sends on Enter. A pasted
+    paragraph keeps its line breaks."""
+
+    class Submitted(Message):
+        def __init__(self, area: "PromptArea", text: str):
+            super().__init__()
+            self.area = area
+            self.text = text
+
+        @property
+        def control(self) -> "PromptArea":
+            return self.area
+
+    async def _on_key(self, event: events.Key) -> None:
+        app = self.app
+        menu_open = getattr(app, "slash_open", lambda: False)()
+        if menu_open and event.key in ("up", "down", "tab", "escape"):
+            event.stop()
+            event.prevent_default()
+            app.slash_key(event.key)
+            return
+        if event.key == "enter":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.Submitted(self, self.text))
+            return
+        await super()._on_key(event)
+
+    @property
+    def value(self) -> str:  # the same name as Input's, for the rest of the app
+        return self.text
+
+    @value.setter
+    def value(self, text: str) -> None:
+        self.text = text
+        self.move_cursor(self.document.end)
+
+
 class Line(Static):
     DEFAULT_CSS = "Line { height: auto; margin: 1 0 0 0; }"
 
@@ -213,12 +253,20 @@ class OmbroApp(App):
     #slash > .option-list--option-highlighted { background: $ombro-band; color: $ombro-band-text;
                                                 text-style: none; }
     #slash-rule { display: none; }
-    #entry { height: 1; }
+    #entry { height: auto; }
     #chevron { width: 2; color: $ombro-text; }
-    #input, #input:focus { border: none; height: 1; padding: 0; background: $ombro-bg; color: $ombro-text;
-                           background-tint: $ombro-bg 0%; }
-    #input > .input--placeholder { color: $ombro-dim; }
-    #input > .input--cursor { background: $ombro-muted; color: $ombro-bg; }
+    #input, #input:focus { border: none; height: auto; max-height: 6; min-height: 1; padding: 0;
+                           background: $ombro-bg; color: $ombro-text; background-tint: $ombro-bg 0%;
+                           scrollbar-size-vertical: 1; scrollbar-color: $ombro-dim;
+                           scrollbar-background: $ombro-bg; }
+    #input > .text-area--placeholder { color: $ombro-dim; }
+    #input > .text-area--cursor { background: $ombro-muted; color: $ombro-bg; }
+    #input > .text-area--cursor-line { background: $ombro-bg; }
+    #input > .text-area--selection { background: $ombro-band; }
+    #secret, #secret:focus { border: none; height: 1; padding: 0; background: $ombro-bg; color: $ombro-text;
+                             background-tint: $ombro-bg 0%; display: none; }
+    #secret > .input--placeholder { color: $ombro-dim; }
+    #secret > .input--cursor { background: $ombro-muted; color: $ombro-bg; }
     #footer { height: 1; margin: 0 0 1 0; }
     #footer-left { width: 1fr; color: $ombro-muted; }
     #footer-right { width: auto; color: $ombro-muted; }
@@ -283,7 +331,9 @@ class OmbroApp(App):
         yield Static("", classes="rule", id="rule-above")
         with Horizontal(id="entry"):
             yield Static(">", id="chevron")
-            yield Input(placeholder="Chat or /brief", id="input")
+            yield PromptArea(id="input", placeholder="Chat or /brief", soft_wrap=True, show_line_numbers=False,
+                             tab_behavior="focus", compact=True)
+            yield Input(id="secret", password=True, placeholder="Hidden as you type")
         yield Static("", classes="rule", id="rule-below")
         with Horizontal(id="footer"):
             yield Static("", id="footer-left")
@@ -294,16 +344,13 @@ class OmbroApp(App):
         self.draw_rules()
         self.update_footer()
         if self.setup_needed:
-            self.add_line(Note(f"Welcome. Ombro needs setting up first: {self.setup_needed} It takes a few "
-                               "questions: your name, a model and its key (typed hidden, never sent to a model), "
-                               "then a short interview with the Lead."), "note")
             self.start_work(self._set_up)
         else:
             self.greet()
         self.active_runs = {r["run_id"] for r in views.run_list(self.home) if r["active"]}
         if self.poll:
             self.set_interval(POLL_SECONDS, self.poll_runs)
-        self.query_one("#input", Input).focus()
+        self.query_one("#input", PromptArea).focus()
 
     def greet(self) -> None:
         self.add_line(LeadSaid(look.greeting(self.summary["name"])), "lead")
@@ -354,7 +401,7 @@ class OmbroApp(App):
         self.query_one("#footer-left", Static).update(left)
         self.query_one("#footer-right", Static).update(right)
         placeholder = "Complete the brief interview, or /chat" if self.mode == "Brief" else "Chat or /brief"
-        self.query_one("#input", Input).placeholder = placeholder
+        self.query_one("#input", PromptArea).placeholder = placeholder
 
     # -- the conversation ------------------------------------------------------
 
@@ -386,16 +433,25 @@ class OmbroApp(App):
             return
         kind = {LeadSaid: "lead", Progress: "progress", Failure: "error", ProposalShown: "proposal"}.get(
             type(event), "note")
+        if isinstance(event, Note) and event.level == "lead":
+            event, kind = LeadSaid(event.text), "lead"  # set-up's own lines, in the Lead's voice
         self.add_line(event, kind)
 
     def begin_ask(self, pending: Pending) -> None:
         f = pending.field
         self.pending = pending
-        inp = self.query_one("#input", Input)
-        inp.password = f.kind == "secret"
         if f.kind in ("choice", "yesno") or (f.label and f.label not in ("You", "answer")):
             self.add_line(Note(field_prompt(f)), "note")
-        inp.focus()
+        self.show_secret(f.kind == "secret")
+
+    def show_secret(self, on: bool) -> None:
+        """A secret is typed into its own hidden field, never into the input box."""
+        prompt, secret = self.query_one("#input", PromptArea), self.query_one("#secret", Input)
+        prompt.display = not on
+        secret.display = on
+        if not on:
+            secret.value = ""
+        (secret if on else prompt).focus()
 
     def edit_files(self, paths: list[Path]) -> None:
         import subprocess
@@ -412,10 +468,10 @@ class OmbroApp(App):
 
     # -- input -----------------------------------------------------------------
 
-    @on(Input.Changed, "#input")
-    def typed(self, event: Input.Changed) -> None:
+    @on(TextArea.Changed, "#input")
+    def typed(self, event: TextArea.Changed) -> None:
         menu = self.query_one("#slash", OptionList)
-        value = event.value
+        value = event.text_area.text
         show = value.startswith("/") and " " not in value and self.pending is None
         matches = filter_slash(value) if show else []
         menu.clear_options()
@@ -427,37 +483,41 @@ class OmbroApp(App):
         if matches:
             menu.highlighted = 0
 
-    def on_key(self, event: events.Key) -> None:
+    def slash_open(self) -> bool:
+        return bool(self.query_one("#slash", OptionList).display)
+
+    def slash_key(self, key: str) -> None:
         menu = self.query_one("#slash", OptionList)
-        if not menu.display:
-            return
-        if event.key in ("down", "up"):
-            menu.action_cursor_down() if event.key == "down" else menu.action_cursor_up()
-            event.stop()
-        elif event.key == "escape":
+        if key in ("down", "up"):
+            menu.action_cursor_down() if key == "down" else menu.action_cursor_up()
+        elif key == "escape":
             menu.display = False
             self.query_one("#slash-rule").display = False
-            event.stop()
-        elif event.key == "tab":
+        elif key == "tab":
             self._take_slash()
-            event.stop()
 
     def _take_slash(self) -> str | None:
         menu = self.query_one("#slash", OptionList)
         if not menu.display or menu.highlighted is None:
             return None
         cmd = menu.get_option_at_index(menu.highlighted).id
-        inp = self.query_one("#input", Input)
+        inp = self.query_one("#input", PromptArea)
         inp.value = cmd + " "
-        inp.cursor_position = len(inp.value)
         menu.display = False
         self.query_one("#slash-rule").display = False
         return cmd
 
-    @on(Input.Submitted, "#input")
-    def submitted(self, event: Input.Submitted) -> None:
-        inp = self.query_one("#input", Input)
+    @on(Input.Submitted, "#secret")
+    def secret_submitted(self, event: Input.Submitted) -> None:
         text = event.value
+        self.query_one("#secret", Input).value = ""
+        if self.pending is not None:
+            self._answer(text)
+
+    @on(PromptArea.Submitted, "#input")
+    def submitted(self, event: PromptArea.Submitted) -> None:
+        inp = self.query_one("#input", PromptArea)
+        text = event.text
         menu = self.query_one("#slash", OptionList)
         if menu.display and text.strip() == text.strip().split(" ")[0]:
             # Enter on the menu takes the highlighted command
@@ -500,7 +560,7 @@ class OmbroApp(App):
                 self.add_line(Note(problem), "note")
                 return
         self.pending = None
-        self.query_one("#input", Input).password = False
+        self.show_secret(False)
         pending.value = value
         pending.done.set()
 
@@ -620,19 +680,27 @@ class OmbroApp(App):
         changed = counts != self.last_counts or active != self.active_runs
         self.active_runs = active
         self.last_counts = counts
-        if changed:
-            self.call_from_thread(self.refresh_summary)
+        if changed and self.is_running:
+            try:
+                self.call_from_thread(self.refresh_summary)
+            except RuntimeError:  # closed in the meantime
+                pass
 
     def refresh_summary(self) -> None:
+        from textual.css.query import NoMatches
+
         self.summary = views.summary(self.home)
-        self.query_one(HeaderBlock).refresh()
-        self.update_footer()
+        try:
+            self.query_one(HeaderBlock).refresh()
+            self.update_footer()
+        except NoMatches:  # the app is closing
+            pass
 
     def action_interrupt(self) -> None:
-        inp = self.query_one("#input", Input)
+        inp = self.query_one("#input", PromptArea)
         if self.pending is not None:
             pending, self.pending = self.pending, None
-            inp.password = False
+            self.show_secret(False)
             pending.error = Interrupted()
             pending.done.set()
             return
@@ -673,11 +741,11 @@ def field_prompt(f: Field) -> str:
         from ombro.ui import numbered
 
         if numbered(f):
-            return f.label + ":\n" + "\n".join(f"  {o.key}) {o.label}" for o in f.options) + \
+            return f.label + ("" if f.label.endswith(("?", ":")) else ":") + "\n" + "\n".join(f"  {o.key}) {o.label}" for o in f.options) + \
                 (f"\n(Enter for {f.default})" if f.default not in (None, "") else "")
         return (f"{f.label} " if f.label else "") + option_text(f.options, f.other) + "?"
     if f.kind == "secret":
-        return f"{f.label} (hidden as you type)"
+        return f.label + ("" if "hidden" in f.label.lower() else " (hidden as you type)")
     return f.label + (f" (Enter for {f.default})" if f.default not in (None, "") else "")
 
 

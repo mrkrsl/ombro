@@ -129,12 +129,18 @@ def test_slash_quit_during_questions_writes_nothing(talk, home):
 
 
 def test_edit_by_hand_then_accept_writes_the_edited_version(talk, home):
+    opened = []
+
     def edit(paths):
-        assert len(paths) == 2
-        paths[1].write_text("You are an invented Lead, edited by hand.\n")
+        assert len(paths) == 1  # one file at a time, so every one is opened
+        opened.append(paths[0].name)
+        if paths[0].name.endswith("soul.md"):
+            paths[0].write_text("You are an invented Lead, edited by hand.\n")
 
     out = talk(SetupPurpose(home), [fake.call("propose", SETUP)], ["e", "a"], edit=edit)
     assert out.status == "confirmed" and out.edited
+    assert opened == ["1-preferences-instructions.md", "2-lead-soul.md"]
+    assert "Opening lead/soul.md in your editor (2 of 2)." in talk.output
     soul = (home.lead_dir / "soul.md").read_text()
     assert soul == "You are an invented Lead, edited by hand.\n"
     assert "You edited it to" in out.transcript.read_text()
@@ -373,7 +379,7 @@ def test_init_holds_the_setup_interview_and_offers_a_role(tmp_path):
         fake.call("propose", ROLE),
     ])
     said = []
-    ask = Answers(["", "1", "deepseek-chat", "", "An invented baker.", "a", "y", "Check facts.", "a", "n", "n"])
+    ask = Answers(["", "1", "deepseek-chat", "", "An invented baker.", "a", "", "y", "Check facts.", "a", "n", "n"])
     secret = Answers(["sk-test-INVENTED-model", ""])
     assert run_init(h, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, home: client)
     assert "invented bakery" in h.instructions.read_text()
@@ -385,10 +391,14 @@ def test_init_holds_the_setup_interview_and_offers_a_role(tmp_path):
 # -- keeping each interview to its purpose, and showing progress -------------------
 
 
-def test_setup_writes_the_name_and_refuses_a_proposal_without_one(talk, home):
-    out = talk(SetupPurpose(home), [fake.call("propose", {**SETUP, "name": ""}), fake.call("propose", SETUP)], ["a"])
-    assert "Ask the user's name" in talk.tool_replies()[0]
+def test_setup_takes_the_name_from_preferences_and_never_asks_for_it(talk, home):
+    from ombro.settings import set_preference
+
+    set_preference(home, "name", "Ada")
+    out = talk(SetupPurpose(home), [fake.call("propose", {k: v for k, v in SETUP.items() if k != "name"})], ["a"])
     assert out.status == "confirmed"
+    assert "name" not in [k for k, _ in SetupPurpose.topics]
+    assert "The user's name ==\nAda" in talk.sent_to_model() or "Ada" in talk.sent_to_model()
     text = home.instructions.read_text()
     assert "# About me\n\nMy name is Ada." in text
     for heading in ("# How I like to work", "# How I want reports", "# Standing rules"):
@@ -419,8 +429,8 @@ def test_ask_shows_how_far_through_the_interview_is(talk, home):
     assert out.status == "confirmed"
     assert "○○○○○○  0 of 6 covered" in talk.output
     assert "●●●●○○  4 of 6 covered  ·  still to cover: what would be a waste, non-goals  ·  about halfway" in talk.output
-    # Two questions are numbered, each on its own line.
-    assert "Lead: \n  1. What would be a waste?\n  2. What is not wanted?" in talk.output
+    # Two questions come as separate paragraphs after "Two questions:".
+    assert "Lead: Two questions:\n\nWhat would be a waste?\n\nWhat is not wanted?" in talk.output
     assert '"answer": "Anything outside Lowtown; prices."' in talk.tool_replies()[1]
     assert "usually 5 to 8 questions" in talk.output
     assert "save it as 'teapot-survey'" in talk.answers.asked[-1]

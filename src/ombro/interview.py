@@ -80,6 +80,9 @@ class Purpose:
 
     kind = ""
     title = ""
+    intro = ""  # what the user is told as the interview starts; built from title and typical if empty
+    proposal_intro = ("Here's what I've written. Have a read through. You can then choose one of the options "
+                      "at the end to save it, ask me to change it, or edit it yourself.")
     rules = ""
     can_report_gaps = False
     accept_label = "write these files"
@@ -300,12 +303,10 @@ class Interview:
         )
         opening, removed = keys.scrub(self.home, p.opening())
         messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": opening}]
-        self.ui.say(
+        self.ui.say(p.intro or (
             f"{p.title}" + (f" It is {p.typical}." if p.typical else "")
             + " Type /quit to stop; nothing is written unless you accept it."
-            + f" For several lines, start and end with {BLOCK}."
-            + f" (Up to {format_tokens(self.limits.max_tokens)} tokens.)\n"
-        )
+        ))
         try:
             outcome = self._loop(messages, tools)
         except LimitReached as e:
@@ -378,41 +379,46 @@ class Interview:
         return {"error": f"unknown tool {tc.name!r}"}, None
 
     def progress_line(self, args: dict) -> str:
+        """Topics covered, what is left, and how far through: worked out from the
+        topics, so the words always agree with the count."""
         keys_ = [k for k, _ in self.purpose.topics]
+        if not keys_:
+            return ""
         covered = [k for k in keys_ if k in (args.get("covered") or [])]
-        progress = args.get("progress") if args.get("progress") in prompts.PROGRESS else ""
-        parts = []
-        if keys_:
-            labels = dict(self.purpose.topics)
-            bar = "●" * len(covered) + "○" * (len(keys_) - len(covered))
-            left = [labels[k] for k in keys_ if k not in covered]
-            parts.append(f"{bar}  {len(covered)} of {len(keys_)} covered")
-            if left:
-                parts.append("still to cover: " + ", ".join(left))
-        if progress:
-            parts.append(progress)
+        labels = dict(self.purpose.topics)
+        bar = "●" * len(covered) + "○" * (len(keys_) - len(covered))
+        left = [labels[k] for k in keys_ if k not in covered]
+        parts = [f"{bar}  {len(covered)} of {len(keys_)} covered"]
+        if left:
+            parts.append("still to cover: " + ", ".join(left))
+        parts.append(how_far(len(covered), len(keys_)))
         return "  ·  ".join(parts)
 
     @staticmethod
     def questions_text(args: dict) -> str:
-        """The questions, each on its own line, numbered when there is more than one."""
+        """The questions as the user reads them: one on its own, or two as separate
+        paragraphs after "Two questions:", with any short lead-in line first."""
         raw = args.get("questions")
         if isinstance(raw, str) or raw is None:
             raw = [raw or args.get("question") or ""]
         items = [" ".join(str(q).split()) for q in raw if str(q or "").strip()]
+        if not items:
+            return ""
+        lead_in = " ".join(str(args.get("lead_in") or "").split())
         if len(items) == 1:
-            return items[0]
-        return "\n".join(f"  {i}. {q}" for i, q in enumerate(items, 1))
+            body = items[0]
+        else:
+            body = f"{'Two' if len(items) == 2 else len(items)} questions:\n\n" + "\n\n".join(items)
+        return f"{lead_in}\n\n{body}" if lead_in else body
 
     def _ask(self, args: dict) -> tuple[dict, Outcome | None]:
         question = self.questions_text(args)
         if not question:
             return {"error": "give at least one question in `questions`"}, None
-        if "\n" in question:
-            question = "\n" + question
         line = self.progress_line(args)
-        if line:
+        if line and line != getattr(self, "_last_progress", None):
             self.ui.show(Progress(line))
+        self._last_progress = line
         self.ui.show(LeadSaid(question, asks=True))
         self.transcript.lead(question + (f"\n\n_[{line}]_" if line else ""))
         answer = self._answer()
@@ -445,8 +451,10 @@ class Interview:
             return {"error": f"refused: {e}"}, None
         self.transcript.proposal(proposal)
         edited = False
+        self.ui.say(self.purpose.proposal_intro, spaced=True, level="lead")
         while True:
             self._show(proposal)
+            self.ui.say("Choose one of these options:")
             choice = self.ui.ask(Field(
                 "decision", "", "choice",
                 options=[Option("a", f"accept and {self.purpose.accept_label_for(proposal)}", ("accept", "y", "yes")),
@@ -460,7 +468,7 @@ class Interview:
                 self.purpose.write(proposal)
                 self.transcript.note("You accepted" + (" your edited version." if edited else " the proposal."))
                 for f in proposal.files:
-                    self.ui.say(f"Wrote {f.path}", level="done")
+                    self.ui.say(f"Saved {f.path}", level="done")
                 return {}, Outcome("confirmed", proposal=proposal, edited=edited)
             if choice == "q":
                 raise KeyboardInterrupt
@@ -484,7 +492,11 @@ class Interview:
                 p = drafts / f"{i + 1}-{f.path.parent.name}-{f.path.name}"
                 p.write_text(f.text, encoding="utf-8")
                 paths.append(p)
-            self.ui.edit(paths)
+            # One file at a time, so every file is opened, whatever the editor does with several.
+            for i, (f, path) in enumerate(zip(proposal.files, paths), 1):
+                if len(paths) > 1:
+                    self.ui.say(f"Opening {f.label} in your editor ({i} of {len(paths)}).")
+                self.ui.edit([path])
             texts = [p.read_text(encoding="utf-8") for p in paths]
         finally:
             shutil.rmtree(drafts, ignore_errors=True)
@@ -532,6 +544,31 @@ class Interview:
         return path
 
 
+def how_far(covered: int, total: int) -> str:
+    if total <= 0 or covered <= 0:
+        return "just started"
+    share = covered / total
+    if covered >= total:
+        return "ready to wrap up"
+    if share < 0.4:
+        return "about a third of the way"
+    if share < 0.7:
+        return "about halfway"
+    return "nearly done"
+
+
+def readable(text: str) -> str:
+    """A file as the user reads it in a proposal: no empty header block, no hidden comments."""
+    import re
+
+    try:
+        meta, body = mdfile.parse(text)
+    except mdfile.FrontMatterError:
+        return text.strip()
+    shown = text if meta else body
+    return re.sub(r"\n{3,}", "\n\n", re.sub(r"<!--.*?-->", "", shown, flags=re.S)).strip()
+
+
 def proposal_view(proposal: Proposal) -> ProposalShown:
     """The proposal as data for an interface: each file, whether it replaces one,
     and the changes from the current file when it has content."""
@@ -544,7 +581,7 @@ def proposal_view(proposal: Proposal) -> ProposalShown:
             if mdfile.prompt_text(mdfile.parse(old)[1]) and old != f.text:
                 diff = list(difflib.unified_diff(
                     old.splitlines(), f.text.splitlines(), "current", "proposed", lineterm="", n=1))[2:60]
-        files.append(FileView(f.label, str(f.path), f.text, exists, diff))
+        files.append(FileView(f.label, str(f.path), readable(f.text), exists, diff))
     return ProposalShown(files, list(proposal.warnings))
 
 

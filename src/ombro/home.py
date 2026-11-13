@@ -378,6 +378,14 @@ def crew_title(home: "Home", crew: str) -> str:
     return title or f"{tidy_title(crew)} Crew"
 
 
+def set_crew_title(home: "Home", crew: str, title: str) -> None:
+    """Change a crew's title in crew.md, keeping the rest."""
+    path = home.crew_dir(crew) / "crew.md"
+    meta, body = mdfile.read(path) if path.is_file() else ({"name": crew}, "")
+    meta["title"] = " ".join(title.split())
+    mdfile.write(path, meta, body)
+
+
 LEAD_CONFIG = {
     "name": "lead",
     "title": "Lead",
