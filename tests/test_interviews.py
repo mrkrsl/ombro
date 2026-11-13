@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from conftest import LEAD_REPORT
+from conftest import LEAD_REPORT, TEST_LEAD_SOUL
 from ombro import fake, keys, mdfile, runs
 from ombro.fake import ScriptedClient
 from ombro.home import LEAD_SOUL
@@ -88,7 +88,7 @@ def test_setup_writes_nothing_until_accepted(talk, home):
     before = home.instructions.read_text()
 
     def unchanged_so_far(messages, tools):
-        assert home.instructions.read_text() == before and soul_path.read_text() == LEAD_SOUL
+        assert home.instructions.read_text() == before and soul_path.read_text() == TEST_LEAD_SOUL
         return fake.call("propose", {**SETUP, "soul": "You are brisk, kind and short."})
 
     out = talk(
@@ -103,8 +103,10 @@ def test_setup_writes_nothing_until_accepted(talk, home):
     )
     assert out.status == "confirmed"
     assert "I run an invented bakery in Lowtown." in home.instructions.read_text()
-    assert soul_path.read_text() == "You are brisk, kind and short.\n"
-    assert (soul_path.parent / "soul.previous.md").read_text() == LEAD_SOUL  # the old text is kept
+    soul = soul_path.read_text()
+    # The interview adds its own section; the Lead's character above it is kept.
+    assert soul.startswith(TEST_LEAD_SOUL.strip()) and soul.endswith("## Working with Ada\n\nYou are brisk, kind and short.\n")
+    assert (soul_path.parent / "soul.previous.md").read_text() == TEST_LEAD_SOUL  # the old text is kept
     # The change request went back to the Lead as the tool's result.
     assert "Make the soul shorter." in talk.tool_replies()[0]
     # The new preferences are read the way a run reads them.
@@ -455,3 +457,18 @@ def test_a_brief_opens_with_the_users_own_description(talk, home):
     messages = talk.client.calls[0]["messages"]
     assert "describe it in their own words" in messages[1]["content"]
     assert "Do not open with the checklist" in messages[0]["content"]
+
+
+def test_running_set_up_again_replaces_only_its_own_section(talk, home):
+    from ombro.home import soul_with
+    from ombro.settings import set_preference
+
+    set_preference(home, "name", "Ada")
+    soul_path = home.lead_dir / "soul.md"
+    soul_path.write_text("You are an invented Lead with a character edited by hand.\n")  # the user's own edit
+    talk(SetupPurpose(home), [fake.call("propose", {**SETUP, "soul": "With Ada, you report early."})], ["a"])
+    talk(SetupPurpose(home), [fake.call("propose", {**SETUP, "soul": "With Ada, you report at the end."})], ["a"])
+    soul = soul_path.read_text()
+    assert soul == ("You are an invented Lead with a character edited by hand.\n\n## Working with Ada\n\n"
+                    "With Ada, you report at the end.\n")
+    assert soul_with("## Working with Ada\n\nOld.", "Ada", "New.").startswith(LEAD_SOUL.strip())

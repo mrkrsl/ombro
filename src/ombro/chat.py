@@ -307,7 +307,7 @@ class Chat:
         except ModelError as e:
             self.exchanges.pop()
             self.transcript.note(f"The model call failed: {e}")
-            self.ui.show(Failure(f"The model call failed: {e}. Say it again, or /quit."))
+            self.ui.show(Failure(f"I couldn't reach the model just now ({e}). Try again in a moment."))
             return True
         self._usage_line()
         if request:

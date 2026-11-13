@@ -452,16 +452,30 @@ def notice_text(app: "OmbroApp", run_id: str) -> Text:
         return Text(f"Run {run_id} has ended.", style=p.text)
     r = views.report(app.home, run_dir)
     out = Text()
-    out.append(f"Run {run_id} has ended: {r['status']}", style=f"bold {p.text}")
-    if r.get("limit_hit"):
-        out.append(f" (stopped by {r['limit_hit']})", style=p.text)
-    out.append(f".\n{r['brief']}\n", style=p.muted)
+    out.append(ended_line(r["status"], r.get("limit_hit")), style=f"bold {p.text}")
+    out.append(f"\n{r['brief']}\n", style=p.muted)
     files = [d for d in r["deliverables"] if d["kind"] == "deliverable"]
+    if files:
+        out.append("Here's what it made:\n", style=p.text)
     for d in files:
         out.append(f"  {d['name']}: ", style=p.muted)
         out.append(d["path"], Style(color=p.text, underline=True, link=d["url"]))
         out.append("\n")
     if r["waiting"]:
-        out.append(f"{_n(r['waiting'], 'action')} waiting for you: /outbox\n", style=p.text)
-    out.append(f"See the report with /report {run_id}", style=p.muted)
+        n = r["waiting"]
+        out.append(f"{_n(n, 'action')} {'is' if n == 1 else 'are'} waiting for your OK: /outbox\n", style=p.text)
+    out.append(f"Read the report with /report {run_id}", style=p.muted)
     return out
+
+
+def ended_line(status: str, limit: str | None) -> str:
+    """How a run ended, as Ombro says it in a notice."""
+    if status == "completed":
+        return "Your run has finished."
+    if status == "stopped_by_limit":
+        return f"Your run stopped at its {limit or 'run'} limit before finishing."
+    if status == "stopped":
+        return "Your run was stopped, as you asked."
+    if status == "insufficient_brief":
+        return "Your run needs more from you before it can start."
+    return "Your run didn't finish: something went wrong."

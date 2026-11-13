@@ -436,12 +436,12 @@ def test_a_run_ending_posts_a_notice_and_marks_it_seen(home, run):
             app.poll_runs()
             for _ in range(100):
                 await pilot.pause(0.03)
-                if any("has ended" in t for t in _texts(app)):
+                if any("Your run has finished." in t for t in _texts(app)):
                     break
             texts = _texts(app)
             assert any(f"{run_id} · lead briefed" in t for t in texts)
-            notice = next(t for t in texts if "has ended" in t)
-            assert "completed" in notice and "The note:" in notice and f"/report {run_id}" in notice
+            notice = next(t for t in texts if "Your run has finished." in t)
+            assert "Here's what it made:" in notice and "The note:" in notice and f"/report {run_id}" in notice
 
     drive(go())
     assert runs_mod.read_run(run.run_dir)[0].get("seen_at")

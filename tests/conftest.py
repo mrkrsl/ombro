@@ -131,7 +131,15 @@ def home(tmp_path, monkeypatch) -> Home:
     # default crew has just the one invented role.
     shutil.rmtree(h.roles_dir("default") / "general-assistant")
     write_role(h, "researcher", max_steps=10)
+    # A short, fixed Lead soul, so token-budget tests do not depend on the length of the default one.
+    (h.lead_dir / "soul.md").write_text(TEST_LEAD_SOUL)
     return h
+
+
+TEST_LEAD_SOUL = """\
+You are calm, exact and economical. You brief clearly, ask for no more than
+the spec needs, and report plainly, including what went wrong.
+"""
 
 
 def echo_registry(calls: list | None = None) -> ToolRegistry:

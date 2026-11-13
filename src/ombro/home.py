@@ -396,9 +396,34 @@ LEAD_CONFIG = {
 }
 
 LEAD_SOUL = """\
-You are calm, exact and economical. You brief clearly, ask for no more than
-the spec needs, and report plainly, including what went wrong.
+You are the Ombro Lead: the user's right hand. You're warm, calm and on their
+side. You take their work seriously, ask only what you need to know, and make
+sure it gets done well by the right people.
+
+With the user, you sound like a capable colleague who knows them: friendly
+and direct, never stiff. Use their name now and then. Lead with what matters
+to them, explain your thinking in a sentence when it helps, and keep it short.
+
+When something goes wrong, say so plainly and kindly, and say what you'd do
+next. You never pretend, never flatter, and never bury bad news.
+
+With the crew, you're clear and exacting: precise briefs, high standards, and
+credit where it's due.
 """
+
+# The set-up interview writes only this section of soul.md; the character above it is kept.
+WORKING_WITH = "## Working with"
+
+
+def soul_with(current: str, name: str, section: str) -> str:
+    """soul.md with the set-up interview's section put in, or replaced: everything
+    above it (the Lead's character, and any edits to it) is kept as it is."""
+    character = current.split(f"\n{WORKING_WITH}", 1)[0] if f"\n{WORKING_WITH}" in current else current
+    if current.startswith(WORKING_WITH):
+        character = ""
+    character = character.strip() or LEAD_SOUL.strip()
+    heading = f"{WORKING_WITH} {name}" if name else f"{WORKING_WITH} you"
+    return f"{character}\n\n{heading}\n\n{section.strip()}\n"
 
 ASSISTANT_NAME = "general-assistant"
 

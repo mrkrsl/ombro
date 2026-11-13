@@ -23,6 +23,7 @@ def test_a_fresh_home_has_titles(tmp_path):
     ensure_home(h)
     limits = load_limits(h)
     assert load_lead(h, limits).title == "Lead"
+    assert load_lead(h, limits).soul.startswith("You are the Ombro Lead: the user's right hand.")
     assert crew_title(h, "default") == "Default Crew"
     assert crew_roles(h, "default", limits)["general-assistant"].title == "General Assistant"
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ombro import mdfile, prompts
-from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home, tidy_title
+from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home, soul_with, tidy_title
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
 from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role
 from ombro.settings import Limits, SetupError, format_duration, format_tokens, load_models, load_tool_settings
@@ -157,7 +157,9 @@ class SetupPurpose(Purpose):
                 "working_style": field("How they like to work with the crew, in the first person."),
                 "reports": field("How they want reports, in the first person."),
                 "standing_rules": field("Rules that hold for every task, as a Markdown list. May be empty."),
-                "soul": field("Your soul.md: character and manner, second person. Nothing about any task."),
+                "soul": field("How you'll work with this user in particular, second person (\"With Mark, "
+                              "you…\"), under about 100 words. Your core character is kept as it is. "
+                              "Nothing about any task."),
             },
             ["work", "working_style", "reports", "soul"],
         )
@@ -181,7 +183,9 @@ class SetupPurpose(Purpose):
             [
                 FileDraft("preferences/instructions.md", self.home.instructions,
                           mdfile.dump({}, INSTRUCTIONS_BODY + "\n" + body + "\n")),
-                FileDraft("lead/soul.md", self.soul_path, _text(args, "soul") + "\n"),
+                FileDraft("lead/soul.md", self.soul_path, soul_with(
+                    self.soul_path.read_text(encoding="utf-8") if self.soul_path.is_file() else LEAD_SOUL,
+                    name, _text(args, "soul"))),
             ]
         )
 
