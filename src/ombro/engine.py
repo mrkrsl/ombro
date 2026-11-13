@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ombro import contract, folders, material, mdfile, memory, outbox, outward, prompts, report, runs
+from ombro import skills as skills_mod
 from ombro import journal as journal_mod
 from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
 from ombro.mcp import McpCallLost
-from ombro.roles import Role, load_lead, load_roles, resolve_role, skill_texts
+from ombro.roles import Role, load_lead, load_roles, resolve_role
 from ombro.settings import Limits, ModelSpec, SetupError, ToolSettings, load_models, load_preferences
 from ombro.tools import NotGranted, SharedFolder, Tool, ToolContext, ToolError, ToolRegistry
 
@@ -58,7 +59,8 @@ def cut_off(reply: ModelReply, max_out: int) -> bool:
 
 
 # Tools whose results carry nothing from outside: the harness's own confirmations.
-NOT_MATERIAL = {"workspace.write", "workspace.set_aside", "workspace.place"}
+# skills.read returns the user's own library, which is not material either (4.4).
+NOT_MATERIAL = {"workspace.write", "workspace.set_aside", "workspace.place", "skills.read"}
 
 
 def _error(tool: Tool, e: Exception) -> dict[str, Any]:
@@ -148,11 +150,19 @@ class Engine:
                     f"{role.name} lists tools that are not available and will not be offered: {', '.join(missing_tools)}",
                 )
             self._warn_missing_keys(role)
-            _, missing_skills = skill_texts(self.home, role.skills)
+            have, missing_skills = skills_mod.names_for(self.home, role)
             if missing_skills:
                 self.journal.write(
                     "harness", "warning", f"{role.name} lists skills that do not exist: {', '.join(missing_skills)}"
                 )
+            _, left = self._skill_listing(have)
+            if left:
+                self.journal.write("harness", "warning", f"{role.name}'s skills listing passed its cap of "
+                                   f"{self.limits.skills_list_chars:,} characters, so these were left out: "
+                                   + ", ".join(left))
+        for s in skills_mod.library(self.home).values():
+            if s.warning:
+                self.journal.write("harness", "warning", s.warning)
         spec_meta, spec_body = mdfile.read(self.run_dir / "spec.md")
         self.spec_body = spec_body.strip()
         # `roles:` in the spec: who the work goes to (soft: the Lead may brief others for side tasks).
@@ -259,6 +269,26 @@ class Engine:
             event=lambda action, note, **fields: self.journal.write(role.name, action, note, **fields),
         )
 
+    def _skill_listing(self, names: list[str] | None) -> tuple[str, list[str]]:
+        """Name and description of the given skills (every skill with None), within the cap."""
+        lib = skills_mod.library(self.home)
+        chosen = list(lib.values()) if names is None else [lib[n] for n in names if n in lib]
+        return skills_mod.listing(chosen, self.limits.skills_list_chars)
+
+    def _skills_read_tool(self, allowed: list[str] | None) -> Tool:
+        home, cap = self.home, self.limits.skill_read_chars
+
+        def handler(args: dict, ctx: ToolContext) -> dict[str, Any]:
+            try:
+                out = skills_mod.read(home, allowed, args.get("name"), args.get("file"), cap)
+            except skills_mod.SkillError as e:
+                raise ToolError(str(e)) from None
+            ctx.record("skill_read", f"{out['skill']}{' ' + out['file'] if out.get('file') else ''}",
+                       skill=out["skill"], file=out.get("file"))
+            return out
+
+        return Tool("skills.read", prompts.SKILLS_READ_DESCRIPTION, prompts.SKILLS_READ_PARAMETERS, handler)
+
     def _close_mcp(self) -> None:
         if self.pool is not None:
             self.pool.close()
@@ -313,6 +343,11 @@ class Engine:
         except OSError as e:
             self.journal.write("harness", "warning", f"the changes in shared folders could not be listed: {e}")
         self._notes(status)
+        try:
+            self._skill_step(status)
+        except Exception as e:  # never leave a run without a report
+            self.journal.write("harness", "skills", f"the skill step failed: {type(e).__name__}: {e}",
+                               outcome="skipped")
         self._report(status)
         runs.update_run(
             self.run_dir,
@@ -390,14 +425,17 @@ class Engine:
                     memory=memory.lead_context(self.home, self.crews, self.limits),
                     shared=[(f.name, f.access) for f in self.shared.values()],
                     spec_roles=getattr(self, "spec_roles", []),
+                    skills=self._skill_listing(None)[0],
                 ),
             },
             {"role": "user", "content": self.spec_body},
         ]
         self.gate.begin_scope(self.lead.name, self.lead.max_steps)
+        # skills__read is offered only when there is a skill to read, so an empty library costs nothing.
+        lead_tools = prompts.LEAD_TOOLS + ([prompts.SKILLS_READ_TOOL] if skills_mod.library(self.home) else [])
         idle = 0
         while not self.finished:
-            reply = self._model_call(self.lead, messages, prompts.LEAD_TOOLS)
+            reply = self._model_call(self.lead, messages, lead_tools)
             messages.append(reply.as_message())
             if not reply.tool_calls:
                 idle += 1
@@ -428,10 +466,11 @@ class Engine:
 
     def _lead_tool(self, tc) -> dict[str, Any]:
         searching = tc.name == "memory__search"
-        name = "memory.search" if searching else tc.name
+        reading = tc.name == "skills__read"
+        name = "memory.search" if searching else "skills.read" if reading else tc.name
         try:
             # The Lead's own tools are bounded by max_rounds; memory.search has a per-run cap.
-            self.gate.check_tool_call("lead", name, _canonical(tc.arguments, tc.raw_arguments), capped=searching)
+            self.gate.check_tool_call("lead", name, _canonical(tc.arguments, tc.raw_arguments), capped=searching or reading)
         except ToolRefused as e:
             self.journal.write("lead", "tool_refused", f"{tc.name}: {e.detail}", limit=e.limit)
             return {"error": e.detail}
@@ -442,6 +481,8 @@ class Engine:
             return {"error": "the arguments were not a JSON object"}
         if searching:
             return self._search(tc.arguments)
+        if reading:
+            return self._lead_read_skill(tc.arguments)
         if tc.name == "brief":
             return self._brief(tc.arguments)
         if tc.name == "finish":
@@ -453,7 +494,17 @@ class Engine:
             self.finished = True
             return {"ok": True}
         self.journal.write("lead", "tool_refused", f"unknown tool {tc.name!r}")
-        return {"error": f"unknown tool {tc.name!r}; use brief, memory__search or finish"}
+        return {"error": f"unknown tool {tc.name!r}; use brief, memory__search, skills__read or finish"}
+
+    def _lead_read_skill(self, args: dict) -> dict[str, Any]:
+        try:
+            out = skills_mod.read(self.home, None, args.get("name"), args.get("file"), self.limits.skill_read_chars)
+        except skills_mod.SkillError as e:
+            self.journal.write("lead", "tool_error", f"skills.read: {e}", tool="skills.read")
+            return {"error": str(e)}
+        self.journal.write("lead", "skill_read", f"{out['skill']}{' ' + out['file'] if out.get('file') else ''}",
+                           tool="skills.read", skill=out["skill"], file=out.get("file"))
+        return out
 
     def _search(self, args: dict) -> dict[str, Any]:
         query = str(args.get("query") or "")
@@ -497,6 +548,9 @@ class Engine:
         if "workspace.write" in names and "workspace.set_aside" not in names:
             names.append("workspace.set_aside")  # a role that can write can set a file aside, never delete it
         tools = [t for name in names if (t := self.registry.get(name)) is not None]
+        have = skills_mod.names_for(self.home, role)[0] if role.skills or role.all_skills else []
+        if have:
+            tools.append(self._skills_read_tool(have))
         return [t.schema() for t in tools], {t.wire_name: t for t in tools}
 
     def _flag(self, who: str, src: str, out: Any) -> None:
@@ -509,7 +563,7 @@ class Engine:
     def _run_role(self, role: Role, task: str) -> dict[str, Any]:
         self.tainted = False  # set once the brief reads material; external calls are then staged
         schemas, by_wire = self._role_tools(role)
-        skills, _ = skill_texts(self.home, role.skills)
+        skills, _ = self._skill_listing(skills_mod.names_for(self.home, role)[0])
         messages: list[dict] = [
             {"role": "system", "content": prompts.role_system(role, skills, [t.name for t in by_wire.values()], self.today,
                                                               shared=[(f.name, f.access) for f in self.shared.values()])},
@@ -804,6 +858,118 @@ class Engine:
             return record("changed", f"{len(added)} added, {len(removed)} removed; {new.size:,} of {cap:,} characters",
                           added=added, removed=removed, size=new.size, cap=cap)
         return record("refused", "the Lead did not write the notes in the form required")
+
+    # -- skills ------------------------------------------------------------
+
+    SKILL_CALLS = 4  # the proposal, or none, plus a few skill reads
+
+    def _skill_step(self, status: str) -> None:
+        """The Lead may propose one skill, into the outbox, after a completed run in which a
+        role returned a result (specification 4.4). Recorded as a `skills` event."""
+        def record(outcome: str, note: str, **extra: Any) -> None:
+            self.journal.write("lead" if outcome in ("proposed", "none") else "harness", "skills", note,
+                               outcome=outcome, **extra)
+
+        events = journal_mod.read(self.run_dir / "journal.jsonl")
+        if status != "completed":
+            return record("skipped", "the run did not complete, so no skill was considered", quiet=True)
+        if not any(e.get("action") == "returned" and e.get("status") == "ok" for e in events):
+            return record("skipped", "no role returned a result, so no skill was considered", quiet=True)
+        if self.lead is None or self.lead.model not in self.models:
+            return record("skipped", "the Lead could not be loaded")
+        waiting = outbox.skills_waiting(self.home)
+        if waiting >= self.limits.skill_proposals_waiting:
+            return record("skipped", f"{waiting} skill proposals already wait for you, the most allowed; "
+                          "no more are made until you decide some")
+        self.gate.enter_report_phase("skills")
+        facts = report.gather_facts(self.home, self.run_dir, status)
+        cap = self.limits.skill_max_chars
+        messages: list[dict] = [
+            {"role": "system", "content": prompts.skill_system(self.lead, self.today)},
+            {"role": "user", "content": prompts.skill_input(self._skill_listing(None)[0], list(self.roles), cap,
+                                                            report.narrative_input(facts))},
+        ]
+        report_worst = estimate_tokens([{"role": "user", "content": report.narrative_input(facts)}]) + 2_000 \
+            + self.limits.report_max_output_tokens
+        max_out = min(self.limits.max_output_tokens, cap // 3 + 800)
+        refused = 0
+        for _ in range(self.SKILL_CALLS):
+            worst = estimate_tokens(messages, prompts.SKILL_TOOLS) + max_out
+            if self.limits.max_tokens is not None and \
+                    self.gate.usage.total_tokens + worst + report_worst > self.limits.max_tokens:
+                return record("skipped", "not enough of the token limit was left to consider a skill and still "
+                              "write the report")
+            try:
+                reply = self._model_call(self.lead, messages, prompts.SKILL_TOOLS, max_output=max_out)
+            except (LimitReached, ModelError) as e:
+                return record("skipped", f"the skills call could not be made: {e}")
+            except KeyboardInterrupt:
+                return record("skipped", "the skills call was interrupted")
+            except Exception as e:  # an optional step never stops the report
+                return record("skipped", f"the skills call failed: {type(e).__name__}: {e}")
+            messages.append(reply.as_message())
+            tc = reply.tool_calls[0] if reply.tool_calls else None
+            for extra in reply.tool_calls[1:]:
+                messages.append(_tool_message(extra.id, {"error": "one call at a time; ignored"}))
+            if tc is None or tc.name == "no_skill":
+                why = str((tc.arguments or {}).get("reason") or "") if tc else "the Lead replied without a tool"
+                return record("none", _short(why or "nothing new to keep", 300))
+            if tc.arguments is None:
+                messages.append(_tool_message(tc.id, {"error": "the arguments were not a JSON object"}))
+                refused += 1
+            elif tc.name == "skills__read":
+                messages.append(_tool_message(tc.id, self._lead_read_skill(tc.arguments)))
+                continue
+            elif tc.name == "skills__propose":
+                out = self._propose_skill(tc.arguments)
+                messages.append(_tool_message(tc.id, out))
+                if "error" not in out:
+                    return
+                refused += 1
+            else:
+                messages.append(_tool_message(tc.id, {"error": "use skills__propose, skills__read or no_skill"}))
+                refused += 1
+            if refused >= 2:
+                return record("refused", "the Lead's proposal was refused twice")
+        record("refused", "the Lead did not finish deciding within its calls")
+
+    def _propose_skill(self, args: dict) -> dict[str, Any]:
+        name = str(args.get("name") or "").strip()
+        reason = " ".join(str(args.get("reason") or "").split())
+        text = skills_mod.compose(name, str(args.get("description") or ""), str(args.get("body") or ""),
+                                  {"source": f"run {self.run_id}"})
+        try:
+            skills_mod.check(text, name, self.limits.skill_max_chars)
+        except skills_mod.SkillError as e:
+            self.journal.write("lead", "skills_refused", _short(str(e), 300))
+            return {"error": str(e)}
+        if not reason:
+            return {"error": "give `reason`: one sentence on what in this run shows the skill helps"}
+        raw_for = args.get("for") or []
+        for_roles, unknown = [], []
+        for who in raw_for if isinstance(raw_for, list) else [raw_for]:
+            role, _ = resolve_role(self.roles, str(who))
+            if role is None:
+                unknown.append(str(who))
+            elif f"{role.crew}/{role.path.name}" not in for_roles:
+                for_roles.append(f"{role.crew}/{role.path.name}")
+        signs = material.flags(text)
+        base = skills_mod.live_sha(self.home, name)
+        try:
+            action, duplicate = outbox.stage_skill(self.run_dir, name=name, text=text, for_roles=for_roles,
+                                                   reason=reason, base_sha=base, flags=signs)
+        except outbox.OutboxError as e:
+            self.journal.write("harness", "skills", f"the proposal could not be staged: {e}", outcome="skipped")
+            return {"ok": True, "note": "it could not be staged"}
+        change = "a new version of" if base else "a new skill,"
+        self.journal.write(
+            "lead", "skills", f"proposed {change} {name}, waiting for you as {action.ref}", outcome="proposed",
+            ref=action.ref, skill=name, change="update" if base else "new", reason=reason, flags=signs,
+            **({"for": for_roles} if for_roles else {}), **({"unknown_roles": unknown} if unknown else {}))
+        if signs:
+            self.journal.write("harness", "material_flag", f"the proposed skill {name}: {', '.join(signs)}",
+                               source=f"the proposed skill {name}", signs=signs, reader="lead")
+        return {"ok": True, "staged": action.ref, **({"note": "already staged"} if duplicate else {})}
 
     # -- report ------------------------------------------------------------
 

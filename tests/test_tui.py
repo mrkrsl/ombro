@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pytest
 
-from ombro import fake, keys
+from ombro import fake, keys, mdfile
 from ombro.fake import ScriptedClient
 from ombro.tui import look
 from ombro.tui.detect import is_dark, parse_background
@@ -773,3 +773,24 @@ def test_tools_changes_a_built_in_tool(home):
 
     drive(go())
     assert load_tool_settings(home).provider_for("web.search") == "duckduckgo"
+
+
+def test_skills_lists_the_library_and_gives_a_skill(home):
+    folder = home.skills_dir / "kettle-survey"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: kettle-survey\ndescription: Surveys invented kettle makers.\n---\n"
+                                     "1. Search.\n")
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/skills")
+            await settle(pilot, app)
+            assert "Surveys invented kettle makers." in "\n".join(_texts(app))
+            await command(pilot, app, "/skills give kettle-survey default/researcher")
+            await settle(pilot, app)
+            assert "Gave kettle-survey to default/researcher." in "\n".join(_texts(app))
+
+    drive(go())
+    assert mdfile.read(home.roles_dir("default") / "researcher" / "config.md")[0]["skills"] == ["kettle-survey"]

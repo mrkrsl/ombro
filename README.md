@@ -198,7 +198,7 @@ any point writes nothing. When a file is replaced, its old text is kept next
 to it as `name.previous.md`.
 
 - **Roles.** The Lead may propose only tools from the tool registry and
-  skills from `skills/`; anything else is refused. The harness checks the role
+  skills from `skills/` (or `skills: all`); anything else is refused. The harness checks the role
   the same way a run loads it, and warns when a role has no workspace tools
   (so it can only work from its brief).
 - **Task briefs.** The Lead must find out what done looks like, who uses the
@@ -304,6 +304,46 @@ it; it grows only with the crews a spec names.
 The figures are in `limits.md`, in characters, so they mean the same on
 every model: `memory_notes_max_chars`, `memory_index_entries`,
 `memory_index_entry_chars`, `memory_search_max_chars`.
+
+## Skills
+
+A skill is a reusable method, kept in one library that every crew shares, in
+the open Agent Skills format: `skills/<name>/SKILL.md`, with `name` (lower
+case and hyphens, the same as the folder) and `description` (what it does and
+when to use it) in the front matter, then the method in Markdown. An optional
+`references/` folder holds longer material the method points to. An older
+`skill.md` is read the same way.
+
+- **Who uses which.** A role's `config.md` lists its skills
+  (`skills: [kettle-survey]`), or `skills: all` for the whole library. A role
+  with no `skills:` line has none, so a new skill reaches no role until you
+  give it: `ombro skills give <skill> <crew/role>`, `/skills give`, the role
+  interview, or editing `config.md`.
+- **Read on demand.** A role's prompt lists only the name and description of
+  each skill it may use; it reads the method with `skills.read` when it needs
+  it. The Lead sees the whole library and each role's skills, so a brief can
+  say which skill to read. The listing in any prompt is capped at
+  `skills_list_chars` (4,000 characters), and a read at `skill_read_chars`
+  (20,000), so a growing library does not grow the cost of a run. The report
+  says which skills each role read.
+- **Models propose; you decide.** After a completed run in which a role
+  returned a result, the Lead may propose one skill (a new one, or a better
+  version of one), or none, which is the usual answer. A proposal waits in
+  the outbox as a `skills.propose` action: `ombro outbox show <ref>` gives the
+  whole text, or the diff against today's version, the roles it is for, and
+  any signs of injected text in it; `approve` writes it and gives it to those
+  roles, `decline` drops it, and `edit` opens the text in your editor. At most
+  10 proposals wait at once (`skill_proposals_waiting`); a model-written
+  skill is capped at `skill_max_chars` (10,000 characters).
+- **In chat**, ask the Lead to remember how to do something and it offers a
+  skill, showing it in full, or as a diff; nothing is written without your yes.
+- **Nothing is lost.** Replacing a skill keeps the old version in
+  `skills/Archive/<name>/<date-time>/`. Each skill records where it came from
+  (`metadata: source:`); one with no source is yours.
+- A skill never adds a tool, and its `scripts/` folder is not run.
+
+`ombro skills` lists the library, who uses each skill and the proposals
+waiting; `ombro skills show <name>` and `edit <name>` show and edit one.
 
 ## Chat
 
@@ -834,6 +874,7 @@ matter, except the journal, which is JSON Lines:
   limits.md  models.md  tools.md  folders.md
   secrets/keys.env  secrets/oauth/  secrets/<key file>   owner-only
   preferences/config.md  preferences/instructions.md
+  skills/<name>/SKILL.md, references/  the skills library; skills/Archive/ keeps old versions
   chats/<time>.md                      chat transcripts (never loaded or searched)
   scheduler/tick.md, tick.log, scheduler.log   the last tick and the scheduler's logs
   lead/config.md, soul.md              the one Lead, above every crew

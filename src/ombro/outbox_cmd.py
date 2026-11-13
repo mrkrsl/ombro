@@ -87,12 +87,41 @@ def _show(a: outbox.Action, home: Home | None = None) -> None:
         if to and os.path.lexists(os.path.expanduser(to)):
             print(f"  Replaces  {to} already exists; " + ("approving replaces it" if a.arguments.get("overwrite")
                                                           else "approving is refused unless overwrite is true"))
+    if a.tool == outbox.SKILL_TOOL and home is not None:
+        _show_skill(a, home)
+        print(f"  File      {a.path}")
+        return
     print("  Arguments")
     text = yaml.safe_dump(a.arguments if a.arguments is not None else {}, sort_keys=False, allow_unicode=True,
                           default_flow_style=False).rstrip()
     for line in text.splitlines() or ["{}"]:
         print(f"    {line}")
     print(f"  File      {a.path}")
+
+
+def _show_skill(a: outbox.Action, home: Home) -> None:
+    """A skill proposal: the roles it is for, any signs of injected text, and the whole text,
+    or the diff against today's version."""
+    try:
+        v = outbox.skill_view(home, a)
+    except outbox.OutboxError as e:
+        print(f"  Problem   {e}")
+        return
+    print(f"  Skill     {v['name']} ({'a new version' if v['live'] else 'new'})")
+    print(f"  For       {', '.join(v['for']) or 'no role named'}; approving adds it to their skills: lines")
+    if v["flags"]:
+        print(f"  Warning   signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")
+    if v["changed_since"] and a.status == "pending":
+        print("  Changed   the live skill has changed since this was proposed; approving is refused until you "
+              f"save it again with `ombro outbox edit {a.ref}`")
+    if v["live"]:
+        print("  Diff against today's version:")
+        body = v.get("diff") or "(no difference)"
+    else:
+        print("  The proposed SKILL.md:")
+        body = v["text"]
+    for line in body.rstrip().splitlines():
+        print(f"    {line}")
 
 
 def _find_all(home: Home, refs: list[str]) -> list[outbox.Action]:
@@ -230,6 +259,8 @@ def _edit(home: Home, refs: list[str], args) -> int:
     if len(refs) != 1:
         raise cli.CliError("Name one action, e.g. `ombro outbox edit ab12-3`.")
     a = outbox.find(home, refs[0])
+    if a.tool == outbox.SKILL_TOOL and args.arguments is None:
+        return _edit_skill(home, a, args)
     if args.arguments is not None:
         try:
             new = json.loads(args.arguments)
@@ -266,6 +297,36 @@ def _edit(home: Home, refs: list[str], args) -> int:
         print("No change; nothing was saved.")
         return 0
     done = outbox.edit(home, a, new)
+    if args.json:
+        _print_json(done.as_dict())
+        return 0
+    _show(done, home)
+    print(f"\nSaved. It is still waiting: approve it with `ombro outbox approve {done.ref}`.")
+    return 0
+
+
+def _edit_skill(home: Home, a: outbox.Action, args) -> int:
+    """Open a proposed skill's text in the editor; Ombro checks it before saving it."""
+    cli = _cli()
+    from ombro.interview import editor_command
+
+    cmd = editor_command(home)
+    if not cmd:
+        raise cli.CliError(f"No editor is set (`editor` in preferences/config.md, or $EDITOR). Edit "
+                           f"{outbox._kept_skill(a)} by hand, or name the roles with --arguments "
+                           "'{\"name\": ..., \"for\": [...]}'.")
+    current = outbox.skill_text(a)
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as f:
+        f.write(current)
+        tmp = Path(f.name)
+    try:
+        subprocess.run([*cmd, str(tmp)], check=False)
+        text = tmp.read_text(encoding="utf-8")
+    except OSError as e:
+        raise cli.CliError(f"Could not start the editor {cmd[0]!r}: {e}") from None
+    finally:
+        tmp.unlink(missing_ok=True)
+    done = outbox.edit_skill(home, a, text)
     if args.json:
         _print_json(done.as_dict())
         return 0

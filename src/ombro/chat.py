@@ -26,7 +26,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import keys, material, mdfile, memory, prompts, runs
+from ombro import keys, material, mdfile, memory, prompts, runs, skills
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home, crew_title, find_crew
@@ -44,7 +44,8 @@ MEMORY_TOOLS = {"memory__search": "memory.search", "memory__read": "memory.read"
 WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
 FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write",
                 "folders__set_aside": "folders.set_aside"}
-OFFERS = ("offer_brief", "offer_remember", "offer_run")
+SKILL_TOOLS = {"skills__read": "skills.read"}
+OFFERS = ("offer_brief", "offer_remember", "offer_run", "offer_skill")
 
 HELP = """\
 Chat mode is a conversation with the Lead. It can look at every crew's reports,
@@ -55,6 +56,7 @@ It changes a file only after you say yes.
   /chat                     back to Chat mode from a brief (nothing is written)
   /new                      save this chat and start a fresh one; nothing carries over
   /remember [@crew] text    add a dated lesson to a crew's notes.md, after you confirm the wording
+  /skills                   list the skills library
   /help                     this list
   /quit                     end the chat (it is saved in chats/)
 
@@ -218,6 +220,8 @@ class Chat:
 
     def _model_call(self, messages: list[dict]):
         tools = prompts.CHAT_TOOLS + [t.schema() for n in WEB_TOOLS.values() if (t := self.registry.get(n))]
+        if not skills.library(self.home):  # nothing to read: an empty library costs no tool
+            tools = [t for t in tools if t["function"]["name"] != "skills__read"]
         est = estimate_tokens(messages, tools)
         max_out, timeout = self.gate.check_model_call(self.spec.name, est, None)
         if self._client is None:
@@ -275,7 +279,9 @@ class Chat:
 
     def _messages(self) -> list[dict]:
         system = prompts.chat_system(self.lead.soul, self.instructions, self._crews_text(), self._limits_line(),
-                                     self.today, self._folders_text())
+                                     self.today, self._folders_text(),
+                                     skills.listing(list(skills.library(self.home).values()),
+                                                    self.limits.skills_list_chars)[0])
         # Past a set length, the oldest turns are dropped from what is sent.
         while len(self.exchanges) > 1 and len(json.dumps(self.exchanges, ensure_ascii=False)) > \
                 self.limits.chat_history_chars:
@@ -374,6 +380,10 @@ class Chat:
             crew, rest = self._crew_arg(rest)
             if crew:
                 self._brief([crew] if rest_named(text) else [], self.brief_opening(rest, None))
+        elif word == "/skills":
+            lib = skills.library(self.home)
+            self.ui.say("\n".join(f"- {s.name}: {s.description}" for s in lib.values())
+                        if lib else "No skills yet. Ask me to remember how to do something, and I can write one.")
         elif word == "/remember":
             crew, rest = self._crew_arg(rest)
             if crew:
@@ -428,7 +438,8 @@ class Chat:
                 else:
                     result, request = self._tool(tc)
                 src = None
-                if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside") and not (
+                if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside",
+                                                             "skills__read") and not (
                         isinstance(result, dict) and ("error" in result or "declined" in result)):
                     src = material.source(MEMORY_TOOLS.get(tc.name) or WEB_TOOLS.get(tc.name)
                                           or FOLDER_TOOLS.get(tc.name) or tc.name, tc.arguments)
@@ -452,7 +463,7 @@ class Chat:
 
     def _tool(self, tc) -> tuple[dict, tuple[list[str], str] | None]:
         name = tc.name
-        internal = MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name) or FOLDER_TOOLS.get(name)
+        internal = MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name) or FOLDER_TOOLS.get(name) or SKILL_TOOLS.get(name)
         if name not in OFFERS and (internal is None or (name in WEB_TOOLS and self.registry.get(internal) is None)):
             self.refused.append(name)
             self.transcript.note(f"Refused {name}: not available in chat.")
@@ -477,6 +488,8 @@ class Chat:
             if crew not in self.home.crews():
                 return {"error": f"no crew named {crew!r}; crews: {', '.join(self.home.crews())}"}, None
             return self._remember(str(args.get("text") or ""), crew, offered=True), None
+        if name == "offer_skill":
+            return self._offer_skill(args), None
         self.transcript.note(f"Lead used {internal}: {_short(json.dumps(args, ensure_ascii=False), 160)}")
         try:
             if internal == "memory.search":
@@ -493,6 +506,9 @@ class Chat:
             if internal == "memory.read":
                 return memory.read_file(self.home, args.get("path"), args.get("offset") or 0,
                                         args.get("max_chars") or memory.READ_DEFAULT_CHARS), None
+            if internal == "skills.read":
+                return skills.read(self.home, None, args.get("name"), args.get("file"),
+                                   self.base_limits.skill_read_chars), None
             if internal in FOLDER_TOOLS.values():
                 return self._folder_tool(internal, args), None
             if internal == "memory.list":
@@ -501,7 +517,7 @@ class Chat:
             tool = self.registry.get(internal)
             ctx = ToolContext(self.home.root / "chats", "lead", timeout=60.0)
             return tool.handler(args, ctx), None
-        except memory.ReadRefused as e:
+        except (memory.ReadRefused, skills.SkillError) as e:
             return {"error": str(e)}, None
         except ToolError as e:
             return {"error": str(e)}, None
@@ -748,6 +764,73 @@ class Chat:
             self.transcript.note(f"Not remembered (over the cap): {entry}")
             self.ui.say("Nothing was written.")
             return {"status": "cancelled: notes.md would have passed its cap; nothing was written"}
+
+    # -- skills ------------------------------------------------------------
+
+    def _offer_skill(self, args: dict) -> dict[str, Any]:
+        """Write a skill into the library, only once the user has seen it and said yes (4.4)."""
+        name = str(args.get("name") or "").strip()
+        source = f"chat {self.path.name}" if getattr(self, "path", None) else "chat"
+        text = skills.compose(name, str(args.get("description") or ""), str(args.get("body") or ""))
+        text, _ = keys.scrub(self.home, text)
+        try:
+            skills.check(text, name, self.base_limits.skill_max_chars)
+        except skills.SkillError as e:
+            return {"error": str(e)}
+        raw = args.get("for") or []
+        given: list[str] = []
+        for who in raw if isinstance(raw, list) else [raw]:
+            who = str(who).strip()
+            try:
+                if not skills._config_path(self.home, who).is_file():
+                    raise skills.SkillError("")
+            except skills.SkillError:
+                return {"error": f"no role {who!r}; name roles as crew/role"}
+            if who not in given:
+                given.append(who)
+        while True:
+            live = skills.load(self.home, name)
+            signs = material.flags(text)
+            what = f"a new version of the skill {name}" if live else f"a new skill, {name}"
+            self.ui.say(f"I can write {what}" + (f", for {', '.join(given)}" if given else "") + ".", spaced=True)
+            if live:
+                self.ui.say(skills.diff(live.text, text, name) or "(no change from today's version)")
+            else:
+                self.ui.say(text.rstrip())
+            if signs:
+                line = (f"Ombro: this skill contains text that looks written to steer a model ({', '.join(signs)}). "
+                        "Read it closely before you say yes.")
+                self.ui.say(line)
+                self.transcript.note(line)
+            answer = self.ui.ask(Field(
+                "skill", "Write it?", "choice", mode="Chat",
+                options=[Option("y", "yes"), Option("e", "edit it first", ("edit",)), Option("n", "no")]))
+            if answer == "y":
+                break
+            if answer == "e":
+                draft = self.home.root / "chats" / f".skill-{name}.md"
+                draft.parent.mkdir(parents=True, exist_ok=True)
+                draft.write_text(text, encoding="utf-8")
+                self.ui.edit([draft])
+                new = draft.read_text(encoding="utf-8")
+                draft.unlink(missing_ok=True)
+                try:
+                    skills.check(new, name, None)
+                    text = new
+                except skills.SkillError as e:
+                    self.ui.say(f"That edit was not kept: {e}.")
+                continue
+            self.transcript.note(f"Skill not written: {name}")
+            self.ui.say("Nothing was written.")
+            return {"status": "the user declined; nothing was written"}
+        kept = skills.write(self.home, name, text, source=source, accepted=self.today_date.isoformat())
+        notes = [skills.give(self.home, name, who) for who in given]
+        where = self.home.skills_dir / name / "SKILL.md"
+        self.transcript.note(f"Skill written: {where}" + (f"; old version kept in {kept}" if kept else "")
+                             + (f"; {'; '.join(notes)}" if notes else ""))
+        self.ui.say(f"Written to {where}." + (f" The old version is kept in {kept}." if kept else "")
+                    + (f" {'; '.join(notes).capitalize()}." if notes else ""), level="done")
+        return {"status": "written", "skill": name, **({"given": notes} if notes else {})}
 
     # -- brief -------------------------------------------------------------
 

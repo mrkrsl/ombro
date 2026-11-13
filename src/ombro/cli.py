@@ -986,6 +986,12 @@ def cmd_outbox(args) -> int:
     return run(args)
 
 
+def cmd_skills(args) -> int:
+    from ombro.skills_cmd import cmd_skills as run
+
+    return run(args)
+
+
 def cmd_tools(args) -> int:
     from ombro import tool_cmd
 
@@ -1186,6 +1192,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--arguments", help="for edit: the new arguments as a JSON object, instead of the editor")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_outbox)
+
+    s = sub.add_parser("skills", help="the skills library: list, show <name>, edit <name>, give <skill> <crew/role>")
+    s.add_argument("action", nargs="?", choices=["list", "show", "edit", "give"], help="default: list")
+    s.add_argument("name", nargs="?", help="a skill's name")
+    s.add_argument("roles", nargs="*", help="for give: roles as crew/role")
+    s.add_argument("--json", action="store_true", help="for list and show: print JSON, for interfaces")
+    s.set_defaults(func=cmd_skills)
 
     s = sub.add_parser("tools", help="native tools and MCP servers; with a server, its tools, class and permission")
     s.add_argument("server", nargs="?", help="an MCP server named in tools.md, or a built-in tool such as "

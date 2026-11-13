@@ -250,11 +250,12 @@ def test_a_remember_over_the_cap_asks_what_to_trim(chat, home):
 
 
 def test_chat_usage_has_its_own_cap(chat, run, home):
-    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_max_tokens": 12000}, mdfile.read(home.limits)[1])
+    # The first call fits (its prompt and largest reply are under the cap); after it, the second cannot.
+    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_max_tokens": 12500}, mdfile.read(home.limits)[1])
     chat([fake.say("Hello.", usage={"input": 7000, "output": 100})] * 5, ["Hi.", "Again.", "And again."])
     assert "The chat has reached its limit" in chat.output
     assert len(chat.client.calls) == 1
-    assert "[Chat · 7,100 of 12,000 tokens" in chat.output
+    assert "[Chat · 7,100 of 12,500 tokens" in chat.output
     assert mdfile.read(chat.chat.path)[0]["ended"].startswith("stopped by the chat limit max_tokens")
     # A run keeps its own allowance.
     run([fake.finish(), LEAD_REPORT])

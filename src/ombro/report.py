@@ -62,6 +62,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     spec_roles: list[str] = []
     set_aside: list[str] = []
     tainted: list[str] = []
+    skill_events: list[dict[str, Any]] = []
+    skill_reads: list[dict[str, Any]] = []
     for ev in events:
         action = ev.get("action")
         if action == "spec_roles":
@@ -95,6 +97,10 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
             gaps = list(ev.get("gaps") or [])
         elif action == "notes":
             notes.append(ev)
+        elif action == "skills" and not ev.get("quiet"):
+            skill_events.append(ev)
+        elif action == "skill_read":
+            skill_reads.append(ev)
         elif action == "staged":
             outward["staged"].append(ev)
         elif action == "staged_duplicate":
@@ -185,6 +191,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "missing_deliverables": missing,
         "other_files": other,
         "notes": notes,
+        "skills": skill_events,
+        "skill_reads": skill_reads,
         "outward": outward,
         "outward_setting": meta.get("outward") or {},
         "code_runs": code_runs,
@@ -270,6 +278,10 @@ def narrative_input(facts: dict[str, Any]) -> str:
                      + (f", {len(decided)} staged and already decided by the user" if decided else "")
                      + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)"
                         if ow.get("uncertain") else "") + ".")
+    for ev in facts.get("skills") or []:
+        if ev.get("outcome") == "proposed":
+            lines.append(f"You proposed a skill, {ev.get('skill')}; it waits in the outbox as {ev.get('ref')} "
+                         "for the user's approval.")
     if facts.get("code_runs"):
         stopped = sum(1 for c in facts["code_runs"] if c.get("limit"))
         failed = sum(1 for c in facts["code_runs"] if not c.get("limit") and c.get("exit_code"))
@@ -436,8 +448,15 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
             out.append(f"- and {len(other) - 20} more")
     out += ["", f"Workspace: {f['workspace']}", ""]
 
+    waiting_skills = _skills_waiting(f)
     for heading in ("Decisions for you", "What was done", "What was not done and why"):
-        out += [f"## {heading}", "", parts.get(heading) or "None recorded.", ""]
+        text = parts.get(heading) or "None recorded."
+        if heading == "Decisions for you" and waiting_skills:
+            lines = [f"- A skill waits for your review: {_skill_words(ev)}. See it with "
+                     f"`ombro outbox show {ev.get('ref')}`, then approve or decline it." for ev in waiting_skills]
+            text = "\n".join(lines) if text.strip().rstrip(".").lower() in ("none recorded", "none") else \
+                text.rstrip() + "\n\n" + "\n".join(lines)
+        out += [f"## {heading}", "", text, ""]
     if extra:
         out += ["## The Lead's other notes", "", extra, ""]
 
@@ -498,6 +517,8 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
             out += [f"- {x}" for x in f["set_aside"]] + [""]
     if f.get("material_flags") or f.get("tainted_staged"):
         out += ["## Material", "", *material_lines(f), ""]
+    if f.get("skills") or f.get("skill_reads"):
+        out += ["## Skills", "", *skill_lines(f), ""]
     out += ["## Changes to notes.md", "",
             "Lessons the Lead kept in the crew's notes for future runs: housekeeping, not results.", "",
             *all_notes_lines(f.get("notes")), ""]
@@ -694,6 +715,50 @@ def folder_lines(f: dict[str, Any]) -> list[str]:
         lines += [f"- {_line(p, 200)}" for p in f["not_shared"][:20]]
     if not lines:
         lines.append("None.")
+    return lines
+
+
+def _skill_words(ev: dict[str, Any]) -> str:
+    what = "a new version of" if ev.get("change") == "update" else "a new skill,"
+    words = f"{what} {ev.get('skill')}"
+    if ev.get("for"):
+        words += f", for {', '.join(ev['for'])}"
+    return words
+
+
+def _skills_waiting(f: dict[str, Any]) -> list[dict[str, Any]]:
+    now = f.get("outbox_now") or {}
+    return [ev for ev in f.get("skills") or [] if ev.get("outcome") == "proposed"
+            and now.get(str(ev.get("ref")), "pending") == "pending"]
+
+
+def skill_lines(f: dict[str, Any]) -> list[str]:
+    """Which skills each role read, and the Lead's proposal, from the harness's record."""
+    lines: list[str] = []
+    reads: dict[str, list[str]] = {}
+    for ev in f.get("skill_reads") or []:
+        label = str(ev.get("skill")) + (f" ({ev['file']})" if ev.get("file") else "")
+        who = reads.setdefault(str(ev.get("role") or "?"), [])
+        if label not in who:
+            who.append(label)
+    if reads:
+        lines.append("Read during the run:")
+        lines += [f"- {who}: {', '.join(names)}" for who, names in reads.items()]
+    else:
+        lines.append("No skill was read during the run.")
+    now = f.get("outbox_now") or {}
+    for ev in f.get("skills") or []:
+        lines.append("")
+        if ev.get("outcome") == "proposed":
+            state = DECIDED.get(now.get(str(ev.get("ref")), ""), "waiting for you")
+            lines.append(f"Proposed by the Lead: {_skill_words(ev)} (**{ev.get('ref')}**, {state}). "
+                         f"Reason: {_line(ev.get('reason', ''), 200)}")
+            if ev.get("flags"):
+                lines.append(f"  - Signs of injected text in it: {', '.join(ev['flags'])}. Read it closely.")
+            if ev.get("unknown_roles"):
+                lines.append(f"  - Roles named that this run does not have: {', '.join(ev['unknown_roles'])}")
+        else:
+            lines.append(f"No skill proposed: {_line(ev.get('note', ''), 300)}")
     return lines
 
 

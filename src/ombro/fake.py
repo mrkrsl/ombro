@@ -13,6 +13,10 @@ A script is a list of entries, consumed in order. Each entry is a dict:
 
 or a callable taking (messages, tools) and returning such a dict.
 When the script runs out, calls fail with a ModelError.
+
+The Lead's optional skill call at the end of a run (it is offered
+`skills__propose`) is answered `no_skill` without using an entry, unless the
+next entry answers it itself (skills__propose, skills__read or no_skill).
 """
 
 from __future__ import annotations
@@ -99,9 +103,13 @@ class ScriptedClient:
                 "timeout": timeout,
             }
         )
-        if not self._queue:
+        if _skill_call(tools) and not _answers_skill_call(self._queue[0] if self._queue else None):
+            # Counted as no tokens, so scripts written before skills keep their figures.
+            entry: Entry = no_skill("The script does not answer the skill call.", usage={"input": 0, "output": 0})
+        elif not self._queue:
             raise ModelError("the fake model's script has run out")
-        entry = self._queue.pop(0)
+        else:
+            entry = self._queue.pop(0)
         if callable(entry):
             entry = entry(messages, tools)
         if entry.get("sleep"):
@@ -139,6 +147,17 @@ class ScriptedClient:
         )
         return ModelReply(content=content, tool_calls=calls, usage=usage,
                           finish_reason=entry.get("finish_reason", "stop"))
+
+
+def _skill_call(tools) -> bool:
+    return any((t.get("function") or {}).get("name") == "skills__propose" for t in tools or [])
+
+
+def _answers_skill_call(entry) -> bool:
+    if callable(entry):
+        return True
+    names = {tc.get("name") for tc in (entry or {}).get("tool_calls") or []}
+    return bool(names & {"skills__propose", "skills__read", "no_skill"})
 
 
 # Small helpers for writing scripts --------------------------------------------
@@ -180,3 +199,15 @@ def keep_notes(reason: str = "Nothing new to keep.", **extra) -> dict:
 
 def write_notes(text: str, **extra) -> dict:
     return {"tool_calls": [{"name": "memory__write_notes", "arguments": {"from_runs": text}}], **extra}
+
+
+def no_skill(reason: str = "Nothing new to keep as a skill.", **extra) -> dict:
+    return {"tool_calls": [{"name": "no_skill", "arguments": {"reason": reason}}], **extra}
+
+
+def propose_skill(name: str, description: str, body: str, *, for_roles: list[str] | None = None,
+                  reason: str = "It worked in this run.", **extra) -> dict:
+    args = {"name": name, "description": description, "body": body, "reason": reason}
+    if for_roles is not None:
+        args["for"] = for_roles
+    return {"tool_calls": [{"name": "skills__propose", "arguments": args}], **extra}

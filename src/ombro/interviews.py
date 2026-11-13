@@ -58,14 +58,9 @@ def available_tools(home: Home) -> dict[str, str]:
 
 
 def available_skills(home: Home) -> dict[str, str]:
-    out = {}
-    if home.skills_dir.is_dir():
-        for d in sorted(home.skills_dir.iterdir()):
-            f = d / "skill.md"
-            if d.is_dir() and f.is_file():
-                meta, body = mdfile.read(f)
-                out[d.name] = str(meta.get("description") or _first_sentence(mdfile.prompt_text(body)) or "")
-    return out
+    from ombro import skills
+
+    return {name: s.description for name, s in skills.library(home).items()}
 
 
 def roster(home: Home, crew: str, limits: Limits) -> str:
@@ -239,7 +234,7 @@ class RolePurpose(Purpose):
     def context(self) -> list[tuple[str, str]]:
         return [
             ("Tools that exist (propose only these)", "\n".join(f"- {k}: {v}" for k, v in self.tools.items())),
-            ("Skills that exist (propose only these)",
+            ("Skills that exist (propose only these, or [\"all\"] for the whole library, now and later)",
              "\n".join(f"- {k}: {v}" for k, v in self.skills.items()) or "(none yet)"),
             ("Models in models.md", ", ".join(self.models) + "\n(specialists use `default`, helpers `cheap`, "
              "unless there is a reason to choose otherwise)"),
@@ -257,7 +252,8 @@ class RolePurpose(Purpose):
                 "description": {"type": "string", "description": "What kind of work it does and what it returns. "
                                 "No details of any one task."},
                 "tools": {"type": "array", "items": {"type": "string"}, "description": "Only tools that exist."},
-                "skills": {"type": "array", "items": {"type": "string"}, "description": "Only skills that exist."},
+                "skills": {"type": "array", "items": {"type": "string"},
+                           "description": "Only skills that exist, or [\"all\"] for the whole library."},
                 "model": {"type": "string", "description": "A name from models.md; leave out for the default."},
                 "max_steps": {"type": "integer", "description": "Model calls per brief; leave out for the default."},
                 "soul": {"type": "string", "description": "The role's prompt, second person. General: no task details."},
@@ -285,7 +281,9 @@ class RolePurpose(Purpose):
             raise ProposalError("`tools` and `skills` must be lists of names")
         if tools:
             meta["tools"] = [str(t).strip() for t in tools]
-        if skills:
+        if [str(s).strip() for s in skills] == ["all"]:
+            meta["skills"] = "all"
+        elif skills:
             meta["skills"] = [str(s).strip() for s in skills]
         if args.get("max_steps") is not None:
             meta["max_steps"] = args["max_steps"]
@@ -320,7 +318,8 @@ class RolePurpose(Purpose):
         unknown_tools = [t for t in meta.get("tools") or [] if t not in self.tools]
         if unknown_tools:
             raise ProposalError(f"no such tool: {', '.join(map(str, unknown_tools))}. Tools: {', '.join(self.tools)}")
-        unknown_skills = [s for s in meta.get("skills") or [] if s not in self.skills]
+        listed = meta.get("skills") or []
+        unknown_skills = [] if listed == "all" else [s for s in listed if s not in self.skills]
         if unknown_skills:
             have = ", ".join(self.skills) or "none exist yet"
             raise ProposalError(f"no such skill: {', '.join(map(str, unknown_skills))}. Skills: {have}")

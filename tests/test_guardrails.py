@@ -44,7 +44,7 @@ def test_completed_run(run):
     assert "Found three makers." in run.report
     assert "Ada Pots" in run.report
     assert run.meta["usage"]["rounds"] == 1
-    assert run.meta["usage"]["model_calls"] == 5  # Lead, role, Lead, notes, report
+    assert run.meta["usage"]["model_calls"] == 6  # Lead, role, Lead, notes, skills (none), report
     # The report call had no tools.
     assert run.client.calls[-1]["tools"] is None
 

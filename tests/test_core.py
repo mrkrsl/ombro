@@ -10,7 +10,7 @@ import pytest
 from conftest import write_role
 from ombro import contract, journal, mdfile, prompts
 from ombro.home import Home, ensure_home
-from ombro.roles import RoleError, crew_roles, load_lead, load_role, skill_texts
+from ombro.roles import RoleError, crew_roles, load_lead, load_role
 from ombro.settings import load_limits, load_models, parse_duration
 
 
@@ -107,15 +107,19 @@ def test_a_crew_has_no_lead_of_its_own(home):
         crew_roles(home, "default", load_limits(home))
 
 
-def test_skills_are_included_in_the_role_prompt(home):
+def test_a_role_prompt_lists_its_skills_by_name_and_description_only(home):
+    from ombro import skills
+
     (home.skills_dir / "neat").mkdir()
     (home.skills_dir / "neat" / "skill.md").write_text("---\n---\nAlways fold the corners.\n<!-- not for the model -->\n")
     write_role(home, "tidier", skills=["neat", "missing"])
     role = load_role(home.roles_dir("default") / "tidier", load_limits(home))
-    found, missing = skill_texts(home, role.skills)
-    assert missing == ["missing"]
-    system = prompts.role_system(role, found, [])
-    assert "Always fold the corners." in system
+    have, missing = skills.names_for(home, role)
+    assert (have, missing) == (["neat"], ["missing"])
+    text, _ = skills.listing([skills.load(home, n) for n in have])
+    system = prompts.role_system(role, text, [])
+    assert "- neat: Always fold the corners." in system  # an old skill.md: its first sentence is its description
+    assert "skills.read" in system
     assert "not for the model" not in system
     assert "no tools" in system
 

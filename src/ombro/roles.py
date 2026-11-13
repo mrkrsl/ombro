@@ -31,6 +31,7 @@ class Role:
     max_steps: int
     tools: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
+    all_skills: bool = False  # `skills: all`: the whole library
     crew: str = ""  # empty for the Lead
     title: str = ""  # the display name, e.g. Market Researcher
 
@@ -88,7 +89,8 @@ def load_role(folder: Path, limits: Limits) -> Role:
         path=folder,
         max_steps=steps,
         tools=_str_list(meta.get("tools"), "tools", cfg),
-        skills=_str_list(meta.get("skills"), "skills", cfg),
+        skills=[] if meta.get("skills") == "all" else _str_list(meta.get("skills"), "skills", cfg),
+        all_skills=meta.get("skills") == "all",
         title=str(meta.get("title") or "").strip() or tidy_title(name),
     )
 
@@ -148,16 +150,3 @@ def resolve_role(roles: dict[str, Role], name: str) -> tuple[Role | None, str]:
         return None, f"more than one crew has a role named {name!r}; name it as crew/role: " + \
             ", ".join(r.name for r in matches)
     return None, f"there is no role named {name!r}. Roles you can brief: {known}"
-
-
-def skill_texts(home: Home, skills: list[str]) -> tuple[list[tuple[str, str]], list[str]]:
-    """Return ([(skill, text)], [missing skill names])."""
-    found, missing = [], []
-    for s in skills:
-        path = home.skills_dir / s / "skill.md"
-        if not path.is_file():
-            missing.append(s)
-            continue
-        _, body = mdfile.read(path)
-        found.append((s, mdfile.prompt_text(body)))
-    return found, missing

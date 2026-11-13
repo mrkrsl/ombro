@@ -323,6 +323,9 @@ class Commands:
             if action == "show" and refs:
                 a = outbox.find(self.home, refs[0])
                 d = a.as_dict()
+                if a.tool == outbox.SKILL_TOOL:
+                    self._show_skill_proposal(a, d)
+                    return
                 lines = [f"{a.ref}: {a.tool} ({d.get('class', '')}), {a.status}",
                          f"From run {a.run_id}, role {d.get('role', '')}. Reason: {d.get('reason', '')}",
                          "Arguments:", json.dumps(a.arguments, ensure_ascii=False, indent=2)]
@@ -353,6 +356,63 @@ class Commands:
             return
         self.usage("/outbox, /outbox show <ref>, /outbox approve <ref>..., /outbox decline <ref>..., "
                    "/outbox resolve <ref> sent|not-sent. To edit one, use `ombro outbox edit <ref>`.")
+
+    def _show_skill_proposal(self, a: outbox.Action, d: dict) -> None:
+        v = outbox.skill_view(self.home, a)
+        lines = [f"{a.ref}: {'a new version of' if v['live'] else 'a new skill,'} {v['name']}, {a.status}",
+                 f"From run {a.run_id}. Reason: {d.get('reason', '')}",
+                 f"For: {', '.join(v['for']) or 'no role named'}"]
+        if v["flags"]:
+            lines.append(f"Signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")
+        if v["changed_since"] and a.status == "pending":
+            lines.append(f"The live skill has changed since this was proposed: save it again with "
+                         f"`ombro outbox edit {a.ref}` before approving.")
+        lines += ["", v.get("diff") or "(no difference)"] if v["live"] else ["", v["text"].rstrip()]
+        self.say("\n".join(lines))
+
+    def cmd_skills(self, words: list[str], rest: str) -> None:
+        """/skills, /skills show <name>, /skills give <skill> <crew/role>..."""
+        from ombro import skills
+        from ombro.skills_cmd import library_view
+
+        action = words[0].lower() if words else "list"
+        try:
+            if action == "list":
+                view = library_view(self.home)
+                if not view["skills"] and not view["waiting"]:
+                    self.say("No skills yet. Ask me to remember how to do something, and I can write one; "
+                             "after a run I may propose one for you to approve.")
+                    return
+                p = self.app.colours
+                out = Text()
+                for r in view["skills"]:
+                    out.append(f"  {r['name']}  ", style=f"bold {p.text}")
+                    out.append(f"{r['description']}\n", style=p.text)
+                    out.append(f"    used by {', '.join(r['used_by']) or 'no role by name'}\n", style=p.muted)
+                if view["all_skills"]:
+                    out.append(f"Every skill: {', '.join(view['all_skills'])}\n", style=p.muted)
+                for w in view["waiting"]:
+                    out.append(f"  {w['ref']}  ", style=f"bold {p.text}")
+                    out.append(f"proposed: {w['name']}, waiting for you\n", style=p.text)
+                out.append("/skills show <name>; /skills give <skill> <crew/role>; /outbox show <ref> for a "
+                           "proposal", style=p.muted)
+                self.rich(out)
+                return
+            if action == "show" and len(words) == 2:
+                s = skills.load(self.home, words[1])
+                if s is None:
+                    self.fail(f"There's no skill called {words[1]}.")
+                    return
+                self.say(s.text.rstrip())
+                return
+            if action == "give" and len(words) >= 3:
+                for who in words[2:]:
+                    self.say(skills.give(self.home, words[1], who).capitalize() + ".", level="done")
+                return
+        except skills.SkillError as e:
+            self.fail(str(e).capitalize() + ".")
+            return
+        self.usage("/skills, /skills show <name>, /skills give <skill> <crew/role>...")
 
     # -- schedules, keys, folders, crews, tools, preferences (10e) -------------------
 

@@ -80,6 +80,9 @@ SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "10m", "schedule_max_runn
 # Code execution: limits on each script code.run runs.
 CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 8_000,
                                  "code_max_total": "2GB"}
+# Skills: the listing in a prompt, a read, a model-written SKILL.md, and proposals waiting.
+SKILL_DEFAULTS: dict[str, Any] = {"skills_list_chars": 4_000, "skill_read_chars": 20_000,
+                                  "skill_max_chars": 10_000, "skill_proposals_waiting": 10}
 CODE_DEFAULT_CALLS = 10  # code.run's max_calls when neither limits.md nor tools.md sets one
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
@@ -146,6 +149,10 @@ class Limits:
     code_max_memory: int = 1024**3
     code_output_chars: int = 8_000
     code_max_total: int = 2 * 1024**3  # all the files in workspace/ and scratch/ together
+    skills_list_chars: int = 4_000
+    skill_read_chars: int = 20_000
+    skill_max_chars: int = 10_000
+    skill_proposals_waiting: int = 10
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Limits":
@@ -158,6 +165,7 @@ class Limits:
             **copy.deepcopy(MEMORY_CHAT_DEFAULTS),
             **SCHEDULE_DEFAULTS,
             **CODE_DEFAULTS,
+            **SKILL_DEFAULTS,
             **{k: v for k, v in d.items() if k not in RETIRED_LIMITS},
         }
         unknown = set(d) - known
@@ -224,6 +232,7 @@ class Limits:
             code_max_memory=pos_num("code_max_memory", parse_size(d["code_max_memory"]), integer=True),
             code_output_chars=pos_num("code_output_chars", d["code_output_chars"], integer=True),
             code_max_total=pos_num("code_max_total", parse_size(d["code_max_total"]), integer=True),
+            **{k: pos_num(k, d[k], integer=True) for k in SKILL_DEFAULTS},
         )
 
     def to_dict(self) -> dict[str, Any]:

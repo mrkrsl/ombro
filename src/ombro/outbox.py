@@ -102,7 +102,14 @@ class Action:
 
     @property
     def edited(self) -> bool:
-        return fingerprint(self.arguments) != self.meta.get("arguments_sha256")
+        if fingerprint(self.arguments) != self.meta.get("arguments_sha256"):
+            return True
+        if self.tool == SKILL_TOOL:
+            try:
+                return _text_sha(skill_text(self)) != self.meta.get("file_sha256")
+            except OutboxError:
+                return True
+        return False
 
     @property
     def run_dir(self) -> Path:
@@ -346,6 +353,145 @@ def _approve_place(home: Home, a: Action) -> Action:
 
 
 # ---------------------------------------------------------------------------
+# Skills the Lead proposes at the end of a run (specification 4.4). They wait here
+# like any staged action, but reach nobody outside: approving one makes it live.
+
+SKILL_TOOL = "skills.propose"
+# What may be edited in a skill proposal's arguments: its name, and the roles it is for.
+# The text itself is the SKILL.md kept beside the action.
+SKILL_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["name"],
+    "properties": {"name": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64},
+                   "for": {"type": "array", "items": {"type": "string", "minLength": 1}}},
+}
+
+
+def _text_sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _kept_skill(a: Action) -> Path:
+    """The proposed SKILL.md kept with the action, checked to be its own copy."""
+    own = a.path.with_suffix("")
+    kept = a.run_dir / str(a.meta.get("file") or "")
+    if kept.is_symlink() or kept.resolve().parent != own.resolve() or kept.name != "SKILL.md":
+        raise OutboxError(f"{a.ref}: its `file` must be the SKILL.md kept in {own.relative_to(a.run_dir)}/")
+    return kept
+
+
+def skill_text(a: Action) -> str:
+    try:
+        return _kept_skill(a).read_text(encoding="utf-8")
+    except OSError as e:
+        raise OutboxError(f"{a.ref}: the proposed SKILL.md could not be read: {e}") from None
+
+
+def stage_skill(run_dir: Path, *, name: str, text: str, for_roles: list[str], reason: str, base_sha: str,
+                flags: list[str]) -> tuple[Action, bool]:
+    """Stage a skill the Lead proposes, keeping its SKILL.md beside the action."""
+    run_dir = Path(run_dir)
+    with lock(run_dir, wait=STAGE_WAIT):
+        for a in actions(run_dir):
+            if a.tool == SKILL_TOOL and a.meta.get("file_sha256") == _text_sha(text):
+                return a, True
+        a, _ = _stage_locked(run_dir, tool=SKILL_TOOL, effect="skill", arguments={"name": name, "for": for_roles},
+                             reason=reason, role="lead", input_schema=SKILL_SCHEMA)
+        keep = a.path.with_suffix("") / "SKILL.md"
+        mdfile.write_atomic(keep, text)
+        _save(a, file=keep.relative_to(run_dir).as_posix(), file_sha256=_text_sha(text), base_sha256=base_sha,
+              change="update" if base_sha else "new", flags=list(flags))
+    return a, False
+
+
+def skill_view(home: Home, a: Action) -> dict[str, Any]:
+    """What the user needs to decide: the text, or the diff against today's version, and
+    whether the live skill has changed since the proposal was made."""
+    from ombro import skills
+
+    args = a.arguments if isinstance(a.arguments, dict) else {}
+    name = str(args.get("name") or "")
+    text = skill_text(a)
+    live = skills.load(home, name)
+    now = live.text if live else ""
+    out: dict[str, Any] = {"name": name, "for": list(args.get("for") or []), "text": text,
+                           "flags": list(a.meta.get("flags") or []), "live": bool(live)}
+    if live:
+        out["diff"] = skills.diff(now, text, name)
+    out["changed_since"] = (skills.sha(now) if now else "") != str(a.meta.get("base_sha256") or "")
+    return out
+
+
+def _approve_skill(home: Home, a: Action) -> Action:
+    from datetime import date
+
+    from ombro import skills
+
+    run_dir = a.run_dir
+    args = a.arguments if isinstance(a.arguments, dict) else {}
+    name = str(args.get("name") or "")
+    text = skill_text(a)
+    try:
+        skills.check(text, name, max_chars=None)
+    except skills.SkillError as e:
+        raise OutboxError(f"{a.ref} cannot be approved: {e}. Fix it with `ombro outbox edit {a.ref}`") from None
+    if skills.live_sha(home, name) != str(a.meta.get("base_sha256") or ""):
+        raise OutboxError(f"{a.ref}: the skill {name} has changed since this was proposed. See the diff against "
+                          f"today's version with `ombro outbox show {a.ref}`; to approve it after all, open it "
+                          f"with `ombro outbox edit {a.ref}`, save, then approve")
+    _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
+    _journal(run_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
+    try:
+        kept = skills.write(home, name, text, source=f"run {a.run_id}", accepted=date.today().isoformat())
+    except (OSError, skills.SkillError) as e:
+        _save(a, status="failed", error=str(e)[:RESULT_CHARS], decided_at=utc_now())
+        _journal(run_dir, "outbox_failed", a, str(e)[:300])
+        _record(run_dir, a, f"approved; the skill could not be written: {str(e)[:200]}")
+        return a
+    given = []
+    for who in args.get("for") or []:
+        try:
+            given.append(skills.give(home, name, str(who)))
+        except (OSError, mdfile.FrontMatterError, skills.SkillError) as e:
+            given.append(f"not given to {who}: {e}")
+    note = f"skill {name} written to skills/{name}/SKILL.md" + (f"; old version kept in {kept}" if kept else "")
+    if given:
+        note += "; " + "; ".join(given)
+    _save(a, status="executed", executed_at=utc_now(), decided_at=utc_now(), result=note)
+    _journal(run_dir, "outbox_executed", a, note)
+    _record(run_dir, a, "approved" + (" after editing" if a.edited else "") + f"; {note}")
+    return a
+
+
+def edit_skill(home: Home, a: Action, text: str) -> Action:
+    """Replace a proposal's text after checking it. Saving also makes it current against
+    today's version of the skill, so it can be approved after a change. It stays waiting."""
+    from ombro import skills
+
+    run_dir = a.run_dir
+    with lock(run_dir):
+        _settle_locked(run_dir)
+        a = _reload(a)
+        if a.status != "pending":
+            raise OutboxError(f"{a.ref} is {a.status}, so it cannot be edited")
+        name = str((a.arguments or {}).get("name") or "") if isinstance(a.arguments, dict) else ""
+        try:
+            skills.check(text, name, max_chars=None)
+        except skills.SkillError as e:
+            raise OutboxError(f"the edit was not saved: {e}") from None
+        mdfile.write_atomic(_kept_skill(a), text)
+        _save(a, base_sha256=skills.live_sha(home, name), edited_at=utc_now())
+        _journal(run_dir, "outbox_edited", a, "skill text edited; still waiting")
+        _record(run_dir)
+        return a
+
+
+def skills_waiting(home: Home) -> int:
+    return sum(1 for a in waiting(home) if a.tool == SKILL_TOOL and a.status == "pending")
+
+
+# ---------------------------------------------------------------------------
 # Deciding (during a run or after it)
 
 
@@ -472,6 +618,8 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
             raise OutboxError(f"{a.ref} cannot run: {problem}. Fix it with `ombro outbox edit {a.ref}`")
         if a.tool == PLACE_TOOL:
             return _approve_place(home, a)
+        if a.tool == SKILL_TOOL:
+            return _approve_skill(home, a)
         parts = split_name(a.tool)
         if parts is None:
             raise OutboxError(f"{a.ref} names {a.tool!r}, which is not an MCP tool")
