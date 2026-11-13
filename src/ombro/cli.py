@@ -210,6 +210,10 @@ def cmd_run(args) -> int:
         crews = runs.spec_crews(home, spec_meta, given)
     except SetupError as e:
         raise CliError(str(e)) from None
+    if args.role:
+        # For this run only: who does the work, in place of the spec's `roles:`. The saved spec is unchanged.
+        spec_meta = {**spec_meta, "roles": list(dict.fromkeys(args.role))}
+        source += f"; roles for this run: {', '.join(args.role)}"
     overrides = spec_meta.get("limits") or {}
     if not isinstance(overrides, dict):
         raise CliError("`limits` in a spec must be a mapping, e.g. limits: {allowance: generous}")
@@ -1023,6 +1027,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--detach", action="store_true", help="keep running after the terminal closes")
     s.add_argument("--crew", action="append",
                    help="a crew the run may use when the spec names none; repeat for several (default from preferences)")
+    s.add_argument("--role", action="append",
+                   help="for this run only, who does the work (crew/role or a role's name), in place of the spec's "
+                   "roles:; repeat for several")
     s.set_defaults(func=cmd_run)
 
     s = sub.add_parser("brief", help="interview about a task and save a confirmed spec")

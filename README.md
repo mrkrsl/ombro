@@ -99,6 +99,7 @@ ombro role edit lead                   # the one Lead's files
 ombro crew list | add <name> | use <name>   # a new crew starts empty; `use` sets the default crew
 ombro crew add legal --title "Legal Team"   # the title shown; without one, "Legal Crew"
 ombro run --spec <spec> --crew ops     # --crew gives the crews when the spec names none
+ombro run --spec <spec> --role marketing-researcher   # who does the work, this run only
 ```
 
 Every command that lists or shows something takes `--json`, for an interface
@@ -307,11 +308,12 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   Lead's one-line summary if you accepted its offer. It saves a spec, which
   you run with `ombro run --spec <name>`. `/chat` goes back with nothing written.
 - **Saved specs.** Ask to restart a task you briefed before and the Lead
-  offers to run its saved spec again; Ombro shows the spec and asks first.
-  Ask for a change (another role, a narrower scope) and the Lead offers to
-  change the saved spec: the interview starts from its text, asks only about
-  the change, and shows it as a diff (the old text is kept as
-  `<name>.previous.md`).
+  finds its spec and asks, in one question, whether to start it: yes, no, or
+  "change it". It can say who does the work this time (for this run only, as
+  `ombro run --spec <name> --role <role>` does), leaving the saved spec as it
+  is. "change it", or asking for a change to the task itself, opens the saved
+  spec: the interview starts from its text, asks only about the change, and
+  shows it as a diff (the old text is kept as `<name>.previous.md`).
 - **`/new`** saves the chat and starts a fresh one, with its own token cap
   and usage from zero. Nothing from the old one is sent to the Lead.
 - **`/remember [@crew] <text>`** adds a dated line to a crew's notes.md

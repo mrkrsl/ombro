@@ -171,7 +171,7 @@ def test_the_lead_offers_a_brief_and_the_chat_becomes_its_starting_point(chat, h
     assert (home.specs_dir / "find-teapots.md").is_file()
     assert "ombro run --spec find-teapots" in chat.output
     asked = chat.answers.asked
-    assert asked[0].startswith("[Chat]") and asked[1].startswith("[Chat] Start a brief")
+    assert asked[0].startswith("[Chat]") and asked[1].startswith("[Chat] Shall we start the brief?")
     assert asked[2].startswith("[Brief]")  # the mode is shown in Brief too
     assert asked[3] == "[Chat] You: "
     # After the brief the Lead is told what happened.

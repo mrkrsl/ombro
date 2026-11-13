@@ -306,8 +306,8 @@ class Chat:
                     break
                 if not self.handle(raw):
                     break
-                while self.run_offers:  # the command line asks here; an interface asks in its own way
-                    self._run_offered(self.run_offers.pop())
+                while self.run_offers:  # the user said yes in chat; the command line starts it here
+                    self._run_offered(self.run_offers.pop(0))
         finally:
             self.close()
         return self
@@ -467,7 +467,7 @@ class Chat:
         if name == "offer_brief":
             return self._offer_brief(args)
         if name == "offer_run":
-            return self._offer_run(args), None
+            return self._offer_run(args)
         if name == "offer_remember":
             crew = str(args.get("crew") or self.crew)
             if crew not in self.home.crews():
@@ -581,30 +581,61 @@ class Chat:
         path = self.home.specs_dir / f"{name}.md"
         return path if name and "/" not in name and path.is_file() else None
 
-    def _offer_run(self, args: dict) -> dict[str, Any]:
-        """The Lead offers to run a saved spec again. The interface shows the spec and asks;
-        nothing starts without the user's yes (specification 10.4)."""
+    def _offer_run(self, args: dict) -> tuple[dict[str, Any], tuple | None]:
+        """The Lead offers to run a saved spec again, in its own voice: yes starts it (the
+        interface does), "change it" opens the spec for changing, and no leaves it. Roles
+        given here apply to this run only; the saved spec is unchanged (10.4)."""
         path = self._saved_spec(args.get("spec"))
         if path is None:
             from ombro.cli import saved_specs
 
             names = [n for n, _ in saved_specs(self.home)][:15]
             return {"error": f"there is no saved spec called {args.get('spec')!r}. Saved specs, newest first: "
-                             + (", ".join(names) or "none")}
-        self.run_offers.append(path.stem)
-        self.transcript.note(f"The Lead offered to run saved spec {path.stem!r}.")
-        return {"status": f"Ombro now shows the user spec {path.stem!r} and asks whether to run it. Do not say "
-                          "it has started; say only that you have offered it. If the user wants it changed first, "
-                          "call offer_brief with revise instead."}
+                             + (", ".join(names) or "none")}, None
+        name = path.stem
+        meta = mdfile.read(path)[0]
+        raw_crews = meta.get("crews") or [self.crew]
+        crews = [str(c) for c in ([raw_crews] if isinstance(raw_crews, str) else raw_crews)]
+        roles: list[str] = []
+        if args.get("roles"):
+            from ombro.roles import RoleError, load_roles, resolve_role
 
-    def _run_offered(self, spec: str) -> None:
-        """The command line's way of asking about a run the Lead offered."""
-        if not self.ui.yes("run_now", f"Run the saved spec {spec!r} now? It runs in the background.", False):
-            self.ui.say(f"Not started. Run it later with `ombro run --spec {spec}`.")
-            return
+            try:
+                available = load_roles(self.home, crews, self.base_limits)
+            except (RoleError, SetupError) as e:
+                return {"error": str(e)}, None
+            for r in [args["roles"]] if isinstance(args["roles"], str) else list(args["roles"]):
+                role, why = resolve_role(available, str(r))
+                if role is None:
+                    return {"error": f"roles: {why}"}, None
+                roles.append(role.name)
+        how = " ".join(str(args.get("how") or "").split()).rstrip(".")
+        how = how or ("with " + ", ".join(roles) + " doing the work" if roles else "as it was")
+        self.ui.say(f"I found it. It's the spec '{name}'. I can restart it {how}.", level="lead")
+        self.transcript.note(f"The Lead offered to run saved spec {name!r} again ({how}).")
+        answer = self.ui.ask(Field(
+            "run_now", 'If you prefer to read through the spec again and change it, just say "change it". '
+                       "Otherwise, should I just start it?", "yesno", default=False, other="change it", mode="Chat"))
+        if answer == "change it":
+            self.transcript.note(f"You chose to change spec {name!r} first.")
+            return ({"status": "the user wants to change the spec first; the interview starts now, so do not "
+                               "reply"}, (crews, how, name))
+        if answer:
+            self.run_offers.append((name, roles))
+            self.transcript.note(f"You said yes: spec {name!r} starts" + (f" with {', '.join(roles)}" if roles
+                                                                            else "") + ".")
+            return {"status": f"the user said yes; Ombro starts spec {name!r} now in the background. Say in "
+                              "one short sentence that it is starting; do not describe the work again."}, None
+        self.transcript.note(f"You said no: spec {name!r} was not started.")
+        return {"status": "the user said no, so it was not started. Carry on the conversation; do not offer it "
+                          "again unless they ask."}, None
+
+    def _run_offered(self, offer) -> None:
+        """The command line starts a run the user said yes to in chat."""
         from ombro.cli import main
 
-        main(["run", "--spec", spec, "--detach"])
+        spec, roles = offer if isinstance(offer, tuple) else (offer, [])
+        main(["run", "--spec", spec, "--detach", *[a for r in roles for a in ("--role", r)]])
 
     def _offer_brief(self, args: dict) -> tuple[dict, tuple | None]:
         summary = _short(args.get("summary") or "", 300)
@@ -621,12 +652,13 @@ class Chat:
             had = mdfile.read(self.home.specs_dir / f"{revise}.md")[0].get("crews") or []
             crews = [str(c) for c in ([had] if isinstance(had, str) else had) if str(c) in self.home.crews()]
         which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
+        summary = summary.rstrip(".")
         if revise:
-            self.ui.say(f"The Lead offers to change your saved spec {revise!r}: {summary}", spaced=True)
-            question = "Change it now? You'll see the changes before anything is saved."
+            self.ui.say(f"I can open your saved spec '{revise}' and change it: {summary}.", level="lead")
+            question = "Shall we change it now? You'll see the changes before anything is saved."
         else:
-            self.ui.say(f"The Lead offers to brief this as a task{which}: {summary}", spaced=True)
-            question = "Start a brief now?"
+            self.ui.say(f"This sounds like a task. I can brief it{which}: {summary}.", level="lead")
+            question = "Shall we start the brief?"
         if self.ui.yes("start_brief", question, False, mode="Chat"):
             self.transcript.note(f"The Lead offered a brief ({summary}); you accepted.")
             return ({"status": "the user accepted; the task interview starts now, so do not reply"},

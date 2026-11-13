@@ -399,7 +399,8 @@ def test_a_confirmed_brief_offers_to_run_it(home, monkeypatch):
             "waste": "Makers outside Lowtown.", "non_goals": "No prices."}
     app, _ = _app(home, [fake.call("propose", spec)])
     started = []
-    monkeypatch.setattr(app.commands, "start_run", lambda name: started.append(name) or "20261112-000000-abcd")
+    monkeypatch.setattr(app.commands, "start_run",
+                        lambda name, roles=None: started.append(name) or "20261112-000000-abcd")
     monkeypatch.setattr("ombro.tui.app.runs.find_run", lambda h, rid: home.root / "runs" / rid)
 
     async def go():
@@ -702,7 +703,7 @@ def test_slash_run_offers_a_saved_spec_again(home, monkeypatch):
     mdfile.write(home.specs_dir / "new-task.md", {"name": "new-task", "crews": ["default"]}, "# An invented task\n")
     app, _ = _app(home)
     started = []
-    monkeypatch.setattr(app.commands, "start_run", lambda name: started.append(name) or None)
+    monkeypatch.setattr(app.commands, "start_run", lambda name, roles=None: started.append(name) or None)
 
     async def go():
         async with app.run_test(size=(120, 40)) as pilot:

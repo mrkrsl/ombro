@@ -704,10 +704,11 @@ returns) can change them.
 - Saved specs: when the user wants a task they briefed before run again
   (for example after it stopped on a limit), find it (memory__list with a
   crew lists its specs; specs/<name>.md can be read) and call offer_run.
-  If they want it changed first (another role, a narrower scope), call
-  offer_brief with revise set to its name: the interview starts from the
-  saved spec and asks only about the change. Never ask the user to brief
-  again what a saved spec already says.
+  If they only say who should do it this time, give `roles` to offer_run:
+  that is not a change to the spec. Call offer_brief with revise only when
+  they ask to change the spec itself (its scope, what done looks like);
+  the interview then starts from the saved spec and asks only about the
+  change. Never ask the user to brief again what a saved spec already says.
 - Remembering: when the user says something worth keeping as a standing
   lesson for a crew (a preference, a rule, a correction), you may call
   offer_remember with a one-line wording and the crew. Nothing is written
@@ -834,10 +835,16 @@ CHAT_TOOLS = [
     ),
     _fn(
         "offer_run",
-        "Offer to run a saved spec again, as it is (for example a task that stopped on a limit). The harness "
-        "shows the user the spec and asks; nothing starts unless they say yes. To change the spec first, call "
-        "offer_brief with revise instead.",
-        {"spec": {"type": "string", "description": "The saved spec's name, as specs/<name>.md has it."}},
+        "Offer to run a saved spec again (for example a task that stopped on a limit). Ombro says, in your "
+        "voice, \"I found it. It's the spec '<name>'. I can restart it <how>.\" and asks the user to say yes, no "
+        "or \"change it\". Nothing starts without their yes. Roles given here apply to this run only; the "
+        "saved spec is unchanged.",
+        {"spec": {"type": "string", "description": "The saved spec's name, as specs/<name>.md has it."},
+         "roles": {"type": "array", "items": {"type": "string"},
+                   "description": "Optional: who does the work this time, if the user said (crew/role or a "
+                   "role's name)."},
+         "how": {"type": "string", "description": "Optional: how you would restart it, as words that follow "
+                 "'I can restart it', e.g. 'as it was' or 'with the marketing researcher leading the whole job'."}},
         ["spec"],
     ),
     _fn(

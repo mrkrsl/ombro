@@ -58,20 +58,63 @@ def test_the_brief_interview_records_roles_and_refuses_unknown_ones(home):
 # -- running a saved spec again from chat -------------------------------------------------
 
 
-def test_the_lead_offers_to_run_a_saved_spec_and_nothing_starts_without_yes(home, monkeypatch):
+def test_the_lead_offers_to_run_a_saved_spec_in_its_own_voice(home, monkeypatch):
     saved(home)
     started = []
     monkeypatch.setattr("ombro.cli.main", lambda argv: started.append(argv) or 0)
     s = ChatSession(home)
-    s([fake.call("offer_run", {"spec": "teapot-makers"}), fake.say("I've offered it.")],
-      ["Restart the teapot task", "n"])
+    s([fake.call("offer_run", {"spec": "teapot-makers"}), fake.say("All right.")], ["Restart the teapot task", "n"])
     assert started == []
-    assert any("Run the saved spec 'teapot-makers' now?" in a for a in s.answers.asked)
-    assert "Not started." in s.output
+    assert "I found it. It's the spec 'teapot-makers'. I can restart it as it was." in s.output
+    assert any('just say "change it". Otherwise, should I just start it? [y/N]' in a for a in s.answers.asked)
     s = ChatSession(home)
-    s([fake.call("offer_run", {"spec": "teapot-makers"}), fake.say("I've offered it.")],
-      ["Restart the teapot task", "y"])
+    s([fake.call("offer_run", {"spec": "teapot-makers"}), fake.say("Starting it.")], ["Restart the teapot task", "y"])
     assert started == [["run", "--spec", "teapot-makers", "--detach"]]
+
+
+def test_roles_given_to_the_offer_apply_to_this_run_only(home, monkeypatch):
+    path = saved(home)
+    write_role(home, "researcher")
+    before = path.read_text()
+    started = []
+    monkeypatch.setattr("ombro.cli.main", lambda argv: started.append(argv) or 0)
+    s = ChatSession(home)
+    s([fake.call("offer_run", {"spec": "teapot-makers", "roles": ["researcher"],
+                               "how": "with the researcher leading the whole job"}),
+       fake.say("Starting it.")], ["Restart it, with the researcher doing it", "y"])
+    assert "I can restart it with the researcher leading the whole job." in s.output
+    assert started == [["run", "--spec", "teapot-makers", "--detach", "--role", "researcher"]]
+    assert path.read_text() == before  # the saved spec is unchanged
+
+
+def test_change_it_opens_the_saved_spec_for_changing(home):
+    saved(home)
+
+    def interview(messages, tools):
+        assert "change their saved spec 'teapot-makers'" in messages[1]["content"]
+        return fake.call("propose", {**SPEC_ARGS, "name": "teapot-makers"})
+
+    s = ChatSession(home)
+    s([fake.call("offer_run", {"spec": "teapot-makers"}), interview, fake.say("Changed.")],
+      ["Restart the teapot task", "change it", "a", "Thanks"])
+    assert (home.specs_dir / "teapot-makers.previous.md").is_file()
+
+
+def test_the_command_line_runs_a_spec_with_roles_for_this_run_only(home, monkeypatch):
+    from ombro import runs
+    from ombro.cli import main
+
+    path = saved(home)
+    write_role(home, "researcher")
+    monkeypatch.setattr("ombro.cli._require_model", lambda h: None)
+    monkeypatch.setattr("ombro.cli.Engine", None, raising=False)
+    try:
+        main(["run", "--spec", "teapot-makers", "--role", "researcher", "--detach"])
+    except BaseException:  # noqa: BLE001 - only the run folder is checked here
+        pass
+    run_dir = runs.all_runs(home)[-1]
+    assert mdfile.read(run_dir / "spec.md")[0]["roles"] == ["researcher"]
+    assert "roles" not in mdfile.read(path)[0]
 
 
 def test_an_unknown_spec_is_refused_with_the_saved_ones(home):
@@ -100,6 +143,6 @@ def test_revising_a_saved_spec_starts_from_its_text_and_keeps_the_old_one(home):
     s([fake.call("offer_brief", {"summary": "The researcher should do it", "revise": "teapot-makers"}),
        interview, fake.say("Changed.")],
       ["Same task, but the researcher should do it", "y", "a", "Thanks"])
-    assert "offers to change your saved spec 'teapot-makers'" in s.output
+    assert "I can open your saved spec 'teapot-makers' and change it" in s.output
     assert mdfile.read(path)[0]["roles"] == ["researcher"]
     assert (home.specs_dir / "teapot-makers.previous.md").read_text().count("a list of three") == 1

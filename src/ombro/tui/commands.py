@@ -255,10 +255,12 @@ class Commands:
             spec = shown[int(pick) - 1]
         self.app.offer_run(spec["name"], spec_view(self.home, spec))
 
-    def start_run(self, spec: str) -> str | None:
-        """`ombro run --spec <spec> --detach`, as the command line would. Returns the run ID."""
+    def start_run(self, spec: str, roles: list[str] | None = None) -> str | None:
+        """`ombro run --spec <spec> --detach [--role ...]`, as the command line would. Returns the run ID."""
         env = {**os.environ, "OMBRO_HOME": str(self.home.root)}
-        r = subprocess.run([sys.executable, "-m", "ombro", "run", "--spec", spec, "--detach"], capture_output=True,
+        extra = [a for r in roles or [] for a in ("--role", r)]
+        r = subprocess.run([sys.executable, "-m", "ombro", "run", "--spec", spec, "--detach", *extra],
+                           capture_output=True,
                            text=True, env=env, timeout=120, stdin=subprocess.DEVNULL)
         m = re.search(r"Started run (\S+)", r.stdout)
         if r.returncode != 0 or not m:

@@ -342,7 +342,7 @@ class ConsoleUI(UI):
             if f.kind == "wait":
                 return None
             if f.kind == "yesno":
-                answer = yes_no(raw, f.default)
+                answer = yes_no(raw, f.default, f.other)
                 if answer is None:
                     self._say(YESNO_AGAIN)
                     continue
@@ -378,12 +378,15 @@ class ConsoleUI(UI):
 YESNO_AGAIN = "Please answer y or n (Enter for the default)."
 
 
-def yes_no(raw: str, default: Any) -> bool | None:
+def yes_no(raw: str, default: Any, other: str | None = None) -> bool | str | None:
     """A yes/no answer, the default for Enter, or None for anything else: a stray
-    command such as /model must never be taken as no."""
-    low = (raw or "").strip().lower()
+    command such as /model must never be taken as no. A yes/no field with `other`
+    (such as "change it") also takes that answer, by its first word, and returns it."""
+    low = (raw or "").strip().lower().strip(".!\"'")
     if not low:
         return bool(default)
+    if other and low.split()[0] == other.lower().split()[0]:
+        return other
     if low in ("y", "yes"):
         return True
     if low in ("n", "no"):

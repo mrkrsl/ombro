@@ -607,7 +607,7 @@ class OmbroApp(App):
         if f.kind != "secret" or text:
             self.add_line(Note(shown or "(Enter)"), "you")
         if f.kind == "yesno":
-            value = yes_no(text, f.default)
+            value = yes_no(text, f.default, f.other)
             if value is None:
                 self.add_line(Note(("That's a question waiting for an answer, so commands wait until it's done. "
                                     if text.strip().startswith("/") else "") + YESNO_AGAIN), "note")
@@ -705,23 +705,21 @@ class OmbroApp(App):
             return
         if len(self.chat.specs) > specs_before:
             self.offer_run(self.chat.specs[-1])
-        elif self.chat.run_offers:
-            name = self.chat.run_offers.pop()
-            from ombro.tui.commands import spec_view
+        while self.chat.run_offers:  # the user already said yes in chat
+            name, roles = self.chat.run_offers.pop(0)
+            self.offer_run(name, roles=roles, ask=False)
 
-            match = [s for s in views.spec_list(self.home) if s["name"] == name]
-            if match:
-                self.offer_run(name, spec_view(self.home, match[0]))
-
-    def offer_run(self, spec: str, shown: str | None = None) -> None:
+    def offer_run(self, spec: str, shown: str | None = None, *, roles: list[str] | None = None,
+                  ask: bool = True) -> None:
         """Run a saved spec now, detached, after the user's yes: after a confirmed brief, on /run, or when the
-        Lead in chat offers to run one again (specification 10.3, 10.4)."""
+        Lead in chat offered it and the user said yes there (specification 10.3, 10.4)."""
         if shown:
             self.bridge.say(f"Saved spec {shown}")
-        if not self.bridge.yes("run_now", "Run it now? It runs in the background, and its progress shows here."):
+        if ask and not self.bridge.yes("run_now", "Run it now? It runs in the background, and its progress "
+                                                  "shows here."):
             self.bridge.say(f"Run it later with `ombro run --spec {spec}`.")
             return
-        run_id = self.commands.start_run(spec)
+        run_id = self.commands.start_run(spec, roles or [])
         if run_id:
             from ombro.journal import Follower
 
