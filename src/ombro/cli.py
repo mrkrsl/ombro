@@ -987,6 +987,16 @@ def cmd_outbox(args) -> int:
 
 
 def cmd_tools(args) -> int:
+    from ombro import tool_cmd
+
+    if args.server and tool_cmd.is_native(args.server):
+        from ombro.ui import ConsoleUI
+
+        if args.provider is None and args.max_calls is None and args.json:
+            return _print_json({"tool": args.server, "settings": tool_cmd.describe(_home(), args.server)})
+        return tool_cmd.flow(_home(), ConsoleUI(), args.server, args.provider, args.max_calls)
+    if args.provider or args.max_calls:
+        raise CliError("--provider and --max-calls are for a built-in tool, such as `ombro tools web.search`.")
     from ombro.outbox_cmd import cmd_tools as run
 
     return run(args)
@@ -1178,7 +1188,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_outbox)
 
     s = sub.add_parser("tools", help="native tools and MCP servers; with a server, its tools, class and permission")
-    s.add_argument("server", nargs="?", help="an MCP server named in tools.md")
+    s.add_argument("server", nargs="?", help="an MCP server named in tools.md, or a built-in tool such as "
+                   "web.search to see or change it")
+    s.add_argument("--provider", help="for a built-in tool: the provider to use (e.g. duckduckgo, firecrawl)")
+    s.add_argument("--max-calls", type=int, help="for a built-in tool: the most calls one run may make")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_tools)
 

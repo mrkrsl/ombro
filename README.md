@@ -83,6 +83,7 @@ ombro outbox approve ab12-1 ab12-3     # run the named ones (each at most once);
 ombro outbox decline ab12-2            # drop it for good
 ombro outbox edit ab12-3               # change its arguments; it waits for approval again
 ombro tools [server]                   # tools and MCP servers; a server's tools and their permission
+ombro tools web.search --provider duckduckgo --max-calls 30   # change a built-in tool
 ombro server add <name>                # add an MCP server to tools.md; asks for any secret hidden
 ombro server remove <name>
 ombro folder                           # shared folders, and whether each can be backed up
@@ -152,7 +153,8 @@ The `/` commands do what their `ombro` commands do:
   `/models default | refresh | add`.
 - `/keys`, `/keys set <NAME>` (hidden); `/folder`, `/folder add <path>`,
   `/folder remove <name>`; `/schedule`, `/schedule enable | disable <name>`;
-  `/tools`, `/tools add [name]`, `/tools remove <name>`; `/preferences`,
+  `/tools`, `/tools <tool>` (change a built-in tool's provider or calls, such
+  as `/tools web.search`), `/tools add [name]`, `/tools remove <name>`; `/preferences`,
   `/preferences edit`; `/theme`, `/help`, `/quit`.
 
 Enter sends; Shift+Return (or Option+Return, Ctrl+J, or `\` then Return)

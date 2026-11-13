@@ -755,3 +755,21 @@ def test_the_leads_words_and_reports_render_as_markdown(home, run):
             assert "# Ombro's record" in [w for w in app.query(MdLine) if "## Summary" in w.source][-1].source
 
     drive(go())
+
+
+def test_tools_changes_a_built_in_tool(home):
+    from ombro.settings import load_tool_settings
+
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/tools web.search")
+            await answer(pilot, app, "2")  # DuckDuckGo
+            await answer(pilot, app, "25")
+            await settle(pilot, app)
+            assert "Saved. web.search now:" in "\n".join(_texts(app))
+
+    drive(go())
+    assert load_tool_settings(home).provider_for("web.search") == "duckduckgo"

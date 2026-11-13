@@ -550,6 +550,18 @@ class Commands:
         self.usage("/crew, /crew add <name> [title], /crew use <name>")
 
     def cmd_tools(self, words: list[str], rest: str) -> None:
+        from ombro import tool_cmd
+
+        if words and tool_cmd.is_native(words[0].lower()):
+            # /tools web.search [provider <name>] [max <n>]: see a built-in tool, or change it
+            tool, opts = words[0].lower(), [w.lower() for w in words[1:]]
+            provider = opts[opts.index("provider") + 1] if "provider" in opts[:-1] else None
+            raw = opts[opts.index("max") + 1] if "max" in opts[:-1] else None
+            if raw is not None and not raw.isdigit():
+                self.usage("/tools web.search [provider <name>] [max <calls>]")
+                return
+            tool_cmd.flow(self.home, self.ui, tool, provider, int(raw) if raw else None)
+            return
         action = words[0].lower() if words else "list"
         if action in ("add", "remove"):
             from ombro.server_cmd import ServerError, add_flow, remove_flow
@@ -566,7 +578,8 @@ class Commands:
         cmd = [sys.executable, "-m", "ombro", "tools"] + ([words[0]] if words else [])
         r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=180, stdin=subprocess.DEVNULL)
         self.say((r.stdout or r.stderr).rstrip() or "No output.")
-        self.say("Add an MCP server with /tools add [name]; remove one with /tools remove <name>.")
+        self.say("Change a built-in tool with /tools <tool>, such as /tools web.search. Add an MCP server with "
+                 "/tools add [name]; remove one with /tools remove <name>.")
 
     def cmd_preferences(self, words: list[str], rest: str) -> None:
         if words and words[0].lower() == "edit":
