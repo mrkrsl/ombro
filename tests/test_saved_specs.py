@@ -66,7 +66,7 @@ def test_the_lead_offers_to_run_a_saved_spec_in_its_own_voice(home, monkeypatch)
     s([fake.call("offer_run", {"spec": "teapot-makers"}), fake.say("All right.")], ["Restart the teapot task", "n"])
     assert started == []
     assert "I found it. It's the spec 'teapot-makers'. I can restart it as it was." in s.output
-    assert any('just say "change it". Otherwise, should I just start it? [y/N]' in a for a in s.answers.asked)
+    assert any('just say "change it". Otherwise, should I just start it? [Y/n]' in a for a in s.answers.asked)
     s = ChatSession(home)
     s([fake.call("offer_run", {"spec": "teapot-makers"}), fake.say("Starting it.")], ["Restart the teapot task", "y"])
     assert started == [["run", "--spec", "teapot-makers", "--detach"]]
@@ -146,3 +146,16 @@ def test_revising_a_saved_spec_starts_from_its_text_and_keeps_the_old_one(home):
     assert "I can open your saved spec 'teapot-makers' and change it" in s.output
     assert mdfile.read(path)[0]["roles"] == ["researcher"]
     assert (home.specs_dir / "teapot-makers.previous.md").read_text().count("a list of three") == 1
+
+
+def test_the_offer_is_said_once_and_enter_starts_it(home, monkeypatch):
+    saved(home)
+    started = []
+    monkeypatch.setattr("ombro.cli.main", lambda argv: started.append(argv) or 0)
+    s = ChatSession(home)
+    s([fake.call("offer_run", {"spec": "teapot-makers", "note": "It stopped on the token limit"},
+                 content="Found it, Mark. It's the saved spec teapot-makers."),
+       fake.say("Starting it.")], ["Restart the teapot task", ""])
+    assert "Found it, Mark" not in s.output  # the offer speaks for the Lead, once
+    assert "I found it. It's the spec 'teapot-makers'. It stopped on the token limit. I can restart it" in s.output
+    assert started == [["run", "--spec", "teapot-makers", "--detach"]]  # Enter means yes

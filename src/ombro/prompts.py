@@ -822,8 +822,8 @@ CHAT_TOOLS = [
     ),
     _fn(
         "offer_brief",
-        "Offer to turn what the user described into a task brief. The harness asks the user; nothing starts "
-        "unless they accept.",
+        "Offer to turn what the user described into a task brief. Ombro words the offer as you and asks the "
+        "user; nothing starts unless they accept. Write nothing else in the reply that calls it.",
         {
             "summary": {"type": "string", "description": "The task as you heard it, in one line."},
             "crews": {"type": "array", "items": {"type": "string"},
@@ -836,15 +836,17 @@ CHAT_TOOLS = [
     _fn(
         "offer_run",
         "Offer to run a saved spec again (for example a task that stopped on a limit). Ombro says, in your "
-        "voice, \"I found it. It's the spec '<name>'. I can restart it <how>.\" and asks the user to say yes, no "
-        "or \"change it\". Nothing starts without their yes. Roles given here apply to this run only; the "
-        "saved spec is unchanged.",
+        "voice, \"I found it. It's the spec '<name>'. <note> I can restart it <how>.\" and asks the user to say "
+        "yes, no or \"change it\". Nothing starts without their yes. Roles given here apply to this run only; "
+        "the saved spec is unchanged. Write nothing else in the reply that calls it: Ombro's words are yours.",
         {"spec": {"type": "string", "description": "The saved spec's name, as specs/<name>.md has it."},
          "roles": {"type": "array", "items": {"type": "string"},
                    "description": "Optional: who does the work this time, if the user said (crew/role or a "
                    "role's name)."},
          "how": {"type": "string", "description": "Optional: how you would restart it, as words that follow "
-                 "'I can restart it', e.g. 'as it was' or 'with the marketing researcher leading the whole job'."}},
+                 "'I can restart it', e.g. 'as it was' or 'with the marketing researcher leading the whole job'."},
+         "note": {"type": "string", "description": "Optional: one short sentence on what happened last time, "
+                  "e.g. 'It stopped on the token limit before anything was written.'"}},
         ["spec"],
     ),
     _fn(

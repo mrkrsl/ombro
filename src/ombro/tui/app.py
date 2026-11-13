@@ -716,7 +716,7 @@ class OmbroApp(App):
         if shown:
             self.bridge.say(f"Saved spec {shown}")
         if ask and not self.bridge.yes("run_now", "Run it now? It runs in the background, and its progress "
-                                                  "shows here."):
+                                                  "shows here.", True):
             self.bridge.say(f"Run it later with `ombro run --spec {spec}`.")
             return
         run_id = self.commands.start_run(spec, roles or [])

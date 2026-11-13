@@ -412,7 +412,11 @@ class Chat:
             reply = self._model_call(self._messages())
             self.exchanges[-1].append(reply.as_message())
             said = (reply.content or "").strip()
-            if said:
+            offering = any(tc.name in ("offer_run", "offer_brief") for tc in reply.tool_calls or [])
+            if said and offering:
+                # The offer says it in the Lead's voice; the same words twice read as a stutter.
+                self.transcript.note(f"The Lead's words with its offer, not shown: {_short(said, 300)}")
+            elif said:
                 self.ui.show(LeadSaid(said))
                 self.transcript.lead(said)
             if not reply.tool_calls:
@@ -611,11 +615,15 @@ class Chat:
                 roles.append(role.name)
         how = " ".join(str(args.get("how") or "").split()).rstrip(".")
         how = how or ("with " + ", ".join(roles) + " doing the work" if roles else "as it was")
-        self.ui.say(f"I found it. It's the spec '{name}'. I can restart it {how}.", level="lead")
+        note = " ".join(str(args.get("note") or "").split())
+        if note and not note.endswith((".", "!", "?")):
+            note += "."
+        self.ui.say(f"I found it. It's the spec '{name}'. " + (f"{note} " if note else "")
+                    + f"I can restart it {how}.", level="lead")
         self.transcript.note(f"The Lead offered to run saved spec {name!r} again ({how}).")
         answer = self.ui.ask(Field(
             "run_now", 'If you prefer to read through the spec again and change it, just say "change it". '
-                       "Otherwise, should I just start it?", "yesno", default=False, other="change it", mode="Chat"))
+                       "Otherwise, should I just start it?", "yesno", default=True, other="change it", mode="Chat"))
         if answer == "change it":
             self.transcript.note(f"You chose to change spec {name!r} first.")
             return ({"status": "the user wants to change the spec first; the interview starts now, so do not "
@@ -659,7 +667,7 @@ class Chat:
         else:
             self.ui.say(f"This sounds like a task. I can brief it{which}: {summary}.", level="lead")
             question = "Shall we start the brief?"
-        if self.ui.yes("start_brief", question, False, mode="Chat"):
+        if self.ui.yes("start_brief", question, True, mode="Chat"):
             self.transcript.note(f"The Lead offered a brief ({summary}); you accepted.")
             return ({"status": "the user accepted; the task interview starts now, so do not reply"},
                     (crews, summary, revise))
