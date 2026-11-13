@@ -787,10 +787,31 @@ def test_skills_lists_the_library_and_gives_a_skill(home):
             await pilot.pause()
             await command(pilot, app, "/skills")
             await settle(pilot, app)
-            assert "Surveys invented kettle makers." in "\n".join(_texts(app))
+            shown = "\n".join(_texts(app))
+            assert "Surveys invented kettle makers." in shown
+            assert "Approved (1)" in shown and "Waiting for your approval (0)" in shown
             await command(pilot, app, "/skills give kettle-survey default/researcher")
             await settle(pilot, app)
             assert "Gave kettle-survey to default/researcher." in "\n".join(_texts(app))
 
     drive(go())
     assert mdfile.read(home.roles_dir("default") / "researcher" / "config.md")[0]["skills"] == ["kettle-survey"]
+
+
+def test_skills_add_imports_after_yes(home, tmp_path):
+    src = tmp_path / "Downloads" / "kettle-survey"
+    src.mkdir(parents=True)
+    (src / "SKILL.md").write_text("---\nname: kettle-survey\ndescription: Surveys invented kettle makers.\n---\n"
+                                  "1. Search.\n")
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, f"/skills add {src}")
+            await answer(pilot, app, "y")
+            await settle(pilot, app)
+            assert "Added kettle-survey." in "\n".join(_texts(app))
+
+    drive(go())
+    assert (home.skills_dir / "kettle-survey" / "SKILL.md").is_file()

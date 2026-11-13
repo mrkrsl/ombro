@@ -51,6 +51,8 @@ def cmd_skills(args) -> int:
             return _edit(home, args)
         if action == "give":
             return _give(home, args)
+        if action == "add":
+            return _add(home, args)
     except skills.SkillError as e:
         raise cli.CliError(str(e)) from None
     raise cli.CliError(f"Unknown skills action {action!r}.")
@@ -61,25 +63,28 @@ def _list(home: Home, args) -> int:
     if args.json:
         print(json.dumps(view, ensure_ascii=False, indent=2))
         return 0
+    print(f"Approved ({len(view['skills'])}), in {home.skills_dir}:")
     if not view["skills"]:
-        print(f"No skills yet. A skill is a folder in {home.skills_dir} with a SKILL.md; the Lead can propose "
-              "one after a run, or write one in chat when you ask it to remember how to do something.")
-    else:
-        print(f"Skills ({len(view['skills'])}), in {home.skills_dir}:\n")
-        for r in view["skills"]:
-            who = ", ".join(r["used_by"]) or ("no role by name" if view["all_skills"] else "no role yet")
-            print(f"  {r['name']}  ({'yours' if r['source'] == 'you' else 'from ' + r['source']})")
-            print(f"    {r['description'] or '(no description)'}")
-            print(f"    Used by: {who}")
-            if r["warning"]:
-                print(f"    Warning: {r['warning']}")
-        if view["all_skills"]:
-            print(f"\nEvery skill is used by: {', '.join(view['all_skills'])} (skills: all).")
+        print("  none yet. The Lead can propose one after a run, or write one in chat when you ask it to "
+              "remember how to do something.")
+    for r in view["skills"]:
+        who = ", ".join(r["used_by"]) or "no role by name"
+        print(f"  {r['name']}  ({'yours' if r['source'] == 'you' else 'from ' + r['source']})")
+        print(f"    {r['description'] or '(no description)'}")
+        print(f"    Used by: {who}")
+        if r["warning"]:
+            print(f"    Warning: {r['warning']}")
+    if view["all_skills"]:
+        print(f"  Every skill is used by: {', '.join(view['all_skills'])} (skills: all).")
+    print(f"\nWaiting for your approval ({len(view['waiting'])}):")
+    if not view["waiting"]:
+        print("  none")
+    for w in view["waiting"]:
+        what = "a new version of" if w["change"] == "update" else "new:"
+        print(f"  {w['ref']:<10} {what} {w['name']}" + (f", for {', '.join(w['for'])}" if w["for"] else ""))
+        if w["flags"]:
+            print(f"  {'':<10} signs of injected text: {', '.join(w['flags'])}")
     if view["waiting"]:
-        print(f"\nProposed, waiting for you ({len(view['waiting'])}):")
-        for w in view["waiting"]:
-            what = "a new version of" if w["change"] == "update" else "new:"
-            print(f"  {w['ref']:<10} {what} {w['name']}" + (f", for {', '.join(w['for'])}" if w["for"] else ""))
         print("\nSee one with `ombro outbox show <ref>`, then `ombro outbox approve <ref>` or `decline <ref>`.")
     print("\nGive a skill to a role with `ombro skills give <skill> <crew/role>`.")
     return 0
@@ -129,6 +134,45 @@ def _edit(home: Home, args) -> int:
         print("The skill needs a description and a method; roles will see it without one until it is fixed.")
         return 1
     print(f"{s.name} is valid.")
+    return 0
+
+
+def describe_import(imp: skills.Import) -> list[str]:
+    """What the user reads before saying yes to an import: the whole text, or the diff."""
+    lines = [f"Skill {imp.name}, from {imp.source}"
+             + (": a new version of the one in your library" if imp.live else ": new to your library")]
+    if imp.flags:
+        lines.append(f"Warning: signs of injected text in it: {', '.join(imp.flags)}. Read it closely.")
+    lines.append("References copied with it: " + (", ".join(imp.references) or "none"))
+    if imp.skipped:
+        lines.append("Not copied (scripts, other folders, links, or files that are not text): "
+                     + ", ".join(imp.skipped[:20]) + (f" and {len(imp.skipped) - 20} more" if len(imp.skipped) > 20
+                                                      else ""))
+    lines.append("")
+    if imp.live:
+        lines.append(skills.diff(imp.live.text, imp.text, imp.name) or "(SKILL.md is the same as today's)")
+    else:
+        lines.append(imp.text.rstrip())
+    return lines
+
+
+def _add(home: Home, args) -> int:
+    from datetime import date
+
+    if not args.name:
+        raise skills.SkillError("give the skill's folder, e.g. `ombro skills add ~/Downloads/kettle-survey`")
+    imp = skills.inspect_import(home, args.name)
+    print("\n".join(describe_import(imp)))
+    print()
+    if not args.yes and not _cli()._confirm(
+            "Add it to your library? Roles that use it will follow it as your own instructions."):
+        print("Nothing was added.")
+        return 1
+    kept = skills.add(home, imp, date.today().isoformat())
+    print(f"Added {imp.name} to {home.skills_dir / imp.name}." + (f" The old version is kept in {kept}." if kept
+                                                                  else ""))
+    print(f"No role uses it yet, unless it has skills: all. Give it with `ombro skills give {imp.name} "
+          "<crew/role>`.")
     return 0
 
 

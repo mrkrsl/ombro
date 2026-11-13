@@ -342,8 +342,17 @@ when to use it) in the front matter, then the method in Markdown. An optional
   (`metadata: source:`); one with no source is yours.
 - A skill never adds a tool, and its `scripts/` folder is not run.
 
-`ombro skills` lists the library, who uses each skill and the proposals
-waiting; `ombro skills show <name>` and `edit <name>` show and edit one.
+- **Importing.** `ombro skills add <folder>` (or `/skills add <folder>`)
+  brings in a skill you found elsewhere. A skill from outside is someone
+  else's instructions, so Ombro checks its format, shows you the whole text
+  (or the diff against yours), lists any signs of injected text and what it
+  will not copy, and adds it only after your yes. It copies `SKILL.md` and
+  `references/` (text files up to 1 MB), never `scripts/` or anything else,
+  and records it as imported. No role uses it until you give it.
+
+`ombro skills` lists the approved skills and who uses each, then the
+proposals waiting for your approval; `ombro skills show <name>` and
+`edit <name>` show and edit one.
 
 ## Chat
 

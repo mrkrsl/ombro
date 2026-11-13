@@ -274,6 +274,76 @@ def diff(old: str, new: str, name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Importing a skill found elsewhere. It is someone else's instructions, which roles
+# would follow unfenced, so the user sees it all, and any signs of injected text,
+# before it is copied in, and it is recorded as imported, not as theirs.
+
+REFERENCE_MAX_BYTES = 1_000_000
+
+
+@dataclass
+class Import:
+    name: str
+    text: str
+    source: Path  # the folder it came from
+    references: list[str]  # files under references/ that will be copied
+    skipped: list[str]  # files that will not be (scripts/, assets/, links, binary or large files)
+    flags: list[str]  # signs of injected text, in SKILL.md or a reference
+    live: Skill | None  # the skill it would replace, if there is one
+
+
+def inspect_import(home: Home, path: str | Path) -> Import:
+    """Check a skill folder (or its SKILL.md) outside the home, without copying anything."""
+    from ombro import material
+
+    src = Path(os.path.expanduser(str(path))).resolve()
+    folder = src.parent if src.is_file() else src
+    f = src if src.is_file() else skill_file(folder)
+    if f is None or not f.is_file():
+        raise SkillError(f"no SKILL.md in {folder}")
+    if folder == home.skills_dir.resolve() or folder.is_relative_to(home.skills_dir.resolve()):
+        raise SkillError(f"{folder} is already in the skills library")
+    try:
+        text = f.read_text(encoding="utf-8")
+        meta, _ = mdfile.parse(text)
+    except (OSError, UnicodeDecodeError, mdfile.FrontMatterError) as e:
+        raise SkillError(f"{f} could not be read: {e}") from None
+    name = str(meta.get("name") or folder.name)
+    check(text, name, max_chars=None)
+    flags = list(material.flags(text))
+    references, skipped = [], []
+    for p in sorted(folder.rglob("*")):
+        rel = p.relative_to(folder).as_posix()
+        if p == f or (p.is_dir() and not p.is_symlink()) or any(x.startswith(".") for x in rel.split("/")):
+            continue
+        if not rel.startswith("references/") or p.is_symlink() or not p.is_file() \
+                or p.stat().st_size > REFERENCE_MAX_BYTES:
+            skipped.append(rel)
+            continue
+        try:
+            ref_text = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            skipped.append(rel)
+            continue
+        references.append(rel)
+        flags += [x for x in material.flags(ref_text) if x not in flags]
+    return Import(name, text, folder, references, skipped, flags, load(home, name))
+
+
+def add(home: Home, imp: Import, accepted: str) -> Path | None:
+    """Copy a checked import into the library. Returns where the old version was kept, if any."""
+    kept = write(home, imp.name, imp.text, source=f"imported from {imp.source}", accepted=accepted)
+    old_refs = home.skills_dir / imp.name / "references"
+    if kept is not None and old_refs.is_dir() and not old_refs.is_symlink():
+        shutil.rmtree(old_refs)  # the old version's references are in the archive; the import brings its own
+    for rel in imp.references:
+        dest = home.skills_dir / imp.name / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(imp.source / rel, dest, follow_symlinks=False)
+    return kept
+
+
+# ---------------------------------------------------------------------------
 # Who uses which
 
 

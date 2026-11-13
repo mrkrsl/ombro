@@ -371,7 +371,7 @@ class Commands:
         self.say("\n".join(lines))
 
     def cmd_skills(self, words: list[str], rest: str) -> None:
-        """/skills, /skills show <name>, /skills give <skill> <crew/role>..."""
+        """/skills, /skills show <name>, /skills give <skill> <crew/role>..., /skills add <folder>"""
         from ombro import skills
         from ombro.skills_cmd import library_view
 
@@ -385,17 +385,29 @@ class Commands:
                     return
                 p = self.app.colours
                 out = Text()
+                out.append(f"Approved ({len(view['skills'])})\n", style=f"bold {p.text}")
+                if not view["skills"]:
+                    out.append("  none yet\n", style=p.muted)
                 for r in view["skills"]:
                     out.append(f"  {r['name']}  ", style=f"bold {p.text}")
                     out.append(f"{r['description']}\n", style=p.text)
-                    out.append(f"    used by {', '.join(r['used_by']) or 'no role by name'}\n", style=p.muted)
+                    origin = "yours" if r["source"] == "you" else f"from {r['source']}"
+                    out.append(f"    {origin}; used by {', '.join(r['used_by']) or 'no role by name'}\n",
+                               style=p.muted)
                 if view["all_skills"]:
-                    out.append(f"Every skill: {', '.join(view['all_skills'])}\n", style=p.muted)
+                    out.append(f"  Every skill is used by {', '.join(view['all_skills'])}\n", style=p.muted)
+                out.append(f"\nWaiting for your approval ({len(view['waiting'])})\n", style=f"bold {p.text}")
+                if not view["waiting"]:
+                    out.append("  none\n", style=p.muted)
                 for w in view["waiting"]:
+                    what = "a new version of" if w["change"] == "update" else "new:"
                     out.append(f"  {w['ref']}  ", style=f"bold {p.text}")
-                    out.append(f"proposed: {w['name']}, waiting for you\n", style=p.text)
-                out.append("/skills show <name>; /skills give <skill> <crew/role>; /outbox show <ref> for a "
-                           "proposal", style=p.muted)
+                    out.append(f"{what} {w['name']}" + (f", for {', '.join(w['for'])}" if w["for"] else "")
+                               + "\n", style=p.text)
+                    if w["flags"]:
+                        out.append(f"    signs of injected text: {', '.join(w['flags'])}\n", style=p.muted)
+                out.append("\n/skills show <name>; /skills give <skill> <crew/role>; /outbox show <ref>, then "
+                           "/outbox approve or decline <ref>", style=p.muted)
                 self.rich(out)
                 return
             if action == "show" and len(words) == 2:
@@ -405,6 +417,21 @@ class Commands:
                     return
                 self.say(s.text.rstrip())
                 return
+            if action == "add" and len(words) >= 2:
+                from datetime import date
+
+                from ombro.skills_cmd import describe_import
+
+                imp = skills.inspect_import(self.home, rest.strip()[3:].strip())
+                self.say("\n".join(describe_import(imp)))
+                if not self.ui.yes("confirm", "Add it to your library? Roles that use it will follow it as your "
+                                   "own instructions.", default=False):
+                    self.say("Nothing was added.")
+                    return
+                kept = skills.add(self.home, imp, date.today().isoformat())
+                self.say(f"Added {imp.name}." + (f" The old version is kept in {kept}." if kept else "")
+                         + f" Give it to a role with /skills give {imp.name} <crew/role>.", level="done")
+                return
             if action == "give" and len(words) >= 3:
                 for who in words[2:]:
                     self.say(skills.give(self.home, words[1], who).capitalize() + ".", level="done")
@@ -412,7 +439,7 @@ class Commands:
         except skills.SkillError as e:
             self.fail(str(e).capitalize() + ".")
             return
-        self.usage("/skills, /skills show <name>, /skills give <skill> <crew/role>...")
+        self.usage("/skills, /skills show <name>, /skills give <skill> <crew/role>..., /skills add <folder>")
 
     # -- schedules, keys, folders, crews, tools, preferences (10e) -------------------
 

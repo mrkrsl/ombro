@@ -1193,9 +1193,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_outbox)
 
-    s = sub.add_parser("skills", help="the skills library: list, show <name>, edit <name>, give <skill> <crew/role>")
-    s.add_argument("action", nargs="?", choices=["list", "show", "edit", "give"], help="default: list")
-    s.add_argument("name", nargs="?", help="a skill's name")
+    s = sub.add_parser("skills", help="the skills library: list, show <name>, edit <name>, "
+                       "give <skill> <crew/role>, add <folder>")
+    s.add_argument("action", nargs="?", choices=["list", "show", "edit", "give", "add"], help="default: list")
+    s.add_argument("name", nargs="?", help="a skill's name; for add, the folder of a skill to import")
+    s.add_argument("--yes", action="store_true", help="for add: do not ask (an interface that has shown it "
+                   "passes this)")
     s.add_argument("roles", nargs="*", help="for give: roles as crew/role")
     s.add_argument("--json", action="store_true", help="for list and show: print JSON, for interfaces")
     s.set_defaults(func=cmd_skills)
