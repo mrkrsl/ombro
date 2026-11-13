@@ -138,7 +138,7 @@ class Home:
 
 LIMITS_META = {
     "allowance": "moderate",
-    "max_output_tokens": 8000,
+    "max_output_tokens": 32000,
     "report_reserve": 0.10,
     "loop_threshold": 3,
     "max_steps": {"lead": 6, "specialist": 15, "helper": 8},
@@ -194,7 +194,9 @@ To set one value by hand instead, add it here; it wins over the level:
 
 Always in force:
 
-- max_output_tokens: the most any single model call may produce.
+- max_output_tokens: the most any single model call may produce, thinking
+  included for models that think. Ombro learns a model's own maximum from its
+  endpoint where that is lower.
 - report_reserve: share of max_tokens held back so the final report can always be written.
 - loop_threshold: how many times a role may make the same tool call with the same arguments.
 - max_steps: model calls a role may make for one brief, by kind. A role's config.md can set its own.
@@ -269,8 +271,8 @@ endpoints. Any OpenAI-compatible chat endpoint with tool calling works.
 
 TOOLS_META = {
     "tools": {
-        "web.search": {"provider": "duckduckgo", "max_calls": 20},
-        "web.fetch": {"provider": "direct", "max_calls": 30},
+        "web.search": {"provider": "duckduckgo"},
+        "web.fetch": {"provider": "direct"},
         "workspace.write": {"max_calls": 40},
     },
     "providers": {"firecrawl": {"key": "FIRECRAWL_API_KEY"}},
@@ -287,6 +289,9 @@ Tools:
   unofficial and rate-limited, so best effort) or `fake`.
 - web.fetch: providers `firecrawl` (needs a key), `direct` (no key; a plain
   page download that refuses local and private network addresses) or `fake`.
+- Calls a run may make, unless max_calls says otherwise: web.search 20 with
+  firecrawl (each call is billed) or 60 with duckduckgo; web.fetch 30 with
+  firecrawl or 100 with direct.
 - workspace.read, workspace.write, workspace.list: files in the run's
   workspace/ and scratch/ folders, and in shared folders the run was given
   (folders.md). No provider.

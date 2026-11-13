@@ -773,3 +773,34 @@ def test_tools_changes_a_built_in_tool(home):
 
     drive(go())
     assert load_tool_settings(home).provider_for("web.search") == "duckduckgo"
+
+
+def test_clicking_read_the_report_opens_it_at_its_top(home, run):
+    from conftest import LEAD_REPORT, write_role
+    from ombro.tui.app import MdLine
+    from ombro.tui.commands import notice_text
+
+    write_role(home, "researcher")
+    long = "## Summary\n" + "\n\n".join(f"Paragraph {i} of an invented summary." for i in range(40)) + \
+        "\n\n## What was done\nIt.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone."
+    run([fake.brief("researcher", "Do it."), fake.result("Done."), fake.finish(), fake.keep_notes(), fake.say(long)])
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            text = notice_text(app, run.run_dir.name)
+            action = next(s.style.meta["@click"] for s in text.spans
+                          if not isinstance(s.style, str) and s.style.meta.get("@click"))
+            assert action == f"app.run_command('/report {run.run_dir.name}')"
+            app.add_text(text, "notice")
+            await pilot.pause()
+            app.action_run_command(f"/report {run.run_dir.name}")
+            await settle(pilot, app)
+            await pilot.pause(0.3)
+            conv = app.query_one("#conversation")
+            report = [w for w in app.query(MdLine) if w.has_class("report")][-1]
+            # its title is on screen, at the top of the conversation
+            assert conv.region.y <= report.region.y < conv.region.y + 3
+
+    drive(go())

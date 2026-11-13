@@ -97,6 +97,7 @@ class Engine:
         self.pool: outward.McpPool | None = None
         self.refused_tools: set[str] = set()  # set to `permission: refuse` in tools.md: never offered
         self.archived: set[str] = set()  # shared files whose pre-run version is in Archive/
+        self._learned: set[str] = set()  # models whose own output maximum was learned in this run
         # So are the shared folders, checked against folders.md when the run was created.
         self.shared = {f["name"]: SharedFolder(f["name"], Path(f["path"]), f["access"])
                        for f in meta.get("folders") or []}
@@ -366,6 +367,17 @@ class Engine:
             output_tokens=out_tokens,
             **({"finish_reason": reply.finish_reason} if reply.finish_reason else {}),
         )
+        client = self._client(spec)
+        learned = getattr(client, "learned_max", None)
+        if learned and spec.name not in self._learned:
+            self._learned.add(spec.name)
+            self.journal.write("harness", "warning",
+                               f"model {spec.name} allows at most {learned:,} output tokens in one reply, fewer than "
+                               f"max_output_tokens ({max_out:,}), so Ombro used {learned:,}. Add "
+                               f"`max_output_tokens: {learned}` under {spec.name} in models.md to say so up front.",
+                               model=spec.name, learned_max=learned)
+        if learned:
+            max_out = min(max_out, learned)
         reply.cut_off = cut_off(reply, max_out)
         self._save_usage()
         return reply

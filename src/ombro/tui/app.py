@@ -295,6 +295,10 @@ class MdLine(Horizontal):
             yield Static(self.mark, classes="mark")
         yield Markdown(self.source, open_links=False)
 
+    def on_markdown_table_of_contents_updated(self, event: Markdown.TableOfContentsUpdated) -> None:
+        """The Markdown has been laid out, so it has its full height: bring it into view."""
+        self.call_after_refresh(self.app.show_line, self)
+
 
 class OmbroApp(App):
     CSS = """
@@ -506,7 +510,18 @@ class OmbroApp(App):
 
     def add_markdown(self, source: str, kind: str, mark: str = "") -> None:
         self.query_one("#messages").mount(MdLine(source, kind, mark))
-        self.call_after_refresh(self._after_line)
+        # A report is brought into view at its top once laid out (MdLine.show_line), not scrolled past.
+        self.call_after_refresh(self.fit_spacer if kind == "report" else self._after_line)
+
+    def show_line(self, line: Widget) -> None:
+        """Once a Markdown line has its full height: a report opens at its top, so you start
+        reading at the title; anything else keeps the conversation at its end."""
+        self.fit_spacer()
+        conv = self.query_one("#conversation")
+        if line.has_class("report"):
+            conv.scroll_to_widget(line, top=True, animate=False)
+        else:
+            conv.scroll_end(animate=False)
 
     def action_run_command(self, command: str) -> None:
         """A click on a command in Ombro's own lines, such as "Read the report"."""

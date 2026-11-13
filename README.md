@@ -252,9 +252,12 @@ check; the report says who the spec named and who else was briefed. Without
 4. The harness validates the result and records it in the journal. An invalid
    result is retried once with a stricter instruction, and then the brief is
    marked failed and the Lead is told. A reply cut off at the output limit
-   (`max_output_tokens`, 8,000 by default; a model in `models.md` can set a
-   lower `max_output_tokens` of its own) is not counted as invalid: the role is
-   told to write less at once, and three in one brief end it.
+   (`max_output_tokens`, 32,000 by default, thinking included for models that
+   think) is not counted as invalid: the role is told to write less at once,
+   and three in one brief end it. Where a model's endpoint allows fewer output
+   tokens, Ombro learns its maximum from the endpoint, uses it, and the report
+   suggests a `max_output_tokens` line for that model in `models.md`. Near a
+   token cap the reply allowance shrinks to what is left.
 5. The Lead briefs again, searches past reports (`memory.search`), or calls
    `finish`.
 6. On finish, or when any limit is reached, delegation stops. The Lead
@@ -453,6 +456,10 @@ providers:
   firecrawl: {key: FIRECRAWL_API_KEY}
 ---
 ```
+
+Without `max_calls`, a run may make 20 searches and 30 fetches through
+Firecrawl, which bills each call, and 60 searches through DuckDuckGo and 100
+direct fetches, which are free. `/tools web.search` changes either.
 
 `max_calls` caps a tool's calls per run, which is also how a service that
 bills in its own units, such as Firecrawl credits, is kept in bounds. Like

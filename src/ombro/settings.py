@@ -296,6 +296,8 @@ def load_limits(
     merged = _layer(copy.deepcopy(LIMITS_META), meta)
     tools = tools if tools is not None else load_tool_settings(home)
     per_tool: dict[str, dict] = {"tool_max_calls": {}}
+    for name in PROVIDER_TOOLS:  # a free provider gets more calls than one that bills for each
+        per_tool["tool_max_calls"][name] = PROVIDER_CALLS.get((name, tools.provider_for(name)), 30)
     for name, cfg in tools.tools.items():
         if "max_calls" in cfg:
             per_tool["tool_max_calls"][name] = cfg["max_calls"]
@@ -312,6 +314,10 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
     "web.fetch": (("firecrawl", "direct", "fake"), "direct"),
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
+# Calls a run may make, by tool and provider, unless tools.md says: fewer where each call is billed.
+PROVIDER_CALLS = {("web.search", "firecrawl"): 20, ("web.fetch", "firecrawl"): 30,
+                  ("web.search", "duckduckgo"): 60, ("web.fetch", "direct"): 100,
+                  ("web.search", "fake"): 20, ("web.fetch", "fake"): 30}
 _TOOL_FIELDS = {"provider", "max_calls", "class", "permission"}
 # Accepted in tools.md from earlier versions, and ignored.
 _RETIRED_TOOL_FIELDS = {"cost_per_call"}
