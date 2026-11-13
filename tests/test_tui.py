@@ -131,7 +131,7 @@ def test_theme_detection():
 def test_slash_filtering():
     from ombro.tui.app import filter_slash
 
-    assert [c for c, _ in filter_slash("/re")] == ["/report", "/remember"]
+    assert [c for c, _ in filter_slash("/re")] == ["/rename", "/report", "/remember"]
     assert [c for c, _ in filter_slash("/")][0] == "/chat"
     assert filter_slash("/zzz") == []
 
@@ -144,7 +144,7 @@ def _app(home, script=None, *, dark=False):
 
     keys.set_key(home, "TEST_MODEL_KEY", "sk-test-INVENTED-0123456789")
     client = ScriptedClient(script or [])
-    return OmbroApp(home, dark=dark, client_factory=lambda spec: client, poll=False), client
+    return OmbroApp(home, dark=dark, client_factory=lambda spec: client, poll=False, titles=False), client
 
 
 def _texts(app):
@@ -624,7 +624,7 @@ def test_new_clears_the_screen_and_the_usage(home):
             await command(pilot, app, "/new")
             await settle(pilot, app)
             texts = "\n".join(_texts(app))
-            assert "Hello there." not in texts and "I've saved the last chat to chats/" in texts
+            assert "Hello there." not in texts and "I've saved the last chat. This is a new chat." in texts
             assert app.usage[0] == 0
 
     drive(go())
@@ -815,3 +815,34 @@ def test_skills_add_imports_after_yes(home, tmp_path):
 
     drive(go())
     assert (home.skills_dir / "kettle-survey" / "SKILL.md").is_file()
+
+
+def test_clicking_read_the_report_opens_it_at_its_top(home, run):
+    from conftest import LEAD_REPORT, write_role
+    from ombro.tui.app import MdLine
+    from ombro.tui.commands import notice_text
+
+    write_role(home, "researcher")
+    long = "## Summary\n" + "\n\n".join(f"Paragraph {i} of an invented summary." for i in range(40)) + \
+        "\n\n## What was done\nIt.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone."
+    run([fake.brief("researcher", "Do it."), fake.result("Done."), fake.finish(), fake.keep_notes(), fake.say(long)])
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            text = notice_text(app, run.run_dir.name)
+            action = next(s.style.meta["@click"] for s in text.spans
+                          if not isinstance(s.style, str) and s.style.meta.get("@click"))
+            assert action == f"app.run_command('/report {run.run_dir.name}')"
+            app.add_text(text, "notice")
+            await pilot.pause()
+            app.action_run_command(f"/report {run.run_dir.name}")
+            await settle(pilot, app)
+            await pilot.pause(0.3)
+            conv = app.query_one("#conversation")
+            report = [w for w in app.query(MdLine) if w.has_class("report")][-1]
+            # its title is on screen, at the top of the conversation
+            assert conv.region.y <= report.region.y < conv.region.y + 3
+
+    drive(go())

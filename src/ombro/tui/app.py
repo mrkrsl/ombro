@@ -27,13 +27,15 @@ from textual.widgets.option_list import Option as ListOption
 from ombro import runs, views
 from ombro.home import Home
 from ombro.tui import look
-from ombro.ui import (YESNO_AGAIN, UI, ChatCleared, Event, Failure, Field, LeadSaid, ModeChanged, Note, Progress,
-                      ProposalShown, Usage, yes_no)
+from ombro.ui import (YESNO_AGAIN, UI, ChatCleared, Event, Failure, Field, LeadSaid, ModeChanged, Note, PastTurn,
+                      Progress, ProposalShown, Usage, yes_no)
 
 # The slash commands (specification 14.1). Each does what its command in section 13 does.
 SLASH = [
     ("/chat", "back to Chat from a brief"),
     ("/new", "save this chat and start a fresh one"),
+    ("/chats", "your past chats; reopen one and carry on"),
+    ("/rename", "give this chat a title"),
     ("/brief", "brief a task: the Lead interviews you for a spec"),
     ("/run", "run a saved spec again"),
     ("/runs", "runs and their status"),
@@ -57,7 +59,7 @@ SLASH = [
     ("/help", "what each command does"),
     ("/quit", "leave Ombro"),
 ]
-CHAT_COMMANDS = ("/chat", "/new", "/brief", "/remember")  # handled by chat itself
+CHAT_COMMANDS = ("/chat", "/new", "/chats", "/rename", "/brief", "/remember")  # handled by chat itself
 TUI_COMMANDS = ("/run", "/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model",
                 "/models",
                 "/keys", "/folder", "/folders", "/limits",
@@ -294,6 +296,10 @@ class MdLine(Horizontal):
             yield Static(self.mark, classes="mark")
         yield Markdown(self.source, open_links=False)
 
+    def on_markdown_table_of_contents_updated(self, event: Markdown.TableOfContentsUpdated) -> None:
+        """The Markdown has been laid out, so it has its full height: bring it into view."""
+        self.call_after_refresh(self.app.show_line, self)
+
 
 class OmbroApp(App):
     CSS = """
@@ -344,9 +350,11 @@ class OmbroApp(App):
 
     BINDINGS = [Binding("ctrl+c", "interrupt", "Stop or leave", priority=True, show=False)]
 
-    def __init__(self, home: Home, *, dark: bool, client_factory=None, poll: bool = True, pace: bool = False):
+    def __init__(self, home: Home, *, dark: bool, client_factory=None, poll: bool = True, pace: bool = False,
+                 titles: bool = True):
         self.dark = dark
         self.pace = pace
+        self.titles = titles  # chats are named after their first exchange
         self.thinking_frame = 0
         self.colours = look.palette(dark)  # before Textual reads the CSS variables
         super().__init__()
@@ -503,7 +511,18 @@ class OmbroApp(App):
 
     def add_markdown(self, source: str, kind: str, mark: str = "") -> None:
         self.query_one("#messages").mount(MdLine(source, kind, mark))
-        self.call_after_refresh(self._after_line)
+        # A report is brought into view at its top once laid out (MdLine.show_line), not scrolled past.
+        self.call_after_refresh(self.fit_spacer if kind == "report" else self._after_line)
+
+    def show_line(self, line: Widget) -> None:
+        """Once a Markdown line has its full height: a report opens at its top, so you start
+        reading at the title; anything else keeps the conversation at its end."""
+        self.fit_spacer()
+        conv = self.query_one("#conversation")
+        if line.has_class("report"):
+            conv.scroll_to_widget(line, top=True, animate=False)
+        else:
+            conv.scroll_end(animate=False)
 
     def action_run_command(self, command: str) -> None:
         """A click on a command in Ombro's own lines, such as "Read the report"."""
@@ -553,6 +572,12 @@ class OmbroApp(App):
         if isinstance(event, ChatCleared):
             self.query_one("#messages").remove_children()
             self.call_after_refresh(self.fit_spacer)
+            return
+        if isinstance(event, PastTurn):  # a reopened chat, shown again
+            if event.who == "you":
+                self.add_line(Note(event.text), "you")
+            else:
+                self.add_markdown(event.text, "lead", "• ")
             return
         if isinstance(event, Usage):
             self.usage = (event.total_tokens, event.max_tokens)
@@ -764,7 +789,7 @@ class OmbroApp(App):
             from ombro.chat import Chat
 
             kw = {"client_factory": self.client_factory} if self.client_factory else {}
-            self.chat = Chat(self.home, ui=self.bridge, **kw)
+            self.chat = Chat(self.home, ui=self.bridge, titles=self.titles, **kw)
         specs_before = len(self.chat.specs)
         go_on = self.chat.handle(text)
         if not go_on:

@@ -1,0 +1,86 @@
+"""Chats have titles, never file names, and a past chat can be reopened to carry on.
+All invented; fake model; no network."""
+
+from __future__ import annotations
+
+from ombro import fake, mdfile, views
+from test_chat import SPEC_ARGS, ChatSession
+
+
+def test_a_chat_is_named_after_its_first_exchange(home):
+    s = ChatSession(home, titles=True)
+    s([fake.say("Happy to help with the teapots."), fake.say("Invented Teapot Makers")], ["Find me teapot makers"])
+    path = s.chat.path
+    assert path.name.startswith("invented-teapot-makers-") and path.is_file()
+    meta, body = mdfile.read(path)
+    assert meta["title"] == "Invented Teapot Makers" and meta["titled_by"] == "model"
+    assert body.startswith("# Invented Teapot Makers")
+    assert not list((home.root / "chats").glob("new-chat-*.md"))  # renamed, not copied
+    assert [c["title"] for c in views.chat_list(home)] == ["Invented Teapot Makers"]
+
+
+def test_a_title_you_set_is_never_replaced(home):
+    s = ChatSession(home, titles=True)
+    s([fake.say("Fine."), fake.say("Something Else")], ["/rename Kettle Research", "Hello"])
+    assert s.chat.title == "Kettle Research" and s.chat.path.name.startswith("kettle-research-")
+    assert "This chat is now called 'Kettle Research'." in s.output
+
+
+def test_a_confirmed_brief_gives_the_chat_its_specs_title(home):
+    s = ChatSession(home)
+    s([fake.call("offer_brief", {"summary": "Find teapot makers"}), fake.call("propose", SPEC_ARGS),
+       fake.say("Saved.")], ["Find me teapot makers", "y", "a", "Thanks"])
+    assert s.chat.title == "Find invented teapot makers" and s.chat.titled_by == "spec"
+
+
+def test_new_names_the_saved_chat_not_its_file(home):
+    s = ChatSession(home)
+    s([fake.say("Hi.")], ["/rename Teapot Talk", "Hello", "/new"])
+    assert "I've saved the last chat, 'Teapot Talk'. This is a new chat." in s.output
+    assert "chats/" not in s.output.split("I've saved the last chat")[1].split("\n")[0]
+
+
+def test_a_past_chat_is_reopened_and_the_lead_gets_the_conversation_again(home):
+    first = ChatSession(home)
+    first([fake.say("There are three invented makers:\n\nAda, Bo\n\nand Cy.")],
+          ["/rename Teapot Makers", "Who makes teapots?"])
+    old = first.chat.path
+
+    second = ChatSession(home)
+    second([fake.say("Ada is the oldest.")], ["/chats", "1", "Which is the oldest?"])
+    assert second.chat.path == old
+    sent = second.client.calls[-1]["messages"]
+    said = [(m["role"], m["content"]) for m in sent if m["role"] in ("user", "assistant")]
+    assert ("user", "Who makes teapots?") in said
+    assert ("assistant", "There are three invented makers:\n\nAda, Bo\n\nand Cy.") in said  # paragraphs kept
+    assert "reopened this chat" in said[-1][1] and said[-1][1].endswith("Which is the oldest?")
+    body = mdfile.read(old)[1]
+    assert body.count("**You (Chat):** Who makes teapots?") == 1 and "Which is the oldest?" in body
+    assert "Lead: There are three invented makers" in second.output  # shown again
+    assert len(list((home.root / "chats").glob("*.md"))) == 1  # no empty chat is left behind
+
+
+def test_old_untitled_chats_are_listed_by_their_date(home):
+    folder = home.root / "chats"
+    folder.mkdir(parents=True, exist_ok=True)
+    mdfile.write(folder / "20261112-090000.md", {"kind": "chat", "started_at": "2026-11-12T09:00:00Z"},
+                 "# Chat\n\n**You (Chat):** Hello\n\n**Lead:** Hi.\n")
+    assert views.chat_list(home)[0]["title"] == "Chat of 12/11/2026"
+
+
+def test_an_interview_transcript_is_named_for_what_it_made(home):
+    s = ChatSession(home)
+    s([fake.call("offer_brief", {"summary": "Find teapot makers"}), fake.call("propose", SPEC_ARGS),
+       fake.say("Saved.")], ["Find me teapot makers", "y", "a", "Thanks"])
+    names = [p.name for p in home.interviews_dir.glob("*.md")]
+    assert any(n.startswith("brief-find-teapots-") for n in names), names
+
+
+def test_the_command_line_lists_chats_by_title(home, capsys):
+    from ombro.cli import main
+
+    s = ChatSession(home)
+    s([fake.say("Hi.")], ["/rename Teapot Talk", "Hello"])
+    assert main(["chats"]) == 0
+    out = capsys.readouterr().out
+    assert "Teapot Talk" in out and ".md" not in out

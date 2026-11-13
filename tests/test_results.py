@@ -90,3 +90,64 @@ def test_the_same_spec_twice_in_a_minute_gets_a_number(home):
     a = runs.create_run(home, ["default"], {"name": "kettles"}, "# Kettles\n", load_limits(home), source="test")
     b = runs.create_run(home, ["default"], {"name": "kettles"}, "# Kettles\n", load_limits(home), source="test")
     assert b.name == a.name + "-2"
+
+
+def test_a_models_own_output_maximum_is_learned_from_its_refusal():
+    import httpx
+
+    from ombro.client import OpenAICompatibleClient, allowed_max_tokens
+
+    assert allowed_max_tokens("Invalid max_tokens value, the valid range of max_tokens is [1, 8192]") == 8192
+    assert allowed_max_tokens("max_tokens must be less than or equal to `16384`") == 16384
+    assert allowed_max_tokens("The model is overloaded") is None
+    asked = []
+
+    def handler(request):
+        import json
+
+        n = json.loads(request.content)["max_tokens"]
+        asked.append(n)
+        if n > 8192:
+            return httpx.Response(400, json={"error": {"message": "Invalid max_tokens value, the valid range of "
+                                                                  "max_tokens is [1, 8192]"}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                                         "usage": {"prompt_tokens": 5, "completion_tokens": 1}})
+
+    c = OpenAICompatibleClient("https://models.invalid/v1", "m", lambda: "sk-test-INVENTED",
+                               transport=httpx.MockTransport(handler))
+    assert c.complete([{"role": "user", "content": "hi"}], max_output_tokens=32000, timeout=10).content == "ok"
+    c.complete([{"role": "user", "content": "again"}], max_output_tokens=32000, timeout=10)
+    assert asked == [32000, 8192, 8192] and c.learned_max == 8192
+
+
+def test_free_providers_get_more_calls_than_billed_ones(home):
+    from ombro import tool_cmd
+    from ombro.settings import load_limits, load_tool_settings
+
+    def calls(tool):
+        return load_limits(home, None, load_tool_settings(home)).max_calls_for(tool)
+
+    assert (calls("web.search"), calls("web.fetch")) == (60, 100)  # DuckDuckGo and direct: free
+    tool_cmd.set_tool(home, "web.search", provider="firecrawl")
+    assert calls("web.search") == 20  # billed per call
+    tool_cmd.set_tool(home, "web.search", max_calls=45)
+    assert calls("web.search") == 45  # what tools.md says wins
+
+
+def test_near_the_cap_the_reply_allowance_shrinks_rather_than_refusing(home):
+    import pytest
+
+    from dataclasses import replace
+
+    from ombro.gate import Gate, LimitReached
+    from ombro.settings import load_limits
+
+    gate = Gate(replace(load_limits(home).for_chat(), max_tokens=50_000), lambda: 0.0)
+    max_out, _ = gate.check_model_call("m", 1_000, None)
+    assert max_out == 32_000  # plenty left: the full allowance
+    gate.record_model_call("m", 30_000, 5_000)
+    max_out, _ = gate.check_model_call("m", 1_000, None)
+    assert max_out == 14_000  # 50,000 - 35,000 - 1,000 left for the reply
+    gate.record_model_call("m", 12_000, 1_500)
+    with pytest.raises(LimitReached):  # under 2,000 left: not worth a call
+        gate.check_model_call("m", 1_000, None)

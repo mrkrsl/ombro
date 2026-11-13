@@ -63,7 +63,8 @@ ombro runs                             # list runs
 ombro status [run_id]                  # limits and usage
 ombro journal [run_id] [--follow]      # the event log, readable; --follow shows new events as they come
 ombro report [run]                     # the final report (any part of the run's name; the latest by default)
-ombro chat                             # talk with the Lead about past work; /brief, /remember, /new inside
+ombro chat [--resume [title]]          # talk with the Lead; /brief, /remember, /new, /chats inside
+ombro chats                            # saved chats by title
 ombro summary                          # who you are, the crew, what is running and waiting, and runs not yet seen
 ombro preferences [edit]               # your name, theme, default crew, editor and outward preset
 ombro stop <run_id>                    # stop a run; it writes its report first
@@ -251,9 +252,12 @@ check; the report says who the spec named and who else was briefed. Without
 4. The harness validates the result and records it in the journal. An invalid
    result is retried once with a stricter instruction, and then the brief is
    marked failed and the Lead is told. A reply cut off at the output limit
-   (`max_output_tokens`, 8,000 by default; a model in `models.md` can set a
-   lower `max_output_tokens` of its own) is not counted as invalid: the role is
-   told to write less at once, and three in one brief end it.
+   (`max_output_tokens`, 32,000 by default, thinking included for models that
+   think) is not counted as invalid: the role is told to write less at once,
+   and three in one brief end it. Where a model's endpoint allows fewer output
+   tokens, Ombro learns its maximum from the endpoint, uses it, and the report
+   suggests a `max_output_tokens` line for that model in `models.md`. Near a
+   token cap the reply allowance shrinks to what is left.
 5. The Lead briefs again, searches past reports (`memory.search`), or calls
    `finish`.
 6. On finish, or when any limit is reached, delegation stops. The Lead
@@ -383,6 +387,14 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   shows it as a diff (the old text is kept as `<name>.previous.md`).
 - **`/new`** saves the chat and starts a fresh one, with its own token cap
   and usage from zero. Nothing from the old one is sent to the Lead.
+- **Titles.** After the first exchange a small model call names the chat in
+  a few words (a confirmed brief gives it the spec's title; `/rename <title>`
+  sets your own, which is kept). The file is named to match:
+  `chats/teapot-makers-20261113-1417.md`.
+- **Carry on.** `/chats` lists past chats by title and reopens one: the
+  conversation is shown again and sent to the Lead, as any conversation is
+  (tool results from before are not kept). `ombro chats` and
+  `ombro chat --resume <part of a title>` do the same on the command line.
 - **`/remember [@crew] <text>`** adds a dated line to a crew's notes.md
   ("From you"); the default crew unless you name one, or `ombro chat --crew
   <name>` sets it for the session. The Lead can offer to remember something
@@ -394,9 +406,8 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   calls for one message. Usage is shown after each reply. Once the
   conversation passes `chat_history_chars` (30,000), the oldest turns are no
   longer sent to the model.
-- **Saved, not remembered.** Each chat is saved in `chats/`. Transcripts are
-  never loaded into a later chat or run and never searched. Only what you
-  chose to remember carries forward.
+- **Saved.** Each chat is saved in `chats/`. Transcripts are never loaded into
+  a run and never searched; only what you chose to remember carries into runs.
 
 In chat and interviews, a line that starts with `"""` begins a block of
 several lines, ended by a line that ends with `"""`, so a pasted paragraph
@@ -494,6 +505,10 @@ providers:
   firecrawl: {key: FIRECRAWL_API_KEY}
 ---
 ```
+
+Without `max_calls`, a run may make 20 searches and 30 fetches through
+Firecrawl, which bills each call, and 60 searches through DuckDuckGo and 100
+direct fetches, which are free. `/tools web.search` changes either.
 
 `max_calls` caps a tool's calls per run, which is also how a service that
 bills in its own units, such as Firecrawl credits, is kept in bounds. Like

@@ -387,7 +387,7 @@ def test_init_holds_the_setup_interview_and_offers_a_role(tmp_path):
     assert "invented bakery" in h.instructions.read_text()
     assert (h.roles_dir("default") / "fact-checker" / "soul.md").is_file()
     assert "sk-test-INVENTED-model" not in json.dumps([c["messages"] for c in client.calls])
-    assert len(list((h.interviews_dir).glob("*-setup.md"))) == 1
+    assert len(list((h.interviews_dir).glob("setup-*.md"))) == 1
 
 
 # -- keeping each interview to its purpose, and showing progress -------------------

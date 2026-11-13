@@ -21,6 +21,9 @@ from typing import Callable
 from ombro.settings import Limits, format_duration
 
 
+MIN_OUTPUT = 2000  # the shortest reply allowance worth a model call; below it, the cap has been reached
+
+
 class LimitReached(Exception):
     """A limit stopped the run. `limit` names it; `detail` says what happened."""
 
@@ -147,6 +150,11 @@ class Gate:
             timeout = self.report_deadline - now
             where = "in the run"
 
+        if token_cap is not None:
+            # Near the cap, the reply may be shorter, never the total longer: the output allowance
+            # shrinks to what is left, down to a floor below which a reply is not worth asking for.
+            left = token_cap - self.usage.total_tokens - est_input
+            max_out = max(min(max_out, left), min(MIN_OUTPUT, max_out))
         worst_tokens = est_input + max_out
         if token_cap is not None and self.usage.total_tokens + worst_tokens > token_cap:
             raise LimitReached(

@@ -42,7 +42,8 @@ def new_run_id(slug: str = "run", n: int = 1) -> str:
     return f"{slug}-{stamp}" + (f"-{n}" if n > 1 else "")
 
 
-_WHEN = re.compile(r"(\d{8})-(\d{4,6})")
+WHEN = re.compile(r"(\d{8})-(\d{4,6})")
+_WHEN = WHEN
 
 
 def run_time(run_dir: Path) -> str:

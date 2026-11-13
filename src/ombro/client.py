@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
@@ -90,6 +91,22 @@ def parse_tool_arguments(raw: Any) -> dict | None:
 RETRYABLE = {408, 409, 429, 500, 502, 503, 504}
 
 
+_RANGE = re.compile(r"\[\s*\d+\s*,\s*(\d{3,7})\s*\]")
+_AT_MOST = re.compile(r"(?:<=|less than or equal to|at most|no more than|maximum(?: value)?(?: of| is)?|up to|"
+                      r"must not exceed|cannot exceed|exceeds?(?: the)?(?: maximum| limit)?(?: of)?)"
+                      r"\s*:?\s*`?(\d{3,7})")
+
+
+def allowed_max_tokens(text: str) -> int | None:
+    """The most output tokens an endpoint says it allows, from its refusal of max_tokens."""
+    low = (text or "").lower()
+    if not re.search(r"max_(?:completion_)?tokens|output tokens|max tokens|completion tokens", low):
+        return None
+    m = _RANGE.search(low) or _AT_MOST.search(low)
+    n = int(m.group(1)) if m else 0
+    return n if n >= 256 else None
+
+
 class OpenAICompatibleClient:
     """POSTs to {endpoint}/chat/completions. The key is fetched on every call."""
 
@@ -112,11 +129,14 @@ class OpenAICompatibleClient:
         self.transport = transport
         self.retries = retries
         self.sleep = sleep
+        self.learned_max: int | None = None  # the most the endpoint allows per reply, learned from its refusal
 
     def complete(self, messages, *, tools=None, max_output_tokens, timeout) -> ModelReply:
         key = self.key_getter()
         if self.key_required and not key:
             raise ModelError("no API key is set for this model; run `ombro init` or set it with `ombro keys set`")
+        if self.learned_max:
+            max_output_tokens = min(int(max_output_tokens), self.learned_max)
         body: dict[str, Any] = {"model": self.model, "messages": messages, "max_tokens": int(max_output_tokens)}
         if tools:
             body["tools"] = tools
@@ -153,10 +173,14 @@ class OpenAICompatibleClient:
                     reply = self._parse(resp, key)
                     reply.lost_attempts = lost
                     return reply
-                err = ModelError(
-                    f"{self.host} returned HTTP {resp.status_code}: {self._error_text(resp, key)}",
-                    status=resp.status_code,
-                )
+                detail = self._error_text(resp, key)
+                allowed = allowed_max_tokens(detail) if resp.status_code in (400, 422) else None
+                if allowed and allowed < body["max_tokens"] and not self.learned_max:
+                    # The endpoint allows fewer output tokens than asked: use its maximum from now on.
+                    self.learned_max = allowed
+                    body["max_tokens"] = allowed
+                    continue
+                err = ModelError(f"{self.host} returned HTTP {resp.status_code}: {detail}", status=resp.status_code)
                 retryable = resp.status_code in RETRYABLE
             if not retryable or attempt >= self.retries:
                 err.lost_attempts = lost

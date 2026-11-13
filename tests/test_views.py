@@ -130,7 +130,7 @@ def test_new_starts_a_fresh_chat(home):
 
     client = ScriptedClient([fake.say("First answer."), fake.say("Second answer.")])
     ui = ScriptedUI([])
-    chat = Chat(home, ui=ui, client_factory=lambda s: client)
+    chat = Chat(home, ui=ui, client_factory=lambda s: client, titles=False)
     assert chat.handle("Something invented.")
     first = chat.path
     assert chat.handle("/new")
