@@ -208,6 +208,11 @@ class Gate:
             raise ToolRefused("max_calls", f"{tool} has used all {cap} calls allowed in this run")
         self.usage.tool_calls[tool] = used + 1
 
+    def forget_reads(self, role: str) -> None:
+        """A role changed files: reading or listing them again is not a loop."""
+        for key in [k for k in self._seen if k[0] == role and k[1] in ("workspace.read", "workspace.list")]:
+            del self._seen[key]
+
     def snapshot(self) -> dict:
         self.usage.elapsed_seconds = round(self.elapsed(), 3)
         d = asdict(self.usage)

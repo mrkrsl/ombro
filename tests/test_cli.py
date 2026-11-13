@@ -200,7 +200,7 @@ def test_init_other_endpoint_without_key(tmp_path):
     assert not any("$" in s for s in said)
 
 
-def test_init_offers_firecrawl_when_a_search_key_is_saved(tmp_path):
+def test_init_asks_no_search_key_and_says_where_tools_are_added(tmp_path):
     home = Home(tmp_path / "fresh")
 
     class Client:
@@ -208,18 +208,15 @@ def test_init_offers_firecrawl_when_a_search_key_is_saved(tmp_path):
             return ModelReply(content="OK")
 
     said = []
-    ask = ScriptedPrompts(["", "1", "deepseek-chat", "y", "n"])
-    secret = ScriptedPrompts(["sk-test-INVENTED-model", "fc-test-INVENTED-search"])
+    ask = ScriptedPrompts(["", "1", "deepseek-chat", "n"])
+    secret = ScriptedPrompts(["sk-test-INVENTED-model"])
     assert run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
-    assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-test-INVENTED-search"
+    assert keys.get_key(home, "FIRECRAWL_API_KEY") is None
     from ombro.settings import load_tool_settings
 
-    tools = load_tool_settings(home)
-    assert tools.provider_for("web.search") == "firecrawl" and tools.provider_for("web.fetch") == "firecrawl"
-    meta, body = mdfile.read(home.tools)
-    assert meta["tools"]["web.search"]["max_calls"] == 20  # other settings kept
-    assert "Which provider backs each tool" in body
-    assert "INVENTED" not in "\n".join(said)
+    assert load_tool_settings(home).provider_for("web.search") == "duckduckgo"
+    shown = "\n".join(said)
+    assert "Web search uses DuckDuckGo" in shown and "/tools" in shown and "Firecrawl" not in shown
 
 
 # -- keys and open ------------------------------------------------------------------

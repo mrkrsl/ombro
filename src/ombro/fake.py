@@ -5,6 +5,7 @@ A script is a list of entries, consumed in order. Each entry is a dict:
     {"content": "text" or {...}}          a reply; a dict is sent as JSON text
     {"tool_calls": [{"name": "brief", "arguments": {...}}]}
     {"usage": {"input": 100, "output": 20}}   token counts to report
+    {"finish_reason": "length"}               a reply cut off at the output limit
     {"times": 5}                          repeat this entry 5 times
     {"error": "message"}                  fail the call with a ModelError
     {"advance": 60}                       move the fake clock on (seconds)
@@ -136,7 +137,8 @@ class ScriptedClient:
             int(u.get("input", estimate_tokens(messages, tools))),
             min(int(u.get("output", out_default)), int(max_output_tokens)),
         )
-        return ModelReply(content=content, tool_calls=calls, usage=usage, finish_reason="stop")
+        return ModelReply(content=content, tool_calls=calls, usage=usage,
+                          finish_reason=entry.get("finish_reason", "stop"))
 
 
 # Small helpers for writing scripts --------------------------------------------

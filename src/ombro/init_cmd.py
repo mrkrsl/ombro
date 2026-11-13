@@ -231,26 +231,16 @@ def connect_model(home: Home, ui: UI, client_factory=make_client) -> tuple[str, 
 
 
 def _offer_search_key(home: Home, ui: UI) -> None:
-    if keys.get_key(home, SEARCH_KEY):
-        ui.say(f"Search key {SEARCH_KEY} is set.")
-    else:
-        value = str(ui.ask(Field("search_key", "Do you want to add a key for Firecrawl, for web search? Paste "
-                                 "it now, or press Enter to skip", "secret")) or "").strip()
-        if not value:
-            ui.say("No problem. For now, web search uses DuckDuckGo (best effort) and pages are fetched directly. "
-                   "You can add a Firecrawl key at any time.")
-            return
-        keys.set_key(home, SEARCH_KEY, value)
-        ui.say("Firecrawl search key saved.", level="done")
+    """No search key is asked for in set-up: web search starts on DuckDuckGo, and one line
+    says where to add better search and other tools later."""
     try:
-        tools = load_tool_settings(home)
+        provider = load_tool_settings(home).provider_for("web.search")
     except (SetupError, mdfile.FrontMatterError):
-        return
-    if all(tools.provider_for(t) == "firecrawl" for t in ("web.search", "web.fetch")):
-        return
-    if ui.yes("firecrawl", "Should your team use Firecrawl for both web search and fetching pages?", True):
-        set_tool_providers(home, {"web.search": "firecrawl", "web.fetch": "firecrawl"})
-        ui.say(f"Great, we'll use Firecrawl for web search and fetching pages. Edit {home.tools} to change it.")
+        provider = "duckduckgo"
+    where = {"duckduckgo": "DuckDuckGo, which is free but best-effort", "firecrawl": "Firecrawl"}.get(
+        provider, provider)
+    ui.say(f"Web search uses {where} for now. You'll probably want to add a search provider of your own, or "
+           "other tools such as email or documents, later on: /tools shows and adds them.", level="lead")
 
 
 def set_tool_providers(home: Home, providers: dict[str, str]) -> None:

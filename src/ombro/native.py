@@ -168,6 +168,7 @@ def _write(args: dict, ctx: ToolContext) -> dict[str, Any]:
     if target.exists() and not target.is_file():
         raise ToolInputError(f"{args['path']} is a folder")
     real = target.resolve()
+    created = not target.exists()
     kept = archive_before_replacing(ctx, target) if mode == "overwrite" else None
     if mode == "append" and real.exists() and real.stat().st_size + len(content.encode()) > FILE_MAX_BYTES:
         raise ToolInputError(f"files in the workspace are limited to {FILE_MAX_BYTES:,} bytes")
@@ -180,6 +181,8 @@ def _write(args: dict, ctx: ToolContext) -> dict[str, Any]:
         raise ToolInputError(f"{args['path']} could not be written: {e.strerror}") from None
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(content)
+    if created and ctx.archived is not None:
+        ctx.archived.add(str(real))  # made in this run: replacing it later keeps nothing older than the run
     out = {"path": _display(ctx, real), "bytes": real.stat().st_size, "mode": mode}
     if kept:
         out["archived"] = f"The version before this one is kept in {kept}."

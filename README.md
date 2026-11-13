@@ -62,7 +62,7 @@ ombro run --spec my-spec.md --detach   # keeps going after the terminal closes
 ombro runs                             # list runs
 ombro status [run_id]                  # limits and usage
 ombro journal [run_id] [--follow]      # the event log, readable; --follow shows new events as they come
-ombro report [run_id]                  # the final report; marks the run as seen
+ombro report [run]                     # the final report (any part of the run's name; the latest by default)
 ombro chat                             # talk with the Lead about past work; /brief, /remember, /new inside
 ombro summary                          # who you are, the crew, what is running and waiting, and runs not yet seen
 ombro preferences [edit]               # your name, theme, default crew, editor and outward preset
@@ -140,7 +140,8 @@ The `/` commands do what their `ombro` commands do:
   confirmed, it offers to run the spec at once, in the background.
 - `/run [spec]`: run a saved spec again, with no interview (no name: choose
   from the saved specs, newest first).
-- `/runs`, `/report [run_id]` (deliverables as links that open the file),
+- `/runs`, `/report [run]` (the summary, deliverables and decisions, with every
+  file the run made as a link; `/report <run> full` adds Ombro's record),
   `/stop <run_id>`, `/open [run_id]`.
 - `/outbox`, `/outbox show | approve | decline <ref>...`,
   `/outbox resolve <ref> sent | not-sent`; decisions work while a run is going.
@@ -243,10 +244,14 @@ check; the report says who the spec named and who else was briefed. Without
 1. Ombro loads the Lead, the roles of the crews the spec names, the limits,
    the spec and those crews' memory (see Memory).
 2. The Lead decides whom to brief and with what (`brief`), one role at a time.
-3. The role works within its own step limit and returns a structured result.
+3. The role works within its own step limit and hands in a structured result
+   with `submit_result`.
 4. The harness validates the result and records it in the journal. An invalid
    result is retried once with a stricter instruction, and then the brief is
-   marked failed and the Lead is told.
+   marked failed and the Lead is told. A reply cut off at the output limit
+   (`max_output_tokens`, 8,000 by default; a model in `models.md` can set a
+   lower `max_output_tokens` of its own) is not counted as invalid: the role is
+   told to write less at once, and three in one brief end it.
 5. The Lead briefs again, searches past reports (`memory.search`), or calls
    `finish`.
 6. On finish, or when any limit is reached, delegation stops. The Lead
@@ -256,6 +261,17 @@ check; the report says who the spec named and who else was briefed. Without
    writes the report from the journal.
 7. The harness adds one line for the run to the `memory/index.md` of each
    crew the spec names.
+
+A run is named for its spec, then when it started:
+`teapot-survey-20261113-1301`. Commands that take a run take any part of its
+name (`ombro report teapot`), or the latest run by default.
+
+The report reads as a report: the task's title and a status line in words,
+then a short summary, the deliverables (in the workspace or a shared folder),
+decisions for you, and what was and was not done. Ombro's own record follows
+after a divider: the run's facts, the briefs, outward actions, code, shared
+folders, flagged material, the changes to each crew's notes, and usage. The
+terminal interface shows reports and the Lead's words as Markdown.
 
 ## Memory
 

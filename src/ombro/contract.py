@@ -83,6 +83,37 @@ def validate_text(text: str | None) -> tuple[dict | None, list[str]]:
     return data, []
 
 
+SUBMIT_NAME = "submit_result"
+SUBMIT_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": SUBMIT_NAME,
+        "description": "Hand in your result for this brief. This ends the brief. Keep it short: put long content "
+                       "in a workspace file and give its path as a deliverable.",
+        "parameters": RESULT_SCHEMA,
+    },
+}
+
+CUT_OFF_INSTRUCTION = (
+    "Your last reply was cut off because it reached the output limit for one reply, so none of it was used "
+    "(a tool call in it was not run). Write less in one reply: write a long file in parts (workspace.write with "
+    "mode append), and keep your result short, with long content in a workspace file given by path. Then carry on."
+)
+
+
+def validate_value(data: Any) -> tuple[dict | None, list[str]]:
+    """Return (result, []) if `data` (submit_result's arguments) is a valid result, else (None, errors)."""
+    if not isinstance(data, dict):
+        return None, ["the arguments were not a JSON object"]
+    errors = []
+    for err in sorted(_validator.iter_errors(data), key=lambda e: list(e.path)):
+        where = "/".join(str(p) for p in err.path) or "the result"
+        errors.append(f"{where}: {err.message}")
+    if errors:
+        return None, errors[:10]
+    return data, []
+
+
 def retry_instruction(errors: list[str]) -> str:
     listed = "\n".join(f"- {e}" for e in errors)
     return (

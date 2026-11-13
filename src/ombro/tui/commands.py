@@ -46,6 +46,35 @@ def spec_view(home, spec: dict[str, Any]) -> str:
     return "; ".join(parts) + "."
 
 
+RECORD_MARK = "\n# Ombro's record"
+
+
+def report_markdown(r: dict[str, Any], full: bool = False) -> str:
+    """A report as the terminal shows it: the part you read (summary, deliverables, decisions,
+    what was and was not done), then every file the run made as a link, and links to the full
+    report and to Ombro's record. `full` adds the record itself."""
+    from urllib.parse import quote
+
+    text = r["report"].rstrip()
+    head, _, record = text.partition("\n---\n" + RECORD_MARK.lstrip("\n"))
+    if not record:
+        head, _, record = text.partition(RECORD_MARK)
+    out = [head.rstrip()]
+    made = [d for d in r["deliverables"] if d["kind"] != "other"]
+    if made:
+        out += ["", "**Open what the run made:**", ""]
+        for d in made:
+            label = d["name"] + ("" if d["kind"] == "deliverable" else f" ({d['kind']} in a shared folder)")
+            out.append(f"- [{label}]({d['url']})" + ("" if d["exists"] else " (no longer there)"))
+    report_url = Path(r["report_path"]).as_uri()
+    rid = quote(str(r["run_id"]))
+    out += ["", f"[Open the full report]({report_url}) · "
+                + (f"[Show Ombro's record](ombro:report/{rid}/full)" if not full else "Ombro's record is below.")]
+    if full and record:
+        out += ["", "---", "", "# Ombro's record" + record]
+    return "\n".join(out) + "\n"
+
+
 class Commands:
     def __init__(self, app: "OmbroApp"):
         self.app = app
@@ -165,6 +194,9 @@ class Commands:
             return None
 
     def cmd_report(self, words: list[str], rest: str) -> None:
+        full = bool(words) and words[-1].lower() == "full"
+        if full:
+            words = words[:-1]
         run_dir = self._find_run(words)
         if run_dir is None:
             return
@@ -172,7 +204,7 @@ class Commands:
         if r["report"] is None:
             self.say(f"Run {run_dir.name} has no report yet (status {r['status']}).")
             return
-        self.rich(self.report_text(r), "report")
+        self.app.call_from_thread(self.app.add_markdown, report_markdown(r, full), "report")
         runs.mark_seen(run_dir)
 
     def report_text(self, r: dict[str, Any]) -> Text:
@@ -588,7 +620,9 @@ def notice_text(app: "OmbroApp", run_id: str) -> Text:
     if r["waiting"]:
         n = r["waiting"]
         out.append(f"{_n(n, 'action')} {'is' if n == 1 else 'are'} waiting for your OK: /outbox\n", style=p.text)
-    out.append(f"Read the report with /report {run_id}", style=p.muted)
+    out.append("Read the report", Style(color=p.text, underline=True, bold=True,
+                                         meta={"@click": f"app.run_command({'/report ' + run_id!r})"}))
+    out.append(f"  (or type /report {run_id})", style=p.muted)
     return out
 
 

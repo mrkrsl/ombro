@@ -271,7 +271,8 @@ def test_only_workspace_files_are_listed_as_deliverables(run, home):
     assert f"- list (researcher): {ws / 'list.md'}" in deliverables
     assert "list again" not in deliverables
     assert f"Working files (scratch/, not deliverables): {sc / 'draft.md'} (researcher)" in deliverables
-    assert "### Notes from roles\n\n- remark (researcher): The makers all close on Sundays." in deliverables
+    notes = "Notes roles gave in place of a file:\n- remark (researcher): The makers all close on Sundays."
+    assert notes in deliverables
     assert f"no role named as a deliverable:\n- {ws / 'forgotten.md'}" in deliverables
 
 

@@ -466,6 +466,7 @@ class ModelSpec:
     endpoint: str | None = None
     key: str | None = None
     script: str | None = None
+    max_output_tokens: int | None = None  # the most this model may write in one reply, if less than the limit
 
 
 def load_models(home: Home) -> dict[str, ModelSpec]:
@@ -501,6 +502,7 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
             endpoint=entry.get("endpoint"),
             key=entry.get("key") or None,
             script=entry.get("script"),
+            max_output_tokens=int(entry["max_output_tokens"]) if entry.get("max_output_tokens") else None,
         )
 
     return {name: resolve(name) for name in raw}

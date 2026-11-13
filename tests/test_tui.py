@@ -148,9 +148,11 @@ def _app(home, script=None, *, dark=False):
 
 
 def _texts(app):
-    from ombro.tui.app import Line
+    """Every line in the conversation, in order: plain lines as drawn, Markdown lines
+    (the Lead's words, reports) as their mark and source."""
+    from ombro.tui.app import Line, MdLine
 
-    return [str(w.render()) for w in app.query(Line)]
+    return [w.mark + w.source if isinstance(w, MdLine) else str(w.render()) for w in app.query("Line, MdLine")]
 
 
 def _screen(app) -> str:
@@ -310,7 +312,6 @@ def test_a_fresh_home_is_set_up_inside_the_interface(home):
             assert app.query_one("#secret").display and not app.query_one("#input").display
             await answer(pilot, app, "sk-test-INVENTED-0123456789")
             await answer(pilot, app, "")  # the endpoint lists no models here: the suggested name
-            await answer(pilot, app, "")  # no search key
             await answer(pilot, app, "n")  # no set-up interview now
             for _ in range(100):
                 await pilot.pause(0.05)
@@ -463,7 +464,7 @@ def test_runs_and_report_commands(home, run):
             assert any(run.run_dir.name in t and "completed" in t for t in _texts(app))
             await command(pilot, app, "/report")
             await settle(pilot, app)
-            assert any("# Report:" in t and "Workspace:" in t for t in _texts(app))
+            assert any("## Summary" in t and "Workspace:" in t for t in _texts(app))
 
     drive(go())
     assert run.meta.get("seen_at")
@@ -632,19 +633,21 @@ def test_new_clears_the_screen_and_the_usage(home):
 def test_switching_theme_redraws_lines_already_shown(home):
     from ombro.tui import look
 
-    app, _ = _app(home, [fake.say("A legible reply.")])
+    from ombro.ui import Failure
+
+    app, _ = _app(home)
 
     async def go():
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            await command(pilot, app, "Hi")
-            await settle(pilot, app)
+            app.add_line(Failure("A legible reply."), "error")  # drawn in the light theme's colours
+            await pilot.pause()
             app.set_dark(True)
             await pilot.pause()
             from ombro.tui.app import Line
 
             reply = next(w for w in app.query(Line) if "A legible reply." in w.text.plain)
-            colours = {str(s.style).lower() for s in reply.text.spans}
+            colours = {str(s.style).lower() for s in reply.text.spans} | {str(reply.text.style).lower()}
             assert any(look.DARK.text.lower() in c for c in colours)
             assert not any(look.LIGHT.text.lower() in c for c in colours)
 
@@ -721,3 +724,34 @@ def test_slash_run_offers_a_saved_spec_again(home, monkeypatch):
 
     drive(go())
     assert started == ["old-task"]
+
+
+def test_the_leads_words_and_reports_render_as_markdown(home, run):
+    from conftest import LEAD_REPORT, write_role
+    from ombro.tui.app import MdLine
+
+    write_role(home, "researcher")
+    run([fake.brief("researcher", "Do it."), fake.result("Done."), fake.finish(), fake.keep_notes(),
+         fake.say("## Summary\nAll **done**.\n\n## What was done\nIt.\n\n## What was not done and why\nNothing."
+                  "\n\n## Decisions for you\nNone.")])
+    app, _ = _app(home, [fake.say("Here is **bold** and a list:\n\n- one\n- two")])
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "Hi")
+            await settle(pilot, app)
+            lead = [w for w in app.query(MdLine) if "bold" in w.source][0]
+            await pilot.pause()
+            shown = " ".join(str(b.render()) for b in lead.query("MarkdownBlock"))
+            assert "**" not in shown and "bold" in shown  # rendered, not raw asterisks
+            await command(pilot, app, f"/report {run.run_dir.name}")
+            await settle(pilot, app)
+            report = [w for w in app.query(MdLine) if "## Summary" in w.source][-1].source
+            assert "Open the full report" in report and "# Ombro's record" not in report
+            assert f"ombro:report/{run.run_dir.name}/full" in report
+            await command(pilot, app, f"/report {run.run_dir.name} full")
+            await settle(pilot, app)
+            assert "# Ombro's record" in [w for w in app.query(MdLine) if "## Summary" in w.source][-1].source
+
+    drive(go())

@@ -41,6 +41,7 @@ class ModelReply:
     usage: Usage = field(default_factory=lambda: Usage(0, 0, True))
     finish_reason: str | None = None
     lost_attempts: int = 0  # earlier attempts at this call that timed out and were tried again
+    cut_off: bool = False  # it reached the output limit, so its text or a tool call is incomplete
 
     def as_message(self) -> dict[str, Any]:
         msg: dict[str, Any] = {"role": "assistant", "content": self.content if self.content is not None else ""}

@@ -46,6 +46,17 @@ def _tool_message(call_id: str, payload: Any, src: str | None = None) -> dict[st
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 
 
+def cut_off(reply: ModelReply, max_out: int) -> bool:
+    """A reply that stopped because it reached the output limit: its text or a tool call's
+    arguments are incomplete."""
+    if reply.finish_reason == "length":
+        return True
+    if reply.finish_reason is None and not reply.usage.estimated and reply.usage.output_tokens >= max_out:
+        return any(tc.arguments is None for tc in reply.tool_calls) or (
+            not reply.tool_calls and contract.validate_text(reply.content)[0] is None)
+    return False
+
+
 # Tools whose results carry nothing from outside: the harness's own confirmations.
 NOT_MATERIAL = {"workspace.write", "workspace.set_aside", "workspace.place"}
 
@@ -330,6 +341,8 @@ class Engine:
     ) -> ModelReply:
         spec = self.models[role.model]
         est = estimate_tokens(messages, tools)
+        if spec.max_output_tokens:
+            max_output = min(max_output or spec.max_output_tokens, spec.max_output_tokens)
         max_out, timeout = self.gate.check_model_call(spec.name, est, max_output)
         try:
             reply = self._client(spec).complete(messages, tools=tools, max_output_tokens=max_out, timeout=timeout)
@@ -351,7 +364,9 @@ class Engine:
             model=spec.name,
             input_tokens=in_tokens,
             output_tokens=out_tokens,
+            **({"finish_reason": reply.finish_reason} if reply.finish_reason else {}),
         )
+        reply.cut_off = cut_off(reply, max_out)
         self._save_usage()
         return reply
 
@@ -519,9 +534,48 @@ class Engine:
 
     def _role_loop(self, role: Role, messages: list[dict], schemas: list[dict], by_wire: dict[str, Tool]) -> dict:
         invalid = 0
+        cut = 0
+        tools = (schemas or []) + [contract.SUBMIT_TOOL]
         while True:
-            reply = self._model_call(role, messages, schemas or None)
+            reply = self._model_call(role, messages, tools)
             messages.append(reply.as_message())
+            if getattr(reply, "cut_off", False):
+                # Cut off at the output limit: nothing in the reply can be used. Say so plainly, so the role
+                # writes less at once, rather than calling it an invalid result (journal of the first real run).
+                cut += 1
+                self.journal.write(role.name, "reply_cut_off", f"the reply reached the output limit "
+                                   f"({self.gate.limits.max_output_tokens:,} tokens) and was cut off", attempt=cut)
+                for tc in reply.tool_calls:
+                    messages.append(_tool_message(tc.id, {"error": "not run: your reply was cut off before this "
+                                                          "call was complete"}))
+                if cut >= 3:
+                    reason = "its replies were cut off at the output limit three times"
+                    self.journal.write(role.name, "returned", reason, status="failed", reason=reason)
+                    return {"status": "failed", "role": role.name, "reason": reason + ". Brief it with a smaller "
+                            "piece of work, or one that writes long text to a file in parts."}
+                messages.append({"role": "user", "content": contract.CUT_OFF_INSTRUCTION})
+                continue
+            submitted = [tc for tc in reply.tool_calls if tc.name == contract.SUBMIT_NAME]
+            if submitted:
+                tc = submitted[0]
+                for other in reply.tool_calls:
+                    if other is not tc:
+                        messages.append(_tool_message(other.id, {"error": "not run: submit_result ends the brief"}))
+                result, errors = contract.validate_value(tc.arguments)
+                if result is not None:
+                    messages.append(_tool_message(tc.id, {"ok": True}))
+                    self.journal.write(role.name, "returned", _short(result["summary"]), status="ok", result=result)
+                    if result.get("journal_note"):
+                        self.journal.write(role.name, "note", _short(result["journal_note"], 300))
+                    return {"status": "ok", "result": result}
+                messages.append(_tool_message(tc.id, {"error": "not accepted: " + "; ".join(errors)}))
+                invalid += 1
+                self.journal.write(role.name, "result_invalid", _short("; ".join(errors), 300), attempt=invalid)
+                if invalid >= 2:
+                    reason = "returned an invalid result twice: " + _short("; ".join(errors), 400)
+                    self.journal.write(role.name, "returned", reason, status="failed", reason=reason)
+                    return {"status": "failed", "role": role.name, "reason": reason}
+                continue
             if reply.tool_calls:
                 for tc in reply.tool_calls:
                     out = self._role_tool(role, tc, by_wire)
@@ -590,6 +644,8 @@ class Engine:
             self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
             return {"error": f"{type(e).__name__}: {e}"}
         self.journal.write(role.name, "tool_call", f"{name} {args_note}", tool=name)
+        if name in ("workspace.write", "workspace.set_aside", "workspace.place", "code.run"):
+            self.gate.forget_reads(role.name)  # reading a changed file again is not a loop
         return out if out is not None else {"ok": True}
 
     def _outward_call(self, role: Role, tool: Tool, arguments: dict) -> dict[str, Any]:

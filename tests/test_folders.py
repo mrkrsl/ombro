@@ -429,3 +429,18 @@ def test_approving_a_placement_copies_only_the_file_kept_with_it(run, home, user
         outbox.approve(home, outbox.load(a.path))
     assert not (user / "Documents" / "Reports" / "spec.md").exists()
     assert outbox.load(a.path).status == "pending"
+
+
+def test_a_deliverable_in_a_shared_folder_is_listed_with_its_full_path(run, home, user):
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    write_role(home, "researcher", max_steps=10, tools=["workspace.write"])
+    run([
+        fake.brief("researcher", "Write the colour note into the photos folder."),
+        fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
+        fake.result("Wrote the note.", deliverables=[{"name": "Colour note", "path": "shared/photos/colour.md"}]),
+        fake.finish(), fake.keep_notes(), LEAD_REPORT,
+    ], spec_meta={"folders": ["photos"]})
+    report = run.report
+    deliverables = report.split("## Deliverables", 1)[1].split("\n## ", 1)[0]
+    assert f"- Colour note (researcher): {user / 'Pictures' / 'Trip' / 'colour.md'}" in deliverables
+    assert "could not be found" not in deliverables

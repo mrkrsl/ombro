@@ -245,7 +245,7 @@ class Chat:
             roles = sorted(p.name for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")) \
                 if rdir.is_dir() else []
             all_runs = runs.all_runs(self.home, c)
-            latest = all_runs[-1].name[:8] if all_runs else ""
+            latest = runs.run_time(all_runs[-1])[:8] if all_runs else ""
             when = f", latest {latest[:4]}-{latest[4:6]}-{latest[6:8]}" if latest else ""
             mark = ", the default crew" if c == self.crew else ""
             lines.append(f"- the {crew_title(self.home, c)} (crew name `{c}` for tools{mark}): "

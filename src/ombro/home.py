@@ -138,7 +138,7 @@ class Home:
 
 LIMITS_META = {
     "allowance": "moderate",
-    "max_output_tokens": 4000,
+    "max_output_tokens": 8000,
     "report_reserve": 0.10,
     "loop_threshold": 3,
     "max_steps": {"lead": 6, "specialist": 15, "helper": 8},
@@ -261,6 +261,8 @@ endpoints. Any OpenAI-compatible chat endpoint with tool calling works.
 
 - api: `openai` for an OpenAI-compatible endpoint, or `fake` for a scripted
   model used in tests and dry runs (`script:` names a JSON file of replies).
+- max_output_tokens (optional): the most this model may write in one reply,
+  where its endpoint allows less than max_output_tokens in limits.md.
 - key: the name of the variable in secrets/keys.env that holds the API key. Keys never go in this file.
 - A name can point at another name, as `cheap: default` does.
 """

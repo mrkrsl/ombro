@@ -130,18 +130,22 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
 
     workspace = area_path(run_dir, "workspace")
     scratch = area_path(run_dir, "scratch")
+    # A deliverable may be a file in a folder shared with the run: shared/<name>/...
+    shared = {str(x.get("name")): Path(str(x.get("path"))) for x in meta.get("folders") or []
+              if isinstance(x, dict) and x.get("name") and x.get("path")}
     # Only files in workspace/ are deliverables. Working files in scratch/ and
     # inline notes are listed apart, so the list says what the run produced.
     deliverables, working, inline, missing = [], [], [], []
     seen: set[str] = set()
     for b in briefs:
         for d in (b.get("result") or {}).get("deliverables") or []:
-            entry = {"role": b["role"], **_resolve_deliverable(run_dir, d)}
+            entry = {"role": b["role"], **_resolve_deliverable(run_dir, d, shared)}
             if entry.get("path"):
                 if entry["path"] in seen:
                     continue
                 seen.add(entry["path"])
-                (working if Path(entry["path"]).is_relative_to(scratch) else deliverables).append(entry)
+                (working if not entry.get("shared") and Path(entry["path"]).is_relative_to(scratch)
+                 else deliverables).append(entry)
             elif entry.get("missing"):
                 missing.append(entry)
             elif str(entry.get("inline") or "").strip():
@@ -155,6 +159,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     in_progress = briefs[-1] if briefs and briefs[-1]["status"] == "in_progress" else None
     return {
         "run_id": meta.get("run_id", run_dir.name),
+        "run_dir": str(run_dir),
         "crew": ", ".join(str(c) for c in meta.get("crews") or []),
         "status": status,
         "brief": meta.get("brief", ""),
@@ -216,10 +221,19 @@ def _still_waiting(f: dict[str, Any], staged: list[dict]) -> tuple[list[dict], l
 DECIDED = {"executed": "approved and done", "declined": "declined", "failed": "approved, but it failed"}
 
 
-def _resolve_deliverable(run_dir: Path, d: dict) -> dict[str, Any]:
-    """A deliverable's path may be `workspace/x`, `scratch/x` or plain `x` (in the
-    workspace). Anything that leads outside those folders is treated as inline text."""
+def _resolve_deliverable(run_dir: Path, d: dict, shared: dict[str, Path] | None = None) -> dict[str, Any]:
+    """A deliverable's path may be `workspace/x`, `scratch/x`, plain `x` (in the
+    workspace) or `shared/<name>/x` in a folder shared with the run. Anything that
+    leads outside those folders is treated as inline text."""
     name, path = str(d.get("name", "")), str(d.get("path", ""))
+    if path.startswith("shared/") and "\n" not in path and len(path) < 600:
+        parts = path.split("/")
+        root = (shared or {}).get(parts[1]) if len(parts) > 2 else None
+        if root is not None and ".." not in parts:
+            candidate = root.joinpath(*parts[2:])
+            if candidate.is_file() and not candidate.is_symlink() and candidate.resolve().is_relative_to(root):
+                return {"name": name, "path": str(candidate), "inline": None, "shared": True}
+            return {"name": name, "path": None, "inline": None, "missing": path}
     if path and "\n" not in path and len(path) < 300 and not path.startswith(("/", "~")):
         first = path.split("/", 1)[0]
         area = first if first in ("workspace", "scratch") and "/" in path else "workspace"
@@ -323,8 +337,17 @@ def mechanical_narrative(facts: dict[str, Any]) -> str:
         not_done.append(f"- The run was stopped by `{facts['limit']['limit']}`: {facts['limit']['detail']}")
     for f in facts["failures"]:
         not_done.append(f"- The run failed: {f}")
+    if facts.get("finish") and facts["finish"].get("summary"):
+        summary = _short(" ".join(str(facts["finish"]["summary"]).split()), 900)
+    elif facts["limit"]:
+        summary = f"The run stopped on its `{facts['limit']['limit']}` limit before it finished."
+    else:
+        summary = f"The run ended {facts['status'].replace('_', ' ')}."
     return "\n".join(
         [
+            "## Summary",
+            summary,
+            "",
             "## What was done",
             "\n".join(done) or "No role completed a brief.",
             "",
@@ -351,11 +374,76 @@ def _clean_narrative(text: str) -> str:
 # Rendering
 
 
+STATUS_WORDS = {"completed": "Completed", "stopped_by_limit": "Stopped early", "failed": "Failed",
+                "insufficient_brief": "Not started: the brief was insufficient", "running": "Still running"}
+READER_SECTIONS = ("Summary", "What was done", "What was not done and why", "Decisions for you")
+
+
+def _sections(narrative: str) -> tuple[dict[str, str], str]:
+    """The Lead's account by heading, and anything under headings it was not asked for."""
+    found: dict[str, list[str]] = {}
+    extra: list[str] = []
+    current: list[str] | None = None
+    for line in _clean_narrative(narrative).splitlines():
+        if line.startswith("## "):
+            title = line[3:].strip()
+            if title in READER_SECTIONS:
+                current = found.setdefault(title, [])
+                continue
+            current = extra
+        if current is None:
+            current = extra
+        current.append(line)
+    return {k: "\n".join(v).strip() for k, v in found.items()}, "\n".join(extra).strip()
+
+
 def render(facts: dict[str, Any], narrative: str | None, note: str | None = None) -> str:
+    """The report: what the user reads first (summary, deliverables, decisions, what was and
+    was not done), then Ombro's own record of the run (specification 12)."""
     f = facts
     lim = f["limits"]
     sp = f["usage"]
-    out = [f"# Report: {f['run_id']}", ""]
+    title = runs.first_line(f["spec"], 100) or f"Run {f['run_id']}"
+    out = [f"# {title}", ""]
+    status = STATUS_WORDS.get(f["status"], f["status"])
+    if f["limit"]:
+        status += f": the `{f['limit']['limit']}` limit was reached"
+    when = (f.get("finished_at") or "")[:10]
+    out.append(f"**{status}.** {when} · run `{f['run_id']}` · {f['crew']}")
+    for fail in f["failures"]:
+        out.append(f"\n**Failed:** {fail}")
+    out.append("")
+
+    parts, extra = _sections(narrative or mechanical_narrative(f))
+    if not parts.get("Summary") and f.get("finish"):
+        parts["Summary"] = _short(" ".join(str(f["finish"]["summary"] or "").split()), 900)
+    out += ["## Summary", "", parts.get("Summary") or "No summary was written.", ""]
+    if not narrative:
+        out += [f"_This report was written by the harness from the journal{': ' + note if note else ''}._", ""]
+
+    out += ["## Deliverables", ""]
+    if not f["deliverables"] and not f.get("missing_deliverables"):
+        out.append("None.")
+    for d in f["deliverables"]:
+        out.append(f"- {d['name']} ({d['role']}): {d['path']}")
+    for d in f.get("missing_deliverables") or []:
+        out.append(f"- {d['name']} ({d['role']}): {d['missing']} was named but could not be found")
+    other = f.get("other_files") or []
+    if other:
+        out += ["", "Other files in the workspace that no role named as a deliverable:"]
+        out += [f"- {p}" for p in other[:20]]
+        if len(other) > 20:
+            out.append(f"- and {len(other) - 20} more")
+    out += ["", f"Workspace: {f['workspace']}", ""]
+
+    for heading in ("Decisions for you", "What was done", "What was not done and why"):
+        out += [f"## {heading}", "", parts.get(heading) or "None recorded.", ""]
+    if extra:
+        out += ["## The Lead's other notes", "", extra, ""]
+
+    out += ["---", "", "# Ombro's record", "",
+            "What follows is Ombro's own record of the run, from its journal, for checking.", ""]
+    out += ["## The run", ""]
     out.append(f"- **Status:** {f['status']}")
     out.append(f"- **{'Crews' if ', ' in f['crew'] else 'Crew'}:** {f['crew']}")
     out.append(f"- **Started:** {f['started_at']}")
@@ -369,17 +457,9 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         if len(" ".join(str(f["finish"]["summary"] or "").split())) > CLOSING_NOTE_CAP:
             note_text += " (shortened; the full note is in the journal)"
         out.append(f"- **Lead's closing note ({f['finish']['outcome']}):** {note_text}")
-    out += ["", "## What was asked", ""]
-    out += ["> " + line if line else ">" for line in _short(f["spec"], 4000).splitlines()]
+    out += ["", "## What was asked", "", f"{title}. The full spec: {f['run_dir']}/spec.md"]
     if f["source"]:
         out += ["", f"_Source: {f['source']}_"]
-    out.append("")
-
-    if narrative:
-        out.append(_clean_narrative(narrative))
-    else:
-        out.append(mechanical_narrative(f))
-        out += ["", f"_This part was written by the harness from the journal{': ' + note if note else ''}._"]
     out.append("")
 
     out += ["## Briefs (harness record)", ""]
@@ -400,28 +480,13 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
             out.append(f"Also briefed, outside the spec's roles: {', '.join(others)}. The Lead's account says why.")
         if unused:
             out.append(f"Not briefed, though the spec named them: {', '.join(unused)}.")
-    out.append("")
-
-    out += ["## Deliverables", ""]
-    if not f["deliverables"] and not f.get("other_files") and not f.get("missing_deliverables"):
-        out.append("None.")
-    for d in f["deliverables"]:
-        out.append(f"- {d['name']} ({d['role']}): {d['path']}")
-    for d in f.get("missing_deliverables") or []:
-        out.append(f"- {d['name']} ({d['role']}): {d['missing']} was named but is not in the workspace")
-    other = f.get("other_files") or []
-    if other:
-        out += ["", "Other files in the workspace that no role named as a deliverable:"]
-        out += [f"- {p}" for p in other[:20]]
-        if len(other) > 20:
-            out.append(f"- and {len(other) - 20} more")
     if f.get("working_files"):
         out += ["", "Working files (scratch/, not deliverables): "
                 + ", ".join(f"{d['path']} ({d['role']})" for d in f["working_files"])]
     if f.get("inline_notes"):
-        out += ["", "### Notes from roles", ""]
+        out += ["", "Notes roles gave in place of a file:"]
         out += [f"- {d['name']} ({d['role']}): {_line(d['inline'], 300)}" for d in f["inline_notes"]]
-    out += ["", f"Workspace: {f['workspace']}", ""]
+    out.append("")
 
     out += ["## Outward actions", "", *outbox_lines(f), ""]
     if f.get("code_runs"):
@@ -433,7 +498,9 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
             out += [f"- {x}" for x in f["set_aside"]] + [""]
     if f.get("material_flags") or f.get("tainted_staged"):
         out += ["## Material", "", *material_lines(f), ""]
-    out += ["## Changes to notes.md", "", *all_notes_lines(f.get("notes")), ""]
+    out += ["## Changes to notes.md", "",
+            "Lessons the Lead kept in the crew's notes for future runs: housekeeping, not results.", "",
+            *all_notes_lines(f.get("notes")), ""]
 
     out += ["## Usage", ""]
     cap_tokens = lim.get("max_tokens")

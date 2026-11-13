@@ -21,7 +21,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widget import Widget
 from textual.message import Message
-from textual.widgets import Input, OptionList, Static, TextArea
+from textual.widgets import Input, Markdown, OptionList, Static, TextArea
 from textual.widgets.option_list import Option as ListOption
 
 from ombro import runs, views
@@ -263,6 +263,37 @@ class Line(Static):
         self.update(self.text)
 
 
+class MdLine(Horizontal):
+    """A line written in Markdown (the Lead's words, a report): headings, bold, lists,
+    quotes, code and links, in the theme's colours. `source` keeps the text."""
+
+    DEFAULT_CSS = """
+    MdLine { height: auto; margin: 1 0 0 0; padding: 0 1; }
+    MdLine > .mark { width: 2; color: $ombro-muted; }
+    MdLine > Markdown { width: 1fr; height: auto; margin: 0; padding: 0; background: $ombro-bg;
+                        color: $ombro-text; }
+    MdLine MarkdownBlock { color: $ombro-text; }
+    MdLine MarkdownParagraph { margin: 0 0 1 0; }
+    MdLine MarkdownHeader { margin: 1 0 0 0; padding: 0; content-align: left top; text-align: left; }
+    MdLine MarkdownBlockQuote { background: $ombro-bg; border-left: wide $ombro-dim; margin: 0 0 1 0; }
+    MdLine MarkdownFence { background: $ombro-bg; margin: 0 0 1 0; }
+    MdLine MarkdownBulletList, MdLine MarkdownOrderedList { margin: 0 0 1 0; }
+    MdLine MarkdownHorizontalRule { border-bottom: solid $ombro-dim; margin: 0 0 1 0; }
+    MdLine MarkdownBlock:last-child { margin-bottom: 0; }
+    MdLine Markdown > MarkdownBlock:first-child { margin-top: 0; }
+    """
+
+    def __init__(self, source: str, kind: str, mark: str = ""):
+        super().__init__(classes=kind)
+        self.source = source
+        self.mark = mark
+
+    def compose(self) -> ComposeResult:
+        if self.mark:
+            yield Static(self.mark, classes="mark")
+        yield Markdown(self.source, open_links=False)
+
+
 class OmbroApp(App):
     CSS = """
     Screen { background: $ombro-bg; color: $ombro-text; padding: 1 4 0 4; layout: vertical; }
@@ -349,7 +380,9 @@ class OmbroApp(App):
 
     def get_css_variables(self) -> dict[str, str]:
         p = self.colours
-        return {**super().get_css_variables(), "ombro-bg": p.background, "ombro-text": p.text,
+        headings = {f"markdown-h{n}-{k}": v for n in range(1, 7)
+                    for k, v in (("color", p.strong), ("background", "transparent"), ("text-style", "bold"))}
+        return {**super().get_css_variables(), **headings, "ombro-bg": p.background, "ombro-text": p.text,
                 "ombro-muted": p.muted, "ombro-dim": p.dim, "ombro-band": p.band, "ombro-band-text": p.band_text}
 
     def set_dark(self, dark: bool) -> None:
@@ -467,7 +500,40 @@ class OmbroApp(App):
 
     # -- the conversation ------------------------------------------------------
 
+    def add_markdown(self, source: str, kind: str, mark: str = "") -> None:
+        self.query_one("#messages").mount(MdLine(source, kind, mark))
+        self.call_after_refresh(self._after_line)
+
+    def action_run_command(self, command: str) -> None:
+        """A click on a command in Ombro's own lines, such as "Read the report"."""
+        if self.busy:
+            self.add_line(Note("Still working on the last thing; try again in a moment."), "note")
+            return
+        self.add_line(Note(command), "you")
+        self.handle(command)
+
+    @on(Markdown.LinkClicked)
+    def link_clicked(self, event: Markdown.LinkClicked) -> None:
+        """A link in a report or a Lead line: a file opens; an `ombro:` link runs a command."""
+        href = event.href
+        if href.startswith("ombro:"):
+            from urllib.parse import unquote
+
+            self.action_run_command("/" + unquote(href.removeprefix("ombro:")).replace("/", " ").strip())
+        elif href.startswith(("file:", "http:", "https:")):
+            from ombro.cli import _launch
+
+            if href.startswith("file:"):
+                from urllib.parse import unquote, urlparse
+
+                _launch(Path(unquote(urlparse(href).path)))
+            else:
+                self.open_url(href)
+
     def add_line(self, event: Event, kind: str) -> None:
+        if isinstance(event, LeadSaid):
+            self.add_markdown(event.text, "lead", "• ")
+            return
         text = render_event(event, self.colours)
         if text is None:
             return

@@ -136,6 +136,18 @@ def deliverables(home: Home, run_dir: Path) -> list[dict[str, Any]]:
         p = Path(d["path"])
         out.append({"name": d.get("name") or p.name, "role": d.get("role", ""), "path": str(p),
                     "url": p.as_uri(), "exists": p.is_file(), "kind": "deliverable"})
+    named = {d["path"] for d in out}
+    for name, ev in (facts.get("folder_changes") or {}).items():
+        root = Path(str(ev.get("path") or ""))
+        for kind in ("created", "changed"):
+            for rel in ev.get(kind) or []:
+                if rel.split("/", 1)[0] in ("Archive", "For deletion") or not str(root):
+                    continue  # Ombro's own keeping, not the run's output
+                p = root / rel
+                if str(p) in named:
+                    continue
+                out.append({"name": f"shared/{name}/{rel}", "role": "", "path": str(p), "url": p.as_uri(),
+                            "exists": p.is_file(), "kind": kind})
     for path in facts.get("other_files") or []:
         p = Path(path)
         out.append({"name": p.name, "role": "", "path": str(p), "url": p.as_uri(), "exists": p.is_file(),

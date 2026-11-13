@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import fcntl
 import os
 import secrets as _random
@@ -24,8 +26,30 @@ class RunNotFound(LookupError):
     pass
 
 
-def new_run_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-") + _random.token_hex(2)
+def run_slug(spec_meta: dict[str, Any] | None, spec_body: str = "") -> str:
+    """The friendly part of a run's name: the spec's name, else its title, made into
+    lower-case words joined by hyphens."""
+    raw = str((spec_meta or {}).get("name") or "") or first_line(spec_body or "", 80)
+    slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
+    return slug[:48].rstrip("-") or "run"
+
+
+def new_run_id(slug: str = "run", n: int = 1) -> str:
+    """A run's name: what it is, then when it started (local time), so it can be found
+    by either: indie-author-creator-research-20261113-1301. A second run of the same spec
+    in the same minute gets -2, and so on."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    return f"{slug}-{stamp}" + (f"-{n}" if n > 1 else "")
+
+
+_WHEN = re.compile(r"(\d{8})-(\d{4,6})")
+
+
+def run_time(run_dir: Path) -> str:
+    """When a run started, from its name (YYYYMMDDHHMMSS), for sorting; old names start
+    with the time, new ones end with it."""
+    m = _WHEN.search(run_dir.name)
+    return (m.group(1) + m.group(2).ljust(6, "0")) if m else ""
 
 
 def first_line(text: str, limit: int = 120) -> str:
@@ -95,8 +119,10 @@ def create_run(
         shared, left_out = [], [f"no shared folder was given: {e}"]
     runs_dir = home.runs_dir
     runs_dir.mkdir(parents=True, exist_ok=True)
+    slug, n = run_slug(spec_meta, spec_body), 1
     while True:
-        run_id = new_run_id()
+        run_id = new_run_id(slug, n)
+        n += 1
         run_dir = runs_dir / run_id
         try:
             run_dir.mkdir()
@@ -226,19 +252,20 @@ def all_runs(home: Home, crew: str | None = None) -> list[Path]:
             except (OSError, mdfile.FrontMatterError):
                 continue
         out.append(d)
-    out.sort(key=lambda d: d.name)
+    out.sort(key=lambda d: (run_time(d), d.name))
     return out
 
 
 def find_run(home: Home, run_id: str) -> Path:
-    matches = [d for d in all_runs(home) if d.name == run_id]
-    if not matches:
-        matches = [d for d in all_runs(home) if d.name.startswith(run_id)]
-    if not matches:
-        raise RunNotFound(f"no run matching {run_id!r}")
-    if len(matches) > 1:
-        raise RunNotFound(f"{run_id!r} matches {len(matches)} runs; give more of the ID")
-    return matches[0]
+    """A run by its name, the start of it, or any part of it ("indie", "20261113").
+    Where several match, the newest; an exact name always wins."""
+    every = all_runs(home)
+    want = run_id.strip()
+    for test in (lambda n: n == want, lambda n: n.startswith(want), lambda n: want.lower() in n.lower()):
+        matches = [d for d in every if test(d.name)]
+        if matches:
+            return matches[-1]
+    raise RunNotFound(f"no run matching {run_id!r}")
 
 
 def latest_run(home: Home, crew: str | None) -> Path:

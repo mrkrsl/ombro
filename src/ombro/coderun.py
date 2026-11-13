@@ -36,8 +36,9 @@ LIMIT_TEXT = {
 DESCRIPTION = (
     "Run a Python script you write, for work on files: renaming, moving, converting, editing in bulk, counting, "
     "checking. Python standard library only. The script's working folder holds workspace/, scratch/ and "
-    "shared/<name>/ for each folder shared with this run; use those relative paths. It cannot reach the network, "
-    "start other programs, or reach anything else on the machine. You get its exit status, its output (long "
+    "shared/<name>/ for each folder shared with this run; use those relative paths. It has NO network at all: no "
+    "internet, no web APIs, no downloads; for anything online use web.search and web.fetch. It cannot start other "
+    "programs or reach anything else on the machine. You get its exit status, its output (long "
     "output is cut in the middle), and the files it created, changed or removed. Print what you need to know; "
     "prefer one script that does a whole batch to many small ones."
 )

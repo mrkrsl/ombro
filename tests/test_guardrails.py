@@ -75,7 +75,8 @@ def test_lead_and_role_prompts(run, home):
     assert "invented user who likes short reports" in lead_system
     assert lead_system.index("fixed rules") < lead_system.index("Your soul")
     role_call = run.client.calls[1]
-    assert role_call["tools"] is None  # stage 1 roles have no tools
+    # a role with no tools is offered only submit_result, to hand in its result
+    assert [t["function"]["name"] for t in role_call["tools"]] == ["submit_result"]
     assert role_call["messages"][1]["content"].endswith("Do the thing.")
     assert SPEC_TITLE not in role_call["messages"][1]["content"]  # roles see the brief, not the spec
 
@@ -160,7 +161,7 @@ def test_without_a_reserve_the_report_falls_back_to_the_journal(run):
     status = run(
         [
             fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 17500, "output": 200}),
+            fake.result("Read it all.", usage={"input": 17400, "output": 200}),
             LEAD_REPORT,
         ],
         limits=limits,
