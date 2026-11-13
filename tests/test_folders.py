@@ -93,8 +93,8 @@ def test_grants_are_added_listed_and_removed(home, user, capsys):
     cmd_folders(folders_args())
     out = capsys.readouterr().out
     assert "brand" in out and "photos" in out and "backup:" in out
-    with pytest.raises(Exception, match="already shared"):
-        cmd_folders(folders_args("add", str(user / "Pictures" / "Trip"), name="trip"))
+    assert cmd_folders(folders_args("add", str(user / "Pictures" / "Trip"), name="trip")) == 0
+    assert "already shared as 'photos' (write)" in capsys.readouterr().out
     assert cmd_folders(folders_args("remove", "brand")) == 0
     assert set(folders.load(home)[0]) == {"photos"}
     assert "Folders on this machine" in home.folders.read_text()

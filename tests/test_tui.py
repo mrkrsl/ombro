@@ -306,10 +306,10 @@ def test_a_fresh_home_is_set_up_inside_the_interface(home):
             await pilot.pause()
             await answer(pilot, app, "Ada")  # your name
             await answer(pilot, app, "1")  # DeepSeek
-            await answer(pilot, app, "")  # the model name: its default
-            assert app.pending.field.kind == "secret"
+            assert app.pending.field.kind == "secret"  # the key comes before the model
             assert app.query_one("#secret").display and not app.query_one("#input").display
             await answer(pilot, app, "sk-test-INVENTED-0123456789")
+            await answer(pilot, app, "")  # the endpoint lists no models here: the suggested name
             await answer(pilot, app, "")  # no search key
             await answer(pilot, app, "n")  # no set-up interview now
             for _ in range(100):
@@ -535,5 +535,138 @@ def test_the_input_box_wraps_and_grows(home):
             await pilot.press(*("A long, invented message that goes on " * 6))
             await pilot.pause()
             assert 1 < box.size.height <= 6 and box.soft_wrap
+
+    drive(go())
+
+
+# -- fixes from the first real test (10f) -------------------------------------------
+
+
+def test_model_commands_show_and_change_who_uses_which(home):
+    from ombro import mdfile, models
+
+    models.add_models(home, "https://models.invalid/v1", "TEST_MODEL_KEY", ["invented-chat", "invented-pro"])
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/models")
+            await settle(pilot, app)
+            texts = "\n".join(_texts(app))
+            assert "invented-pro" in texts and "(the default)" in texts
+            await command(pilot, app, "/model")
+            await answer(pilot, app, "1")  # the Lead
+            f = app.pending.field if app.pending else None
+            for _ in range(100):
+                if app.pending is not None and app.pending.field.name == "model":
+                    f = app.pending.field
+                    break
+                await pilot.pause(0.02)
+            key = next(o.key for o in f.options if o.label.startswith("invented-pro"))
+            await answer(pilot, app, key)
+            await settle(pilot, app)
+
+    drive(go())
+    assert mdfile.read(home.lead_dir / "config.md")[0]["model"] == "invented-pro"
+
+
+def test_a_yes_no_question_never_takes_a_command_as_no(home):
+    from ombro.tui.app import Pending
+    from ombro.ui import Field
+
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            pending = Pending(Field("add_role", "Add another role?", "yesno"))
+            app.begin_ask(pending)
+            await pilot.press(*"/model")
+            await pilot.press("enter")
+            await pilot.pause(0.05)
+            assert app.pending is pending and not pending.done.is_set()
+            assert "commands wait" in "\n".join(_texts(app))
+            await pilot.press("y", "enter")
+            await pilot.pause(0.05)
+            assert pending.done.is_set() and pending.value is True
+
+    drive(go())
+
+
+def test_shift_return_starts_a_new_line(home):
+    from ombro.tui.app import PromptArea
+
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press(*"one")
+            await pilot.press("shift+enter")
+            await pilot.press(*"two")
+            assert app.query_one("#input", PromptArea).text == "one\ntwo"
+
+    drive(go())
+
+
+def test_new_clears_the_screen_and_the_usage(home):
+    app, _ = _app(home, [fake.say("Hello there.")])
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "Hi")
+            await settle(pilot, app)
+            assert app.usage[0] > 0
+            await command(pilot, app, "/new")
+            await settle(pilot, app)
+            texts = "\n".join(_texts(app))
+            assert "Hello there." not in texts and "I've saved the last chat to chats/" in texts
+            assert app.usage[0] == 0
+
+    drive(go())
+
+
+def test_switching_theme_redraws_lines_already_shown(home):
+    from ombro.tui import look
+
+    app, _ = _app(home, [fake.say("A legible reply.")])
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "Hi")
+            await settle(pilot, app)
+            app.set_dark(True)
+            await pilot.pause()
+            from ombro.tui.app import Line
+
+            reply = next(w for w in app.query(Line) if "A legible reply." in w.text.plain)
+            colours = {str(s.style).lower() for s in reply.text.spans}
+            assert any(look.DARK.text.lower() in c for c in colours)
+            assert not any(look.LIGHT.text.lower() in c for c in colours)
+
+    drive(go())
+
+
+def test_a_thinking_glyph_turns_while_the_core_works(home):
+    import threading
+
+    app, _ = _app(home)
+    release = threading.Event()
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            assert not app.query_one("#thinking").display
+            app.start_work(lambda: release.wait(5))
+            await pilot.pause(0.4)
+            shown = app.query_one("#thinking")
+            assert shown.display and "Thinking" in str(shown.render())
+            release.set()
+            await settle(pilot, app)
+            await pilot.pause(0.3)
+            assert not app.query_one("#thinking").display
 
     drive(go())

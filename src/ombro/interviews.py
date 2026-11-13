@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ombro import mdfile, prompts
-from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home, soul_with, tidy_title
+from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home, crew_title, soul_with, tidy_title
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
 from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role
 from ombro.settings import Limits, SetupError, format_duration, format_tokens, load_models, load_tool_settings
@@ -91,7 +91,8 @@ def crews_roster(home: Home, limits: Limits) -> str:
                 meta = mdfile.read(home.crew_dir(crew) / "crew.md")[0]
         except mdfile.FrontMatterError:
             meta = {}
-        out.append(f"Crew {crew}: {str(meta.get('description') or '').strip() or '(no description)'}")
+        out.append(f"Crew {crew} (called the {crew_title(home, crew)}; use that title when talking to the user): "
+                   f"{str(meta.get('description') or '').strip() or '(no description)'}")
         try:
             roles = crew_roles(home, crew, limits)
         except (RoleError, SetupError) as e:
@@ -440,7 +441,7 @@ class BriefPurpose(Purpose):
             ("Crews and their roles (a run may brief roles only in the crews its spec names)",
              crews_roster(self.home, L)
              + (f"\nThe user started this brief for: {', '.join(self.suggested)}." if self.suggested else "")
-             + f"\nThe default crew is {self.crew}."),
+             + f"\nThe default crew is {self.crew} (the {crew_title(self.home, self.crew)})."),
             ("Limits a run will have",
              f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.run_timeout)}\n"
              f"- tokens: {format_tokens(L.max_tokens)}"),
@@ -676,8 +677,7 @@ class BriefPurpose(Purpose):
             crews = runs.spec_crews(self.home, meta)
         except SetupError as e:
             raise ProposalError(str(e)) from None
-        warnings.append(("the run may brief roles in crews " if len(crews) > 1 else "the run may brief roles in "
-                         "crew ") + ", ".join(crews)
+        warnings.append("the run may brief roles in the " + " and the ".join(crew_title(self.home, c) for c in crews)
                         + ("" if meta.get("crews") else " (the default crew: the spec names none)") + ".")
         if meta.get("folders"):
             from ombro import folders

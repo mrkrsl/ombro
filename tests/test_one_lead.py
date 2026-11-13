@@ -230,7 +230,7 @@ def test_the_brief_proposes_crews_and_shows_them(talk, crews):
     assert out.status == "confirmed"
     meta, _ = mdfile.read(crews.specs_dir / "notice.md")
     assert meta["crews"] == ["bakery", "ops"]
-    assert "the run may brief roles in crews bakery, ops" in talk.output
+    assert "the run may brief roles in the Bakery Crew and the Ops Crew" in talk.output
     # The Lead was shown every crew's roles, and told to ask between look-alike crews.
     system = talk.client.calls[0]["messages"][0]["content"]
     assert "bakery/writer" in system and "garden/writer" in system and "ask the user which one" in system

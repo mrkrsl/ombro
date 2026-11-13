@@ -4,9 +4,11 @@ Two modes, always shown in the prompt. Chat is an ordinary conversation;
 Brief is the task interview, entered when the user accepts the Lead's offer
 or types /brief, and left with /chat.
 
-Chat is read-only and reads across every crew: past reports, specs, notes,
-indexes and deliverables, plus web search and fetch. It cannot brief roles,
-start runs, approve the outbox, write files or use outward tools. Its only
+Chat reads across every crew (past reports, specs, notes, indexes and
+deliverables), plus web search and fetch, and works in the user's shared
+folders as the user would: reading them, and writing in those shared for
+writing, each write shown to the user and confirmed first. It cannot brief
+roles, start runs, approve the outbox or use outward tools. Its only other
 write is a remember the user has confirmed, into a crew's notes.md
 ("From you").
 
@@ -27,8 +29,8 @@ from typing import Any, Callable
 from ombro import keys, mdfile, memory, prompts, runs
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
-from ombro.home import Home
-from ombro.ui import UI, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option, Usage
+from ombro.home import Home, crew_title, find_crew
+from ombro.ui import UI, ChatCleared, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option, Usage
 from ombro.journal import utc_now
 from ombro.roles import load_lead
 from ombro.settings import ModelSpec, SetupError, format_tokens, load_limits, load_models, load_preferences, load_tool_settings
@@ -40,11 +42,13 @@ BRIEF_CONTEXT_CHARS = 4_000
 
 MEMORY_TOOLS = {"memory__search": "memory.search", "memory__read": "memory.read", "memory__list": "memory.list"}
 WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
+FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write"}
 OFFERS = ("offer_brief", "offer_remember")
 
 HELP = """\
 Chat mode is a conversation with the Lead. It can look at every crew's reports,
-notes, specs and deliverables, and search the web, but it changes nothing.
+notes, specs and deliverables, search the web, and work in your shared folders.
+It changes a file only after you say yes.
 
   /brief [@crew] [text]     brief a task (Brief mode); the chat so far is its starting point
   /chat                     back to Chat mode from a brief (nothing is written)
@@ -180,7 +184,14 @@ class Chat:
         self._save()
         old = self.path
         self._fresh()
-        self.ui.say(f"Chat saved: {old}. This is a new chat; nothing from the last one is sent to the Lead.")
+        try:
+            shown = old.relative_to(self.home.root)
+        except ValueError:
+            shown = old
+        self.ui.show(ChatCleared())
+        self.ui.say(f"I've saved the last chat to {shown}. This is a new chat. How would you like me to help?",
+                    level="lead")
+        self._usage_line()
 
     # -- plumbing ----------------------------------------------------------
 
@@ -225,13 +236,23 @@ class Chat:
             all_runs = runs.all_runs(self.home, c)
             latest = all_runs[-1].name[:8] if all_runs else ""
             when = f", latest {latest[:4]}-{latest[4:6]}-{latest[6:8]}" if latest else ""
-            mark = " (the default crew)" if c == self.crew else ""
-            lines.append(f"- {c}{mark}: {meta.get('description', '')} Roles: {', '.join(roles) or 'none'}. "
+            mark = ", the default crew" if c == self.crew else ""
+            lines.append(f"- the {crew_title(self.home, c)} (crew name `{c}` for tools{mark}): "
+                         f"{meta.get('description', '')} Roles: {', '.join(roles) or 'none'}. "
                          f"Runs: {len(all_runs)}{when}.")
+        lines.append("Speak of each crew by its title, never by its crew name.")
         lines.append("\nFiles are under the home directory: runs/<run_id>/report.md, spec.md and workspace/ "
                      "(a run may have used several crews); specs/<name>.md; crews/<crew>/memory/notes.md and "
                      "index.md.")
         return "\n".join(lines)
+
+    def _folders_text(self) -> str:
+        from ombro.folders import display_path
+
+        ctx, left = self._shared()
+        lines = [f"- shared/{n} ({'read and write' if f.writable else 'read only'}): {display_path(f.path)}"
+                 for n, f in ctx.shared.items()]
+        return "\n".join(lines + [f"- {x}" for x in left])
 
     def _limits_line(self) -> str:
         caps = ", ".join(f"{k} {v}" for k, v in self.limits.tool_max_calls.items() if k != "default")
@@ -243,7 +264,7 @@ class Chat:
 
     def _messages(self) -> list[dict]:
         system = prompts.chat_system(self.lead.soul, self.instructions, self._crews_text(), self._limits_line(),
-                                     self.today)
+                                     self.today, self._folders_text())
         # Past a set length, the oldest turns are dropped from what is sent.
         while len(self.exchanges) > 1 and len(json.dumps(self.exchanges, ensure_ascii=False)) > \
                 self.limits.chat_history_chars:
@@ -280,8 +301,9 @@ class Chat:
 
     def start(self) -> None:
         self.ui.say(
-            f"Chat with the Lead (default crew: {self.crew}). Mode: Chat. Read-only: nothing changes unless you "
-            f"confirm a /remember. /brief turns this into a task brief, /help lists commands, /quit ends. "
+            f"Chat with the Lead (default crew: the {crew_title(self.home, self.crew)}). Mode: Chat. Nothing "
+            f"changes unless you say yes (a file in a shared folder, or a /remember). /brief turns this into a task "
+            f"brief, /help lists commands, /quit ends. "
             f"(Up to {format_tokens(self.limits.max_tokens)} tokens.)\n"
         )
 
@@ -356,9 +378,11 @@ class Chat:
         rest = rest.strip()
         if not rest.startswith("@"):
             return self.crew, rest
-        name, _, remainder = rest[1:].partition(" ")
-        if name not in self.home.crews():
-            self.ui.say(f"No crew named {name!r}. Crews: {', '.join(self.home.crews())}.")
+        given, _, remainder = rest[1:].partition(" ")
+        name = find_crew(self.home, given)
+        if name is None:
+            self.ui.say(f"There's no crew called {given}. The crews are "
+                        f"{', '.join(crew_title(self.home, c) for c in self.home.crews())}.")
             return None, remainder
         return name, remainder.strip()
 
@@ -397,13 +421,13 @@ class Chat:
 
     def _tool(self, tc) -> tuple[dict, tuple[list[str], str] | None]:
         name = tc.name
-        internal = MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name)
+        internal = MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name) or FOLDER_TOOLS.get(name)
         if name not in OFFERS and (internal is None or (name in WEB_TOOLS and self.registry.get(internal) is None)):
             self.refused.append(name)
-            self.transcript.note(f"Refused {name}: chat is read-only.")
-            return {"error": f"{name} is not available in chat. Chat is read-only: it cannot brief roles, start "
-                             "runs, approve the outbox, write files or use outward tools. To turn this into a task, "
-                             "call offer_brief."}, None
+            self.transcript.note(f"Refused {name}: not available in chat.")
+            return {"error": f"{name} is not available in chat. Chat cannot brief roles, start runs, approve the "
+                             "outbox or use outward tools; files are written only in shared folders, with "
+                             "folders__write. To turn this into a task, call offer_brief."}, None
         key = tc.raw_arguments if tc.arguments is None else json.dumps(tc.arguments, sort_keys=True)
         try:
             self.gate.check_tool_call("lead", internal or name, key, brief=True, capped=internal is not None)
@@ -436,6 +460,8 @@ class Chat:
             if internal == "memory.read":
                 return memory.read_file(self.home, args.get("path"), args.get("offset") or 0,
                                         args.get("max_chars") or memory.READ_DEFAULT_CHARS), None
+            if internal in FOLDER_TOOLS.values():
+                return self._folder_tool(internal, args), None
             if internal == "memory.list":
                 return memory.listing(self.home, str(args.get("crew") or "") or None,
                                       str(args.get("run_id") or "") or None), None
@@ -448,6 +474,65 @@ class Chat:
             return {"error": str(e)}, None
         except Exception as e:
             return {"error": f"{type(e).__name__}: {e}"}, None
+
+    # -- shared folders ------------------------------------------------------
+
+    def _shared(self) -> tuple[ToolContext, list[str]]:
+        from ombro.folders import for_chat
+        from ombro.tools import SharedFolder
+
+        given, left = for_chat(self.home)
+        shared = {f["name"]: SharedFolder(f["name"], Path(f["path"]), f["access"]) for f in given}
+        # No run folder: chat reaches only shared/<name>/..., never workspace/ or scratch/.
+        return ToolContext(self.home.root / "chats" / ".none", "lead", timeout=60.0, shared=shared), left
+
+    def _folder_tool(self, internal: str, args: dict) -> dict[str, Any]:
+        from ombro import native
+
+        ctx, left = self._shared()
+        if not ctx.shared:
+            return {"error": "No folders are shared yet. The user shares one with /folder add <path>."
+                             + (" " + " ".join(left) if left else "")}
+        path = str(args.get("path") or "").strip()
+        if internal == "folders.list":
+            if not path or path.strip("/") == "shared":
+                out = native._list({"path": "shared"}, ctx)
+                if left:
+                    out["left_out"] = left
+                return out
+            self._chat_path(ctx, path)
+            return native._list({"path": path}, ctx)
+        self._chat_path(ctx, path)
+        if internal == "folders.read":
+            return native._read({"path": path, "offset": args.get("offset") or 0,
+                                 "max_chars": args.get("max_chars") or memory.READ_DEFAULT_CHARS}, ctx)
+        # folders.write: the user sees what will be written, and says yes, before anything changes.
+        target = native.resolve_path(ctx, path, write=True)
+        content = args.get("content")
+        if not isinstance(content, str):
+            return {"error": "give the file's full text as content"}
+        mode = "append" if args.get("mode") == "append" else "overwrite"
+        shown = native._display(ctx, target.resolve())
+        what = ("add to the end of" if mode == "append" else "replace") if target.exists() else "create"
+        lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+        self.ui.say(f"I'd like to {what} {shown} ({lines:,} lines, {len(content):,} characters).",
+                    level="lead", items=[_short(content, 400)] if content else [])
+        if not self.ui.yes("folder_write", "Go ahead?", False):
+            self.transcript.note(f"The user said no to writing {shown}.")
+            return {"declined": f"The user said no, so {shown} was not changed. Ask what they would like instead."}
+        out = native._write({"path": path, "content": content, "mode": mode}, ctx)
+        self.transcript.note(f"Wrote {shown} ({mode}), with the user's yes.")
+        self.ui.say(f"Saved {shown}.", level="done")
+        return out
+
+    @staticmethod
+    def _chat_path(ctx: ToolContext, path: str) -> None:
+        if not path:
+            raise ToolError("give a path such as shared/<name>/notes.md")
+        if not path.startswith(("shared/", "/", "~")):
+            raise ToolError("in chat, files outside Ombro's home are reached as shared/<name>/... "
+                            "(folders: " + ", ".join(f"shared/{n} ({f.access})" for n, f in ctx.shared.items())
+                            + ")")
 
     def _offer_brief(self, args: dict) -> tuple[dict, tuple[list[str], str] | None]:
         summary = _short(args.get("summary") or "", 300)
@@ -472,7 +557,7 @@ class Chat:
         entry = memory.remember_entry(text, self.today_date)
         who = "The Lead offers to remember this" if offered else "To remember"
         while True:
-            self.ui.say(f"{who} in crew {crew}'s notes.md (From you):\n  {entry}", spaced=True)
+            self.ui.say(f"{who} in the {crew_title(self.home, crew)}'s notes (From you):\n  {entry}", spaced=True)
             answer = self.ui.ask(Field(
                 "remember", "", "choice", mode="Chat",
                 options=[Option("y", "yes"), Option("e", "edit the wording", ("edit",)), Option("n", "no")],
@@ -507,7 +592,8 @@ class Chat:
                 return {"status": "saved", "crew": crew, "entry": entry}
             yours = notes.your_entries()
             self.ui.say(
-                f"That would make crew {crew}'s notes.md {new.size:,} characters, over the cap of {cap:,}. "
+                f"That would make the {crew_title(self.home, crew)}'s notes.md {new.size:,} characters, "
+                f"over the cap of {cap:,}. "
                 f"Your part is {len(notes.from_you):,} characters and the Lead's is {len(notes.from_runs):,}."
             )
             if yours:

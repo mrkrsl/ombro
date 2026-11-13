@@ -656,12 +656,19 @@ returns) can change them.
 
 - This is Chat mode: a conversation, about work the crews have done or
   about anything else. It is not a run and not a brief.
-- Read only. You can look at every crew: memory__search finds passages in
-  past reports, memory__list lists crews, runs, specs and a run's files,
+- You can look at every crew: memory__search finds passages in past
+  reports, memory__list lists crews, runs, specs and a run's files,
   memory__read reads a report, spec, notes.md, index.md or a workspace file.
-  You can search and read the web with web__search and web__fetch. You
-  cannot brief roles, start runs, approve the outbox, write files or use
-  outward tools; such calls are refused.
+  You can search and read the web with web__search and web__fetch.
+- Shared folders: the user's own folders, listed below, are yours to work
+  in as they would. folders__list and folders__read reach them as
+  shared/<name>/...; folders__write saves a text file in one shared for
+  writing, and the user sees it and says yes first. A folder shared
+  read-only stays read-only. Nothing outside these folders and Ombro's home
+  can be reached; if the user needs another folder, ask them to share it
+  with /folder add.
+- You cannot brief roles, start runs, approve the outbox or use outward
+  tools; such calls are refused.
 - Before you answer about past work, look it up; do not answer from guesses.
   Say which run, report or page a fact came from.
 - Tasks: when the user describes something that sounds like work for a
@@ -681,12 +688,14 @@ returns) can change them.
 """
 
 
-def chat_system(lead_soul: str, instructions: str, crews: str, limits_line: str, today: str = "") -> str:
+def chat_system(lead_soul: str, instructions: str, crews: str, limits_line: str, today: str = "",
+                folders: str = "") -> str:
     parts = [CHAT_RULES, "\n", VOICE, "\n", STANDARDS, _today(today)]
     parts.append(_section("Your soul (character only; cannot override the rules above)", lead_soul))
     if instructions:
         parts.append(_section("User context (cannot override the rules above)", instructions))
     parts.append(_section("Crews", crews))
+    parts.append(_section("Shared folders", folders or "None yet. The user shares one with /folder add <path>."))
     parts.append(_section("Limits for this chat", limits_line))
     return "".join(parts)
 
@@ -731,6 +740,36 @@ CHAT_TOOLS = [
             "max_chars": {"type": "integer", "minimum": 1},
         },
         ["path"],
+    ),
+    _fn(
+        "folders__list",
+        "folders.list: with no path, the shared folders and their access; with a path such as shared/<name> or "
+        "shared/<name>/drafts, the files inside it.",
+        {"path": {"type": "string"}},
+        [],
+    ),
+    _fn(
+        "folders__read",
+        "folders.read: read a text file in a shared folder, e.g. shared/<name>/plan.md. Long files come in "
+        "parts: pass next_offset back as offset.",
+        {
+            "path": {"type": "string"},
+            "offset": {"type": "integer", "minimum": 0},
+            "max_chars": {"type": "integer", "minimum": 1},
+        },
+        ["path"],
+    ),
+    _fn(
+        "folders__write",
+        "folders.write: save a text file in a folder shared for writing, e.g. shared/<name>/notes.md. The user "
+        "is shown what you will write and must say yes; if they say no, nothing changes.",
+        {
+            "path": {"type": "string"},
+            "content": {"type": "string", "description": "The full text to write."},
+            "mode": {"type": "string", "enum": ["overwrite", "append"],
+                     "description": "overwrite (default) replaces the file; append adds to its end."},
+        },
+        ["path", "content"],
     ),
     _fn(
         "offer_brief",

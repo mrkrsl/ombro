@@ -56,7 +56,7 @@ and may lower write to read (`folders: {photos: read}`).
 Only folders in your home folder, or on mounted drives and server shares
 (/Volumes/... on macOS; /mnt, /media, /run/media on Linux), can be shared.
 Never the home folder itself, hidden folders, ~/Library, or the Ombro home.
-Manage grants with `ombro folders`.
+Manage grants with `ombro folder`.
 """
 
 
@@ -349,7 +349,7 @@ def for_run(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
     for name, access in wanted.items():
         g = grants.get(name)
         if g is None:
-            left.append(f"the spec names folder {name!r}, which is not shared (`ombro folders add`), so it was "
+            left.append(f"the spec names folder {name!r}, which is not shared (`ombro folder add`), so it was "
                         "left out")
             continue
         try:
@@ -361,11 +361,21 @@ def for_run(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
             # Somewhere on the way the path now passes through a symlink (perhaps one a
             # script made), so it would lead to a different folder from the one granted.
             left.append(f"folder {name!r} was left out: {g.path} now leads to {display_path(real)} through a "
-                        "symlink. Check it, then share the folder again with `ombro folders add`")
+                        "symlink. Check it, then share the folder again with `ombro folder add`")
             continue
         final = "read" if "read" in (access, g.access) else "write"
         out.append({"name": name, "path": str(real), "access": final})
     return out, left
+
+
+def for_chat(home: Home) -> tuple[list[dict[str, str]], list[str]]:
+    """Every granted folder, with its own access, checked as a run's are: the Lead in
+    chat works across all of them, as the user would."""
+    try:
+        grants, _ = load(home)
+    except SetupError as e:
+        return [], [f"folders.md could not be read: {e}"]
+    return for_run(home, {"folders": {name: g.access for name, g in grants.items()}})
 
 
 def granted_names(home: Home) -> list[str]:

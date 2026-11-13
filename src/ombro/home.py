@@ -153,7 +153,8 @@ LIMITS_META = {
     "chat_history_chars": 30_000,
     "chat_calls_per_message": 8,
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
-                            "web.fetch": 15, "default": 10},
+                            "web.fetch": 15, "folders.list": 30, "folders.read": 40, "folders.write": 10,
+                            "default": 10},
     "schedule_grace": "10m",
     "schedule_max_running": 2,
     "schedule_max_starts": 3,
@@ -376,6 +377,22 @@ def crew_title(home: "Home", crew: str) -> str:
     except mdfile.FrontMatterError:
         title = ""
     return title or f"{tidy_title(crew)} Crew"
+
+
+def find_crew(home: "Home", text: str) -> str | None:
+    """The crew someone means, by its name or its title ("marketing", "Marketing Team",
+    "the marketing team"), or None. People see titles; names stay the crew's folder."""
+    want = " ".join(str(text or "").lower().split())
+    if want.startswith("the "):
+        want = want[4:]
+    names = home.crews()
+    if want in names:
+        return want
+    for crew in names:
+        title = crew_title(home, crew).lower()
+        if want in (title, title.removesuffix(" crew")):
+            return crew
+    return None
 
 
 def set_crew_title(home: "Home", crew: str, title: str) -> None:

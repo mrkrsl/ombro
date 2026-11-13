@@ -165,6 +165,29 @@ class OpenAICompatibleClient:
             if pause > 0:
                 self.sleep(pause)
 
+    def list_models(self, timeout: float = 20.0) -> list[str]:
+        """The models this endpoint offers to this key (GET {endpoint}/models), sorted.
+        Raises ModelError if the endpoint does not say."""
+        key = self.key_getter()
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        url = self.url.removesuffix("/chat/completions") + "/models"
+        try:
+            with httpx.Client(transport=self.transport, timeout=httpx.Timeout(timeout)) as http:
+                resp = http.get(url, headers=headers)
+        except httpx.HTTPError as e:
+            raise ModelError(f"could not reach {self.host}: {type(e).__name__}") from None
+        if resp.status_code != 200:
+            raise ModelError(f"{self.host} returned HTTP {resp.status_code}: {self._error_text(resp, key)}",
+                             status=resp.status_code)
+        try:
+            data = resp.json().get("data")
+            ids = sorted({str(m["id"]) for m in data if isinstance(m, dict) and m.get("id")})
+        except (ValueError, AttributeError, TypeError):
+            raise ModelError(f"{self.host} sent a model list Ombro could not read") from None
+        if not ids:
+            raise ModelError(f"{self.host} listed no models")
+        return ids
+
     @staticmethod
     def _scrub(text: str, key: str | None) -> str:
         if key:

@@ -192,7 +192,7 @@ def test_init_other_endpoint_without_key(tmp_path):
             return ModelReply(content="OK")
 
     said = []
-    ask = ScriptedPrompts(["", "2", "http://localhost:11434/v1", "invented-local-model", "", "n"])
+    ask = ScriptedPrompts(["", "2", "http://localhost:11434/v1", "", "invented-local-model", "n"])
     secret = ScriptedPrompts([""])
     run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
     spec = connected_model(home)

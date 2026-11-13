@@ -332,7 +332,7 @@ def cmd_tools(args) -> int:
                                            sandbox.kind() or "", "ready")))
         print(f"  {r['tool']:<18}{extra}")
     print("\nShared folders: " + (", ".join(rows["folders"]) if rows["folders"] else "none")
-          + " (`ombro folders`)")
+          + " (`ombro folder`)")
     print("\nMCP servers (tools.md `servers:`):")
     if not rows["servers"]:
         print("  none yet. Add one with `ombro server add <name>` (or under `servers:` in tools.md), then see "

@@ -103,7 +103,7 @@ def run_init(
     ui.say((f"Thanks, {name}. " if name else "") + "Let's connect an AI model. API keys are stored in "
            "secrets/keys.env, readable only by you, and are never sent to a model.", spaced=True, level="lead")
     while True:
-        endpoint, model, key_name = connect_model(home, ui)
+        endpoint, model, key_name = connect_model(home, ui, client_factory)
         spec = load_models(home)["default"]
         ui.show(Progress(f"Testing {model} at {endpoint} …"))
         ok, detail = test_connection(home, spec, client_factory)
@@ -142,13 +142,12 @@ def endpoint_field() -> Field:
 
 
 def model_form(preset: dict) -> Form:
-    """What is asked about a model once its endpoint is chosen."""
+    """What is asked about an endpoint once it is chosen: for another endpoint, its URL
+    and the name of its key. The model is chosen once the endpoint has said which it has."""
     fields = []
     if not preset["endpoint"]:
         fields.append(Field("url", "Endpoint base URL (the part before /chat/completions)", required=True,
                             pattern=r"https?://\S+", invalid="The URL must start with http:// or https://."))
-    fields.append(Field("model", "What model will you use? You can change it later", default=preset["model"],
-                        required=True, invalid="A model name is needed."))
     if not preset["key"]:
         fields.append(Field("key_name", "Name for its key in secrets/keys.env, e.g. MY_PROVIDER_API_KEY "
                             "(Enter if it needs no key)", pattern=r"[A-Z][A-Z0-9_]*",
@@ -156,14 +155,47 @@ def model_form(preset: dict) -> Form:
     return Form("model", "Connect a model", fields)
 
 
-def connect_model(home: Home, ui: UI) -> tuple[str, str, str]:
-    """Part 1 of set-up, without a model: the endpoint, the model name and its key,
-    written to models.md and secrets/keys.env. Returns (endpoint, model, key name)."""
+def model_name_field(default: str | None) -> Field:
+    return Field("model", "What model will you use? You can change it later with /models", default=default,
+                 required=True, invalid="A model name is needed.")
+
+
+def offered_models(home: Home, endpoint: str, key_name: str | None, client_factory=make_client) -> list[str]:
+    """The models an endpoint lists for this key, or [] if it does not say."""
+    spec = ModelSpec(name="default", api="openai", model="", endpoint=endpoint, key=key_name or None)
+    try:
+        client = client_factory(spec, home)
+        lister = getattr(client, "list_models", None)
+        return list(lister()) if lister else []
+    except ModelError:
+        return []
+
+
+def choose_model(ui: UI, offered: list[str], suggested: str | None) -> str:
+    """One of the endpoint's models, the suggested one first; or a name typed in."""
+    if not offered:
+        return str(ui.ask(model_name_field(suggested)) or "").strip() or (suggested or "")
+    first = suggested if suggested in offered else offered[0]
+    order = [first] + [m for m in offered if m != first]
+    ui.say(f"It offers {len(order)} model{'s' if len(order) != 1 else ''}. Which should be your default? You "
+           "can give roles other models, and change this later with /models.", level="lead")
+    picked = ui.ask(Field("model", "Default model", "choice", default="1",
+                          options=[Option(str(i), m) for i, m in enumerate(order, 1)],
+                          invalid="Please choose one of the numbers shown."))
+    return order[int(picked) - 1]
+
+
+def connect_model(home: Home, ui: UI, client_factory=make_client) -> tuple[str, str, str]:
+    """Part 1 of set-up, without a model: the endpoint and its key, then the model,
+    chosen from those the endpoint lists. Every listed model is written to models.md,
+    with `default` naming the chosen one; the key goes to secrets/keys.env.
+    Returns (endpoint, model, key name)."""
+    from ombro import models as model_list
+
     while True:
         preset = ENDPOINTS[int(ui.ask(endpoint_field())) - 1]
-        answers = ui.form(model_form(preset))
+        answers = ui.form(model_form(preset)) if model_form(preset).fields else {}
         endpoint = preset["endpoint"] or str(answers.get("url") or "").strip()
-        model = str(answers.get("model") or "").strip() or preset["model"] or ""
         key_name = preset["key"] or str(answers.get("key_name") or "").strip()
         problems = [p for f in model_form(preset).fields if (p := f.check(answers.get(f.name)))]
         if problems:  # an interface that let a bad answer through
@@ -181,10 +213,20 @@ def connect_model(home: Home, ui: UI) -> tuple[str, str, str]:
             elif not existing:
                 ui.say("A key is needed for this endpoint.")
                 continue
-        entry: dict = {"api": "openai", "endpoint": endpoint, "model": model}
-        if key_name:
-            entry["key"] = key_name
-        _write_default_model(home, entry)
+        offered = offered_models(home, endpoint, key_name, client_factory)
+        model = choose_model(ui, offered, preset["model"])
+        if not model:
+            ui.say("A model name is needed.")
+            continue
+        names = model_list.add_models(home, endpoint, key_name or None, offered or [model])
+        name = model_list.entry_name(model)
+        if name in names:
+            model_list.set_default(home, name)
+        else:
+            entry: dict = {"api": "openai", "endpoint": endpoint, "model": model}
+            if key_name:
+                entry["key"] = key_name
+            _write_default_model(home, entry)
         return endpoint, model, key_name
 
 
@@ -300,7 +342,12 @@ def _set_up(home: Home, ui: UI, client_factory, next_steps: bool = True) -> None
             question = "Would you like to add a new role now?"
             while ui.yes("add_role", question):
                 ui.say("Excellent. Let's get that set up.", level="lead")
-                start(home, RolePurpose(home, crew, limits), crew, limits, **kwargs)
+                added = start(home, RolePurpose(home, crew, limits), crew, limits, **kwargs)
+                if added.confirmed:
+                    from ombro.models import offer_role_model
+
+                    offer_role_model(home, ui, f"{crew}/{added.proposal.data['name']}",
+                                     _role_title(home, crew, added.proposal.data["name"]))
                 limits = load_limits(home)
                 question = "Do you want to add another role to the crew now?"
             ui.say("Okay. We can just chat, or you might want to brief your first task.", spaced=True, level="lead")
@@ -313,6 +360,13 @@ def _set_up(home: Home, ui: UI, client_factory, next_steps: bool = True) -> None
                            f"Run it with:  ombro run --spec {brief.proposal.data['name']}", spaced=True, level="done")
     if next_steps:
         _next_steps(home, ui)
+
+
+def _role_title(home: Home, crew: str, name: str) -> str:
+    try:
+        return str(mdfile.read(home.roles_dir(crew) / name / "config.md")[0].get("title") or name)
+    except (OSError, mdfile.FrontMatterError):
+        return name
 
 
 def _next_steps(home: Home, ui: UI) -> None:

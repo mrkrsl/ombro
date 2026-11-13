@@ -450,7 +450,7 @@ def cmd_preferences(args) -> int:
         return _print_json(p)
     print(f"Name          {p['name'] or '(not set)'}")
     print(f"Theme         {p['theme']}")
-    print(f"Default crew  {p['default_crew']}")
+    print(f"Default crew  {p['default_crew_title']} (--crew {p['default_crew']})")
     print(f"Editor        {p['editor'] or '(from $VISUAL or $EDITOR)'}")
     print(f"Outward       {p['outward']}")
     print(f"About you     {'set' if p['instructions_set'] else 'not set (the set-up interview writes it)'}")
@@ -757,7 +757,14 @@ def cmd_role(args) -> int:
         limits = load_limits(home)
         outcome = start(home, RolePurpose(home, crew, limits, title), crew, limits)
         if outcome.confirmed:
-            print(f"\nAdded {outcome.proposal.data['name']} to crew {crew}.")
+            from ombro.init_cmd import _role_title
+            from ombro.models import offer_role_model
+            from ombro.home import crew_title
+            from ombro.ui import ConsoleUI
+
+            added = outcome.proposal.data["name"]
+            print(f"\nAdded {added} to the {crew_title(home, crew)}.")
+            offer_role_model(home, ConsoleUI(), f"{crew}/{added}", _role_title(home, crew, added))
             return 0
         return 1
     if not args.name:
@@ -1130,7 +1137,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_tools)
 
-    s = sub.add_parser("folders", help="folders shared with runs: list, add <path>, remove <name>")
+    s = sub.add_parser("folder", aliases=["folders"],
+                       help="folders shared with runs and the Lead: list, add <path>, remove <name>")
     s.add_argument("action", nargs="?", choices=["list", "add", "remove"])
     s.add_argument("target", nargs="?", help="a folder's path (add) or a shared folder's name (remove)")
     s.add_argument("--name", help="the name runs and specs use for it (add)")

@@ -1,0 +1,103 @@
+"""The Lead in chat works in the user's shared folders: it reads every grant, writes
+only in those shared for writing, and only after the user says yes. All invented."""
+
+from __future__ import annotations
+
+import pytest
+
+from ombro import fake, folders
+from test_chat import ChatSession
+
+
+@pytest.fixture
+def user(tmp_path, monkeypatch):
+    me = tmp_path / "user"
+    (me / "Documents" / "Niches").mkdir(parents=True)
+    (me / "Documents" / "Niches" / "master-list.md").write_text("1. Invented niche: teapot restorers\n")
+    (me / "Documents" / "Brand").mkdir(parents=True)
+    (me / "Documents" / "Brand" / "guide.md").write_text("Invented brand guide: teal.\n")
+    (me / "Documents" / "Private").mkdir(parents=True)
+    (me / "Documents" / "Private" / "diary.md").write_text("Not shared.\n")
+    monkeypatch.setenv("HOME", str(me))
+    return me.resolve()
+
+
+@pytest.fixture
+def chat(home, user):
+    folders.add(home, user / "Documents" / "Niches", "niches", "write")
+    folders.add(home, user / "Documents" / "Brand", "brand", "read")
+    return ChatSession(home)
+
+
+def test_the_lead_is_told_which_folders_are_shared(chat):
+    chat([fake.say("Hello.")], ["Hi"])
+    system = chat.client.calls[0]["messages"][0]["content"]
+    assert "shared/niches (read and write)" in system and "shared/brand (read only)" in system
+    assert "folders__read" in system
+
+
+def test_the_lead_lists_and_reads_a_shared_folder(chat):
+    chat([
+        fake.call("folders__list", {}),
+        fake.call("folders__list", {"path": "shared/niches"}),
+        fake.call("folders__read", {"path": "shared/niches/master-list.md"}),
+        fake.say("The list starts with teapot restorers."),
+    ], ["What's on the niche list?"])
+    listed, inside, read = chat.tool_replies()
+    assert {e["path"] for e in listed["entries"]} == {"shared/niches", "shared/brand"}
+    assert [e["path"] for e in inside["entries"]] == ["shared/niches/master-list.md"]
+    assert "teapot restorers" in read["content"]
+
+
+def test_a_write_waits_for_yes(chat, user):
+    chat([
+        fake.call("folders__write", {"path": "shared/niches/sizing.md", "content": "# Sizing\nInvented.\n"}),
+        fake.say("Saved it."),
+    ], ["Write a sizing note", "y"])
+    (reply,) = chat.tool_replies()
+    assert reply["path"] == "shared/niches/sizing.md"
+    assert (user / "Documents" / "Niches" / "sizing.md").read_text() == "# Sizing\nInvented.\n"
+    assert "I'd like to create shared/niches/sizing.md" in chat.output
+
+
+def test_a_write_the_user_refuses_changes_nothing(chat, user):
+    chat([
+        fake.call("folders__write", {"path": "shared/niches/master-list.md", "content": "gone"}),
+        fake.say("Left it alone."),
+    ], ["Tidy the list", "n"])
+    (reply,) = chat.tool_replies()
+    assert "declined" in reply
+    assert "teapot restorers" in (user / "Documents" / "Niches" / "master-list.md").read_text()
+    assert "replace shared/niches/master-list.md" in chat.output
+
+
+def test_read_only_grants_and_unshared_folders_stay_out_of_reach(chat, user):
+    chat([
+        fake.call("folders__write", {"path": "shared/brand/guide.md", "content": "orange"}),
+        fake.call("folders__read", {"path": str(user / "Documents" / "Private" / "diary.md")}),
+        fake.call("folders__read", {"path": "shared/niches/../Private/diary.md"}),
+        fake.call("folders__read", {"path": "workspace/notes.md"}),
+        fake.say("I can't reach those."),
+    ], ["Try these"])
+    write, absolute, dotdot, workspace = chat.tool_replies()
+    assert "read-only" in write["error"]
+    assert "not in a folder shared" in absolute["error"]
+    assert ".." in dotdot["error"]
+    assert "shared/<name>" in workspace["error"]
+    assert (user / "Documents" / "Brand" / "guide.md").read_text() == "Invented brand guide: teal.\n"
+
+
+def test_an_absolute_path_inside_a_grant_is_read(chat, user):
+    chat([
+        fake.call("folders__read", {"path": "~/Documents/Niches/master-list.md"}),
+        fake.say("Read it."),
+    ], ["Read ~/Documents/Niches/master-list.md"])
+    (reply,) = chat.tool_replies()
+    assert "teapot restorers" in reply["content"]
+
+
+def test_with_nothing_shared_the_lead_is_told_how_to_share(home):
+    s = ChatSession(home)
+    s([fake.call("folders__list", {}), fake.say("Nothing shared yet.")], ["What folders can you see?"])
+    (reply,) = s.tool_replies()
+    assert "/folder add" in reply["error"]

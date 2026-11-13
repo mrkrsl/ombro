@@ -1,4 +1,4 @@
-"""`ombro folders`: list, grant and remove shared folders. And the offer to share
+"""`ombro folder`: list, grant and remove shared folders. And the offer to share
 the folder a brief starts in.
 
 Only the user grants. Every grant is asked for here, in the brief interview,
@@ -37,11 +37,11 @@ def cmd_folders(args) -> int:
             return _list(home)
         if action == "add":
             if not args.target:
-                raise cli.CliError("Give the folder: `ombro folders add ~/Documents/Brand` (or `.` for this one).")
+                raise cli.CliError("Give the folder: `ombro folder add ~/Documents/Brand` (or `.` for this one).")
             return add_flow(home, args.target, args.name, args.access, args.yes, ConsoleUI())
         if action == "remove":
             if not args.target:
-                raise cli.CliError("Name the shared folder: `ombro folders remove <name>`.")
+                raise cli.CliError("Name the shared folder: `ombro folder remove <name>`.")
             g = folders.remove(home, args.target)
             print(f"Removed {g.name!r} ({g.path}). Runs already going keep it; new runs do not get it.")
             return 0
@@ -56,7 +56,7 @@ def _list(home: Home) -> int:
     grants, declined = folders.load(home)
     if not grants:
         print("No folders are shared. Runs reach only their own workspace.")
-        print("Share one with `ombro folders add <path>`; a spec then names it with `folders: [<name>]`.")
+        print("Share one with `ombro folder add <path>`; a spec then names it with `folders: [<name>]`.")
     else:
         print("Shared folders. A spec names the ones its run uses (`folders: [name]`).\n")
         for g in grants.values():
@@ -81,13 +81,18 @@ def access_field() -> Field:
 
 
 def add_flow(home: Home, target: str, name: str | None, access: str | None, yes: bool, ui: UI) -> int:
-    """`ombro folders add`: grant a folder, asking for what is not given."""
+    """`ombro folder add`: grant a folder, asking for what is not given."""
     path = Path(os.path.expanduser(target))
     if not path.is_absolute():
         path = Path.cwd() / path
     real = folders.check_place(path, home)
     grants, _ = folders.load(home)
-    name = name or folders.suggest_name(real, set(grants))
+    existing = folders.find(grants, real)
+    if existing is not None and (access is None or access == existing.access):
+        ui.say(f"{folders.display_path(real)} is already shared as {existing.name!r} ({existing.access}). "
+               f"To change that, remove it with `/folder remove {existing.name}` and share it again.")
+        return 0
+    name = name or (existing.name if existing else folders.suggest_name(real, set(grants)))
     if access is None:
         if yes:
             access = "read"
@@ -102,7 +107,8 @@ def add_flow(home: Home, target: str, name: str | None, access: str | None, yes:
     if access == "write" and not yes:
         ui.say(f"Backup before each run that can write to it: {folders.backup_hint(real, home)}.")
         try:
-            go = ui.yes("write", f"Let runs change files in {folders.display_path(real)}?")
+            go = ui.yes("write", f"Let Ombro change files in {folders.display_path(real)}? Runs can, and the Lead "
+                                 "can in chat once you say yes to each change.")
         except (KeyboardInterrupt, EOFError):
             go = False
         if not go:
@@ -136,7 +142,7 @@ def offer_start_folder(home: Home, cwd: Path | None = None, ask: Callable[[str],
     say = ui.say
     if choice == "n":
         folders.decline(home, here)
-        say("Not shared, and Ombro will not ask about this folder again (`ombro folders add` shares it later).")
+        say("Not shared, and Ombro will not ask about this folder again (`ombro folder add` shares it later).")
         return
     if choice not in ("r", "w"):
         return

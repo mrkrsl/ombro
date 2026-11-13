@@ -8,6 +8,7 @@ conversation, and a field waits for the next thing typed in the input box.
 
 from __future__ import annotations
 
+import random
 import threading
 import time
 from pathlib import Path
@@ -26,7 +27,8 @@ from textual.widgets.option_list import Option as ListOption
 from ombro import runs, views
 from ombro.home import Home
 from ombro.tui import look
-from ombro.ui import UI, Event, Failure, Field, LeadSaid, ModeChanged, Note, Progress, ProposalShown, Usage
+from ombro.ui import (YESNO_AGAIN, UI, ChatCleared, Event, Failure, Field, LeadSaid, ModeChanged, Note, Progress,
+                      ProposalShown, Usage, yes_no)
 
 # The slash commands (specification 14.1). Each does what its command in section 13 does.
 SLASH = [
@@ -41,8 +43,10 @@ SLASH = [
     ("/schedule", "scheduled runs"),
     ("/crew", "crews and their roles"),
     ("/role", "add or edit a role"),
+    ("/model", "which model the Lead and each role use"),
+    ("/models", "your model connections and their models"),
     ("/keys", "which keys are set"),
-    ("/folders", "folders shared with runs"),
+    ("/folder", "folders shared with runs and the Lead: list, add, remove"),
     ("/tools", "tools and their permissions"),
     ("/remember", "add a lesson to a crew's notes"),
     ("/preferences", "your name, theme and defaults"),
@@ -51,9 +55,13 @@ SLASH = [
     ("/quit", "leave Ombro"),
 ]
 CHAT_COMMANDS = ("/chat", "/new", "/brief", "/remember")  # handled by chat itself
-TUI_COMMANDS = ("/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/keys", "/folders",
+TUI_COMMANDS = ("/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model", "/models",
+                "/keys", "/folder", "/folders",
                 "/tools", "/preferences")
 QUIT_AGAIN_SECONDS = 2.5
+THINKING_FRAMES = ("·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢")
+THINKING_SECONDS = 0.12
+PACE_SECONDS = (0.4, 1.2)  # the pause before each of set-up's lines, chosen at random
 POLL_SECONDS = 2.0
 
 
@@ -96,6 +104,10 @@ class TuiUI(UI):
     def show(self, event: Event) -> None:
         if not self.app.is_running:
             raise Interrupted()
+        if self.app.pace and isinstance(event, Note) and event.level == "lead":
+            # Set-up's own lines are written, not generated: a short, varied pause (with
+            # the thinking glyph showing) keeps the conversation's rhythm.
+            time.sleep(random.uniform(*PACE_SECONDS))
         self.app.call_from_thread(self.app.show_event, event)
         self._check()
 
@@ -183,9 +195,13 @@ class HeaderBlock(Widget):
         return Group(rule, Text(""), grid, Text(""), Text("─" * width, style=p.dim))
 
 
+NEWLINE_KEYS = ("shift+enter", "alt+enter", "ctrl+j")  # a new line in the input; Enter sends
+
+
 class PromptArea(TextArea):
-    """The input box: wraps, grows to a few lines, and sends on Enter. A pasted
-    paragraph keeps its line breaks."""
+    """The input box: wraps, grows to a few lines, and sends on Enter. Shift+Return
+    (or Option+Return, Ctrl+J, or a backslash then Return) starts a new line. A
+    pasted paragraph keeps its line breaks."""
 
     class Submitted(Message):
         def __init__(self, area: "PromptArea", text: str):
@@ -205,9 +221,19 @@ class PromptArea(TextArea):
             event.prevent_default()
             app.slash_key(event.key)
             return
+        if event.key in NEWLINE_KEYS:
+            event.stop()
+            event.prevent_default()
+            self.insert("\n")
+            return
         if event.key == "enter":
             event.stop()
             event.prevent_default()
+            if self.text.endswith("\\") and self.cursor_location == self.document.end:
+                # a backslash before Enter starts a new line, for terminals that
+                # send Shift+Return as a plain Return
+                self.replace("\n", (self.cursor_location[0], self.cursor_location[1] - 1), self.cursor_location)
+                return
             self.post_message(self.Submitted(self, self.text))
             return
         await super()._on_key(event)
@@ -224,6 +250,14 @@ class PromptArea(TextArea):
 
 class Line(Static):
     DEFAULT_CSS = "Line { height: auto; margin: 1 0 0 0; }"
+
+    def __init__(self, text: Text, **kw: Any):
+        super().__init__(text, **kw)
+        self.text = text
+
+    def retheme(self, old: look.Palette, new: look.Palette) -> None:
+        self.text = look.recolour(self.text, old, new)
+        self.update(self.text)
 
 
 class OmbroApp(App):
@@ -267,6 +301,7 @@ class OmbroApp(App):
                              background-tint: $ombro-bg 0%; display: none; }
     #secret > .input--placeholder { color: $ombro-dim; }
     #secret > .input--cursor { background: $ombro-muted; color: $ombro-bg; }
+    #thinking { height: 1; padding: 0 1; margin: 1 0 0 0; display: none; }
     #footer { height: 1; margin: 0 0 1 0; }
     #footer-left { width: 1fr; color: $ombro-muted; }
     #footer-right { width: auto; color: $ombro-muted; }
@@ -274,8 +309,10 @@ class OmbroApp(App):
 
     BINDINGS = [Binding("ctrl+c", "interrupt", "Stop or leave", priority=True, show=False)]
 
-    def __init__(self, home: Home, *, dark: bool, client_factory=None, poll: bool = True):
+    def __init__(self, home: Home, *, dark: bool, client_factory=None, poll: bool = True, pace: bool = False):
         self.dark = dark
+        self.pace = pace
+        self.thinking_frame = 0
         self.colours = look.palette(dark)  # before Textual reads the CSS variables
         super().__init__()
         self.home = home
@@ -313,8 +350,12 @@ class OmbroApp(App):
                 "ombro-muted": p.muted, "ombro-dim": p.dim, "ombro-band": p.band, "ombro-band-text": p.band_text}
 
     def set_dark(self, dark: bool) -> None:
+        old = self.colours
         self.dark = dark
         self.colours = look.palette(dark)
+        if old != self.colours:
+            for line in self.query(Line):
+                line.retheme(old, self.colours)
         self.refresh_css()
         self.query_one(HeaderBlock).refresh()
         self.update_footer()
@@ -326,6 +367,7 @@ class OmbroApp(App):
             yield HeaderBlock(self)
             yield Static("", id="spacer")
             yield Vertical(id="messages")
+        yield Static("", id="thinking")
         yield Static("", classes="rule", id="slash-rule")
         yield OptionList(id="slash")
         yield Static("", classes="rule", id="rule-above")
@@ -341,6 +383,7 @@ class OmbroApp(App):
 
     def on_mount(self) -> None:
         self.query_one("#messages").styles.height = "auto"
+        self.set_interval(THINKING_SECONDS, self.tick_thinking)
         self.draw_rules()
         self.update_footer()
         if self.setup_needed:
@@ -387,6 +430,19 @@ class OmbroApp(App):
         for rid in ("#rule-above", "#rule-below", "#slash-rule"):
             self.query_one(rid, Static).update("─" * width)
 
+    def tick_thinking(self) -> None:
+        """The thinking glyph: one cell that turns while the core works and nothing is
+        being asked, so a pause reads as work rather than a hang."""
+        box = self.query_one("#thinking", Static)
+        on = self.busy and self.pending is None
+        if on:
+            self.thinking_frame = (self.thinking_frame + 1) % len(THINKING_FRAMES)
+            p = self.colours
+            box.update(Text(THINKING_FRAMES[self.thinking_frame], style=p.strong) + Text("  Thinking", style=p.dim))
+        if box.display != on:
+            box.display = on
+            self.call_after_refresh(self.fit_spacer)
+
     def update_footer(self) -> None:
         p = self.colours
         model = self.summary.get("model") or "no model"
@@ -421,6 +477,10 @@ class OmbroApp(App):
         self.call_after_refresh(self.query_one("#conversation").scroll_end, animate=False)
 
     def show_event(self, event: Event) -> None:
+        if isinstance(event, ChatCleared):
+            self.query_one("#messages").remove_children()
+            self.call_after_refresh(self.fit_spacer)
+            return
         if isinstance(event, Usage):
             self.usage = (event.total_tokens, event.max_tokens)
             self.update_footer()
@@ -541,8 +601,11 @@ class OmbroApp(App):
         if f.kind != "secret" or text:
             self.add_line(Note(shown or "(Enter)"), "you")
         if f.kind == "yesno":
-            low = text.strip().lower()
-            value = bool(f.default) if not low else low in ("y", "yes")
+            value = yes_no(text, f.default)
+            if value is None:
+                self.add_line(Note(("That's a question waiting for an answer, so commands wait until it's done. "
+                                    if text.strip().startswith("/") else "") + YESNO_AGAIN), "note")
+                return
         elif f.kind == "choice":
             raw = text if text.strip() or f.default in (None, "") else str(f.default)
             value = f.choose(raw)
@@ -815,5 +878,5 @@ def run_app(home: Home | None = None) -> int:
         theme = load_preferences(home).theme if home.root.is_dir() else "auto"
     except Exception:  # noqa: BLE001
         theme = "auto"
-    OmbroApp(home, dark=is_dark(theme)).run()
+    OmbroApp(home, dark=is_dark(theme), pace=True).run()
     return 0

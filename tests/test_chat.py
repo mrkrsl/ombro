@@ -102,7 +102,8 @@ def test_chat_answers_about_a_past_run_from_every_crew(chat, run, home):
     assert "Copperkettle teapot works" in read["content"]
     assert f"Lead: Run {teapots} found the Copperkettle teapot works." in chat.output
     system = chat.client.calls[0]["messages"][0]["content"]
-    assert "- default (the default crew)" in system and "- podcast" in system
+    assert "- the Default Crew (crew name `default` for tools, the default crew)" in system
+    assert "- the Podcast Crew" in system
     assert "Copperkettle" not in system  # memory is reached through tools, not loaded
 
 

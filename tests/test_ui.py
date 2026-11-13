@@ -228,12 +228,12 @@ def test_connecting_a_model_is_a_form_with_a_hidden_key(tmp_path):
             return ModelReply(content="OK")
 
     home = Home(tmp_path / "fresh")
-    ui = ScriptedUI(["", "2", "https://models.invalid/v1", "invented-model", "INVENTED_API_KEY",
-                     "sk-test-INVENTED-0123456789", "", False])
+    ui = ScriptedUI(["", "2", "https://models.invalid/v1", "INVENTED_API_KEY", "sk-test-INVENTED-0123456789",
+                     "invented-model", "", False])
     assert run_init(home, ui=ui, client_factory=lambda s, h: Client())
     kinds = [(f.name, f.kind) for f in ui.fields]
-    assert kinds[:6] == [("name", "text"), ("endpoint", "choice"), ("url", "text"), ("model", "text"), ("key_name", "text"),
-                         ("key", "secret")]
+    assert kinds[:6] == [("name", "text"), ("endpoint", "choice"), ("url", "text"), ("key_name", "text"),
+                         ("key", "secret"), ("model", "text")]  # the endpoint lists no models, so it is typed
     assert ui.fields[1].options[0].label.startswith("DeepSeek")
     assert keys.get_key(home, "INVENTED_API_KEY") == "sk-test-INVENTED-0123456789"
     assert connected_model(home).model == "invented-model"
@@ -242,13 +242,13 @@ def test_connecting_a_model_is_a_form_with_a_hidden_key(tmp_path):
 
 
 def test_the_model_form_holds_its_own_checks():
-    from ombro.init_cmd import ENDPOINTS, model_form
+    from ombro.init_cmd import ENDPOINTS, model_form, model_name_field
 
     form = model_form(ENDPOINTS[1])
     by_name = {f.name: f for f in form.fields}
     assert by_name["url"].check("not a url") and by_name["key_name"].check("lower") and not by_name["key_name"].check("")
-    assert [f.name for f in model_form(ENDPOINTS[0]).fields] == ["model"]  # DeepSeek needs only the model name
-    assert model_form(ENDPOINTS[0]).fields[0].check("") is None  # its default is taken
+    assert model_form(ENDPOINTS[0]).fields == []  # DeepSeek needs only its key; the model is chosen after
+    assert model_name_field("deepseek-chat").check("") is None  # a suggested name is taken on Enter
 
 
 def test_setting_a_key_from_an_interface(home):
@@ -290,7 +290,9 @@ def test_granting_a_folder_from_an_interface(home, tmp_path, monkeypatch):
     assert [f.kind for f in ui.fields] == ["choice", "yesno"]
     (g,) = folders.load(home)[0].values()
     assert g.access == "write" and g.path == "~/Invented Brand"
-    assert add_flow(home, str(target), "again", None, False, ScriptedUI(["n"])) == 1
+    again = ScriptedUI([])
+    assert add_flow(home, str(target), "again", None, False, again) == 0  # said at once, nothing asked
+    assert not again.fields and "already shared as 'invented-brand' (write)" in _shown_text(again)
 
 
 # -- the set-up script and the crew step ---------------------------------------------

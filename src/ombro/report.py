@@ -570,7 +570,7 @@ def folder_lines(f: dict[str, Any]) -> list[str]:
         lines.append(f"- Left out: {note}")
     if f.get("not_shared"):
         lines += ["", "Refused because they are not in a folder shared with this run. Share the folder with "
-                  "`ombro folders add <path>` if a later run should reach it:"]
+                  "`ombro folder add <path>` if a later run should reach it:"]
         lines += [f"- {_line(p, 200)}" for p in f["not_shared"][:20]]
     if not lines:
         lines.append("None.")

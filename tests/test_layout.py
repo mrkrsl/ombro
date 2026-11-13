@@ -132,7 +132,7 @@ def test_a_grant_whose_path_now_leads_elsewhere_is_left_out(home, user):
     swap_for_symlink(user / "Pictures" / "Trip", user / "Documents")
     got, left = folders.for_run(home, {"folders": ["photos"]})
     assert got == []
-    assert "through a symlink" in left[0] and "ombro folders add" in left[0]
+    assert "through a symlink" in left[0] and "ombro folder add" in left[0]
 
 
 def test_the_report_lists_nothing_through_a_replaced_workspace(home, secret):

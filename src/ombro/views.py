@@ -244,7 +244,8 @@ def preferences(home: Home) -> dict[str, Any]:
     p = load_preferences(home)
     outward = p.outward
     preset = outward.get("preset") if isinstance(outward, dict) else outward
-    return {"name": p.name, "theme": p.theme, "default_crew": p.default_crew, "editor": p.editor,
+    return {"name": p.name, "theme": p.theme, "default_crew": p.default_crew,
+            "default_crew_title": crew_title(home, p.default_crew), "editor": p.editor,
             "outward": str(preset or "balanced"), "instructions_set": bool(p.instructions.strip()),
             "files": {"config": str(home.preferences_config), "instructions": str(home.instructions)}}
 

@@ -110,6 +110,13 @@ class ModeChanged(Event):
     text: str = ""
 
 
+@dataclass
+class ChatCleared(Event):
+    """/new: a fresh chat began, so an interface may clear what is on screen."""
+
+    kind: ClassVar[str] = "cleared"
+
+
 # ---------------------------------------------------------------------------
 # Fields and forms: what the core asks
 
@@ -335,8 +342,11 @@ class ConsoleUI(UI):
             if f.kind == "wait":
                 return None
             if f.kind == "yesno":
-                low = raw.strip().lower()
-                return bool(f.default) if not low else low in ("y", "yes")
+                answer = yes_no(raw, f.default)
+                if answer is None:
+                    self._say(YESNO_AGAIN)
+                    continue
+                return answer
             if f.kind == "choice":
                 if not raw.strip() and f.default not in (None, ""):
                     raw = str(f.default)
@@ -365,6 +375,22 @@ class ConsoleUI(UI):
         open_in_editor(self.home, paths, self)
 
 
+YESNO_AGAIN = "Please answer y or n (Enter for the default)."
+
+
+def yes_no(raw: str, default: Any) -> bool | None:
+    """A yes/no answer, the default for Enter, or None for anything else: a stray
+    command such as /model must never be taken as no."""
+    low = (raw or "").strip().lower()
+    if not low:
+        return bool(default)
+    if low in ("y", "yes"):
+        return True
+    if low in ("n", "no"):
+        return False
+    return None
+
+
 def render(event: Event) -> list[str]:
     """The lines the command line prints for an event."""
     if isinstance(event, LeadSaid):
@@ -373,6 +399,8 @@ def render(event: Event) -> list[str]:
         return [f"\n[{event.text}]"]
     if isinstance(event, Failure):
         return [f"\n{event.text}"]
+    if isinstance(event, ChatCleared):
+        return []
     if isinstance(event, ModeChanged):
         if not event.text:
             return []

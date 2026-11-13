@@ -70,7 +70,8 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
     "chat_history_chars": 30_000,
     "chat_calls_per_message": 8,
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
-                            "web.fetch": 15, "default": 10},
+                            "web.fetch": 15, "folders.list": 30, "folders.read": 40, "folders.write": 10,
+                            "default": 10},
 }
 # Scheduler settings: how late a tick may start a slot, and how many scheduled
 # runs may start in one tick or run at once.

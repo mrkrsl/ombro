@@ -18,6 +18,7 @@ from rich.style import Style
 from rich.text import Text
 
 from ombro import outbox, runs, views
+from ombro.home import crew_title, find_crew
 from ombro.ui import Failure, Field, Note, Option
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -26,6 +27,14 @@ if TYPE_CHECKING:  # pragma: no cover
 
 def _n(count: int, word: str) -> str:
     return f"{count} {word}" + ("" if count == 1 else "s")
+
+
+def models_spec(home, model: str):
+    from ombro import models
+    from ombro.settings import load_models
+
+    specs = load_models(home)
+    return specs.get(models.entry_name(model)) or specs["default"]
 
 
 class Commands:
@@ -83,19 +92,26 @@ class Commands:
             crew = load_preferences(self.home).default_crew
             m = re.search(r"--crew\s+(\S+)", rest)
             if m:
-                crew = m.group(1)
-                title = " ".join(w for w in words[1:] if w not in ("--crew", crew)) or None
-            if crew not in self.home.crews():
-                self.say(f"No crew named {crew!r}. Crews: {', '.join(self.home.crews())}.")
-                return
+                given = m.group(1)
+                title = " ".join(w for w in words[1:] if w not in ("--crew", given)) or None
+                crew = find_crew(self.home, given)
+                if crew is None:
+                    self.say(f"There's no crew called {given}. The crews are "
+                             f"{', '.join(crew_title(self.home, c) for c in self.home.crews())}.")
+                    return
             if title and self.home.roles_dir(crew).joinpath(folder_name(title)).exists():
-                self.say(f"Crew {crew} already has a role called {title}.")
+                self.say(f"The {crew_title(self.home, crew)} already has a role called {title}.")
                 return
             limits = load_limits(self.home)
             kw = {"client_factory": self.app.client_factory} if self.app.client_factory else {}
             outcome = start(self.home, RolePurpose(self.home, crew, limits, title), crew, limits, ui=self.ui, **kw)
             if outcome.confirmed:
-                self.say(f"Added {outcome.proposal.data['name']} to crew {crew}.", level="done")
+                from ombro.init_cmd import _role_title
+                from ombro.models import offer_role_model
+
+                added = outcome.proposal.data["name"]
+                self.say(f"Added {added} to the {crew_title(self.home, crew)}.", level="done")
+                offer_role_model(self.home, self.ui, f"{crew}/{added}", _role_title(self.home, crew, added))
             return
         if action == "edit" and len(words) > 1:
             name = words[1]
@@ -325,7 +341,110 @@ class Commands:
             return
         self.usage("/keys, /keys set <NAME>. Removing one is `ombro keys remove` for now.")
 
-    def cmd_folders(self, words: list[str], rest: str) -> None:
+    def cmd_models(self, words: list[str], rest: str) -> None:
+        from ombro import models
+        from ombro.client import ModelError, make_client
+        from ombro.init_cmd import connect_model, test_connection
+        from ombro.settings import SetupError
+
+        action = words[0].lower() if words else "list"
+        if action == "list":
+            items = []
+            for c in models.connections(self.home):
+                where = c["endpoint"] or c["api"]
+                items.append(f"{where}" + (f" (key {c['key']})" if c["key"] else ""))
+                for m in c["models"]:
+                    who = f": {', '.join(m['used_by'])}" if m["used_by"] else ""
+                    items.append(f"   {m['name']}" + ("  (the default)" if m["default"] else "") + who)
+            self.say("Models, by connection:", items=items or ["none yet"])
+            self.say("/model changes who uses which. /models default chooses the default, /models refresh asks "
+                     "each connection for its models, and /models add connects another provider.")
+            return
+        if action == "default":
+            have = models.names(self.home)
+            if len(words) > 1:
+                name = words[1]
+            else:
+                f = models.choice_field(self.home, "default_model", "Which model should be the default?")
+                if f is None:
+                    self.say(f"There's only one model, {have[0] if have else 'none'}. /models refresh or "
+                             "/models add finds more.")
+                    return
+                name = models.chosen(self.home, self.ui.ask(f))
+            try:
+                models.set_default(self.home, name)
+            except SetupError as e:
+                self.fail(str(e))
+                return
+            self.say(f"The default model is now {name}. The Lead and roles without a model of their own use it.",
+                     level="done")
+            return
+        if action == "refresh":
+            from ombro.settings import ModelSpec
+
+            for c in models.connections(self.home):
+                if c["api"] != "openai":
+                    continue
+                spec = ModelSpec(name="default", api="openai", model="", endpoint=c["endpoint"], key=c["key"])
+                try:
+                    ids = make_client(spec, self.home).list_models()
+                except ModelError as e:
+                    self.say(f"{c['endpoint']} did not list its models: {e}")
+                    continue
+                before = {m["name"] for m in c["models"]}
+                added = [n for n in models.add_models(self.home, c["endpoint"], c["key"], ids) if n not in before]
+                self.say(f"{c['endpoint']}: {len(ids)} model{'s' if len(ids) != 1 else ''}"
+                         + (f", added {', '.join(added)}." if added else ", nothing new."))
+            return
+        if action == "add":
+            old_default = models.default_name(self.home)
+            endpoint, model, _ = connect_model(self.home, self.ui,
+                                               self.app.init_client_factory or make_client)
+            ok, detail = test_connection(self.home, models_spec(self.home, model),
+                                         self.app.init_client_factory or make_client)
+            if not ok:
+                self.fail(f"The test call to {model} failed: {detail}")
+            if old_default and old_default != models.entry_name(model) and not self.ui.yes(
+                    "make_default", f"Make {model} your default model, in place of {old_default}?"):
+                models.set_default(self.home, old_default)
+            self.say(f"Connected {endpoint}. /models lists its models.", level="done")
+            return
+        self.usage("/models, /models default [name], /models refresh, /models add")
+
+    def cmd_model(self, words: list[str], rest: str) -> None:
+        """Who uses which model: the Lead or a role, then the model."""
+        from ombro import models
+        from ombro.ui import Field, Option
+
+        people = [("lead", "the Lead")]
+        for crew in self.home.crews():
+            rdir = self.home.roles_dir(crew)
+            if rdir.is_dir():
+                from ombro.init_cmd import _role_title
+
+                people += [(f"{crew}/{p.name}", f"{_role_title(self.home, crew, p.name)} "
+                            f"({crew_title(self.home, crew)})")
+                           for p in sorted(rdir.iterdir()) if p.is_dir() and not p.name.startswith(".")]
+        lines = [f"{label}: {models.current_model(self.home, who)}" for who, label in people]
+        self.say("Who uses which model:", items=lines)
+        if len(models.names(self.home)) < 2:
+            self.say("There's only one model so far. /models refresh or /models add finds more.")
+            return
+        pick = self.ui.ask(Field("who", "Whose model would you like to change?", "choice", default="1",
+                                 options=[Option(str(i), label) for i, (_, label) in enumerate(people, 1)],
+                                 invalid="Please choose one of the numbers shown."))
+        who, label = people[int(pick) - 1]
+        f = models.choice_field(self.home, "model", f"Which model should {label} use?",
+                                models.current_model(self.home, who))
+        name = models.chosen(self.home, self.ui.ask(f))
+        models.set_role_model(self.home, who, name)
+        self.say(f"{label[0].upper() + label[1:]} will use {name} from the next chat, interview or run.",
+                 level="done")
+
+    def cmd_folders(self, words: list[str], rest: str) -> None:  # the old name, kept working
+        self.cmd_folder(words, rest)
+
+    def cmd_folder(self, words: list[str], rest: str) -> None:
         from ombro import folders
         from ombro.settings import SetupError
 
@@ -335,7 +454,7 @@ class Commands:
                 data = views.folder_list(self.home)
                 if not data["folders"]:
                     self.say("No folders are shared. Runs reach only their own workspace. Share one with "
-                             "/folders add <path>.")
+                             "/folder add <path>.")
                     return
                 self.say("Shared folders:", items=[f"{f['name']}  {f['access']}  {f['path']}"
                                                    + (f"  (problem: {f['problem']})" if f["problem"] else "")
@@ -353,10 +472,10 @@ class Commands:
         except (folders.FolderError, SetupError) as e:
             self.fail(str(e))
             return
-        self.usage("/folders, /folders add <path>, /folders remove <name>")
+        self.usage("/folder, /folder add <path>, /folder remove <name>")
 
     def cmd_crew(self, words: list[str], rest: str) -> None:
-        from ombro.home import crew_title, ensure_crew
+        from ombro.home import ensure_crew
         from ombro.roles import NAME
         from ombro.settings import set_preference
 
@@ -381,15 +500,16 @@ class Commands:
                 self.say("Crew names use lower-case letters, digits, - and _, and must be new.")
                 return
             ensure_crew(self.home, name, "", " ".join(words[2:]))
-            self.say(f"Created crew {name} ({crew_title(self.home, name)}). Add its roles with "
+            self.say(f"Created the {crew_title(self.home, name)}. Add its roles with "
                      f"/role add <title> --crew {name}.", level="done")
             return
         if action == "use" and len(words) > 1:
-            if words[1] not in self.home.crews():
-                self.say(f"No crew named {words[1]!r}.")
+            crew = find_crew(self.home, " ".join(words[1:]))
+            if crew is None:
+                self.say(f"There's no crew called {' '.join(words[1:])}.")
                 return
-            set_preference(self.home, "default_crew", words[1])
-            self.say(f"The default crew is now {words[1]}.", level="done")
+            set_preference(self.home, "default_crew", crew)
+            self.say(f"The default crew is now the {crew_title(self.home, crew)}.", level="done")
             return
         self.usage("/crew, /crew add <name> [title], /crew use <name>")
 
@@ -419,7 +539,7 @@ class Commands:
             return
         p = views.preferences(self.home)
         self.say("Preferences:", items=[f"name: {p['name'] or '(not set)'}", f"theme: {p['theme']}",
-                                        f"default crew: {p['default_crew']}",
+                                        f"default crew: {p['default_crew_title']}",
                                         f"editor: {p['editor'] or '(from $VISUAL or $EDITOR)'}",
                                         f"outward: {p['outward']}",
                                         f"about you: {'set' if p['instructions_set'] else 'not set'}"])

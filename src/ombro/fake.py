@@ -49,6 +49,12 @@ class ScriptedClient:
             self._queue.extend([entry] * int(n))
         self.clock = clock
         self.calls: list[dict[str, Any]] = []
+        self.models: list[str] | None = None  # what list_models answers; None: the endpoint does not say
+
+    def list_models(self, timeout: float = 20.0) -> list[str]:
+        if not self.models:
+            raise ModelError("this endpoint does not list its models")
+        return sorted(self.models)
 
     @classmethod
     def from_file(cls, path: str, base: Path | None = None) -> "ScriptedClient":

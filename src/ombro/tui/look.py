@@ -33,12 +33,51 @@ LIGHT = Palette(background="#FFFFFF", text=OMBRO[700], strong=OMBRO[500], muted=
                 band=OMBRO[200], band_text=OMBRO[500], logo_box=OMBRO[500], logo_text=OMBRO[100],
                 logo_shadow=OMBRO[400])
 DARK = Palette(background=OMBRO[700], text=OMBRO[200], strong=OMBRO[300], muted=OMBRO[300], dim=OMBRO[500],
-               band=OMBRO[500], band_text=OMBRO[200], logo_box=OMBRO[200], logo_text=OMBRO[700],
+               band=OMBRO[600], band_text=OMBRO[200], logo_box=OMBRO[200], logo_text=OMBRO[700],
                logo_shadow=OMBRO[400])
 
 
 def palette(dark: bool) -> Palette:
     return DARK if dark else LIGHT
+
+
+TEXT_ROLES = ("text", "strong", "muted", "dim")  # the colours lines are drawn in
+
+
+def colour_map(old: Palette, new: Palette) -> dict[str, str]:
+    """Each colour a line may have been drawn in under `old`, to its role's colour under `new`."""
+    out: dict[str, str] = {}
+    for role in TEXT_ROLES:
+        out.setdefault(getattr(old, role).lower(), getattr(new, role))
+    return out
+
+
+def recolour(text, old: Palette, new: Palette):
+    """A copy of a drawn line with the old theme's colours swapped for the new one's,
+    so lines already on screen stay legible when the theme changes."""
+    from rich.color import Color
+    from rich.style import Style
+    from rich.text import Span
+
+    mapping = colour_map(old, new)
+
+    def swap(style):
+        if not style:
+            return style
+        st = Style.parse(style) if isinstance(style, str) else style
+        changes = {}
+        for attr in ("color", "bgcolor"):
+            c = getattr(st, attr)
+            if c is not None and c.triplet is not None:
+                hexed = c.triplet.hex.lower()
+                if hexed in mapping:
+                    changes[attr] = Color.parse(mapping[hexed])
+        return st + Style(**changes) if changes else st
+
+    out = text.copy()
+    out.style = swap(text.style)
+    out.spans = [Span(s.start, s.end, swap(s.style)) for s in text.spans]
+    return out
 
 
 # ---------------------------------------------------------------------------

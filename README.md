@@ -80,9 +80,9 @@ ombro outbox edit ab12-3               # change its arguments; it waits for appr
 ombro tools [server]                   # tools and MCP servers; a server's tools and their permission
 ombro server add <name>                # add an MCP server to tools.md; asks for any secret hidden
 ombro server remove <name>
-ombro folders                          # folders shared with runs, and whether each can be backed up
-ombro folders add ~/Documents/Brand    # share one; asks read or write
-ombro folders remove brand
+ombro folder                           # folders shared with runs, and whether each can be backed up
+ombro folder add ~/Documents/Brand    # share one; asks read or write
+ombro folder remove brand
 ombro keys remove FIRECRAWL_API_KEY
 ombro role list [--crew <crew>]        # the Lead, then each crew's roles
 ombro role add [title] --crew <crew>   # a role joins one crew
@@ -134,8 +134,8 @@ The `/` commands do what their `ombro` commands do:
   `/outbox resolve <ref> sent | not-sent`; decisions work while a run is going.
 - `/role`, `/role add [title] [--crew <crew>]`, `/role edit <name>`;
   `/crew`, `/crew add <name> [title]`, `/crew use <name>`.
-- `/keys`, `/keys set <NAME>` (hidden); `/folders`, `/folders add <path>`,
-  `/folders remove <name>`; `/schedule`, `/schedule enable | disable <name>`;
+- `/keys`, `/keys set <NAME>` (hidden); `/folder`, `/folder add <path>`,
+  `/folder remove <name>`; `/schedule`, `/schedule enable | disable <name>`;
   `/tools`, `/tools add [name]`, `/tools remove <name>`; `/preferences`,
   `/preferences edit`; `/theme`, `/help`, `/quit`.
 
@@ -457,7 +457,7 @@ declined: [~/Projects/site]
 ---
 ```
 
-- **Only you grant.** `ombro folders add <path>` asks read or write. When
+- **Only you grant.** `ombro folder add <path>` asks read or write. When
   `ombro brief` (or `ombro run` without a spec) starts in a folder that is
   not shared, Ombro asks once whether to share it; a "no" is remembered in
   `declined`. In the brief interview the Lead asks which folders the task
@@ -479,7 +479,7 @@ declined: [~/Projects/site]
   clones it into the run's `backup/` if the disk allows (APFS on macOS,
   reflinks on Linux). A clone is near-instant and takes almost no space until
   files change. A server share usually cannot be cloned: it stays writable,
-  `ombro folders` says no backup will be taken, and the server's own
+  `ombro folder` says no backup will be taken, and the server's own
   backups are the remedy. The report lists every file created, changed and
   removed, from a before-and-after comparison by the harness.
 - **Somewhere not shared.** To save a file in a folder that is not shared
