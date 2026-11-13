@@ -34,8 +34,9 @@ class Answers:
 
 
 class ChatSession:
-    def __init__(self, home):
+    def __init__(self, home, titles=False):
         self.home = home
+        self.titles = titles  # off unless a test is about titles: the title call would use a scripted reply
         self.said: list[str] = []
 
     def __call__(self, script, answers, *, crew=None, edit=None) -> Chat:
@@ -45,7 +46,7 @@ class ChatSession:
         self.chat = Chat(
             self.home, crew=crew, ask=self.answers, say=self.said.append, edit=edit,
             client_factory=lambda spec: self.client, today=TODAY,
-            registry=native_registry(self.home, load_tool_settings(self.home)),
+            registry=native_registry(self.home, load_tool_settings(self.home)), titles=self.titles,
         )
         return self.chat.run()
 

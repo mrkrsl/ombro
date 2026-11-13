@@ -21,6 +21,7 @@ loaded into later chats or runs, and never searched.
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -30,7 +31,7 @@ from ombro import keys, material, mdfile, memory, prompts, runs
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home, crew_title, find_crew
-from ombro.ui import UI, ChatCleared, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option, Usage
+from ombro.ui import UI, ChatCleared, PastTurn, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option, Usage
 from ombro.journal import utc_now
 from ombro.roles import load_lead
 from ombro.settings import ModelSpec, SetupError, format_tokens, load_limits, load_models, load_preferences, load_tool_settings
@@ -54,6 +55,8 @@ It changes a file only after you say yes.
   /brief [@crew] [text]     brief a task (Brief mode); the chat so far is its starting point
   /chat                     back to Chat mode from a brief (nothing is written)
   /new                      save this chat and start a fresh one; nothing carries over
+  /chats                    your past chats, newest first; reopen one and carry on
+  /rename title             give this chat a title of your own
   /remember [@crew] text    add a dated lesson to a crew's notes.md, after you confirm the wording
   /help                     this list
   /quit                     end the chat (it is saved in chats/)
@@ -78,6 +81,46 @@ def _tool_msg(call_id: str, payload: Any, src: str | None = None) -> dict:
     if src:
         content = material.fence(content, src)  # from outside: assessed, never obeyed (7.1)
     return {"role": "tool", "tool_call_id": call_id, "content": content}
+
+
+ENTRY = re.compile(r"^\*\*(You \((Chat|Brief)\)|Lead):\*\* ?")
+
+
+def parse_entries(body: str) -> list[str]:
+    """A saved chat's entries: each turn, yours or the Lead's, and Ombro's notes. A turn
+    may run over several paragraphs; it ends where the next entry begins."""
+    entries: list[str] = []
+    for chunk in body.split("\n\n"):
+        if ENTRY.match(chunk) or (chunk.startswith("_") and chunk.rstrip().endswith("_") and "\n" not in chunk):
+            entries.append(chunk)
+        elif entries:
+            entries[-1] += "\n\n" + chunk
+    return [e.rstrip() for e in entries]
+
+
+def turns(entries: list[str]):
+    """(user or lead, text) for each turn in Chat mode; Brief questions and notes are left out."""
+    for e in entries:
+        m = ENTRY.match(e)
+        if not m:
+            continue
+        text = e[m.end():].strip()
+        if m.group(1).startswith("You"):
+            if m.group(2) == "Chat":
+                yield "user", text
+        else:
+            yield "lead", text
+
+
+def _add_usage(before: dict[str, Any], now: dict[str, Any]) -> dict[str, Any]:
+    out = dict(now)
+    for k in ("total_tokens", "input_tokens", "output_tokens", "model_calls"):
+        out[k] = int(before.get(k) or 0) + int(now.get(k) or 0)
+    tools = dict(before.get("tool_calls") or {})
+    for k, v in (now.get("tool_calls") or {}).items():
+        tools[k] = int(tools.get(k) or 0) + int(v or 0)
+    out["tool_calls"] = tools
+    return out
 
 
 class Transcript:
@@ -131,8 +174,10 @@ class Chat:
         clock: Callable[[], float] = time.time,
         today: date | None = None,
         registry: ToolRegistry | None = None,
+        titles: bool = True,
     ):
         self.home = home
+        self.titles = titles  # name a chat after its first exchange, with one small model call
         prefs = load_preferences(home)
         self.instructions = prefs.instructions
         self.crew = crew or prefs.default_crew
@@ -180,6 +225,10 @@ class Chat:
         self.remembered = []
         self.specs = []
         self.ended = "you ended the chat"
+        self.title: str | None = None
+        self.titled_by: str | None = None  # model, spec or you; a title you set is never replaced
+        self.prior_usage: dict[str, Any] = {}  # what the chat used before it was reopened
+        self.stamp = datetime.now().strftime("%Y%m%d-%H%M")
         self.path = self._transcript_path()
 
     def reload_limits(self) -> None:
@@ -193,16 +242,98 @@ class Chat:
         """/new: save this chat and start a fresh one, with its own token cap."""
         self.ended = "you started a new chat"
         self._save()
-        old = self.path
+        old_title = self.title
         self._fresh()
-        try:
-            shown = old.relative_to(self.home.root)
-        except ValueError:
-            shown = old
         self.ui.show(ChatCleared())
-        self.ui.say(f"I've saved the last chat to {shown}. This is a new chat. How would you like me to help?",
-                    level="lead")
+        saved = f"I've saved the last chat, '{old_title}'." if old_title else "I've saved the last chat."
+        self.ui.say(f"{saved} This is a new chat. How would you like me to help?", level="lead")
         self._usage_line()
+
+    # -- titles ------------------------------------------------------------
+
+    def set_title(self, title: str, by: str) -> bool:
+        """Give the chat a title, and its file a name to match. A title you set stays."""
+        title = " ".join(str(title or "").replace("\n", " ").split()).strip("\"'“”‘’ .:#*")[:70].strip()
+        if not title or (self.titled_by == "you" and by != "you"):
+            return False
+        self.title, self.titled_by = title, by
+        from ombro.runs import run_slug
+
+        folder = self.path.parent
+        new = folder / f"{run_slug({'name': title})}-{self.stamp}.md"
+        n = 2
+        while new.exists() and new != self.path:
+            new = folder / f"{run_slug({'name': title})}-{self.stamp}-{n}.md"
+            n += 1
+        if new != self.path:
+            if self.path.exists():
+                self.path.rename(new)
+            self.path = new
+        self._save()
+        return True
+
+    def _auto_title(self) -> None:
+        """After the first exchange: a title of a few words, from one small model call.
+        Its tokens count as the chat's. If it fails, the chat goes untitled for now."""
+        said = [m for ex in self.exchanges for m in ex if m.get("role") in ("user", "assistant") and m.get("content")]
+        if not said:
+            return
+        text = "\n".join(f"{'You' if m['role'] == 'user' else 'Lead'}: {_short(m['content'], 600)}" for m in said[:4])
+        messages = [{"role": "user", "content": "Give this conversation a title of two to five words, in title "
+                     "case, saying what it is about. Reply with the title only, no quotes.\n\n" + text}]
+        try:
+            spec = self.models.get("cheap") or self.spec
+            est = estimate_tokens(messages, None)
+            max_out, timeout = self.gate.check_model_call(spec.name, est, 30)
+            reply = self._client_factory(spec).complete(messages, tools=None, max_output_tokens=max_out,
+                                                         timeout=min(timeout, 30))
+            u = reply.usage
+            self.gate.record_model_call(spec.name, u.input_tokens or est, min(u.output_tokens, max_out),
+                                        estimated=u.estimated)
+        except (ModelError, LimitReached, OSError):
+            return
+        self.set_title(reply.content or "", "model")
+
+    # -- past chats --------------------------------------------------------
+
+    def reopen(self, path: Path) -> None:
+        """Carry on a past chat: its words (yours and the Lead's) are sent again, as any
+        conversation's are, and new turns are added to the same file. Old tool results are
+        not kept, so the Lead looks things up again if it needs them."""
+        meta, body = mdfile.read(path)
+        self.ended = "you opened another chat"
+        self._save()
+        self._fresh()
+        entries = parse_entries(body)
+        self.path = path
+        self.title = meta.get("title") or None
+        self.titled_by = meta.get("titled_by") or ("model" if self.title else None)
+        self.prior_usage = dict(meta.get("usage") or {})
+        if meta.get("default_crew") in self.home.crews():
+            self.crew = meta["default_crew"]
+        m = runs.WHEN.search(path.stem)
+        self.stamp = f"{m.group(1)}-{m.group(2)[:4]}" if m else self.stamp
+        self.transcript.started = str(meta.get("started_at") or self.transcript.started)
+        self.transcript.entries = entries
+        self.remembered = list(meta.get("remembered") or [])
+        self.specs = list(meta.get("specs_saved") or [])
+        for kind, text in turns(entries):
+            if kind == "user":
+                self.exchanges.append([{"role": "user", "content": text}])
+                self.user_said.append(text)
+            elif self.exchanges:
+                self.exchanges[-1].append({"role": "assistant", "content": text})
+        self.transcript.note(f"Reopened {utc_now()}.")
+        self.pending_note = ("[Ombro note: the user reopened this chat to carry on. Tool results from before are "
+                             "not kept; look things up again if you need them.]\n")
+        self.ui.show(ChatCleared())
+        for who, text in turns(entries):
+            self.ui.show(PastTurn("you" if who == "user" else "lead", text))
+        self._save()
+
+    def history(self) -> list[tuple[str, str]]:
+        """The conversation so far, as (you or lead, text), for an interface to show again."""
+        return list(turns(self.transcript.entries))
 
     # -- plumbing ----------------------------------------------------------
 
@@ -345,6 +476,8 @@ class Chat:
             self.ui.show(Failure(f"I couldn't reach the model just now ({e}). Try again in a moment."))
             return True
         self._usage_line()
+        if self.titles and not self.title and self.exchanges and self.mode == "Chat":
+            self._auto_title()
         if request:
             revise = request[2] if len(request) > 2 else None
             self._brief(request[0], self.brief_opening("", request[1]), revise=revise)
@@ -353,7 +486,8 @@ class Chat:
 
     def close(self) -> None:
         self._save()
-        self.ui.say(f"Chat saved: {self.path}")
+        if self.path.exists():
+            self.ui.say(f"Chat saved: {self.path}" + (f" ('{self.title}')" if self.title else ""))
 
     def _command(self, text: str) -> bool:
         """Handle a slash command. Returns True if the text is a message for the Lead."""
@@ -370,6 +504,13 @@ class Chat:
             self.ui.say("You are in Chat mode.")
         elif word == "/new":
             self.new_chat()
+        elif word == "/rename":
+            if not rest.strip():
+                self.ui.say("Give the title, for example: /rename Indie Publisher Market Research")
+            elif self.set_title(rest, "you"):
+                self.ui.say(f"This chat is now called '{self.title}'.", level="done")
+        elif word == "/chats":
+            self._pick_chat(rest.strip())
         elif word == "/brief":
             crew, rest = self._crew_arg(rest)
             if crew:
@@ -794,6 +935,9 @@ class Chat:
         if outcome is not None and outcome.confirmed:
             name = outcome.proposal.data["name"]
             self.specs.append(name)
+            spec_path = self.home.specs_dir / f"{name}.md"
+            if spec_path.is_file():  # the chat takes the spec's title, unless you named it
+                self.set_title(runs.first_line(mdfile.read(spec_path)[1], 70) or name, "spec")
             self.ui.say(f"Spec saved as {name!r}. Run it with:  ombro run --spec {name}", spaced=True, level="done")
             self.transcript.note(f"Brief mode ended: spec {name!r} saved (transcript {outcome.transcript}).")
             self.pending_note += (f"[Ombro note: in Brief mode the user confirmed a spec, saved as {name!r}. "
@@ -807,20 +951,42 @@ class Chat:
     # -- transcript --------------------------------------------------------
 
     def _transcript_path(self) -> Path:
+        """chats/new-chat-<date-time>.md until the chat has a title; then the title's words."""
         folder = self.home.root / "chats"
         folder.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        path = folder / f"{stamp}.md"
+        path = folder / f"new-chat-{self.stamp}.md"
         n = 2
         while path.exists():
-            path = folder / f"{stamp}-{n}.md"
+            path = folder / f"new-chat-{self.stamp}-{n}.md"
             n += 1
         return path
 
+    def _pick_chat(self, want: str) -> None:
+        """/chats [part of a title]: past chats, newest first, to reopen one."""
+        from ombro import views
+
+        past = [c for c in views.chat_list(self.home) if Path(c["path"]) != self.path]
+        if want:
+            past = [c for c in past if want.lower() in c["title"].lower() or want.lower() in c["name"]]
+        if not past:
+            self.ui.say("There are no other chats" + (f" matching '{want}'." if want else " yet."))
+            return
+        shown = past[:20]
+        pick = self.ui.ask(Field("chat", "Which chat would you like to carry on? (newest first)", "choice",
+                                 default="1", invalid="Please choose one of the numbers shown.", mode="Chat",
+                                 options=[Option(str(i), f"{c['title']}  ({c['when']})")
+                                          for i, c in enumerate(shown, 1)]))
+        self.reopen(Path(shown[int(pick) - 1]["path"]))
+        self.ui.say(f"Here's '{self.title or 'that chat'}' again. Carry on where you left off.", level="lead")
+
     def _save(self) -> None:
+        if not self.transcript.entries and not self.path.exists():
+            return  # nothing was said: no file, so the list of chats has no empty ones
         s = self.gate.snapshot()
         meta = {
             "kind": "chat",
+            "title": self.title or "",
+            "titled_by": self.titled_by or "",
             "default_crew": self.crew,
             "started_at": self.transcript.started,
             "updated_at": utc_now(),
@@ -829,10 +995,11 @@ class Chat:
             "specs_saved": self.specs,
             "refused_tools": sorted(set(self.refused)),
             "limits": {"max_tokens": self.limits.max_tokens, "tool_max_calls": self.limits.tool_max_calls},
-            "usage": {k: s.get(k) for k in ("total_tokens", "input_tokens", "output_tokens", "model_calls",
-                                            "tool_calls")},
+            "usage": _add_usage(self.prior_usage, {k: s.get(k) for k in ("total_tokens", "input_tokens",
+                                                                          "output_tokens", "model_calls",
+                                                                          "tool_calls")}),
         }
-        body = ("# Chat\n\nSaved, not remembered: this transcript is never loaded into a later chat or run.\n\n"
+        body = (f"# {self.title or 'New chat'}\n\nReopen this chat with /chats, or `ombro chat --resume`.\n\n"
                 + "\n\n".join(self.transcript.entries) + "\n")
         text, _ = keys.scrub(self.home, mdfile.dump(meta, body))
         mdfile.write_atomic(self.path, text)

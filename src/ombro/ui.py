@@ -111,6 +111,15 @@ class ModeChanged(Event):
 
 
 @dataclass
+class PastTurn(Event):
+    """A turn from a chat reopened to carry on, shown again: who said it, and what."""
+
+    kind: ClassVar[str] = "past"
+    who: str  # you or lead
+    text: str
+
+
+@dataclass
 class ChatCleared(Event):
     """/new: a fresh chat began, so an interface may clear what is on screen."""
 
@@ -404,6 +413,8 @@ def render(event: Event) -> list[str]:
         return [f"\n{event.text}"]
     if isinstance(event, ChatCleared):
         return []
+    if isinstance(event, PastTurn):
+        return [f"{'You' if event.who == 'you' else 'Lead'}: {event.text}"]
     if isinstance(event, ModeChanged):
         if not event.text:
             return []

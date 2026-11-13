@@ -700,7 +700,32 @@ def cmd_chat(args) -> int:
     home = _home()
     _reap(home)
     _require_model(home)
-    Chat(home, crew=_crew(home, args.crew)).run()
+    chat = Chat(home, crew=_crew(home, args.crew))
+    if args.resume is not None:
+        from ombro import views
+
+        want = args.resume.strip().lower()
+        past = [c for c in views.chat_list(home) if not want or want in c["title"].lower() or want in c["name"]]
+        if not past:
+            raise CliError(f"No saved chat matches {args.resume!r}. `ombro chats` lists them.")
+        chat.reopen(Path(past[0]["path"]))
+        print(f"\nReopened '{past[0]['title']}'. Carry on where you left off.\n")
+    chat.run()
+    return 0
+
+
+def cmd_chats(args) -> int:
+    from ombro import views
+
+    rows = views.chat_list(_home())
+    if args.json:
+        return _print_json(rows)
+    if not rows:
+        print("No saved chats yet.")
+        return 0
+    for c in rows[:40]:
+        print(f"{c['when']:<16} {c['title']}")
+    print("\nCarry one on with `ombro chat --resume <part of its title>`.")
     return 0
 
 
@@ -1049,7 +1074,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("chat", help="talk with the Lead (read-only); /brief, /remember, /help inside")
     s.add_argument("--crew", help="the crew /remember and /brief use unless another is named (default from preferences)")
+    s.add_argument("--resume", nargs="?", const="", metavar="TITLE",
+                   help="carry on a saved chat: the newest whose title contains TITLE (the newest of all if none)")
     s.set_defaults(func=cmd_chat)
+
+    s = sub.add_parser("chats", help="saved chats by title, most recent first")
+    s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
+    s.set_defaults(func=cmd_chats)
 
     s = sub.add_parser("specs", help="list saved specs")
     s.add_argument("--crew")

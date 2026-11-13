@@ -155,6 +155,28 @@ def deliverables(home: Home, run_dir: Path) -> list[dict[str, Any]]:
     return out
 
 
+def chat_list(home: Home) -> list[dict[str, Any]]:
+    """Saved chats, most recently used first: title (never the file name), when, and where.
+    A chat from before titles is shown by its date."""
+    folder = home.root / "chats"
+    out = []
+    for p in folder.glob("*.md") if folder.is_dir() else []:
+        try:
+            meta, _ = mdfile.read(p)
+        except (OSError, mdfile.FrontMatterError):
+            continue
+        updated = str(meta.get("updated_at") or meta.get("started_at") or "")
+        title = str(meta.get("title") or "").strip()
+        if not title:
+            m = runs.WHEN.search(p.stem)
+            title = f"Chat of {m.group(1)[6:8]}/{m.group(1)[4:6]}/{m.group(1)[:4]}" if m else p.stem
+        stamp = datetime.fromtimestamp(p.stat().st_mtime)
+        out.append({"name": p.stem, "title": title, "path": str(p), "updated_at": updated,
+                    "when": f"{stamp.day} {stamp:%b}, {stamp:%H:%M}"})
+    out.sort(key=lambda c: (c["updated_at"], c["name"]), reverse=True)
+    return out
+
+
 def report(home: Home, run_dir: Path) -> dict[str, Any]:
     path = run_dir / "report.md"
     text = path.read_text(encoding="utf-8") if path.is_file() else None

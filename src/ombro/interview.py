@@ -518,11 +518,14 @@ class Interview:
     def _save_transcript(self, outcome: Outcome) -> Path:
         folder = interviews_dir(self.home, self.crew)
         folder.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        path = folder / f"{stamp}-{self.purpose.kind}.md"
+        # Named for what it produced, then when: brief-indie-author-creator-research-20261113-1301.md
+        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        made = (outcome.proposal.data.get("name") if outcome.confirmed and outcome.proposal else "") or ""
+        stem = "-".join(x for x in (self.purpose.kind, str(made), stamp) if x)
+        path = folder / f"{stem}.md"
         n = 2
         while path.exists():
-            path = folder / f"{stamp}-{self.purpose.kind}-{n}.md"
+            path = folder / f"{stem}-{n}.md"
             n += 1
         meta = {
             "kind": self.purpose.kind,

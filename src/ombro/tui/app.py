@@ -27,13 +27,15 @@ from textual.widgets.option_list import Option as ListOption
 from ombro import runs, views
 from ombro.home import Home
 from ombro.tui import look
-from ombro.ui import (YESNO_AGAIN, UI, ChatCleared, Event, Failure, Field, LeadSaid, ModeChanged, Note, Progress,
-                      ProposalShown, Usage, yes_no)
+from ombro.ui import (YESNO_AGAIN, UI, ChatCleared, Event, Failure, Field, LeadSaid, ModeChanged, Note, PastTurn,
+                      Progress, ProposalShown, Usage, yes_no)
 
 # The slash commands (specification 14.1). Each does what its command in section 13 does.
 SLASH = [
     ("/chat", "back to Chat from a brief"),
     ("/new", "save this chat and start a fresh one"),
+    ("/chats", "your past chats; reopen one and carry on"),
+    ("/rename", "give this chat a title"),
     ("/brief", "brief a task: the Lead interviews you for a spec"),
     ("/run", "run a saved spec again"),
     ("/runs", "runs and their status"),
@@ -56,7 +58,7 @@ SLASH = [
     ("/help", "what each command does"),
     ("/quit", "leave Ombro"),
 ]
-CHAT_COMMANDS = ("/chat", "/new", "/brief", "/remember")  # handled by chat itself
+CHAT_COMMANDS = ("/chat", "/new", "/chats", "/rename", "/brief", "/remember")  # handled by chat itself
 TUI_COMMANDS = ("/run", "/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model",
                 "/models",
                 "/keys", "/folder", "/folders", "/limits",
@@ -343,9 +345,11 @@ class OmbroApp(App):
 
     BINDINGS = [Binding("ctrl+c", "interrupt", "Stop or leave", priority=True, show=False)]
 
-    def __init__(self, home: Home, *, dark: bool, client_factory=None, poll: bool = True, pace: bool = False):
+    def __init__(self, home: Home, *, dark: bool, client_factory=None, poll: bool = True, pace: bool = False,
+                 titles: bool = True):
         self.dark = dark
         self.pace = pace
+        self.titles = titles  # chats are named after their first exchange
         self.thinking_frame = 0
         self.colours = look.palette(dark)  # before Textual reads the CSS variables
         super().__init__()
@@ -552,6 +556,12 @@ class OmbroApp(App):
         if isinstance(event, ChatCleared):
             self.query_one("#messages").remove_children()
             self.call_after_refresh(self.fit_spacer)
+            return
+        if isinstance(event, PastTurn):  # a reopened chat, shown again
+            if event.who == "you":
+                self.add_line(Note(event.text), "you")
+            else:
+                self.add_markdown(event.text, "lead", "• ")
             return
         if isinstance(event, Usage):
             self.usage = (event.total_tokens, event.max_tokens)
@@ -763,7 +773,7 @@ class OmbroApp(App):
             from ombro.chat import Chat
 
             kw = {"client_factory": self.client_factory} if self.client_factory else {}
-            self.chat = Chat(self.home, ui=self.bridge, **kw)
+            self.chat = Chat(self.home, ui=self.bridge, titles=self.titles, **kw)
         specs_before = len(self.chat.specs)
         go_on = self.chat.handle(text)
         if not go_on:
