@@ -293,7 +293,7 @@ def test_interview_usage_has_its_own_cap(talk, home):
     assert out.usage["total_tokens"] <= 12000
     assert talk.client.remaining == 1  # the call that would pass the cap never happened
     # The run cap is untouched by the interview's.
-    assert load_limits(home).max_tokens == 400_000
+    assert load_limits(home).max_tokens == 800_000
 
 
 def test_interview_usage_is_kept_apart_from_the_run(home, monkeypatch, capsys):

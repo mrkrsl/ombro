@@ -333,6 +333,50 @@ class Commands:
             return
         self.usage("/keys, /keys set <NAME>. Removing one is `ombro keys remove` for now.")
 
+    def cmd_limits(self, words: list[str], rest: str) -> None:
+        """One allowance level for the whole of Ombro: show it, or change it."""
+        from ombro import mdfile
+        from ombro.settings import (ALLOWANCES, LEVEL_KEYS, SetupError, allowance_table, format_duration,
+                                    format_tokens, load_limits, set_allowance)
+        from ombro.ui import Field, Option
+
+        if words and words[0].lower() == "set":
+            level = words[1].lower() if len(words) > 1 else None
+            if level is None:
+                names = list(ALLOWANCES)
+                current = load_limits(self.home).allowance
+                pick = self.ui.ask(Field(
+                    "allowance", "Which level should Ombro use?", "choice",
+                    default=str(names.index(current) + 1) if current in names else "2",
+                    options=[Option(str(i), line) for i, line in enumerate(allowance_table(), 1)],
+                    invalid="Please choose one of the numbers shown."))
+                level = names[int(pick) - 1]
+            try:
+                dropped = set_allowance(self.home, level)
+            except SetupError as e:
+                self.say(str(e))
+                return
+            self.say(f"Ombro now uses the {level} level, from this chat on. Runs already going keep their "
+                     "limits." + (f" Values set by hand were removed so the level "
+                     f"applies: {', '.join(dropped)}." if dropped else ""), level="done")
+            if self.app.chat is not None:
+                self.app.chat.reload_limits()  # this chat's cap follows at once
+            return
+        if words:
+            self.usage("/limits, /limits set [level]")
+            return
+        lim = load_limits(self.home)
+        meta, _ = mdfile.read(self.home.limits)
+        by_hand = [k for k in LEVEL_KEYS if k in meta]
+        self.say(f"Ombro uses the {lim.allowance} level" + (f" (set by hand: {', '.join(by_hand)})" if by_hand
+                                                             else "") + ":",
+                 items=[f"each run: {format_tokens(lim.max_tokens)} tokens, {lim.max_rounds} rounds, "
+                        f"{format_duration(lim.run_timeout)}",
+                        f"each chat: {format_tokens(lim.chat_max_tokens)} tokens",
+                        f"each interview: {format_tokens(lim.interview_max_tokens)} tokens",
+                        f"each model call: {lim.max_output_tokens:,} output tokens"])
+        self.say("Change it with /limits set. The levels:", items=allowance_table())
+
     def cmd_models(self, words: list[str], rest: str) -> None:
         from ombro import models
 

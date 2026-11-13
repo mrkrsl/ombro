@@ -181,6 +181,13 @@ class Chat:
         self.ended = "you ended the chat"
         self.path = self._transcript_path()
 
+    def reload_limits(self) -> None:
+        """The allowance changed: this chat's cap follows at once, keeping what it has used."""
+        self.base_limits = load_limits(self.home)
+        self.limits = self.base_limits.for_chat()
+        self.gate.limits = self.limits
+        self._usage_line()
+
     def new_chat(self) -> None:
         """/new: save this chat and start a fresh one, with its own token cap."""
         self.ended = "you started a new chat"
@@ -417,6 +424,14 @@ class Chat:
                         isinstance(result, dict) and ("error" in result or "declined" in result)):
                     src = material.source(MEMORY_TOOLS.get(tc.name) or WEB_TOOLS.get(tc.name)
                                           or FOLDER_TOOLS.get(tc.name) or tc.name, tc.arguments)
+                    signs = material.flags(result)
+                    if signs:
+                        # Ombro's own words, not the Lead's: what to check, never a block (7.1).
+                        line = (f"Ombro: {src} contains text that looks written to steer the Lead "
+                                f"({', '.join(signs)}). It is treated as material, and nothing was done because "
+                                "of it.")
+                        self.ui.say(line)
+                        self.transcript.note(line)
                 self.exchanges[-1].append(_tool_msg(tc.id, result, src))
             if request:
                 return request
@@ -535,7 +550,8 @@ class Chat:
         shown = native._display(ctx, target.resolve())
         what = ("add to the end of" if mode == "append" else "replace") if target.exists() else "create"
         lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-        self.ui.say(f"I'd like to {what} {shown} ({lines:,} lines, {len(content):,} characters).",
+        kept = " and keep the current version in Archive/" if what == "replace" else ""
+        self.ui.say(f"I'd like to {what} {shown}{kept} ({lines:,} lines, {len(content):,} characters).",
                     level="lead", items=[_short(content, 400)] if content else [])
         if not self.ui.yes("folder_write", "Go ahead?", False):
             self.transcript.note(f"The user said no to writing {shown}.")

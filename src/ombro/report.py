@@ -66,7 +66,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         if action == "material_flag":
             material_flags.append({"source": ev.get("source", "?"), "signs": ev.get("signs") or [],
                                    "role": ev.get("reader", "")})
-        elif action == "set_aside":
+        elif action in ("set_aside", "archived"):
             set_aside.append(str(ev.get("note") or ""))
         elif action == "staged" and ev.get("tainted"):
             tainted.append(str(ev.get("ref") or ev.get("tool") or ""))
@@ -416,7 +416,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     if f.get("folders") or f.get("not_shared") or f.get("folders_left_out"):
         out += ["## Shared folders", "", *folder_lines(f), ""]
         if f.get("set_aside"):
-            out += ["Set aside, not deleted (only you empty these folders):", ""]
+            out += ["Kept rather than deleted or lost, in For deletion/ and Archive/ (only you empty them):", ""]
             out += [f"- {x}" for x in f["set_aside"]] + [""]
     if f.get("material_flags") or f.get("tainted_staged"):
         out += ["## Material", "", *material_lines(f), ""]

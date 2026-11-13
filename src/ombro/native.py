@@ -168,6 +168,7 @@ def _write(args: dict, ctx: ToolContext) -> dict[str, Any]:
     if target.exists() and not target.is_file():
         raise ToolInputError(f"{args['path']} is a folder")
     real = target.resolve()
+    kept = archive_before_replacing(ctx, target) if mode == "overwrite" else None
     if mode == "append" and real.exists() and real.stat().st_size + len(content.encode()) > FILE_MAX_BYTES:
         raise ToolInputError(f"files in the workspace are limited to {FILE_MAX_BYTES:,} bytes")
     real.parent.mkdir(parents=True, exist_ok=True)
@@ -179,7 +180,10 @@ def _write(args: dict, ctx: ToolContext) -> dict[str, Any]:
         raise ToolInputError(f"{args['path']} could not be written: {e.strerror}") from None
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(content)
-    return {"path": _display(ctx, real), "bytes": real.stat().st_size, "mode": mode}
+    out = {"path": _display(ctx, real), "bytes": real.stat().st_size, "mode": mode}
+    if kept:
+        out["archived"] = f"The version before this one is kept in {kept}."
+    return out
 
 
 def _list(args: dict, ctx: ToolContext) -> dict[str, Any]:
@@ -249,6 +253,61 @@ def _root_of(ctx: ToolContext, path: Path) -> tuple[Path, str]:
     raise ToolInputError("that file is not in a folder Ombro may change")
 
 
+def _shelve(root: Path, kind: str, real: Path, why: str, *, copy: bool) -> Path:
+    """Move (or copy) a file into root/For deletion or root/Archive, never replacing a
+    name already there, and add a line to that folder's README.md. Returns the new path."""
+    import shutil
+
+    shelf = root / SET_ASIDE[kind]
+    if shelf.is_symlink() or (shelf.exists() and not shelf.is_dir()):
+        raise ToolInputError(f"{SET_ASIDE[kind]}/ is not a real folder, so nothing was changed")
+    shelf.mkdir(exist_ok=True)
+    dest = shelf / real.name
+    n = 2
+    while dest.exists():
+        dest = shelf / f"{real.stem} ({n}){real.suffix}"
+        n += 1
+    if copy:
+        shutil.copy2(real, dest)
+    else:
+        os.rename(real, dest)
+    note = shelf / "README.md"
+    line = f"- {dest.name}: from {real.relative_to(root).as_posix()}. {why}\n"
+    if not note.exists():
+        line = (f"# {SET_ASIDE[kind]}\n\nFiles Ombro set aside rather than delete or lose. Only you empty "
+                "this folder.\n\n") + line
+    with open(note, "a", encoding="utf-8") as f:
+        f.write(line)
+    return dest
+
+
+def archive_before_replacing(ctx: ToolContext, target: Path) -> str | None:
+    """Before a file in a shared folder is replaced, keep its old version in Archive/:
+    once per file in a run, every time in chat (ctx.archived is None). Returns where."""
+    from datetime import date
+
+    if not target.is_file() or target.is_symlink():
+        return None
+    real = target.resolve()
+    try:
+        root, label = _root_of(ctx, real)
+    except ToolInputError:
+        return None
+    if not label.startswith("shared/") or real.is_relative_to(root / SET_ASIDE["archive"]):
+        return None
+    key = str(real)
+    if ctx.archived is not None and key in ctx.archived:
+        return None
+    dest = _shelve(root, "archive", real, f"The version before {ctx.role} replaced it on {date.today():%d %B %Y}.",
+                   copy=True)
+    if ctx.archived is not None:
+        ctx.archived.add(key)
+    shown = f"{label}/{SET_ASIDE['archive']}/{dest.name}"
+    ctx.record("archived", f"{label}/{real.relative_to(root).as_posix()} -> {shown}: the version before it "
+               "was replaced")
+    return shown
+
+
 def _set_aside(args: dict, ctx: ToolContext) -> dict[str, Any]:
     """Nothing is deleted: a file that should go is moved into `For deletion/`, or
     into `Archive/` if a newer one replaces it, at the top of the same folder, with a
@@ -263,27 +322,11 @@ def _set_aside(args: dict, ctx: ToolContext) -> dict[str, Any]:
     if target.is_symlink() or not target.is_file():
         raise ToolInputError(f"{args['path']} is not a file")
     root, label = _root_of(ctx, target)
-    shelf = root / SET_ASIDE[kind]
     real = target.resolve()
-    if real.is_relative_to(shelf):
+    if real.is_relative_to(root / SET_ASIDE[kind]):
         raise ToolInputError(f"{args['path']} is already in {SET_ASIDE[kind]}/")
-    if shelf.is_symlink() or (shelf.exists() and not shelf.is_dir()):
-        raise ToolInputError(f"{label}/{SET_ASIDE[kind]} is not a real folder, so nothing was moved")
-    shelf.mkdir(exist_ok=True)
-    dest = shelf / real.name
-    n = 2
-    while dest.exists():
-        dest = shelf / f"{real.stem} ({n}){real.suffix}"
-        n += 1
-    os.rename(real, dest)
-    note = shelf / "README.md"
     rel_from = real.relative_to(root).as_posix()
-    line = f"- {dest.name}: from {rel_from}. {why}\n"
-    if not note.exists():
-        line = (f"# {SET_ASIDE[kind]}\n\nFiles Ombro set aside rather than delete. Only you empty this "
-                "folder.\n\n") + line
-    with open(note, "a", encoding="utf-8") as f:
-        f.write(line)
+    dest = _shelve(root, kind, real, why, copy=False)
     ctx.record("set_aside", f"{label}/{rel_from} -> {label}/{SET_ASIDE[kind]}/{dest.name}: {why}")
     return {"from": f"{label}/{rel_from}", "to": f"{label}/{SET_ASIDE[kind]}/{dest.name}", "why": why}
 
@@ -339,6 +382,8 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
             if final.exists() and final.is_dir():
                 raise ToolInputError(f"{_display(ctx, final)} is a folder")
             parent.mkdir(parents=True, exist_ok=True)
+            if final.exists():
+                archive_before_replacing(ctx, final)
             try:
                 folders.safe_copy(src, final)
             except OSError as e:

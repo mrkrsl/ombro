@@ -101,11 +101,11 @@ def test_limits_shows_and_sets_the_allowance(home, capsys):
     assert "set by hand: max_tokens, max_rounds" in out and "budget_usd" in out
     assert cli.main(["limits", "set", "generous"]) == 0
     out = capsys.readouterr().out
-    assert "Removed values set by hand" in out and "1,500,000" in out
+    assert "Removed values set by hand" in out and "2,000,000" in out
     meta, _ = mdfile.read(home.limits)
     assert meta["allowance"] == "generous" and "max_tokens" not in meta and "budget_usd" not in meta
     assert meta["loop_threshold"] == 3  # other settings kept
-    assert load_limits(home).max_tokens == 1_500_000
+    assert load_limits(home).max_tokens == 2_000_000
     assert cli.main(["limits", "set", "lavish"]) == 2
 
 

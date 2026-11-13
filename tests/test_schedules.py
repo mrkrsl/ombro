@@ -147,7 +147,7 @@ def test_a_due_slot_starts_once_detached_with_limits_fixed(home):
     meta = runs.read_run(r.started[0])[0]
     assert meta["schedule"] == "morning" and meta["due"] == "2026-11-12T07:30"
     assert meta["source"] == "schedule morning (schedules/morning.md), due 2026-11-12 07:30"
-    assert meta["limits"]["max_tokens"] == 150_000 and meta["limits"]["run_timeout"] == 900
+    assert meta["limits"]["max_tokens"] == 300_000 and meta["limits"]["run_timeout"] == 900
     assert "fictional teapot makers" in (r.started[0] / "spec.md").read_text()
     # The same minute again, and the next minute: nothing new.
     assert not tick(home, ts(2026, 11, 12, 7, 30, 50), starter).started
@@ -461,7 +461,7 @@ def test_schedule_add_saves_the_file_and_offers_the_install(home, monkeypatch, c
     assert cli.main(["schedule", "add", "morning", "--spec", "teapots", "--cron", "30 7 * * 1-5",
                      "--allowance", "conservative", "--grace", "5m"]) == 0
     out = capsys.readouterr().out
-    assert "allowance conservative: 150,000 tokens" in out and "not installed yet" in out
+    assert "allowance conservative: 300,000 tokens" in out and "not installed yet" in out
     assert "local.ombro.tick.plist" in out and "Installed." in out
     meta, _ = mdfile.read(home.schedules_dir / "morning.md")
     assert meta == {"name": "morning", "cron": "30 7 * * 1-5", "spec": "specs/teapots.md", "enabled": True,

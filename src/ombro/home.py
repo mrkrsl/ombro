@@ -174,9 +174,9 @@ own run with a `limits:` block in its front matter.
 allowance: how far a run or interview may go before it is stopped. One of
 
   level          run tokens   rounds   run time   each interview   each chat
-  conservative     150,000       4       15m          40,000          60,000
-  moderate         400,000       8       30m         100,000         150,000
-  generous       1,500,000      16       1h          250,000         400,000
+  conservative     300,000       4       15m          50,000         100,000
+  moderate         800,000       8       30m         100,000         200,000
+  generous       2,000,000      16       1h          250,000       1,000,000
   unlimited        no cap       50       4h           no cap          no cap
 
 Even `unlimited` keeps every other cap below: rounds, each role's steps,

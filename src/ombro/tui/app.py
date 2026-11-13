@@ -49,6 +49,7 @@ SLASH = [
     ("/folder", "folders shared with runs and the Lead: list, add, remove"),
     ("/tools", "tools and their permissions"),
     ("/remember", "add a lesson to a crew's notes"),
+    ("/limits", "how far runs, chats and interviews may go"),
     ("/preferences", "your name, theme and defaults"),
     ("/theme", "switch between light and dark"),
     ("/help", "what each command does"),
@@ -56,7 +57,7 @@ SLASH = [
 ]
 CHAT_COMMANDS = ("/chat", "/new", "/brief", "/remember")  # handled by chat itself
 TUI_COMMANDS = ("/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model", "/models",
-                "/keys", "/folder", "/folders",
+                "/keys", "/folder", "/folders", "/limits",
                 "/tools", "/preferences")
 QUIT_AGAIN_SECONDS = 2.5
 THINKING_FRAMES = ("·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢")

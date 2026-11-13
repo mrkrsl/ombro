@@ -199,7 +199,10 @@ def test_a_run_backs_up_and_lists_changes_in_a_writable_folder(run, home, user):
     report = run.report
     assert "## Shared folders" in report
     assert "**shared/photos** (read and write)" in report and "**shared/brand** (read only)" in report
-    assert "Created (1):" in report and "- colour.md" in report
+    # Replacing IMG_0000.jpg kept its old version in Archive/, with a note of why.
+    assert "Created (3):" in report and "- colour.md" in report and "- Archive/IMG_0000.jpg" in report
+    assert (user / "Pictures" / "Trip" / "Archive" / "IMG_0000.jpg").read_text() == "invented photo 0"
+    assert "shared/photos/IMG_0000.jpg -> shared/photos/Archive/IMG_0000.jpg" in report
     assert "Changed (1):" in report and "- IMG_0000.jpg" in report
     assert "missing" in report and "not shared" in report
     assert str(user / "Library" / "Mail" / "x") in report.split("Refused because")[1]

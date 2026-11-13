@@ -48,12 +48,12 @@ def format_duration(seconds: float) -> str:
 # for runs and interviews, so nothing runs away. Any single value can still be
 # set by hand in limits.md or a spec, which wins over the level.
 ALLOWANCES: dict[str, dict[str, Any]] = {
-    "conservative": {"max_tokens": 150_000, "max_rounds": 4, "run_timeout": "15m", "interview_max_tokens": 40_000,
-                     "chat_max_tokens": 60_000},
-    "moderate": {"max_tokens": 400_000, "max_rounds": 8, "run_timeout": "30m", "interview_max_tokens": 100_000,
-                 "chat_max_tokens": 150_000},
-    "generous": {"max_tokens": 1_500_000, "max_rounds": 16, "run_timeout": "1h", "interview_max_tokens": 250_000,
-                 "chat_max_tokens": 400_000},
+    "conservative": {"max_tokens": 300_000, "max_rounds": 4, "run_timeout": "15m", "interview_max_tokens": 50_000,
+                     "chat_max_tokens": 100_000},
+    "moderate": {"max_tokens": 800_000, "max_rounds": 8, "run_timeout": "30m", "interview_max_tokens": 100_000,
+                 "chat_max_tokens": 200_000},
+    "generous": {"max_tokens": 2_000_000, "max_rounds": 16, "run_timeout": "1h", "interview_max_tokens": 250_000,
+                 "chat_max_tokens": 1_000_000},
     "unlimited": {"max_tokens": None, "max_rounds": 50, "run_timeout": "4h", "interview_max_tokens": None,
                   "chat_max_tokens": None},
 }
@@ -66,7 +66,7 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
     "memory_index_entries": 20,
     "memory_index_entry_chars": 200,
     "memory_search_max_chars": 4_000,
-    "chat_max_tokens": 150_000,
+    "chat_max_tokens": 200_000,
     "chat_history_chars": 30_000,
     "fetch_max_query": 200,
     "chat_calls_per_message": 8,
@@ -134,7 +134,7 @@ class Limits:
     memory_index_entries: int = 20
     memory_index_entry_chars: int = 200
     memory_search_max_chars: int = 4_000
-    chat_max_tokens: int | None = 150_000
+    chat_max_tokens: int | None = 200_000
     chat_history_chars: int = 30_000
     fetch_max_query: int = 200  # characters after ? in an address web.fetch will fetch (7.1)
     chat_calls_per_message: int = 8
@@ -547,3 +547,29 @@ def load_preferences(home: Home) -> Preferences:
         _, body = mdfile.read(home.instructions)
         prefs.instructions = mdfile.prompt_text(body)
     return prefs
+
+
+def set_allowance(home, level: str) -> list[str]:
+    """Set the allowance level in limits.md for the whole home. Values set by hand
+    for what the level decides are removed, so the level applies; returns them."""
+    from ombro import mdfile
+
+    level = (level or "").strip().lower()
+    if level not in ALLOWANCES:
+        raise SetupError(f"Choose one of: {', '.join(ALLOWANCES)}.")
+    meta, body = mdfile.read(home.limits)
+    dropped = [k for k in (*LEVEL_KEYS, *RETIRED_LIMITS) if k in meta]
+    for k in dropped:
+        del meta[k]
+    meta = {"allowance": level, **{k: v for k, v in meta.items() if k != "allowance"}}
+    mdfile.write(home.limits, meta, body)
+    return dropped
+
+
+def allowance_table() -> list[str]:
+    """One line per level: what each run, chat and interview may use."""
+    out = []
+    for name, v in ALLOWANCES.items():
+        out.append(f"{name}: runs {format_tokens(v['max_tokens'])}, chats {format_tokens(v['chat_max_tokens'])}, "
+                   f"interviews {format_tokens(v['interview_max_tokens'])} tokens")
+    return out

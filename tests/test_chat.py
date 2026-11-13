@@ -258,7 +258,7 @@ def test_chat_usage_has_its_own_cap(chat, run, home):
     assert mdfile.read(chat.chat.path)[0]["ended"].startswith("stopped by the chat limit max_tokens")
     # A run keeps its own allowance.
     run([fake.finish(), LEAD_REPORT])
-    assert run.meta["limits"]["max_tokens"] == 400_000
+    assert run.meta["limits"]["max_tokens"] == 800_000
 
 
 def test_chat_tool_calls_are_capped(chat, run, home):

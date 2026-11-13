@@ -85,6 +85,7 @@ class Engine:
         self.outward = meta.get("outward") or {"preset": outward.DEFAULT_PRESET, "source": "default"}
         self.pool: outward.McpPool | None = None
         self.refused_tools: set[str] = set()  # set to `permission: refuse` in tools.md: never offered
+        self.archived: set[str] = set()  # shared files whose pre-run version is in Archive/
         # So are the shared folders, checked against folders.md when the run was created.
         self.shared = {f["name"]: SharedFolder(f["name"], Path(f["path"]), f["access"])
                        for f in meta.get("folders") or []}
@@ -230,6 +231,7 @@ class Engine:
     def _context(self, role: Role, tool: str) -> ToolContext:
         return ToolContext(
             self.run_dir, role.name, timeout=self._tool_timeout(tool), shared=self.shared, limits=self.limits,
+            archived=self.archived,
             cancelled=lambda: self.gate.stop_requested or self.gate.timed_out(),
             event=lambda action, note, **fields: self.journal.write(role.name, action, note, **fields),
         )

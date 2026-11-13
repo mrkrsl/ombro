@@ -670,3 +670,24 @@ def test_a_thinking_glyph_turns_while_the_core_works(home):
             assert not app.query_one("#thinking").display
 
     drive(go())
+
+
+def test_limits_shows_and_sets_the_one_level(home):
+    from ombro.settings import load_limits
+
+    app, _ = _app(home)
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await command(pilot, app, "/limits")
+            await settle(pilot, app)
+            texts = "\n".join(_texts(app))
+            assert "generous: runs 2,000,000" in texts
+            await command(pilot, app, "/limits set")
+            await answer(pilot, app, "3")  # generous
+            await settle(pilot, app)
+            assert "now uses the generous level" in "\n".join(_texts(app))
+
+    drive(go())
+    assert load_limits(home).allowance == "generous" and load_limits(home).max_tokens == 2_000_000

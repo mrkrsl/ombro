@@ -931,15 +931,13 @@ def cmd_limits(args) -> int:
 
         return _print_json(views.limit_values(home))
     if args.action == "set":
+        from ombro.settings import set_allowance
+
         level = (args.level or "").strip().lower()
-        if level not in ALLOWANCES:
-            raise CliError(f"Choose one of: {', '.join(ALLOWANCES)}.")
-        meta, body = mdfile.read(home.limits)
-        dropped = [k for k in (*LEVEL_KEYS, *RETIRED_LIMITS) if k in meta]
-        for k in dropped:
-            del meta[k]
-        meta = {"allowance": level, **{k: v for k, v in meta.items() if k != "allowance"}}
-        mdfile.write(home.limits, meta, body)
+        try:
+            dropped = set_allowance(home, level)
+        except SetupError as e:
+            raise CliError(str(e)) from None
         print(f"Allowance set to {level} in {home.limits}.")
         if dropped:
             print(f"Removed values set by hand, so the level applies: {', '.join(dropped)}.")

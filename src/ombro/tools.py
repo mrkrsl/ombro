@@ -87,6 +87,9 @@ class ToolContext:
     limits: Any = None  # the run's Limits, for tools with limits of their own (code.run)
     cancelled: Callable[[], bool] | None = None  # true once the run is stopping
     event: Callable[..., None] | None = None  # write a journal event as this role: event(action, note, **fields)
+    # Files in shared folders whose old version this run has archived before replacing it.
+    # None: archive before every replacement (chat, which has no backup clone).
+    archived: set[str] | None = None
 
     def record(self, action: str, note: str, **fields: Any) -> None:
         if self.event is not None:

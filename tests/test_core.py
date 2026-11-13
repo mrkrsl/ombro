@@ -186,7 +186,7 @@ def test_journal_reads_past_a_torn_line(tmp_path):
 def test_default_allowance_is_moderate(home):
     lim = load_limits(home)
     assert lim.allowance == "moderate"
-    assert (lim.max_tokens, lim.max_rounds, lim.run_timeout, lim.interview_max_tokens) == (400_000, 8, 1800, 100_000)
+    assert (lim.max_tokens, lim.max_rounds, lim.run_timeout, lim.interview_max_tokens) == (800_000, 8, 1800, 100_000)
 
 
 def test_allowance_sets_the_level_values_and_hand_values_win(home):
@@ -194,10 +194,10 @@ def test_allowance_sets_the_level_values_and_hand_values_win(home):
 
     mdfile.write(home.limits, {"allowance": "conservative", "max_rounds": 6})
     lim = load_limits(home)
-    assert (lim.max_tokens, lim.max_rounds, lim.interview_max_tokens) == (150_000, 6, 40_000)
+    assert (lim.max_tokens, lim.max_rounds, lim.interview_max_tokens) == (300_000, 6, 50_000)
     # A spec naming a level replaces the level values below it, and its own hand values win.
     lim = load_limits(home, {"allowance": "generous"})
-    assert (lim.max_tokens, lim.max_rounds) == (1_500_000, 16)
+    assert (lim.max_tokens, lim.max_rounds) == (2_000_000, 16)
     lim = load_limits(home, {"allowance": "generous", "max_tokens": 900_000})
     assert lim.max_tokens == 900_000
 

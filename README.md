@@ -143,6 +143,7 @@ The `/` commands do what their `ombro` commands do:
   `/outbox resolve <ref> sent | not-sent`; decisions work while a run is going.
 - `/role`, `/role add [title] [--crew <crew>]`, `/role edit <name>`;
   `/crew`, `/crew add <name> [title]`, `/crew use <name>`.
+- `/limits`, `/limits set [level]`: one allowance level for all of Ombro.
 - `/model` (who uses which model, and changing one); `/models`,
   `/models default | refresh | add`.
 - `/keys`, `/keys set <NAME>` (hidden); `/folder`, `/folder add <path>`,
@@ -501,6 +502,11 @@ declined: [~/Projects/site]
   newer file replaces it, at the top of the same folder, with a line in that
   folder's `README.md` saying why. The report lists what was set aside. Only
   you empty either folder.
+- **Replacing keeps the old version.** The first time a run replaces a file in
+  a shared folder, its old version is copied into `Archive/` with a note (once
+  per file per run). In chat, every replacement keeps the old version. Scripts
+  that replace files are covered by the backup clone; scripts are told never
+  to delete, though that is not yet enforced.
 - **Backup.** Before a run that can write to a shared folder starts, Ombro
   clones it into the run's `backup/` if the disk allows (APFS on macOS,
   reflinks on Linux). A clone is near-instant and takes almost no space until
@@ -539,7 +545,8 @@ noticing:
 - Common signs of injected instructions ("ignore previous instructions",
   text addressed to an AI, hidden characters, requests to send or delete
   files) are flagged in the report's Material section, with where they came
-  from. A flag never stops a run; it tells you what to check.
+  from. A flag never stops a run; it tells you what to check. In chat, Ombro
+  says so in the conversation at once.
 
 ## Outside services: MCP, permissions and the outbox
 
@@ -730,13 +737,14 @@ Limits are enforced by code, never by asking the model. Every model call and
 tool call passes through one gate that checks all limits before the call and
 records the usage after it.
 
-One word in `limits.md` sets how far runs and interviews may go:
+One word in `limits.md` sets how far runs, chats and interviews may go, for the whole of
+Ombro (`ombro limits set <level>`, or `/limits` in the terminal interface):
 
 | `allowance` | run tokens | rounds | run time | each interview | each chat |
 |---|---|---|---|---|---|
-| `conservative` | 150,000 | 4 | 15m | 40,000 | 60,000 |
-| `moderate` (default) | 400,000 | 8 | 30m | 100,000 | 150,000 |
-| `generous` | 1,500,000 | 16 | 1h | 250,000 | 400,000 |
+| `conservative` | 300,000 | 4 | 15m | 50,000 | 100,000 |
+| `moderate` (default) | 800,000 | 8 | 30m | 100,000 | 200,000 |
+| `generous` | 2,000,000 | 16 | 1h | 250,000 | 1,000,000 |
 | `unlimited` | no cap | 50 | 4h | no cap | no cap |
 
 Any of these can be set by hand in `limits.md` or a spec's `limits:` block,
