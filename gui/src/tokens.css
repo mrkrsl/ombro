@@ -25,12 +25,8 @@
   --menu-bg: #ffffff;
   --menu-pick: #d6eef5;
   --fade: #d4ebf2; /* the blue the foot of the window fades into */
-  --logo-face: #286c7d;
-  --logo-shadow: #a6d6e2;
-  --logo-text: #ffffff;
   --error: #8a1c1c;
   --font: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Ubuntu, Cantarell, sans-serif;
-  --logo-font: "Rockwell", "Roboto Slab", "Zilla Slab", Georgia, serif; /* until the logo files come */
   color-scheme: light;
 }
 
@@ -51,9 +47,6 @@
   --menu-bg: #12323a;
   --menu-pick: #1c4652;
   --fade: #0b2026;
-  --logo-face: #286c7d;
-  --logo-shadow: #000000;
-  --logo-text: #ffffff;
   --error: #f3b4b4;
   color-scheme: dark;
 }

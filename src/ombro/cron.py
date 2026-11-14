@@ -209,9 +209,14 @@ def describe(cron: Cron) -> str:
     """When a schedule runs, in words where it is simple ("Runs weekdays at 6am"); otherwise its
     cron expression. Only a single time a day is put in words."""
     full_month = cron.months == frozenset(range(1, 13))
-    if len(cron.minutes) != 1 or len(cron.hours) != 1 or not full_month:
+    if len(cron.minutes) != 1 or len(cron.hours) != 1:
         return f"Runs at {cron.text}"
     at = _clock(next(iter(cron.hours)), next(iter(cron.minutes)))
+    if not full_month:
+        if len(cron.months) == 1 and len(cron.days) == 1 and cron.weekday_star:
+            month = datetime(2000, next(iter(cron.months)), 1).strftime("%B")
+            return f"Runs on {next(iter(cron.days))} {month} at {at}"
+        return f"Runs at {cron.text}"
     if cron.day_star and cron.weekday_star:
         return f"Runs every day at {at}"
     if cron.day_star:

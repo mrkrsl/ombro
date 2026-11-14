@@ -2,10 +2,12 @@
 //! and hand the port and token to the web view. Serve exits when its stdin
 //! closes, so it never outlives the app; we also stop it on the way out.
 
+mod tray;
+
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::watch;
@@ -87,18 +89,30 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             start_serve(app.handle())?;
+            tray::create(app.handle())?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![handshake])
+        .on_window_event(|window, event| {
+            // Closing the window hides it: Ombro stays in the menu bar. Quit from there, or Cmd+Q.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .invoke_handler(tauri::generate_handler![handshake, tray::set_tray])
         .build(tauri::generate_context!())
         .expect("error while building the Ombro app")
-        .run(|app, event| {
-            if let RunEvent::Exit = event {
+        .run(|app, event| match event {
+            RunEvent::Exit => {
                 if let Some(serve) = app.try_state::<Serve>() {
                     if let Some(child) = serve.child.lock().unwrap().take() {
                         let _ = child.kill();
                     }
                 }
             }
+            // macOS: a click on the Dock icon brings the hidden window back.
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => tray::open(app, "current"),
+            _ => {}
         });
 }

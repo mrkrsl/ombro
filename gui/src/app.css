@@ -491,32 +491,12 @@
   padding: 0 0 14px 28px;
 }
 
-/* -- the wordmark (a stand-in until the logo files arrive) -------------------------- */
+/* -- the wordmark ---------------------------------------------------------------------- */
 
-.logo {
-  position: relative;
-  display: inline-block;
-  font-family: var(--logo-font);
-  color: var(--logo-text);
-  line-height: 1;
-}
-
-.logo span {
-  position: relative;
-  display: inline-block;
-  background: var(--logo-face);
-  border-radius: 0.12em;
-  padding: 0.12em 0.32em 0.2em;
-  transform: rotate(-1deg);
-  z-index: 1;
-}
-
-.logo::after {
-  content: "";
-  position: absolute;
-  inset: 0.28em -0.18em -0.22em 0.25em;
-  background: var(--logo-shadow);
-  border-radius: 0.12em;
+.logo-img {
+  display: block;
+  height: auto;
+  user-select: none;
 }
 
 /* -- pages to come ------------------------------------------------------------------- */

@@ -35,3 +35,17 @@ export async function notify(title: string, body: string): Promise<void> {
     // A notification that can't be shown is not worth an error.
   }
 }
+
+/** Keep the menu bar item's lines and icon in step with the counts (app only). */
+export async function setTray(counts: { active: number; scheduled: number; waiting: number; crews_ready: number }) {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_tray", { counts }).catch(() => undefined);
+}
+
+/** A line clicked in the menu bar item names a page to open (app only). */
+export async function onTrayOpen(open: (screen: string) => void): Promise<void> {
+  if (!inTauri) return;
+  const { listen } = await import("@tauri-apps/api/event");
+  await listen<string>("open-screen", (e) => open(e.payload));
+}

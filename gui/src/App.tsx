@@ -13,7 +13,7 @@ import { Jobs } from "./screens/Jobs";
 import { Placeholder } from "./screens/Placeholder";
 import { ReportPage } from "./screens/ReportPage";
 import { Scheduled } from "./screens/Scheduled";
-import { isMac } from "./platform";
+import { isMac, onTrayOpen, setTray } from "./platform";
 import { useStore } from "./store/store";
 
 export default function App() {
@@ -22,7 +22,18 @@ export default function App() {
 
   useEffect(() => {
     void useStore.getState().start();
+    void onTrayOpen((screen) => {
+      const st = useStore.getState();
+      if (screen === "home") st.goHome();
+      else if (screen !== "current") st.show(screen as Parameters<typeof st.show>[0]);
+    });
   }, []);
+
+  // The menu bar item shows the same counts as the sidebar.
+  const counts = s.counts;
+  useEffect(() => {
+    if (counts) void setTray({ active: counts.active, scheduled: counts.scheduled, waiting: counts.waiting, crews_ready: counts.crews_ready });
+  }, [counts]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
