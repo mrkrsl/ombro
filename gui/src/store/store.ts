@@ -24,6 +24,18 @@ export type FeedLine = { key: number; jobId: string; name: string; line: string;
 
 export type Screen = "home" | "chat" | "jobs" | "approvals" | "scheduled" | "settings" | "report";
 export type Theme = "light" | "dark";
+export type ThemeChoice = "auto" | "light" | "dark"; // auto: as the system
+export type SettingsPage = "general" | "crews" | "folders" | "tools" | "skills";
+const SETTINGS_PAGES: SettingsPage[] = ["general", "crews", "folders", "tools", "skills"];
+
+/** The screen a command names ("settings/crews"), with the Settings page it opens at, if any. */
+export function screenFor(name: string): { screen: Screen; page?: SettingsPage } {
+  if (name.startsWith("settings")) {
+    const page = name.split("/")[1] as SettingsPage;
+    return { screen: "settings", page: SETTINGS_PAGES.includes(page) ? page : undefined };
+  }
+  return { screen: name as Screen };
+}
 
 type State = {
   status: "starting" | "connected" | "lost" | "failed";
@@ -41,6 +53,8 @@ type State = {
   titles: Record<string, string>; // session id: the chat's title
   sidebar: boolean;
   theme: Theme;
+  themeChoice: ThemeChoice;
+  settingsPage: SettingsPage;
   notice: string; // a short line under the input, e.g. a failed send
   chatOn: string | null; // the saved chat on screen, by name
   inspector: boolean;
@@ -68,6 +82,9 @@ type Actions = {
   toggleSidebar: () => void;
   toggleInspector: () => void;
   setTheme: (theme: Theme, save?: boolean) => void;
+  setThemeChoice: (choice: ThemeChoice) => void;
+  showSettings: (page: SettingsPage) => void;
+  newMember: (crew: string) => Promise<void>;
   setPref: (key: "background_feed" | "notifications", value: boolean) => Promise<void>;
   load: (screen?: Screen) => Promise<void>;
   readReport: (jobId: string, inChat: boolean) => Promise<void>;
@@ -139,6 +156,8 @@ export const useStore = create<State & Actions>((set, get) => {
     titles: {},
     sidebar: true,
     theme: systemTheme(),
+    themeChoice: "auto",
+    settingsPage: "general",
     notice: "",
     chatOn: null,
     inspector: false,
@@ -181,7 +200,10 @@ export const useStore = create<State & Actions>((set, get) => {
         api.get<Preferences>("/preferences").catch(() => null),
       ]);
       set({ summary, chats, commands, prefs });
-      if (prefs && (prefs.theme === "light" || prefs.theme === "dark")) get().setTheme(prefs.theme, false);
+      if (prefs) {
+        const choice: ThemeChoice = prefs.theme === "light" || prefs.theme === "dark" ? prefs.theme : "auto";
+        set({ themeChoice: choice, theme: choice === "auto" ? systemTheme() : choice });
+      }
     },
 
     receive(m) {
@@ -328,7 +350,7 @@ export const useStore = create<State & Actions>((set, get) => {
       const args = trimmed.slice(word.length).trim();
       if (cmd && (cmd.where === "app" || (cmd.where === "screen" && (!args || ["report", "open"].includes(cmd.screen))))) {
         if (cmd.where === "app") appCommand(cmd.name);
-        else get().show(cmd.screen.startsWith("settings") ? "settings" : (cmd.screen as Screen), args);
+        else openScreen(cmd.screen, args);
         return;
       }
       try {
@@ -349,11 +371,16 @@ export const useStore = create<State & Actions>((set, get) => {
         if (reply.route) {
           const r = reply.route;
           if (r.where === "app") return appCommand(r.command);
-          const screen = r.screen.startsWith("settings") ? "settings" : (r.screen as Screen);
-          get().show(screen, r.args);
+          openScreen(r.screen, r.args);
         }
       } catch (e) {
         set({ notice: e instanceof Error ? e.message : String(e) });
+      }
+
+      function openScreen(name: string, args: string) {
+        const { screen, page } = screenFor(name);
+        if (page) set({ settingsPage: page });
+        get().show(screen, args);
       }
 
       function appCommand(command: string) {
@@ -434,8 +461,26 @@ export const useStore = create<State & Actions>((set, get) => {
     },
 
     setTheme(theme, save = true) {
-      set({ theme });
+      set({ theme, themeChoice: save ? theme : get().themeChoice });
       if (save) void get().api?.put("/preferences", { theme });
+    },
+
+    setThemeChoice(choice) {
+      set({ themeChoice: choice, theme: choice === "auto" ? systemTheme() : choice });
+      void get().api?.put("/preferences", { theme: choice });
+    },
+
+    showSettings(page) {
+      set({ settingsPage: page, screen: "settings", screenArgs: "" });
+    },
+
+    async newMember(crew) {
+      // A new crew member is an interview with the Lead, so it runs in a chat.
+      try {
+        await openSession({ flow: "role.add", crew });
+      } catch (e) {
+        set({ notice: e instanceof Error ? e.message : String(e) });
+      }
     },
   };
 });

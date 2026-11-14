@@ -868,12 +868,12 @@ def cmd_role(args) -> int:
         if not answer:
             print("Nothing changed.")
             return 1
-        removed = home.crew_dir(crew) / "removed"
-        removed.mkdir(exist_ok=True)
-        target = removed / folder.name
-        if target.exists():
-            target = removed / f"{folder.name}-{time.strftime('%Y%m%d-%H%M%S')}"
-        shutil.move(str(folder), str(target))
+        from ombro.removing import RemoveError, remove_role
+
+        try:
+            target = remove_role(home, crew, folder.name)
+        except RemoveError as e:
+            raise CliError(str(e)) from None
         print(f"Moved {label} to {target}.")
         return 0
     raise CliError(f"Unknown role action {action!r}.")

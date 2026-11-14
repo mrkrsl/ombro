@@ -13,6 +13,7 @@ import { Jobs } from "./screens/Jobs";
 import { Placeholder } from "./screens/Placeholder";
 import { ReportPage } from "./screens/ReportPage";
 import { Scheduled } from "./screens/Scheduled";
+import { Settings } from "./screens/settings/Settings";
 import { isMac, onTrayOpen, setTray, startZoom } from "./platform";
 import { useStore } from "./store/store";
 
@@ -40,6 +41,16 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // "Same as the system": follow it when it changes.
+  const themeChoice = s.themeChoice;
+  useEffect(() => {
+    if (themeChoice !== "auto" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const follow = () => useStore.setState({ theme: mq.matches ? "dark" : "light" });
+    mq.addEventListener?.("change", follow);
+    return () => mq.removeEventListener?.("change", follow);
+  }, [themeChoice]);
 
   if (status === "starting" && !s.summary) {
     return <div className="startup">Starting Ombro…</div>;
@@ -69,7 +80,7 @@ export default function App() {
       ? (current && titles[current]) || (conversation?.kind === "setup" ? "Setting up Ombro" : "New chat")
       : PAGE_TITLES[screen] ?? "";
   const pages: Record<string, ReactElement> = {
-    jobs: <Jobs />, approvals: <Approvals />, scheduled: <Scheduled />, report: <ReportPage />,
+    jobs: <Jobs />, approvals: <Approvals />, scheduled: <Scheduled />, report: <ReportPage />, settings: <Settings />,
   };
 
   return (

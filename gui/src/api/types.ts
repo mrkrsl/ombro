@@ -372,6 +372,7 @@ export interface Connection {
   api: string;
   endpoint: string | null;
   key: string | null;
+  label: string;
   models: ModelEntry[];
 }
 /**
@@ -396,6 +397,7 @@ export interface Preferences {
   files: {
     [k: string]: string;
   };
+  instructions: string;
   instructions_set: boolean;
   name: string;
   notifications: boolean;
@@ -886,6 +888,7 @@ export interface ToolList {
  * via the `definition` "NativeTool".
  */
 export interface NativeTool {
+  calls: number | null;
   max_calls: number | null;
   provider: string | null;
   tool: string;
@@ -897,7 +900,11 @@ export interface NativeTool {
 export interface ServerRow {
   args: string[];
   command: string | null;
+  problem: string | null;
+  secrets: string[];
   server: string;
+  sign_in: string | null;
+  signing_in: boolean;
   url: string | null;
 }
 /**

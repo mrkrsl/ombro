@@ -7,7 +7,8 @@ there. --open then starts the built app on it (macOS):
 
     open --env OMBRO_HOME=~/ombro-demo gui/src-tauri/target/release/bundle/macos/Ombro.app
 
-What is in it: four crews with roles, two skills, built-in tools with providers,
+What is in it: four crews with roles, two skills, three model providers (only the canned one is
+used), built-in tools with providers,
 two MCP servers (one local, one remote), two keys (dummy values), a shared folder,
 saved specs, three chats, four finished jobs (one that made a file, one with two
 actions waiting for approval, one that failed), and two schedules.
@@ -89,6 +90,18 @@ def chat(home, name: str, title: str, turns: list[tuple[str, str]], when: str, j
     return chat_id
 
 
+def demo_providers(home) -> None:
+    """Two more model providers to see on Settings › General. Nothing uses them unless chosen, and
+    their key is a dummy, so they are never called by themselves."""
+    from ombro import keys, models
+
+    if not models.provider_names(home, "https://api.deepseek.com"):
+        models.add_models(home, "https://api.deepseek.com", "DEEPSEEK_API_KEY", ["deepseek-chat", "deepseek-reasoner"])
+        keys.set_key(home, "DEEPSEEK_API_KEY", "demo-not-a-real-key")
+    if not models.provider_names(home, "http://192.168.1.100:1234/v1"):
+        models.add_models(home, "http://192.168.1.100:1234/v1", None, ["local-model"])
+
+
 def build(root: Path) -> None:
     os.environ["OMBRO_HOME"] = str(root)
     from ombro import fake, folders, keys, mdfile, schedules, skills
@@ -101,6 +114,7 @@ def build(root: Path) -> None:
     mdfile.write(home.models, {"models": {"default": {"api": "fake", "script": "script.json",
                                                       "model": "demo-model (canned replies)"},
                                           "cheap": "default"}}, "The demo profile's fake model.")
+    demo_providers(home)
 
     print("crews and roles")
     ensure_crew(home, "marketing", "Research and campaigns.", "Marketing Crew")
@@ -213,6 +227,10 @@ def main(argv: list[str]) -> int:
         shutil.rmtree(root.parent / f"{root.name}-files", ignore_errors=True)
     if root.exists():
         print(f"{root} is there already; --fresh makes it again.")
+        os.environ["OMBRO_HOME"] = str(root)
+        from ombro.home import Home
+
+        demo_providers(Home(root))  # added in stage 7; a demo made before then gets them too
     else:
         build(root)
     if "--open" in argv:

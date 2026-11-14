@@ -118,6 +118,19 @@ def add_server(home: Home, name: str, entry: dict[str, Any]) -> None:
     mdfile.write(home.tools, new, body)
 
 
+def update_server(home: Home, name: str, entry: dict[str, Any]) -> None:
+    """Replace one server's entry in tools.md, keeping its per-tool settings and everything else.
+    Checked as a job checks tools.md."""
+    meta, body = _read_tools(home)
+    servers = dict(meta.get("servers") or {})
+    if name not in servers:
+        raise ServerError(f"no server named {name!r} in tools.md")
+    servers[name] = entry
+    new = {**meta, "servers": servers}
+    ToolSettings.from_dict(new, str(home.tools))
+    mdfile.write(home.tools, new, body)
+
+
 def remove_server(home: Home, name: str) -> list[str]:
     """Remove a server and its per-tool settings from tools.md. Returns the tool settings removed."""
     meta, body = _read_tools(home)

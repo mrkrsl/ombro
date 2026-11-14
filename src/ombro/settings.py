@@ -586,6 +586,27 @@ def load_preferences(home: Home) -> Preferences:
     return prefs
 
 
+def set_instructions(home: Home, text: str) -> None:
+    """Write the profile, preferences/instructions.md: who you are and how you like to work, as
+    the person typed it. Its guidance comment is kept; front matter, if any, too."""
+    from ombro.home import INSTRUCTIONS_BODY
+
+    path = home.instructions
+    meta, body = mdfile.read(path) if path.is_file() else ({}, INSTRUCTIONS_BODY)
+    mdfile.write(path, meta, mdfile.with_comments(body, text))
+
+
+def set_outward(home: Home, preset: str) -> None:
+    """The approval mode: which outward actions wait for your yes. Per-tool choices are kept."""
+    from ombro.outward import PRESETS
+
+    preset = (preset or "").strip().lower()
+    if preset not in PRESETS:
+        raise SetupError(f"Choose one of: {', '.join(PRESETS)}.")
+    current = load_preferences(home).outward
+    set_preference(home, "outward", {**current, "preset": preset} if isinstance(current, dict) else preset)
+
+
 def set_allowance(home, level: str) -> list[str]:
     """Set the allowance level in limits.md for the whole home. Values set by hand
     for what the level decides are removed, so the level applies; returns them."""

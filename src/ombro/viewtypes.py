@@ -217,6 +217,7 @@ class Preferences(TypedDict):
     editor: str
     outward: str
     instructions_set: bool
+    instructions: str  # the profile, as the Lead is given it
     background_feed: bool
     notifications: bool
     files: dict[str, str]
@@ -225,7 +226,8 @@ class Preferences(TypedDict):
 class NativeTool(TypedDict):
     tool: str
     provider: str | None
-    max_calls: int | None
+    max_calls: int | None  # as set in tools.md
+    calls: int | None  # the calls a job may make, set or not
 
 
 class ServerRow(TypedDict):
@@ -233,6 +235,10 @@ class ServerRow(TypedDict):
     command: str | None
     args: list[str]
     url: str | None
+    secrets: list[str]  # the names of its secret headers or environment values; never a value
+    sign_in: str | None  # a remote server's sign-in, in words; None for a local one
+    signing_in: bool  # a sign-in started from the app is waiting for the browser
+    problem: str | None  # why the last sign-in from the app failed
 
 
 class ToolList(TypedDict):
@@ -251,6 +257,7 @@ class ModelEntry(TypedDict):
 
 class Connection(TypedDict):
     api: str
+    label: str  # the provider's name for people: DeepSeek, Local, or its host
     endpoint: str | None
     key: str | None  # the key's name, never its value
     models: list[ModelEntry]

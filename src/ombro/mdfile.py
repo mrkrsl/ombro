@@ -84,3 +84,11 @@ def write(path: str | Path, meta: dict[str, Any], body: str = "", mode: int | No
 def prompt_text(body: str) -> str:
     """Body text as it goes into a prompt: HTML comments (file guidance) removed."""
     return _COMMENT.sub("", body).strip()
+
+
+def with_comments(old_body: str, text: str) -> str:
+    """A new body for a file a person edits as plain text: the old body's guidance comments,
+    which they were not shown, kept above what they wrote."""
+    notes = [m.group(0).strip() for m in _COMMENT.finditer(old_body or "")]
+    text = text.strip()
+    return "\n\n".join([*notes, text]) + "\n" if text or notes else ""

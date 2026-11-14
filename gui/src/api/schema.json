@@ -466,6 +466,9 @@
             }
           ]
         },
+        "label": {
+          "type": "string"
+        },
         "models": {
           "items": {
             "$ref": "#/$defs/ModelEntry"
@@ -475,6 +478,7 @@
       },
       "required": [
         "api",
+        "label",
         "endpoint",
         "key",
         "models"
@@ -1717,6 +1721,16 @@
     },
     "NativeTool": {
       "properties": {
+        "calls": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "max_calls": {
           "anyOf": [
             {
@@ -1744,7 +1758,8 @@
       "required": [
         "tool",
         "provider",
-        "max_calls"
+        "max_calls",
+        "calls"
       ],
       "title": "NativeTool",
       "type": "object"
@@ -1881,6 +1896,9 @@
           },
           "type": "object"
         },
+        "instructions": {
+          "type": "string"
+        },
         "instructions_set": {
           "type": "boolean"
         },
@@ -1905,6 +1923,7 @@
         "editor",
         "outward",
         "instructions_set",
+        "instructions",
         "background_feed",
         "notifications",
         "files"
@@ -2412,8 +2431,37 @@
             }
           ]
         },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "secrets": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "server": {
           "type": "string"
+        },
+        "sign_in": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signing_in": {
+          "type": "boolean"
         },
         "url": {
           "anyOf": [
@@ -2430,7 +2478,11 @@
         "server",
         "command",
         "args",
-        "url"
+        "url",
+        "secrets",
+        "sign_in",
+        "signing_in",
+        "problem"
       ],
       "title": "ServerRow",
       "type": "object"

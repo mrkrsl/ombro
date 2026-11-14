@@ -141,6 +141,7 @@ class Serve:
         self.poll_seconds = poll_seconds
         self.last_counts: dict[str, Any] | None = None
         self._poller: asyncio.Task | None = None
+        self.signing: dict[str, dict[str, Any]] = {}  # tool server: its sign-in from the app, while it lasts
 
     # -- jobs -------------------------------------------------------------------
 
@@ -246,7 +247,7 @@ def _views(s: Serve) -> list[Route]:
         "/limits": lambda r: views.limit_values(home),
         "/keys": lambda r: views.key_list(home),
         "/folders": lambda r: views.folder_list(home),
-        "/tools": lambda r: views.tool_list(home),
+        "/tools": lambda r: views.tool_list(home, signing=s.signing),
         "/skills": skills_view,
         "/sessions": lambda r: [live.describe() for live in s.sessions.by_id.values()],
         "/sessions/{sid}": lambda r: s.sessions.get(r.path_params["sid"]).describe(),
@@ -335,7 +336,7 @@ def _session_routes(s: Serve) -> list[Route]:
 
 
 PREFERENCE_KEYS = {"name": str, "theme": str, "default_crew": str, "editor": str, "background_feed": bool,
-                   "notifications": bool}
+                   "notifications": bool, "instructions": str, "outward": str}
 
 
 def _action_routes(s: Serve) -> list[Route]:
@@ -442,7 +443,8 @@ def _action_routes(s: Serve) -> list[Route]:
         return views.crews(home)
 
     def preferences(r: Request, data: dict[str, Any]) -> Any:
-        from ombro.settings import THEMES, set_preference
+        from ombro.outward import PRESETS
+        from ombro.settings import THEMES, set_instructions, set_outward, set_preference
 
         for key, value in data.items():
             if key not in PREFERENCE_KEYS or not isinstance(value, PREFERENCE_KEYS[key]):
@@ -451,8 +453,15 @@ def _action_routes(s: Serve) -> list[Route]:
                 raise HttpError(400, f"theme is one of {', '.join(THEMES)}")
             if key == "default_crew" and value not in home.crews():
                 raise HttpError(400, f"there's no crew called {value!r}")
+            if key == "outward" and value not in PRESETS:
+                raise HttpError(400, f"the approval mode is one of {', '.join(PRESETS)}")
         for key, value in data.items():
-            set_preference(home, key, value)
+            if key == "instructions":
+                set_instructions(home, value)  # the profile, in its own file
+            elif key == "outward":
+                set_outward(home, value)
+            else:
+                set_preference(home, key, " ".join(value.split())[:60] if key == "name" else value)
         return views.preferences(home)
 
     def limits(r: Request, data: dict[str, Any]) -> Any:
@@ -511,7 +520,9 @@ def _action_routes(s: Serve) -> list[Route]:
         path = folder / "soul.md"
         if "/" in name or not path.is_file():
             raise LookupError(f"no role {crew}/{name}")
-        mdfile.write_atomic(path, _need(data, "text"))
+        meta, body = mdfile.read(path)  # its front matter and guidance comments stay
+        mdfile.write(path, meta, mdfile.with_comments(body, _need(data, "text"))) if meta else \
+            mdfile.write_atomic(path, mdfile.with_comments(body, _need(data, "text")))
         return views.role(home, crew, name)
 
     after = s.counts_soon
@@ -607,6 +618,8 @@ def _subscribe(s: Serve, client: Client, text: str) -> None:
 
 def build_app(token: str, dev: bool = False, *, home: Home | None = None, client_factory: Callable | None = None,
               titles: bool = True, poll_seconds: float = POLL_SECONDS) -> Starlette:
+    from ombro.serve.settings_routes import settings_routes
+
     allowed = origins(dev)
     s = Serve(home or Home(), client_factory=client_factory, titles=titles, poll_seconds=poll_seconds)
     middleware = [
@@ -617,7 +630,7 @@ def build_app(token: str, dev: bool = False, *, home: Home | None = None, client
         Middleware(Guard, token=token, allowed=allowed),
     ]
     routes = [Route("/hello", _hello), WebSocketRoute("/events", _socket(s)),
-              *_action_routes(s), *_session_routes(s), *_views(s)]
+              *_action_routes(s), *settings_routes(s), *_session_routes(s), *_views(s)]
     from contextlib import asynccontextmanager
 
     @asynccontextmanager

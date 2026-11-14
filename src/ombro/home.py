@@ -111,7 +111,7 @@ class Home:
 
     @property
     def removed_dir(self) -> Path:
-        """Where removed schedules go."""
+        """Where removed schedules, crews and skills go (a removed role goes to its crew's removed/)."""
         return self.root / "removed"
 
     def crew_dir(self, crew: str) -> Path:

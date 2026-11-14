@@ -137,6 +137,38 @@ def users(home: Home) -> dict[str, list[str]]:
     return out
 
 
+KNOWN_PROVIDERS = {"deepseek": "DeepSeek", "anthropic": "Anthropic", "openai": "OpenAI", "openrouter": "OpenRouter",
+                   "mistral": "Mistral", "groq": "Groq", "together": "Together", "x": "xAI", "googleapis": "Google",
+                   "fireworks": "Fireworks", "perplexity": "Perplexity", "cohere": "Cohere"}
+
+
+def provider_label(endpoint: str | None, api: str = "openai") -> str:
+    """A provider's name for people, from its address: api.deepseek.com is DeepSeek; an address on
+    this computer or the local network is Local; anything else is its host."""
+    if not endpoint:
+        return "Test model" if api == "fake" else api
+    from urllib.parse import urlparse
+
+    host = (urlparse(endpoint).hostname or endpoint).lower()
+    if host in ("localhost", "127.0.0.1", "::1") or host.endswith((".local", ".lan")) or re.match(
+            r"^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\.", host):
+        return "Local"
+    parts = host.split(".")
+    for p in parts:
+        if p in KNOWN_PROVIDERS:
+            return KNOWN_PROVIDERS[p]
+    core = parts[-2] if len(parts) >= 2 else parts[0]
+    return core[:1].upper() + core[1:]
+
+
+def key_name_for(endpoint: str) -> str:
+    """The name in keys.env for a new provider's key: DEEPSEEK_API_KEY for api.deepseek.com."""
+    label = re.sub(r"[^A-Z0-9]+", "_", provider_label(endpoint).upper()).strip("_") or "MODEL"
+    if not label[0].isalpha():
+        label = "MODEL_" + label
+    return f"{label}_API_KEY"
+
+
 def connections(home: Home) -> list[dict[str, Any]]:
     """Each connection (endpoint and key) with its models: name, model id, whether it
     is the default, and who uses it."""
@@ -157,7 +189,8 @@ def connections(home: Home) -> list[dict[str, Any]]:
                                      for n, e in raw.items()):
             continue  # written out in full, and also listed under its own name
         g = groups.setdefault((spec.api, spec.endpoint, spec.key),
-                              {"api": spec.api, "endpoint": spec.endpoint, "key": spec.key, "models": []})
+                              {"api": spec.api, "endpoint": spec.endpoint, "key": spec.key, "models": [],
+                               "label": provider_label(spec.endpoint, spec.api)})
         who = list(used.get(name, []))
         for alias in ALIASES:
             if alias != name and same(specs.get(alias), spec):
@@ -347,3 +380,122 @@ def model_flow(home: Home, ui, who: str | None = None, name: str | None = None) 
         return 1
     ui.say(f"{label[0].upper() + label[1:]} will use {name} from the next chat, interview or job.", level="done")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Providers: a connection (an endpoint and its key) as one thing to add, edit or remove (plan C5)
+
+
+def _of(entry: Any, endpoint: str) -> bool:
+    return isinstance(entry, dict) and entry.get("endpoint") == endpoint
+
+
+def provider_names(home: Home, endpoint: str) -> list[str]:
+    """The models.md entries that use an endpoint, aliases left out."""
+    _, _, models = _read(home)
+    return [n for n, e in models.items() if _of(e, endpoint)]
+
+
+def add_provider(home: Home, endpoint: str, key_name: str | None, model: str | None = None,
+                 client_factory=None) -> list[str]:
+    """Add a connection from a form: every model the endpoint lists, or the one model named
+    when it lists none. Its key must already be in keys.env. The default is left as it is,
+    unless there was none. Returns the names added."""
+    from ombro.client import make_client
+    from ombro.init_cmd import offered_models
+
+    endpoint = (endpoint or "").strip().rstrip("/")
+    if not re.match(r"^https?://\S+$", endpoint):
+        raise SetupError("The address must start with https:// (or http:// for one on your own network).")
+    key_name = (key_name or "").strip() or None
+    from ombro import keys
+
+    if key_name and not keys.valid_name(key_name):
+        raise SetupError("Key names use capitals, digits and underscores, starting with a letter.")
+    if provider_names(home, endpoint):
+        raise SetupError(f"{endpoint} is already connected. Edit it instead.")
+    offered = offered_models(home, endpoint, key_name, client_factory or make_client)
+    ids = offered or ([model.strip()] if model and model.strip() else [])
+    if not ids:
+        raise SetupError(f"{endpoint} didn't list its models. Give the name of a model it offers.")
+    had_default = default_name(home) is not None or isinstance(_read(home)[2].get("default"), dict)
+    names = add_models(home, endpoint, key_name, ids)
+    if not had_default and names:
+        set_default(home, names[0])
+    return names
+
+
+def edit_provider(home: Home, endpoint: str, *, new_endpoint: str | None = None,
+                  key_name: str | None = None) -> list[str]:
+    """Change a connection's address or the name of its key, in every model of it.
+    key_name "" means it needs no key. Returns the names changed."""
+    meta, body, models = _read(home)
+    names = [n for n, e in models.items() if _of(e, endpoint)]
+    if not names:
+        raise LookupError(f"no provider at {endpoint}")
+    if new_endpoint is not None:
+        new_endpoint = new_endpoint.strip().rstrip("/")
+        if not re.match(r"^https?://\S+$", new_endpoint):
+            raise SetupError("The address must start with https:// (or http:// for one on your own network).")
+        if new_endpoint != endpoint and any(_of(e, new_endpoint) for e in models.values()):
+            raise SetupError(f"{new_endpoint} is already connected.")
+    if key_name:
+        from ombro import keys
+
+        if not keys.valid_name(key_name.strip()):
+            raise SetupError("Key names use capitals, digits and underscores, starting with a letter.")
+    for n in names:
+        entry = dict(models[n])
+        if new_endpoint is not None:
+            entry["endpoint"] = new_endpoint
+        if key_name is not None:
+            if key_name.strip():
+                entry["key"] = key_name.strip()
+            else:
+                entry.pop("key", None)
+        models[n] = entry
+    _write(home, meta, body, models)
+    return names
+
+
+def check_remove_provider(home: Home, endpoint: str) -> dict[str, Any]:
+    """What stops a connection being removed (the default model is one of its models, or a role
+    names one), and what to know first. As removing.Check: {blocked, warnings}."""
+    _, _, models = _read(home)
+    names = [n for n, e in models.items() if _of(e, endpoint)]
+    if not names:
+        raise LookupError(f"no provider at {endpoint}")
+    specs = load_models(home)
+    default = specs.get("default")
+    blocked = None
+    if default is not None and default.endpoint == endpoint:
+        blocked = "Your default model comes from this provider. Choose a default model from another one first."
+    else:
+        used = users(home)
+        who = sorted({w for n in names for w in used.get(n, [])})
+        if who:
+            blocked = (f"{', '.join(who)} {'uses' if len(who) == 1 else 'use'} a model from this provider. "
+                       "Give them another model first.")
+    warnings = []
+    cheap = specs.get("cheap")
+    if cheap is not None and cheap.endpoint == endpoint and not blocked:
+        warnings.append("Helpers use one of its models; they'll use the default model instead.")
+    return {"blocked": blocked, "warnings": warnings, "models": names}
+
+
+def remove_provider(home: Home, endpoint: str) -> list[str]:
+    """Remove every model of a connection from models.md. Its key stays in keys.env.
+    Returns the names removed."""
+    from ombro.removing import RemoveError
+
+    c = check_remove_provider(home, endpoint)
+    if c["blocked"]:
+        raise RemoveError(c["blocked"])
+    meta, body, models = _read(home)
+    names = set(c["models"])
+    for n in names:
+        del models[n]
+    if models.get("cheap") is None or (isinstance(models["cheap"], str) and models["cheap"] in names):
+        models["cheap"] = "default"
+    _write(home, meta, body, models)
+    return sorted(names)

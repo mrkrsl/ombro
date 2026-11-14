@@ -1,0 +1,139 @@
+// Settings › Folders (design 12): the folders shared with the Lead and every crew, how much they may
+// do there, and any problem. Add picks a folder with the system's own picker; Remove stops sharing it
+// (the folder itself is never touched).
+
+import { useState } from "react";
+import { inTauri } from "../../api/serve";
+import type { FolderList } from "../../api/types";
+import { Field, Problem, shortPath, useAction, useView } from "./common";
+
+export const ACCESS: Record<string, string> = { read: "Can read", write: "Can read and change" };
+
+async function pickFolder(): Promise<string | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const picked = await open({ directory: true, multiple: false, title: "Share a folder with Ombro" });
+  return typeof picked === "string" ? picked : null;
+}
+
+export function Folders() {
+  const folders = useView<FolderList>("/folders");
+  const { run, problem, busy } = useAction();
+  const [path, setPath] = useState<string | null>(null);
+  const [access, setAccess] = useState("read");
+  const [asking, setAsking] = useState<string | null>(null);
+  const list = folders.data?.folders ?? [];
+
+  async function start() {
+    if (!inTauri) {
+      setPath(""); // in a browser there's no picker: type the path
+      return;
+    }
+    const picked = await pickFolder();
+    if (picked) setPath(picked);
+  }
+
+  return (
+    <>
+      <h1 className="page-title">Connected folders</h1>
+      <p className="lede">
+        Ombro's crews can only reach the folders you share here. Each one is open to the Lead and to every crew.
+        Ombro's own files are never shared.
+      </p>
+      <Problem text={folders.problem} />
+      <div className="rows">
+        {list.length === 0 && folders.data && <p className="muted">No folders are shared yet.</p>}
+        {list.map((f) => (
+          <div className="row-block" key={f.name}>
+            <div className="row settings-row folder">
+              <span className="row-name" title={f.path}>
+                {shortPath(f.path)}
+              </span>
+              <span className="row-detail">{ACCESS[f.access] ?? f.access}</span>
+              <span className="row-detail" title={f.problem ?? f.backup ?? ""}>
+                {f.problem ? <span className="problem-inline">{f.problem}</span> : f.backup ?? ""}
+              </span>
+              <span className="row-actions">
+                {asking === f.name ? (
+                  <span className="confirm" role="group" aria-label={`Stop sharing ${shortPath(f.path)}?`}>
+                    <span>Stop sharing it? The folder stays as it is.</span>
+                    <button
+                      className="text-button strong"
+                      onClick={async () => {
+                        const next = await run((api) => api.del<FolderList>(`/folders/${encodeURIComponent(f.name)}`));
+                        if (next) folders.set(next);
+                        setAsking(null);
+                      }}
+                    >
+                      Yes
+                    </button>
+                    <button className="text-button" onClick={() => setAsking(null)}>
+                      No
+                    </button>
+                  </span>
+                ) : (
+                  <button className="text-button strong" onClick={() => setAsking(f.name)}>
+                    Remove
+                  </button>
+                )}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {path === null ? (
+        <div className="form-actions">
+          <button className="primary" onClick={() => void start()}>
+            Add a folder
+          </button>
+        </div>
+      ) : (
+        <div className="inline-form">
+          <h3>Share a folder</h3>
+          {inTauri ? (
+            <p className="chosen-path">
+              {shortPath(path)}{" "}
+              <button className="text-button" onClick={() => void start()}>
+                Choose another
+              </button>
+            </p>
+          ) : (
+            <Field label="Folder" hint="The full path, such as /Users/you/Projects/work.">
+              <input className="text-input" value={path} onChange={(e) => setPath(e.target.value)} />
+            </Field>
+          )}
+          <Field
+            label="What may crews do there?"
+            hint={access === "write" ? "Ombro keeps a copy of anything it changes or deletes, so nothing is lost." : undefined}
+          >
+            <span className="form-row tight">
+              <select aria-label="Access" value={access} onChange={(e) => setAccess(e.target.value)}>
+                <option value="read">Read only</option>
+                <option value="write">Read and change</option>
+              </select>
+            </span>
+          </Field>
+          <div className="form-actions">
+            <button
+              className="primary"
+              disabled={busy || !path.trim()}
+              onClick={async () => {
+                const next = await run((api) => api.post<FolderList>("/folders", { path: path.trim(), access }));
+                if (next) {
+                  folders.set(next);
+                  setPath(null);
+                  setAccess("read");
+                }
+              }}
+            >
+              Share it
+            </button>
+            <button className="secondary" onClick={() => setPath(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <Problem text={problem} />
+    </>
+  );
+}

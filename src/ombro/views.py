@@ -288,21 +288,39 @@ def folder_list(home: Home) -> vt.FolderList:
     return {"folders": rows, "declined": [str(d) for d in declined], "file": str(home.folders)}
 
 
-def tool_list(home: Home, settings=None) -> vt.ToolList:
+def tool_list(home: Home, settings=None, signing: dict | None = None) -> vt.ToolList:
     """The built-in tools with their provider and call limit, the MCP servers by address or
     command (never their secret headers or environment), and whether code.run can work here."""
     from ombro import folders, sandbox
     from ombro.settings import PROVIDER_TOOLS, load_tool_settings
 
     settings = settings or load_tool_settings(home)
+    try:
+        limits = load_limits(home, None, settings)
+    except SetupError:
+        limits = None
     native: list[vt.NativeTool] = []
     for name in ("web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list", "workspace.place",
                  "code.run"):
         cfg = settings.tools.get(name, {})
         native.append({"tool": name, "provider": settings.provider_for(name) if name in PROVIDER_TOOLS else None,
-                       "max_calls": cfg.get("max_calls") or (10 if name == "code.run" else None)})
-    servers: list[vt.ServerRow] = [{"server": name, "command": cfg.get("command"), "args": cfg.get("args") or [], "url": cfg.get("url")}
-               for name, cfg in settings.servers.items()]
+                       "max_calls": cfg.get("max_calls") or (10 if name == "code.run" else None),
+                       "calls": limits.max_calls_for(name) if limits else None})
+    from ombro import oauth
+
+    signing = signing or {}
+    servers: list[vt.ServerRow] = []
+    for name, cfg in settings.servers.items():
+        secrets = sorted({*(cfg.get("env") or {}), *(cfg.get("headers") or {})})
+        state = signing.get(name) or {}
+        sign_in = oauth.status(home, name) if cfg.get("url") else None
+        if sign_in == "not signed in" and state.get("state") == "not needed":
+            sign_in = "no sign-in needed"
+        elif sign_in == "not signed in" and cfg.get("headers"):
+            sign_in = "uses its key"
+        servers.append({"server": name, "command": cfg.get("command"), "args": cfg.get("args") or [],
+                        "url": cfg.get("url"), "secrets": secrets, "sign_in": sign_in,
+                        "signing_in": state.get("state") == "waiting", "problem": state.get("problem")})
     return {"native": native, "servers": servers, "sandbox": sandbox.unavailable_reason(),
             "folders": folders.granted_names(home)}
 
@@ -376,6 +394,7 @@ def preferences(home: Home) -> vt.Preferences:
     return {"name": p.name, "theme": p.theme, "default_crew": p.default_crew,
             "default_crew_title": crew_title(home, p.default_crew), "editor": p.editor,
             "outward": str(preset or "balanced"), "instructions_set": bool(p.instructions.strip()),
+            "instructions": p.instructions,
             "background_feed": p.background_feed, "notifications": p.notifications,
             "files": {"config": str(home.preferences_config), "instructions": str(home.instructions)}}
 
