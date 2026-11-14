@@ -365,21 +365,9 @@ def cmd_tools(args) -> int:
         raise cli.CliError(str(e)) from None
     if args.server:
         return _server_tools(home, settings, pref, args)
-    from ombro.settings import PROVIDER_TOOLS
+    from ombro import sandbox, views
 
-    rows = {"native": [], "servers": []}
-    for name in ("web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list", "workspace.place",
-                 "code.run"):
-        cfg = settings.tools.get(name, {})
-        rows["native"].append({"tool": name, "provider": settings.provider_for(name) if name in PROVIDER_TOOLS else None,
-                               "max_calls": cfg.get("max_calls") or (10 if name == "code.run" else None)})
-    from ombro import folders, sandbox
-
-    rows["sandbox"] = sandbox.unavailable_reason()
-    rows["folders"] = folders.granted_names(home)
-    for name, cfg in settings.servers.items():
-        rows["servers"].append({"server": name, "command": cfg.get("command"), "args": cfg.get("args") or [],
-                                "url": cfg.get("url")})
+    rows = views.tool_list(home, settings)
     if args.json:
         _print_json({**rows, "outward": pref})
         return 0

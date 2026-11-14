@@ -102,15 +102,19 @@ def loopback(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", resolve)
 
 
-def _start():
+def _start(home_root):
+    import os
+
+    # A home of its own: serve's poller reads the home, and must never read the real one.
+    env = {**os.environ, "OMBRO_HOME": str(home_root)}
     proc = subprocess.Popen([sys.executable, "-m", "ombro.serve", "--handshake"], stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     line = proc.stdout.readline()
     return proc, json.loads(line)
 
 
-def test_handshake_then_exits_when_stdin_closes(loopback):
-    proc, hs = _start()
+def test_handshake_then_exits_when_stdin_closes(loopback, tmp_path):
+    proc, hs = _start(tmp_path / "home")
     try:
         assert set(hs) == {"port", "token"} and hs["port"] > 0 and len(hs["token"]) >= 40
         url = f"ws://127.0.0.1:{hs['port']}/events"
@@ -124,10 +128,10 @@ def test_handshake_then_exits_when_stdin_closes(loopback):
             proc.kill()
 
 
-def test_each_start_has_a_fresh_token():
+def test_each_start_has_a_fresh_token(tmp_path):
     tokens = []
     for _ in range(2):
-        proc, hs = _start()
+        proc, hs = _start(tmp_path / "home")
         tokens.append(hs["token"])
         proc.stdin.close()
         proc.wait(timeout=10)

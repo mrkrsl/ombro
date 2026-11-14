@@ -43,6 +43,25 @@ def new_job_id(slug: str = "job", n: int = 1) -> str:
 
 
 WHEN = re.compile(r"(\d{8})-(\d{4,6})")
+_STAMP_END = re.compile(r"-?\d{8}-\d{4,6}(-\d+)?$")
+_STAMP_START = re.compile(r"^\d{8}-\d{4,6}-?")
+
+
+def job_name(job_id: str) -> str:
+    """A job's readable name, from its id: indie-author-research-20261113-1301 is
+    "Indie author research". An old id that is only a time stays as it is."""
+    if _STAMP_START.match(job_id):
+        return job_id
+    words = _STAMP_END.sub("", job_id).replace("-", " ").strip()
+    return (words[:1].upper() + words[1:]) if words and not words.isdigit() else job_id
+
+
+def ombro_argv() -> list[str]:
+    """How to run Ombro's command line again from inside Ombro: the frozen app's own
+    binary, or this Python with -m ombro."""
+    import sys
+
+    return [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "ombro"]
 _WHEN = WHEN
 
 
@@ -158,7 +177,7 @@ def create_job(
 
 
 def start_detached(home: Home, job_dir: Path) -> int:
-    """Start `python -m ombro _exec <job_dir>` in its own session, logging to process.log.
+    """Start `ombro _exec <job_dir>` in its own session, logging to process.log.
     The child records its own pid in job.md. Returns the child's pid."""
     import subprocess
     import sys
@@ -166,7 +185,7 @@ def start_detached(home: Home, job_dir: Path) -> int:
     log = open(Path(job_dir) / "process.log", "ab")
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "ombro", "_exec", str(job_dir)],
+            [*ombro_argv(), "_exec", str(job_dir)],
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,

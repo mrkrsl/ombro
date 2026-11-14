@@ -547,13 +547,23 @@ class Preferences:
 
 
 def set_preference(home: Home, key: str, value: Any) -> None:
-    """Change one setting in preferences/config.md, keeping the rest and its notes."""
+    """Change one setting in preferences/config.md, keeping the rest and its notes. The read, change
+    and write happen under a lock, so the terminal and the desktop app changing different settings
+    at once both keep their change."""
+    import fcntl
+
     from ombro.home import PREFERENCES_BODY
 
     path = home.preferences_config
-    meta, body = mdfile.read(path) if path.is_file() else ({}, PREFERENCES_BODY)
-    meta[key] = value
-    mdfile.write(path, meta, body)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.parent / ".config.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            meta, body = mdfile.read(path) if path.is_file() else ({}, PREFERENCES_BODY)
+            meta[key] = value
+            mdfile.write(path, meta, body)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def load_preferences(home: Home) -> Preferences:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -231,6 +232,8 @@ class Chat:
         self.titled_by: str | None = None  # model, spec or you; a title you set is never replaced
         self.prior_usage: dict[str, Any] = {}  # what the chat used before it was reopened
         self.stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        self.id = f"{self.stamp}-{secrets.token_hex(3)}"  # stays when the file is renamed after its title
+        self.jobs: list[str] = []  # jobs started from this chat
         self.path = self._transcript_path()
 
     def reload_limits(self) -> None:
@@ -319,6 +322,8 @@ class Chat:
         self.transcript.entries = entries
         self.remembered = list(meta.get("remembered") or [])
         self.specs = list(meta.get("specs_saved") or [])
+        self.id = str(meta.get("id") or self.id)
+        self.jobs = [str(j) for j in meta.get("jobs") or []]
         for kind, text in turns(entries):
             if kind == "user":
                 self.exchanges.append([{"role": "user", "content": text}])
@@ -332,6 +337,13 @@ class Chat:
         for who, text in turns(entries):
             self.ui.show(PastTurn("you" if who == "user" else "lead", text))
         self._save()
+
+    def note_job(self, job_id: str) -> None:
+        """A job was started from this chat: kept in its record, and the job keeps the chat's id."""
+        if job_id not in self.jobs:
+            self.jobs.append(job_id)
+            self.transcript.note(f"Job {job_id} started.")
+            self._save()
 
     def history(self) -> list[tuple[str, str]]:
         """The conversation so far, as (you or lead, text), for an interface to show again."""
@@ -1076,6 +1088,8 @@ class Chat:
             "ended": self.ended,
             "remembered": self.remembered,
             "specs_saved": self.specs,
+            "id": self.id,
+            "jobs": self.jobs,
             "refused_tools": sorted(set(self.refused)),
             "limits": {"max_tokens": self.limits.max_tokens, "tool_max_calls": self.limits.tool_max_calls},
             "usage": _add_usage(self.prior_usage, {k: s.get(k) for k in ("total_tokens", "input_tokens",

@@ -24,41 +24,16 @@ from textual.message import Message
 from textual.widgets import Input, Markdown, OptionList, Static, TextArea
 from textual.widgets.option_list import Option as ListOption
 
+from ombro import commands as core_commands
 from ombro import jobs, views
 from ombro.home import Home
+from ombro.session import JobWatcher, Session
 from ombro.tui import look
-from ombro.ui import (YESNO_AGAIN, UI, ChatCleared, Event, Failure, Field, LeadSaid, ModeChanged, Note, PastTurn,
-                      Progress, ProposalShown, Usage, yes_no)
+from ombro.ui import (UI, ChatCleared, Event, Failure, Field, JobEnded, JobProgress, JobStarted, LeadSaid,
+                      ModeChanged, Note, PastTurn, Progress, ProposalShown, Usage, field_prompt, parse_answer)
 
-# The slash commands (specification 14.1). Each does what its command in section 13 does.
-SLASH = [
-    ("/chat", "back to Chat from a brief"),
-    ("/new", "save this chat and start a fresh one"),
-    ("/chats", "your past chats; reopen one and carry on"),
-    ("/rename", "give this chat a title"),
-    ("/brief", "brief a task: the Lead interviews you for a spec"),
-    ("/start", "start a saved spec again"),
-    ("/jobs", "jobs and their status"),
-    ("/report", "a job's report and its deliverables"),
-    ("/stop", "stop a job; it writes its report first"),
-    ("/open", "open a job's workspace folder"),
-    ("/approvals", "what waits for your approval"),
-    ("/schedule", "scheduled jobs"),
-    ("/crew", "crews and their roles"),
-    ("/role", "add or edit a role"),
-    ("/model", "which model the Lead and each role use"),
-    ("/models", "your model connections and their models"),
-    ("/keys", "which keys are set"),
-    ("/folder", "folders shared with jobs and the Lead: list, add, remove"),
-    ("/tools", "tools and their permissions"),
-    ("/skills", "the skills library, who uses each, and proposals waiting"),
-    ("/remember", "add a lesson to a crew's notes"),
-    ("/limits", "how far jobs, chats and interviews may go"),
-    ("/preferences", "your name, theme and defaults"),
-    ("/theme", "switch between light and dark"),
-    ("/help", "what each command does"),
-    ("/quit", "leave Ombro"),
-]
+# The slash commands (specification 14.1), as every interface lists them.
+SLASH = [(c.name, c.help) for c in core_commands.COMMANDS]
 CHAT_COMMANDS = ("/chat", "/new", "/chats", "/rename", "/brief", "/remember")  # handled by chat itself
 TUI_COMMANDS = ("/start", "/jobs", "/report", "/stop", "/open", "/approvals", "/schedule", "/crew", "/role", "/model",
                 "/models",
@@ -73,8 +48,7 @@ POLL_SECONDS = 2.0
 
 def filter_slash(text: str) -> list[tuple[str, str]]:
     """The commands that start with what has been typed after the /."""
-    word = text.strip().split(" ", 1)[0].lower()
-    return [c for c in SLASH if c[0].startswith(word)]
+    return [(c.name, c.help) for c in core_commands.matching(text)]
 
 
 # ---------------------------------------------------------------------------
@@ -361,9 +335,7 @@ class OmbroApp(App):
         self.home = home
         self.poll = poll
         self.init_client_factory = (lambda spec, h: client_factory(spec)) if client_factory else None
-        self.active_jobs: set[str] = set()
-        self.following: dict[str, Any] = {}
-        self.last_counts: dict[str, Any] = {}
+        self.watcher = JobWatcher(home)
         self.client_factory = client_factory
         self.summary = views.summary(home)
         self.first_opening = not any((home.root / "chats").glob("*.md")) and not self.summary["unseen"] \
@@ -376,14 +348,44 @@ class OmbroApp(App):
         except Exception:  # noqa: BLE001
             self.usage = (0, None)
         self.bridge = TuiUI(self)
+        self.session = Session(home, self.bridge, client_factory=client_factory, titles=titles,
+                               start_job=lambda spec, roles: self.commands.start_job(spec, roles),
+                               on_started=self._follow_started)
         from ombro.tui.commands import Commands
 
         self.commands = Commands(self)
         self.pending: Pending | None = None
         self.busy = False
-        self.chat = None
         self._quit_armed = 0.0
         self.setup_needed = setup_needed(home)
+
+    # -- the session and the jobs it follows ---------------------------------
+
+    @property
+    def chat(self):
+        return self.session.chat
+
+    @chat.setter
+    def chat(self, value) -> None:
+        self.session.chat = value
+
+    @property
+    def active_jobs(self) -> set[str]:
+        return self.watcher.active
+
+    @active_jobs.setter
+    def active_jobs(self, value: set[str]) -> None:
+        self.watcher.active = set(value)
+
+    @property
+    def following(self) -> dict[str, Any]:
+        return self.watcher.following
+
+    def _follow_started(self, job_id: str) -> None:
+        from ombro.journal import Follower
+
+        self.following[job_id] = Follower(jobs.find_job(self.home, job_id) / "journal.jsonl")
+        self.active_jobs.add(job_id)
 
     # -- colours -------------------------------------------------------------
 
@@ -435,7 +437,7 @@ class OmbroApp(App):
             self.start_work(self._set_up)
         else:
             self.greet()
-        self.active_jobs = {r["job_id"] for r in views.job_list(self.home) if r["active"]}
+        self.watcher.start()
         if self.poll:
             self.set_interval(POLL_SECONDS, self.poll_jobs)
         self.query_one("#input", PromptArea).focus()
@@ -583,6 +585,17 @@ class OmbroApp(App):
             self.usage = (event.total_tokens, event.max_tokens)
             self.update_footer()
             return
+        if isinstance(event, JobStarted):
+            self.add_line(Note(event.text, level="done"), "note")
+            return
+        if isinstance(event, JobProgress):
+            self.add_line(Progress(event.text), "progress")
+            return
+        if isinstance(event, JobEnded):
+            from ombro.tui.commands import render_notice
+
+            self.add_text(render_notice(event, self), "notice")
+            return
         if isinstance(event, ModeChanged):
             self.mode = event.mode
             self.update_footer()
@@ -698,28 +711,10 @@ class OmbroApp(App):
         shown = "•" * len(text) if f.kind == "secret" else text
         if f.kind != "secret" or text:
             self.add_line(Note(shown or "(Enter)"), "you")
-        if f.kind == "yesno":
-            value = yes_no(text, f.default, f.other)
-            if value is None:
-                self.add_line(Note(("That's a question waiting for an answer, so commands wait until it's done. "
-                                    if text.strip().startswith("/") else "") + YESNO_AGAIN), "note")
-                return
-        elif f.kind == "choice":
-            raw = text if text.strip() or f.default in (None, "") else str(f.default)
-            value = f.choose(raw)
-            if value is None and f.other and raw.strip():
-                value = raw.strip()
-            if value is None:
-                self.add_line(Note(f.invalid or f.check(raw) or "Choose one of those shown."), "note")
-                return
-        elif f.kind == "wait":
-            value = None
-        else:
-            value = text if text.strip() or f.default in (None, "") else str(f.default)
-            problem = f.check(value)
-            if problem:
-                self.add_line(Note(problem), "note")
-                return
+        value, problem = parse_answer(f, text)
+        if problem:
+            self.add_line(Note(problem), "note")
+            return
         self.pending = None
         self.show_secret(False)
         pending.value = value
@@ -765,9 +760,7 @@ class OmbroApp(App):
             try:
                 fn()
             except KeyboardInterrupt:
-                if self.chat is not None and self.chat.exchanges and \
-                        self.chat.exchanges[-1][-1].get("role") == "user":
-                    self.chat.exchanges.pop()
+                self.session.undo_unanswered()
                 if self.is_running:
                     self.call_from_thread(self.add_line, Note("Stopped."), "note")
             except Exception as e:  # noqa: BLE001 - shown, never a crash
@@ -785,40 +778,12 @@ class OmbroApp(App):
         self.run_worker(work, thread=True, exclusive=False)
 
     def _chat_turn(self, text: str) -> None:
-        if self.chat is None:
-            from ombro.chat import Chat
-
-            kw = {"client_factory": self.client_factory} if self.client_factory else {}
-            self.chat = Chat(self.home, ui=self.bridge, titles=self.titles, **kw)
-        specs_before = len(self.chat.specs)
-        go_on = self.chat.handle(text)
-        if not go_on:
+        if not self.session.chat_turn(text):
             self.call_from_thread(self.leave)
-            return
-        if len(self.chat.specs) > specs_before:
-            self.offer_start(self.chat.specs[-1])
-        while self.chat.start_offers:  # the user already said yes in chat
-            name, roles = self.chat.start_offers.pop(0)
-            self.offer_start(name, roles=roles, ask=False)
 
     def offer_start(self, spec: str, shown: str | None = None, *, roles: list[str] | None = None,
-                  ask: bool = True) -> None:
-        """Start a saved spec now, detached, after the user's yes: after a confirmed brief, on /start, or when the
-        Lead in chat offered it and the user said yes there (specification 10.3, 10.4)."""
-        if shown:
-            self.bridge.say(f"Saved spec {shown}")
-        if ask and not self.bridge.yes("start_now", "Start it now? It works in the background, and its progress "
-                                                  "shows here.", True):
-            self.bridge.say(f"Start it later with `ombro start --spec {spec}`.")
-            return
-        job_id = self.commands.start_job(spec, roles or [])
-        if job_id:
-            from ombro.journal import Follower
-
-            self.following[job_id] = Follower(jobs.find_job(self.home, job_id) / "journal.jsonl")
-            self.active_jobs.add(job_id)
-            self.bridge.say(f"Started job {job_id}. Keep chatting; its progress and its notice appear here.",
-                            level="done")
+                    ask: bool = True) -> None:
+        self.session.offer_start(spec, shown, roles=roles, ask=ask)
 
     # -- jobs: progress, notices and the header's counts --------------------------
 
@@ -826,29 +791,12 @@ class OmbroApp(App):
         self.run_worker(self._poll, thread=True, exclusive=True, group="poll")
 
     def _poll(self) -> None:
-        from ombro.tui.commands import notice_text, progress_line
-
-        try:
-            rows = views.job_list(self.home)
-        except Exception:  # noqa: BLE001 - a job being written; try at the next tick
+        polled = self.watcher.poll()
+        if polled is None:
             return
-        for job_id, follower in list(self.following.items()):
-            for ev in follower.new_events():
-                line = progress_line(job_id, ev)
-                if line:
-                    self.call_from_thread(self.add_line, Progress(line), "progress")
-        active = {r["job_id"] for r in rows if r["active"]}
-        for job_id in sorted(self.active_jobs - active):
-            self.following.pop(job_id, None)
-            self.call_from_thread(self.add_text, notice_text(self, job_id), "notice")
-            try:
-                jobs.mark_seen(jobs.find_job(self.home, job_id))
-            except (LookupError, OSError):
-                pass
-        counts = {"active": sorted(active), "waiting": sum(r["waiting"] for r in rows), "jobs": len(rows)}
-        changed = counts != self.last_counts or active != self.active_jobs
-        self.active_jobs = active
-        self.last_counts = counts
+        events, changed = polled
+        for event in events:
+            self.call_from_thread(self.show_event, event)
         if changed and self.is_running:
             try:
                 self.call_from_thread(self.refresh_summary)
@@ -889,33 +837,12 @@ class OmbroApp(App):
         self.set_timer(QUIT_AGAIN_SECONDS, self.update_footer)
 
     def leave(self) -> None:
-        if self.chat is not None and self.chat.exchanges:
-            try:
-                self.chat._save()
-            except OSError:
-                pass
+        self.session.save()
         self.exit(0)
 
 
 # ---------------------------------------------------------------------------
 # Rendering events as lines
-
-
-def field_prompt(f: Field) -> str:
-    from ombro.ui import option_text
-
-    if f.kind == "yesno":
-        return f"{f.label} (y or n{', Enter for ' + ('yes' if f.default else 'no')})"
-    if f.kind == "choice":
-        from ombro.ui import numbered
-
-        if numbered(f):
-            return f.label + ("" if f.label.endswith(("?", ":")) else ":") + "\n" + "\n".join(f"  {o.key}) {o.label}" for o in f.options) + \
-                (f"\n(Enter for {f.default})" if f.default not in (None, "") else "")
-        return (f"{f.label} " if f.label else "") + option_text(f.options, f.other) + "?"
-    if f.kind == "secret":
-        return f.label + ("" if "hidden" in f.label.lower() else " (hidden as you type)")
-    return f.label + (f" (Enter for {f.default})" if f.default not in (None, "") else "")
 
 
 def render_event(event: Event, p: look.Palette) -> Text | None:

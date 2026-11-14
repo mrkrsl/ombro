@@ -1,0 +1,909 @@
+// Generated from src/api/schema.json by npm run types. Do not edit.
+
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "CoreEvent".
+ */
+export type CoreEvent =
+  | ChatCleared
+  | Failure
+  | JobEnded
+  | JobProgress
+  | JobStarted
+  | LeadSaid
+  | ModeChanged
+  | Note
+  | PastTurn
+  | Progress
+  | ProposalShown
+  | Usage;
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ServerMessage".
+ */
+export type ServerMessage =
+  | EventMessage
+  | QuestionMessage
+  | QuestionClosedMessage
+  | EditFilesMessage
+  | SessionMessage
+  | JobMessage
+  | CountsMessage;
+
+export interface OmbroApi {
+  api: Api;
+  core_event:
+    | ChatCleared
+    | Failure
+    | JobEnded
+    | JobProgress
+    | JobStarted
+    | LeadSaid
+    | ModeChanged
+    | Note
+    | PastTurn
+    | Progress
+    | ProposalShown
+    | Usage;
+  field: Field;
+  form: Form;
+}
+/**
+ * Every type the app uses, gathered so one schema holds them all.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Api".
+ */
+export interface Api {
+  answer_reply: AnswerReply;
+  approval: ApprovalRow;
+  approval_detail: ApprovalDetail;
+  chat: ChatRow;
+  chat_detail: ChatDetail;
+  command: CommandView;
+  crews: Crews;
+  folders: FolderList;
+  input_reply: InputReply;
+  job: JobRow;
+  job_status: JobStatus;
+  keys: KeyList;
+  models: ModelList;
+  preferences: Preferences;
+  report: Report;
+  role: RoleDetail;
+  schedule: ScheduleRow;
+  server_message:
+    | EventMessage
+    | QuestionMessage
+    | QuestionClosedMessage
+    | EditFilesMessage
+    | SessionMessage
+    | JobMessage
+    | CountsMessage;
+  session: SessionView;
+  since_last: SinceLast;
+  spec: SpecRow;
+  subscribe: SubscribeMessage;
+  summary: Summary;
+  tools: ToolList;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "AnswerReply".
+ */
+export interface AnswerReply {
+  ok: boolean;
+  problem: string | null;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ApprovalRow".
+ */
+export interface ApprovalRow {
+  class: string;
+  edited: boolean;
+  job_id: string;
+  job_name: string;
+  long_ref: string;
+  reason: string;
+  ref: string;
+  role: string;
+  status: string;
+  summary: string;
+  tool: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ApprovalDetail".
+ */
+export interface ApprovalDetail {
+  arguments: unknown;
+  class: string;
+  edited: boolean;
+  job_id: string;
+  job_name: string;
+  long_ref: string;
+  reason: string;
+  ref: string;
+  role: string;
+  skill: {
+    [k: string]: unknown;
+  } | null;
+  status: string;
+  summary: string;
+  tool: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ChatRow".
+ */
+export interface ChatRow {
+  id: string | null;
+  jobs: string[];
+  name: string;
+  path: string;
+  title: string;
+  updated_at: string;
+  when: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ChatDetail".
+ */
+export interface ChatDetail {
+  id: string | null;
+  jobs: string[];
+  name: string;
+  path: string;
+  title: string;
+  turns: ChatTurn[];
+  updated_at: string;
+  when: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ChatTurn".
+ */
+export interface ChatTurn {
+  text: string;
+  who: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "CommandView".
+ */
+export interface CommandView {
+  help: string;
+  name: string;
+  screen: string;
+  where: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Crews".
+ */
+export interface Crews {
+  crews: CrewRow[];
+  default_crew: string;
+  lead: LeadView;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "CrewRow".
+ */
+export interface CrewRow {
+  default: boolean;
+  description: string;
+  name: string;
+  roles: RoleRow[];
+  title: string;
+}
+/**
+ * A role in a crew. One that can't be loaded has its name, title and problem only.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "RoleRow".
+ */
+export interface RoleRow {
+  description?: string;
+  kind?: string;
+  model?: string;
+  name: string;
+  problem?: string;
+  skills?: string[];
+  title: string;
+  tools?: string[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "LeadView".
+ */
+export interface LeadView {
+  model: string | null;
+  name: string;
+  path: string;
+  problem?: string;
+  title: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "FolderList".
+ */
+export interface FolderList {
+  declined: string[];
+  file: string;
+  folders: FolderRow[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "FolderRow".
+ */
+export interface FolderRow {
+  access: string;
+  backup: string | null;
+  name: string;
+  path: string;
+  problem: string | null;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "InputReply".
+ */
+export interface InputReply {
+  handled?: boolean;
+  route?: Route;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Route".
+ */
+export interface Route {
+  args: string;
+  command: string;
+  screen: string;
+  where: "screen" | "app";
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "JobRow".
+ */
+export interface JobRow {
+  active: boolean;
+  brief: string;
+  chat: string | null;
+  created_at: string | null;
+  crews: string[];
+  finished_at: string | null;
+  job_id: string;
+  limit_hit: string | null;
+  name: string;
+  path: string;
+  seen_at: string | null;
+  source: string;
+  started_at: string | null;
+  status: string | null;
+  total_tokens: number;
+  waiting: number;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "JobStatus".
+ */
+export interface JobStatus {
+  active: boolean;
+  allowance: string;
+  brief: string;
+  chat: string | null;
+  created_at: string | null;
+  crews: string[];
+  finished_at: string | null;
+  folders: unknown[];
+  interview_usage: {
+    [k: string]: unknown;
+  };
+  job_id: string;
+  limit_hit: string | null;
+  limits: {
+    [k: string]: unknown;
+  };
+  name: string;
+  outbox: {
+    [k: string]: number;
+  };
+  outward: {
+    [k: string]: unknown;
+  };
+  path: string;
+  pid: number | null;
+  seen_at: string | null;
+  source: string;
+  started_at: string | null;
+  status: string | null;
+  total_tokens: number;
+  usage: {
+    [k: string]: unknown;
+  };
+  waiting: number;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "KeyList".
+ */
+export interface KeyList {
+  file: string;
+  keys: KeyRow[];
+  sign_ins: SignIn[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "KeyRow".
+ */
+export interface KeyRow {
+  name: string;
+  set: boolean;
+  source: string | null;
+  used_by: string[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "SignIn".
+ */
+export interface SignIn {
+  server: string;
+  status: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ModelList".
+ */
+export interface ModelList {
+  connections: Connection[];
+  default: string | null;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Connection".
+ */
+export interface Connection {
+  api: string;
+  endpoint: string | null;
+  key: string | null;
+  models: ModelEntry[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ModelEntry".
+ */
+export interface ModelEntry {
+  default: boolean;
+  model: string;
+  name: string;
+  used_by: string[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Preferences".
+ */
+export interface Preferences {
+  default_crew: string;
+  default_crew_title: string;
+  editor: string;
+  files: {
+    [k: string]: string;
+  };
+  instructions_set: boolean;
+  name: string;
+  outward: string;
+  theme: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Report".
+ */
+export interface Report {
+  active: boolean;
+  brief: string;
+  chat: string | null;
+  created_at: string | null;
+  crews: string[];
+  deliverables: Deliverable[];
+  finished_at: string | null;
+  job_id: string;
+  limit_hit: string | null;
+  name: string;
+  path: string;
+  report: string | null;
+  report_path: string;
+  seen_at: string | null;
+  source: string;
+  started_at: string | null;
+  status: string | null;
+  total_tokens: number;
+  waiting: number;
+  workspace: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Deliverable".
+ */
+export interface Deliverable {
+  exists: boolean;
+  kind: string;
+  name: string;
+  path: string;
+  role: string;
+  url: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "RoleDetail".
+ */
+export interface RoleDetail {
+  all_skills: boolean;
+  crew: string;
+  description: string;
+  kind: string;
+  model: string;
+  name: string;
+  path: string;
+  skills: string[];
+  soul: string;
+  title: string;
+  tools: string[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ScheduleRow".
+ */
+export interface ScheduleRow {
+  crews: string[];
+  cron: string;
+  enabled: boolean;
+  last_job: LastJob | null;
+  name: string;
+  next: string | null;
+  path: string;
+  problem: string | null;
+  spec: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "LastJob".
+ */
+export interface LastJob {
+  due: string | null;
+  job_id: string;
+  status: string | null;
+  waiting: number;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "EventMessage".
+ */
+export interface EventMessage {
+  event:
+    | LeadSaid
+    | Progress
+    | Note
+    | Failure
+    | ProposalShown
+    | Usage
+    | ModeChanged
+    | PastTurn
+    | ChatCleared
+    | JobStarted
+    | JobProgress
+    | JobEnded;
+  seq: number;
+  session: string | null;
+  type: "event";
+}
+/**
+ * The Lead's own words. `asks` is true when it is waiting for an answer.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "LeadSaid".
+ */
+export interface LeadSaid {
+  asks?: boolean;
+  text: string;
+  type: "lead";
+}
+/**
+ * Where something stands: interview topics covered, a test call under way.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Progress".
+ */
+export interface Progress {
+  text: string;
+  type: "progress";
+}
+/**
+ * Something Ombro says. `items` is a list shown beneath it. `spaced` starts
+ * a new paragraph. `level` is info, warning or done.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Note".
+ */
+export interface Note {
+  items?: string[];
+  level?: string;
+  spaced?: boolean;
+  text: string;
+  type: "note";
+}
+/**
+ * Something went wrong. Shown on its own, never mistaken for the Lead.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Failure".
+ */
+export interface Failure {
+  text: string;
+  type: "error";
+}
+/**
+ * Files an interview proposes to write, waiting for the user's decision.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ProposalShown".
+ */
+export interface ProposalShown {
+  files: FileView[];
+  type: "proposal";
+  warnings?: string[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "FileView".
+ */
+export interface FileView {
+  diff?: string[];
+  label: string;
+  path: string;
+  replaces: boolean;
+  text: string;
+}
+/**
+ * Tokens used so far against the cap, for a chat or an interview.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Usage".
+ */
+export interface Usage {
+  final?: boolean;
+  max_tokens: number | null;
+  mode: string;
+  scope: string;
+  tool_calls?: number;
+  total_tokens: number;
+  type: "usage";
+}
+/**
+ * Chat moved into Brief, or back.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ModeChanged".
+ */
+export interface ModeChanged {
+  mode: string;
+  text?: string;
+  type: "mode";
+}
+/**
+ * A turn from a chat reopened to carry on, shown again: who said it, and what.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "PastTurn".
+ */
+export interface PastTurn {
+  text: string;
+  type: "past";
+  who: string;
+}
+/**
+ * /new: a fresh chat began, so an interface may clear what is on screen.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ChatCleared".
+ */
+export interface ChatCleared {
+  type: "cleared";
+}
+/**
+ * A job started in the background, after the user's yes.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "JobStarted".
+ */
+export interface JobStarted {
+  job_id: string;
+  name: string;
+  text: string;
+  type: "job_started";
+}
+/**
+ * A step in a job's journal worth showing: a role briefed, a result back, an approval asked.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "JobProgress".
+ */
+export interface JobProgress {
+  action: string;
+  job_id: string;
+  name: string;
+  note: string;
+  role: string;
+  text: string;
+  type: "job_progress";
+}
+/**
+ * A job has ended: how, what it made, what waits for approval. Written by Ombro, not the model.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "JobEnded".
+ */
+export interface JobEnded {
+  brief?: string;
+  files?: JobFile[];
+  job_id: string;
+  limit_hit?: string | null;
+  name: string;
+  status: string;
+  text: string;
+  type: "job_ended";
+  waiting?: number;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "JobFile".
+ */
+export interface JobFile {
+  exists: boolean;
+  name: string;
+  path: string;
+  url: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "QuestionMessage".
+ */
+export interface QuestionMessage {
+  field: Field;
+  id: string;
+  prompt: string;
+  seq: number;
+  session: string;
+  type: "question";
+}
+/**
+ * One question. In a form, one field of it.
+ *
+ * kind: text (a line, or several if `multiline`), secret (hidden, never shown
+ * or saved), choice (one of `options`), yesno, or wait (only to go on).
+ * `pattern` is a regular expression the answer must match in full, and
+ * `invalid` what to say when it does not (or when a required answer is
+ * empty). A choice with `other` also takes a free answer, described by it.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Field".
+ */
+export interface Field {
+  default?: {
+    [k: string]: unknown;
+  };
+  help?: string;
+  invalid?: string;
+  kind?: string;
+  label: string;
+  mode?: string;
+  multiline?: boolean;
+  name: string;
+  options?: Option[];
+  other?: string;
+  pattern?: string | null;
+  required?: boolean;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Option".
+ */
+export interface Option {
+  aliases?: string[];
+  key: string;
+  label: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "QuestionClosedMessage".
+ */
+export interface QuestionClosedMessage {
+  id: string;
+  seq: number;
+  session: string;
+  type: "question_closed";
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "EditFilesMessage".
+ */
+export interface EditFilesMessage {
+  id: string;
+  paths: string[];
+  seq: number;
+  session: string;
+  type: "edit_files";
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "SessionMessage".
+ */
+export interface SessionMessage {
+  kind: string;
+  seq: number;
+  session: string;
+  state: "working" | "waiting" | "idle" | "ended";
+  type: "session";
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "JobMessage".
+ */
+export interface JobMessage {
+  event: JobProgress | JobEnded;
+  job_id: string;
+  line: string;
+  name: string;
+  status: string;
+  type: "job";
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "CountsMessage".
+ */
+export interface CountsMessage {
+  active: number;
+  crews_ready: number;
+  scheduled: number;
+  type: "counts";
+  unseen: number;
+  waiting: number;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "SessionView".
+ */
+export interface SessionView {
+  chat: string | null;
+  chat_id: string | null;
+  id: string;
+  jobs: string[];
+  kind: string;
+  mode: string | null;
+  question: OpenQuestion | null;
+  seq: number;
+  state: string;
+  title: string | null;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "OpenQuestion".
+ */
+export interface OpenQuestion {
+  field: Field;
+  id: string;
+  kind: "question" | "edit_files";
+  paths: string[];
+  prompt: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "SinceLast".
+ */
+export interface SinceLast {
+  finished: number;
+  jobs: UnseenJob[];
+  waiting: number;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "UnseenJob".
+ */
+export interface UnseenJob {
+  brief: string;
+  finished_at: string | null;
+  job_id: string;
+  status: string | null;
+  waiting: number;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "SpecRow".
+ */
+export interface SpecRow {
+  crews: string[];
+  modified: string;
+  name: string;
+  path: string;
+  title: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "SubscribeMessage".
+ */
+export interface SubscribeMessage {
+  all?: boolean;
+  sessions?: {
+    [k: string]: number;
+  };
+  type?: "subscribe";
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Summary".
+ */
+export interface Summary {
+  counts: Counts;
+  crews: CrewRow[];
+  lead: LeadView;
+  model: string | null;
+  name: string;
+  outward: string;
+  unseen: UnseenJob[];
+  version: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Counts".
+ */
+export interface Counts {
+  active_jobs: number;
+  crews: number;
+  crews_ready: number;
+  scheduled_jobs: number;
+  unseen_jobs: number;
+  waiting: number;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ToolList".
+ */
+export interface ToolList {
+  folders: string[];
+  native: NativeTool[];
+  sandbox: string | null;
+  servers: ServerRow[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "NativeTool".
+ */
+export interface NativeTool {
+  max_calls: number | null;
+  provider: string | null;
+  tool: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ServerRow".
+ */
+export interface ServerRow {
+  args: string[];
+  command: string | null;
+  server: string;
+  url: string | null;
+}
+/**
+ * Several fields asked together: one at a time in a terminal, on one page in a
+ * graphical interface. `intro` lines are shown first.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Form".
+ */
+export interface Form {
+  fields: Field[];
+  intro?: string[];
+  name: string;
+  title: string;
+}

@@ -1,0 +1,2842 @@
+{
+  "$defs": {
+    "AnswerReply": {
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ok",
+        "problem"
+      ],
+      "title": "AnswerReply",
+      "type": "object"
+    },
+    "Api": {
+      "description": "Every type the app uses, gathered so one schema holds them all.",
+      "properties": {
+        "answer_reply": {
+          "$ref": "#/$defs/AnswerReply"
+        },
+        "approval": {
+          "$ref": "#/$defs/ApprovalRow"
+        },
+        "approval_detail": {
+          "$ref": "#/$defs/ApprovalDetail"
+        },
+        "chat": {
+          "$ref": "#/$defs/ChatRow"
+        },
+        "chat_detail": {
+          "$ref": "#/$defs/ChatDetail"
+        },
+        "command": {
+          "$ref": "#/$defs/CommandView"
+        },
+        "crews": {
+          "$ref": "#/$defs/Crews"
+        },
+        "folders": {
+          "$ref": "#/$defs/FolderList"
+        },
+        "input_reply": {
+          "$ref": "#/$defs/InputReply"
+        },
+        "job": {
+          "$ref": "#/$defs/JobRow"
+        },
+        "job_status": {
+          "$ref": "#/$defs/JobStatus"
+        },
+        "keys": {
+          "$ref": "#/$defs/KeyList"
+        },
+        "models": {
+          "$ref": "#/$defs/ModelList"
+        },
+        "preferences": {
+          "$ref": "#/$defs/Preferences"
+        },
+        "report": {
+          "$ref": "#/$defs/Report"
+        },
+        "role": {
+          "$ref": "#/$defs/RoleDetail"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ScheduleRow"
+        },
+        "server_message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventMessage"
+            },
+            {
+              "$ref": "#/$defs/QuestionMessage"
+            },
+            {
+              "$ref": "#/$defs/QuestionClosedMessage"
+            },
+            {
+              "$ref": "#/$defs/EditFilesMessage"
+            },
+            {
+              "$ref": "#/$defs/SessionMessage"
+            },
+            {
+              "$ref": "#/$defs/JobMessage"
+            },
+            {
+              "$ref": "#/$defs/CountsMessage"
+            }
+          ]
+        },
+        "session": {
+          "$ref": "#/$defs/SessionView"
+        },
+        "since_last": {
+          "$ref": "#/$defs/SinceLast"
+        },
+        "spec": {
+          "$ref": "#/$defs/SpecRow"
+        },
+        "subscribe": {
+          "$ref": "#/$defs/SubscribeMessage"
+        },
+        "summary": {
+          "$ref": "#/$defs/Summary"
+        },
+        "tools": {
+          "$ref": "#/$defs/ToolList"
+        }
+      },
+      "required": [
+        "server_message",
+        "subscribe",
+        "session",
+        "input_reply",
+        "answer_reply",
+        "command",
+        "summary",
+        "crews",
+        "role",
+        "job",
+        "job_status",
+        "report",
+        "chat",
+        "chat_detail",
+        "approval",
+        "approval_detail",
+        "keys",
+        "schedule",
+        "spec",
+        "folders",
+        "preferences",
+        "tools",
+        "models",
+        "since_last"
+      ],
+      "title": "Api",
+      "type": "object"
+    },
+    "ApprovalDetail": {
+      "properties": {
+        "arguments": {},
+        "class": {
+          "type": "string"
+        },
+        "edited": {
+          "type": "boolean"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "job_name": {
+          "type": "string"
+        },
+        "long_ref": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "long_ref",
+        "job_id",
+        "job_name",
+        "status",
+        "tool",
+        "summary",
+        "role",
+        "reason",
+        "class",
+        "edited",
+        "arguments",
+        "skill"
+      ],
+      "title": "ApprovalDetail",
+      "type": "object"
+    },
+    "ApprovalRow": {
+      "properties": {
+        "class": {
+          "type": "string"
+        },
+        "edited": {
+          "type": "boolean"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "job_name": {
+          "type": "string"
+        },
+        "long_ref": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "long_ref",
+        "job_id",
+        "job_name",
+        "status",
+        "tool",
+        "summary",
+        "role",
+        "reason",
+        "class",
+        "edited"
+      ],
+      "title": "ApprovalRow",
+      "type": "object"
+    },
+    "ChatCleared": {
+      "description": "/new: a fresh chat began, so an interface may clear what is on screen.",
+      "properties": {
+        "type": {
+          "const": "cleared",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ChatCleared",
+      "type": "object"
+    },
+    "ChatDetail": {
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jobs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "turns": {
+          "items": {
+            "$ref": "#/$defs/ChatTurn"
+          },
+          "type": "array"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "when": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "title",
+        "path",
+        "updated_at",
+        "when",
+        "id",
+        "jobs",
+        "turns"
+      ],
+      "title": "ChatDetail",
+      "type": "object"
+    },
+    "ChatRow": {
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jobs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "when": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "title",
+        "path",
+        "updated_at",
+        "when",
+        "id",
+        "jobs"
+      ],
+      "title": "ChatRow",
+      "type": "object"
+    },
+    "ChatTurn": {
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "who": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "who",
+        "text"
+      ],
+      "title": "ChatTurn",
+      "type": "object"
+    },
+    "CommandView": {
+      "properties": {
+        "help": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "screen": {
+          "type": "string"
+        },
+        "where": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "help",
+        "where",
+        "screen"
+      ],
+      "title": "CommandView",
+      "type": "object"
+    },
+    "Connection": {
+      "properties": {
+        "api": {
+          "type": "string"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/ModelEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "api",
+        "endpoint",
+        "key",
+        "models"
+      ],
+      "title": "Connection",
+      "type": "object"
+    },
+    "CoreEvent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ChatCleared"
+        },
+        {
+          "$ref": "#/$defs/Failure"
+        },
+        {
+          "$ref": "#/$defs/JobEnded"
+        },
+        {
+          "$ref": "#/$defs/JobProgress"
+        },
+        {
+          "$ref": "#/$defs/JobStarted"
+        },
+        {
+          "$ref": "#/$defs/LeadSaid"
+        },
+        {
+          "$ref": "#/$defs/ModeChanged"
+        },
+        {
+          "$ref": "#/$defs/Note"
+        },
+        {
+          "$ref": "#/$defs/PastTurn"
+        },
+        {
+          "$ref": "#/$defs/Progress"
+        },
+        {
+          "$ref": "#/$defs/ProposalShown"
+        },
+        {
+          "$ref": "#/$defs/Usage"
+        }
+      ],
+      "title": "CoreEvent"
+    },
+    "Counts": {
+      "properties": {
+        "active_jobs": {
+          "type": "integer"
+        },
+        "crews": {
+          "type": "integer"
+        },
+        "crews_ready": {
+          "type": "integer"
+        },
+        "scheduled_jobs": {
+          "type": "integer"
+        },
+        "unseen_jobs": {
+          "type": "integer"
+        },
+        "waiting": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "crews",
+        "crews_ready",
+        "active_jobs",
+        "scheduled_jobs",
+        "waiting",
+        "unseen_jobs"
+      ],
+      "title": "Counts",
+      "type": "object"
+    },
+    "CountsMessage": {
+      "properties": {
+        "active": {
+          "type": "integer"
+        },
+        "crews_ready": {
+          "type": "integer"
+        },
+        "scheduled": {
+          "type": "integer"
+        },
+        "type": {
+          "const": "counts",
+          "type": "string"
+        },
+        "unseen": {
+          "type": "integer"
+        },
+        "waiting": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "active",
+        "scheduled",
+        "waiting",
+        "unseen",
+        "crews_ready"
+      ],
+      "title": "CountsMessage",
+      "type": "object"
+    },
+    "CrewRow": {
+      "properties": {
+        "default": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "roles": {
+          "items": {
+            "$ref": "#/$defs/RoleRow"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "title",
+        "description",
+        "default",
+        "roles"
+      ],
+      "title": "CrewRow",
+      "type": "object"
+    },
+    "Crews": {
+      "properties": {
+        "crews": {
+          "items": {
+            "$ref": "#/$defs/CrewRow"
+          },
+          "type": "array"
+        },
+        "default_crew": {
+          "type": "string"
+        },
+        "lead": {
+          "$ref": "#/$defs/LeadView"
+        }
+      },
+      "required": [
+        "lead",
+        "default_crew",
+        "crews"
+      ],
+      "title": "Crews",
+      "type": "object"
+    },
+    "Deliverable": {
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "path",
+        "url",
+        "exists",
+        "kind"
+      ],
+      "title": "Deliverable",
+      "type": "object"
+    },
+    "EditFilesMessage": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "type": {
+          "const": "edit_files",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "session",
+        "seq",
+        "id",
+        "paths"
+      ],
+      "title": "EditFilesMessage",
+      "type": "object"
+    },
+    "EventMessage": {
+      "properties": {
+        "event": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LeadSaid"
+            },
+            {
+              "$ref": "#/$defs/Progress"
+            },
+            {
+              "$ref": "#/$defs/Note"
+            },
+            {
+              "$ref": "#/$defs/Failure"
+            },
+            {
+              "$ref": "#/$defs/ProposalShown"
+            },
+            {
+              "$ref": "#/$defs/Usage"
+            },
+            {
+              "$ref": "#/$defs/ModeChanged"
+            },
+            {
+              "$ref": "#/$defs/PastTurn"
+            },
+            {
+              "$ref": "#/$defs/ChatCleared"
+            },
+            {
+              "$ref": "#/$defs/JobStarted"
+            },
+            {
+              "$ref": "#/$defs/JobProgress"
+            },
+            {
+              "$ref": "#/$defs/JobEnded"
+            }
+          ]
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "const": "event",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "session",
+        "seq",
+        "event"
+      ],
+      "title": "EventMessage",
+      "type": "object"
+    },
+    "Failure": {
+      "description": "Something went wrong. Shown on its own, never mistaken for the Lead.",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "title": "Failure",
+      "type": "object"
+    },
+    "Field": {
+      "description": "One question. In a form, one field of it.\n\nkind: text (a line, or several if `multiline`), secret (hidden, never shown\nor saved), choice (one of `options`), yesno, or wait (only to go on).\n`pattern` is a regular expression the answer must match in full, and\n`invalid` what to say when it does not (or when a required answer is\nempty). A choice with `other` also takes a free answer, described by it.",
+      "properties": {
+        "default": {
+          "default": null
+        },
+        "help": {
+          "default": "",
+          "type": "string"
+        },
+        "invalid": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "default": "text",
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mode": {
+          "default": "",
+          "type": "string"
+        },
+        "multiline": {
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/Option"
+          },
+          "type": "array"
+        },
+        "other": {
+          "default": "",
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "label"
+      ],
+      "title": "Field",
+      "type": "object"
+    },
+    "FileView": {
+      "properties": {
+        "diff": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "replaces": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "path",
+        "text",
+        "replaces"
+      ],
+      "title": "FileView",
+      "type": "object"
+    },
+    "FolderList": {
+      "properties": {
+        "declined": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "file": {
+          "type": "string"
+        },
+        "folders": {
+          "items": {
+            "$ref": "#/$defs/FolderRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "folders",
+        "declined",
+        "file"
+      ],
+      "title": "FolderList",
+      "type": "object"
+    },
+    "FolderRow": {
+      "properties": {
+        "access": {
+          "type": "string"
+        },
+        "backup": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "access",
+        "backup",
+        "problem"
+      ],
+      "title": "FolderRow",
+      "type": "object"
+    },
+    "Form": {
+      "description": "Several fields asked together: one at a time in a terminal, on one page in a\ngraphical interface. `intro` lines are shown first.",
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/Field"
+          },
+          "type": "array"
+        },
+        "intro": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "title",
+        "fields"
+      ],
+      "title": "Form",
+      "type": "object"
+    },
+    "InputReply": {
+      "properties": {
+        "handled": {
+          "type": "boolean"
+        },
+        "route": {
+          "$ref": "#/$defs/Route"
+        }
+      },
+      "title": "InputReply",
+      "type": "object"
+    },
+    "JobEnded": {
+      "description": "A job has ended: how, what it made, what waits for approval. Written by Ombro, not the model.",
+      "properties": {
+        "brief": {
+          "default": "",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/JobFile"
+          },
+          "type": "array"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "limit_hit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "job_ended",
+          "type": "string"
+        },
+        "waiting": {
+          "default": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "job_id",
+        "name",
+        "status",
+        "text"
+      ],
+      "title": "JobEnded",
+      "type": "object"
+    },
+    "JobFile": {
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "url",
+        "exists"
+      ],
+      "title": "JobFile",
+      "type": "object"
+    },
+    "JobMessage": {
+      "properties": {
+        "event": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobProgress"
+            },
+            {
+              "$ref": "#/$defs/JobEnded"
+            }
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "line": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "const": "job",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "job_id",
+        "name",
+        "status",
+        "line",
+        "event"
+      ],
+      "title": "JobMessage",
+      "type": "object"
+    },
+    "JobProgress": {
+      "description": "A step in a job's journal worth showing: a role briefed, a result back, an approval asked.",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "job_progress",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "job_id",
+        "name",
+        "role",
+        "action",
+        "note",
+        "text"
+      ],
+      "title": "JobProgress",
+      "type": "object"
+    },
+    "JobRow": {
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "chat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "crews": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "limit_hit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "seen_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total_tokens": {
+          "type": "integer"
+        },
+        "waiting": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id",
+        "name",
+        "crews",
+        "status",
+        "active",
+        "brief",
+        "source",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "limit_hit",
+        "total_tokens",
+        "waiting",
+        "seen_at",
+        "path",
+        "chat"
+      ],
+      "title": "JobRow",
+      "type": "object"
+    },
+    "JobStarted": {
+      "description": "A job started in the background, after the user's yes.",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "job_started",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "job_id",
+        "name",
+        "text"
+      ],
+      "title": "JobStarted",
+      "type": "object"
+    },
+    "JobStatus": {
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "allowance": {
+          "type": "string"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "chat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "crews": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "folders": {
+          "items": {},
+          "type": "array"
+        },
+        "interview_usage": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "limit_hit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limits": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "outbox": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "outward": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seen_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total_tokens": {
+          "type": "integer"
+        },
+        "usage": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "waiting": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id",
+        "name",
+        "crews",
+        "status",
+        "active",
+        "brief",
+        "source",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "limit_hit",
+        "total_tokens",
+        "waiting",
+        "seen_at",
+        "path",
+        "chat",
+        "pid",
+        "allowance",
+        "usage",
+        "interview_usage",
+        "limits",
+        "outbox",
+        "outward",
+        "folders"
+      ],
+      "title": "JobStatus",
+      "type": "object"
+    },
+    "KeyList": {
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/KeyRow"
+          },
+          "type": "array"
+        },
+        "sign_ins": {
+          "items": {
+            "$ref": "#/$defs/SignIn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "keys",
+        "sign_ins",
+        "file"
+      ],
+      "title": "KeyList",
+      "type": "object"
+    },
+    "KeyRow": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "set": {
+          "type": "boolean"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "used_by": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "set",
+        "source",
+        "used_by"
+      ],
+      "title": "KeyRow",
+      "type": "object"
+    },
+    "LastJob": {
+      "properties": {
+        "due": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waiting": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id",
+        "due",
+        "status",
+        "waiting"
+      ],
+      "title": "LastJob",
+      "type": "object"
+    },
+    "LeadSaid": {
+      "description": "The Lead's own words. `asks` is true when it is waiting for an answer.",
+      "properties": {
+        "asks": {
+          "default": false,
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "lead",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "title": "LeadSaid",
+      "type": "object"
+    },
+    "LeadView": {
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "title",
+        "model",
+        "path"
+      ],
+      "title": "LeadView",
+      "type": "object"
+    },
+    "ModeChanged": {
+      "description": "Chat moved into Brief, or back.",
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "type": "string"
+        },
+        "type": {
+          "const": "mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "mode"
+      ],
+      "title": "ModeChanged",
+      "type": "object"
+    },
+    "ModelEntry": {
+      "properties": {
+        "default": {
+          "type": "boolean"
+        },
+        "model": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "used_by": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "model",
+        "default",
+        "used_by"
+      ],
+      "title": "ModelEntry",
+      "type": "object"
+    },
+    "ModelList": {
+      "properties": {
+        "connections": {
+          "items": {
+            "$ref": "#/$defs/Connection"
+          },
+          "type": "array"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "connections",
+        "default"
+      ],
+      "title": "ModelList",
+      "type": "object"
+    },
+    "NativeTool": {
+      "properties": {
+        "max_calls": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "provider",
+        "max_calls"
+      ],
+      "title": "NativeTool",
+      "type": "object"
+    },
+    "Note": {
+      "description": "Something Ombro says. `items` is a list shown beneath it. `spaced` starts\na new paragraph. `level` is info, warning or done.",
+      "properties": {
+        "items": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "level": {
+          "default": "info",
+          "type": "string"
+        },
+        "spaced": {
+          "default": false,
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "title": "Note",
+      "type": "object"
+    },
+    "OpenQuestion": {
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/Field"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "question",
+            "edit_files"
+          ],
+          "type": "string"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prompt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "field",
+        "prompt",
+        "paths"
+      ],
+      "title": "OpenQuestion",
+      "type": "object"
+    },
+    "Option": {
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label"
+      ],
+      "title": "Option",
+      "type": "object"
+    },
+    "PastTurn": {
+      "description": "A turn from a chat reopened to carry on, shown again: who said it, and what.",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "past",
+          "type": "string"
+        },
+        "who": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "who",
+        "text"
+      ],
+      "title": "PastTurn",
+      "type": "object"
+    },
+    "Preferences": {
+      "properties": {
+        "default_crew": {
+          "type": "string"
+        },
+        "default_crew_title": {
+          "type": "string"
+        },
+        "editor": {
+          "type": "string"
+        },
+        "files": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "instructions_set": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "outward": {
+          "type": "string"
+        },
+        "theme": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "theme",
+        "default_crew",
+        "default_crew_title",
+        "editor",
+        "outward",
+        "instructions_set",
+        "files"
+      ],
+      "title": "Preferences",
+      "type": "object"
+    },
+    "Progress": {
+      "description": "Where something stands: interview topics covered, a test call under way.",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "progress",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "title": "Progress",
+      "type": "object"
+    },
+    "ProposalShown": {
+      "description": "Files an interview proposes to write, waiting for the user's decision.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/FileView"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "proposal",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "files"
+      ],
+      "title": "ProposalShown",
+      "type": "object"
+    },
+    "QuestionClosedMessage": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "type": {
+          "const": "question_closed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "session",
+        "seq",
+        "id"
+      ],
+      "title": "QuestionClosedMessage",
+      "type": "object"
+    },
+    "QuestionMessage": {
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/Field"
+        },
+        "id": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "type": {
+          "const": "question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "session",
+        "seq",
+        "id",
+        "field",
+        "prompt"
+      ],
+      "title": "QuestionMessage",
+      "type": "object"
+    },
+    "Report": {
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "chat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "crews": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deliverables": {
+          "items": {
+            "$ref": "#/$defs/Deliverable"
+          },
+          "type": "array"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "limit_hit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "report": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "report_path": {
+          "type": "string"
+        },
+        "seen_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total_tokens": {
+          "type": "integer"
+        },
+        "waiting": {
+          "type": "integer"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "name",
+        "crews",
+        "status",
+        "active",
+        "brief",
+        "source",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "limit_hit",
+        "total_tokens",
+        "waiting",
+        "seen_at",
+        "path",
+        "chat",
+        "report_path",
+        "report",
+        "deliverables",
+        "workspace"
+      ],
+      "title": "Report",
+      "type": "object"
+    },
+    "RoleDetail": {
+      "properties": {
+        "all_skills": {
+          "type": "boolean"
+        },
+        "crew": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "soul": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "crew",
+        "title",
+        "kind",
+        "model",
+        "description",
+        "tools",
+        "skills",
+        "all_skills",
+        "soul",
+        "path"
+      ],
+      "title": "RoleDetail",
+      "type": "object"
+    },
+    "RoleRow": {
+      "description": "A role in a crew. One that can't be loaded has its name, title and problem only.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "title"
+      ],
+      "title": "RoleRow",
+      "type": "object"
+    },
+    "Route": {
+      "properties": {
+        "args": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "screen": {
+          "type": "string"
+        },
+        "where": {
+          "enum": [
+            "screen",
+            "app"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "where",
+        "command",
+        "screen",
+        "args"
+      ],
+      "title": "Route",
+      "type": "object"
+    },
+    "ScheduleRow": {
+      "properties": {
+        "crews": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cron": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "last_job": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LastJob"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spec": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "enabled",
+        "cron",
+        "spec",
+        "crews",
+        "next",
+        "last_job",
+        "problem",
+        "path"
+      ],
+      "title": "ScheduleRow",
+      "type": "object"
+    },
+    "ServerMessage": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/EventMessage"
+        },
+        {
+          "$ref": "#/$defs/QuestionMessage"
+        },
+        {
+          "$ref": "#/$defs/QuestionClosedMessage"
+        },
+        {
+          "$ref": "#/$defs/EditFilesMessage"
+        },
+        {
+          "$ref": "#/$defs/SessionMessage"
+        },
+        {
+          "$ref": "#/$defs/JobMessage"
+        },
+        {
+          "$ref": "#/$defs/CountsMessage"
+        }
+      ],
+      "title": "ServerMessage"
+    },
+    "ServerRow": {
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "server": {
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "server",
+        "command",
+        "args",
+        "url"
+      ],
+      "title": "ServerRow",
+      "type": "object"
+    },
+    "SessionMessage": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "working",
+            "waiting",
+            "idle",
+            "ended"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "const": "session",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "session",
+        "seq",
+        "state",
+        "kind"
+      ],
+      "title": "SessionMessage",
+      "type": "object"
+    },
+    "SessionView": {
+      "properties": {
+        "chat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chat_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "jobs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OpenQuestion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "state": {
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "state",
+        "seq",
+        "chat",
+        "chat_id",
+        "title",
+        "mode",
+        "jobs",
+        "question"
+      ],
+      "title": "SessionView",
+      "type": "object"
+    },
+    "SignIn": {
+      "properties": {
+        "server": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "server",
+        "status"
+      ],
+      "title": "SignIn",
+      "type": "object"
+    },
+    "SinceLast": {
+      "properties": {
+        "finished": {
+          "type": "integer"
+        },
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/UnseenJob"
+          },
+          "type": "array"
+        },
+        "waiting": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "finished",
+        "waiting",
+        "jobs"
+      ],
+      "title": "SinceLast",
+      "type": "object"
+    },
+    "SpecRow": {
+      "properties": {
+        "crews": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "modified": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "modified",
+        "crews",
+        "title"
+      ],
+      "title": "SpecRow",
+      "type": "object"
+    },
+    "SubscribeMessage": {
+      "properties": {
+        "all": {
+          "type": "boolean"
+        },
+        "sessions": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "type": {
+          "const": "subscribe",
+          "type": "string"
+        }
+      },
+      "title": "SubscribeMessage",
+      "type": "object"
+    },
+    "Summary": {
+      "properties": {
+        "counts": {
+          "$ref": "#/$defs/Counts"
+        },
+        "crews": {
+          "items": {
+            "$ref": "#/$defs/CrewRow"
+          },
+          "type": "array"
+        },
+        "lead": {
+          "$ref": "#/$defs/LeadView"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "outward": {
+          "type": "string"
+        },
+        "unseen": {
+          "items": {
+            "$ref": "#/$defs/UnseenJob"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "model",
+        "outward",
+        "lead",
+        "crews",
+        "counts",
+        "unseen"
+      ],
+      "title": "Summary",
+      "type": "object"
+    },
+    "ToolList": {
+      "properties": {
+        "folders": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "native": {
+          "items": {
+            "$ref": "#/$defs/NativeTool"
+          },
+          "type": "array"
+        },
+        "sandbox": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "servers": {
+          "items": {
+            "$ref": "#/$defs/ServerRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "native",
+        "servers",
+        "sandbox",
+        "folders"
+      ],
+      "title": "ToolList",
+      "type": "object"
+    },
+    "UnseenJob": {
+      "properties": {
+        "brief": {
+          "type": "string"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waiting": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id",
+        "status",
+        "brief",
+        "finished_at",
+        "waiting"
+      ],
+      "title": "UnseenJob",
+      "type": "object"
+    },
+    "Usage": {
+      "description": "Tokens used so far against the cap, for a chat or an interview.",
+      "properties": {
+        "final": {
+          "default": false,
+          "type": "boolean"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "tool_calls": {
+          "default": 0,
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": "integer"
+        },
+        "type": {
+          "const": "usage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "scope",
+        "mode",
+        "total_tokens",
+        "max_tokens"
+      ],
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "api": {
+      "$ref": "#/$defs/Api"
+    },
+    "core_event": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChatCleared"
+        },
+        {
+          "$ref": "#/$defs/Failure"
+        },
+        {
+          "$ref": "#/$defs/JobEnded"
+        },
+        {
+          "$ref": "#/$defs/JobProgress"
+        },
+        {
+          "$ref": "#/$defs/JobStarted"
+        },
+        {
+          "$ref": "#/$defs/LeadSaid"
+        },
+        {
+          "$ref": "#/$defs/ModeChanged"
+        },
+        {
+          "$ref": "#/$defs/Note"
+        },
+        {
+          "$ref": "#/$defs/PastTurn"
+        },
+        {
+          "$ref": "#/$defs/Progress"
+        },
+        {
+          "$ref": "#/$defs/ProposalShown"
+        },
+        {
+          "$ref": "#/$defs/Usage"
+        }
+      ]
+    },
+    "field": {
+      "$ref": "#/$defs/Field"
+    },
+    "form": {
+      "$ref": "#/$defs/Form"
+    }
+  },
+  "required": [
+    "api",
+    "core_event",
+    "field",
+    "form"
+  ],
+  "title": "OmbroApi",
+  "type": "object"
+}

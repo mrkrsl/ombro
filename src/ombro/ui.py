@@ -126,6 +126,52 @@ class ChatCleared(Event):
     kind: ClassVar[str] = "cleared"
 
 
+@dataclass
+class JobStarted(Event):
+    """A job started in the background, after the user's yes."""
+
+    kind: ClassVar[str] = "job_started"
+    job_id: str
+    name: str  # readable, from the job id
+    text: str
+
+
+@dataclass
+class JobProgress(Event):
+    """A step in a job's journal worth showing: a role briefed, a result back, an approval asked."""
+
+    kind: ClassVar[str] = "job_progress"
+    job_id: str
+    name: str
+    role: str
+    action: str  # the journal's action: briefed, returned, staged, finish, failed...
+    note: str
+    text: str  # the line as an interface shows it
+
+
+@dataclass
+class JobFile:
+    name: str
+    path: str
+    url: str  # file://
+    exists: bool
+
+
+@dataclass
+class JobEnded(Event):
+    """A job has ended: how, what it made, what waits for approval. Written by Ombro, not the model."""
+
+    kind: ClassVar[str] = "job_ended"
+    job_id: str
+    name: str
+    status: str  # completed, stopped_by_limit, stopped, insufficient_brief, failed...
+    text: str  # how it ended, in a sentence
+    brief: str = ""
+    limit_hit: str | None = None
+    files: list[JobFile] = field(default_factory=list)
+    waiting: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Fields and forms: what the core asks
 
@@ -403,6 +449,51 @@ def yes_no(raw: str, default: Any, other: str | None = None) -> bool | str | Non
     return None
 
 
+def parse_answer(f: Field, raw: Any) -> tuple[Any, str | None]:
+    """An answer as typed (or, from a graphical interface, a bool for yes or no), turned into
+    what the core gets back: (value, None), or (None, what to say) when it can't be taken and
+    the question stays open. The terminal and graphical interfaces both answer through this."""
+    if f.kind == "yesno":
+        if isinstance(raw, bool):
+            return raw, None
+        text = "" if raw is None else str(raw)
+        value = yes_no(text, f.default, f.other)
+        if value is None:
+            return None, ("That's a question waiting for an answer, so commands wait until it's done. "
+                          if text.strip().startswith("/") else "") + YESNO_AGAIN
+        return value, None
+    text = "" if raw is None else str(raw)
+    if f.kind == "choice":
+        given = text if text.strip() or f.default in (None, "") else str(f.default)
+        value = f.choose(given)
+        if value is None and f.other and given.strip():
+            value = given.strip()
+        if value is None:
+            return None, f.invalid or f.check(given) or "Choose one of those shown."
+        return value, None
+    if f.kind == "wait":
+        return None, None
+    value = text if text.strip() or f.default in (None, "") else str(f.default)
+    problem = f.check(value)
+    return (None, problem) if problem else (value, None)
+
+
+def field_prompt(f: Field) -> str:
+    """A field as a line of conversation: its label, with the choices, the default, or a
+    reminder that it is hidden."""
+    if f.kind == "yesno":
+        return f"{f.label} (y or n{', Enter for ' + ('yes' if f.default else 'no')})"
+    if f.kind == "choice":
+        if numbered(f):
+            return f.label + ("" if f.label.endswith(("?", ":")) else ":") + "\n" + \
+                "\n".join(f"  {o.key}) {o.label}" for o in f.options) + \
+                (f"\n(Enter for {f.default})" if f.default not in (None, "") else "")
+        return (f"{f.label} " if f.label else "") + option_text(f.options, f.other) + "?"
+    if f.kind == "secret":
+        return f.label + ("" if "hidden" in f.label.lower() else " (hidden as you type)")
+    return f.label + (f" (Enter for {f.default})" if f.default not in (None, "") else "")
+
+
 def render(event: Event) -> list[str]:
     """The lines the command line prints for an event."""
     if isinstance(event, LeadSaid):
@@ -443,4 +534,10 @@ def render(event: Event) -> list[str]:
         return out
     if isinstance(event, Note):
         return [("\n" if event.spaced else "") + event.text] + [f"  - {i}" for i in event.items]
+    if isinstance(event, (JobStarted, JobProgress)):
+        return [event.text]
+    if isinstance(event, JobEnded):
+        return [f"\n{event.text}", event.brief] + [f"  {f.name}: {f.path}" for f in event.files] + \
+            ([f"{event.waiting} waiting for approval: ombro approvals"] if event.waiting else []) + \
+            [f"Read the report: ombro report {event.job_id}"]
     return [str(event.to_dict())]

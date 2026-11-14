@@ -1,7 +1,6 @@
 """`ombro serve`: the local API the desktop app talks to.
 
-This is stage 1 of the GUI: just enough to prove the app can start a frozen
-serve, find it and hear from it. Serve listens on 127.0.0.1 only, on a port
+Serve listens on 127.0.0.1 only, on a port
 chosen at start, with a token made fresh each time. With --handshake it prints
 one line of JSON on stdout, `{"port": …, "token": …}`, for the app to read.
 It exits when its stdin closes, so it never outlives the app that started it.
@@ -12,8 +11,8 @@ socket. A request that names an origin must name the app's own
 (`tauri://localhost`, `http://tauri.localhost`), or Vite's with --dev. The
 host must be 127.0.0.1, which keeps out pages that rebind a name to it.
 
-The one socket, /events, sends a hello: a real `ui.py` event, as every core
-event will be sent later, `{"type": "event", "session", "seq", "event"}`.
+The routes, the sessions and the protocol are in app.py and live.py; the
+socket, /events, opens with a hello, a real `ui.py` event.
 """
 
 from __future__ import annotations
@@ -63,7 +62,7 @@ def run(port: int = 0, handshake: bool = False, dev: bool = False) -> int:
     if dev:
         print(f"Open {DEV_ORIGIN}/?port={port}&token={token}", flush=True)
     config = uvicorn.Config(build_app(token, dev), log_level="warning", loop="asyncio", http="h11",
-                            ws="websockets-sansio", lifespan="off")
+                            ws="websockets-sansio", lifespan="on")
     server = uvicorn.Server(config)
     threading.Thread(target=_exit_on_eof, args=(server,), daemon=True).start()
     server.run(sockets=[sock])

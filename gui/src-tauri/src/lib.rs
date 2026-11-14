@@ -40,7 +40,7 @@ fn start_serve(app: &tauri::AppHandle) -> Result<(), String> {
         .shell()
         .sidecar("ombro-serve")
         .map_err(|e| e.to_string())?
-        .args(["--handshake"])
+        .args(["serve", "--handshake"])
         .spawn()
         .map_err(|e| format!("could not start ombro serve: {e}"))?;
     app.manage(Serve { ready: rx, child: Mutex::new(Some(child)) });

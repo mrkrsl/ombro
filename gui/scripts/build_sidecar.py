@@ -5,9 +5,9 @@ scripts/build_sidecar.py`). It writes src-tauri/binaries/ombro-serve-<target>,
 the name Tauri looks for, where <target> is the Rust host triple, e.g.
 aarch64-apple-darwin or x86_64-unknown-linux-gnu.
 
-The whole core goes in, not just what serve imports today, so the size is
-close to what later stages will ship and anything that won't freeze shows up
-now. The terminal interface (ombro.tui and Textual) stays out.
+The binary is the whole `ombro` command line without the terminal interface
+(ombro.tui and Textual stay out). The app runs it as `ombro-serve serve
+--handshake`, and serve runs it again for each job it starts.
 
 PyInstaller can't cross-compile: build on each platform for its own binary.
 """
@@ -25,7 +25,9 @@ REPO = GUI.parent
 BUILD = GUI / "build" / "sidecar"
 OUT = GUI / "src-tauri" / "binaries"
 
-ENTRY = '''from ombro.serve import main
+# The whole command line, not serve alone: a job serve starts runs as `<this binary> _exec <job>`
+# (jobs.ombro_argv), so the frozen binary must be able to run it.
+ENTRY = '''from ombro.cli import main
 
 raise SystemExit(main())
 '''
