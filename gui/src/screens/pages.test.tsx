@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ApprovalRow } from "../api/types";
+import { approvalTitle, argumentLines } from "../store/approvals";
 import { splitReport } from "../store/conversation";
 import { useStore } from "../store/store";
 import { Approvals } from "./Approvals";
@@ -34,9 +35,18 @@ describe("the pages", () => {
 describe("approvals", () => {
   const row: ApprovalRow = { ref: "ab12-1", crews: ["Default Crew"], long_ref: "x", job_id: "invented-20261114-1200",
     job_name: "Invented", status: "pending", tool: "mcp.fake.post_message", summary: "text: invented",
-    role: "poster", reason: "The spec asks.", class: "external", edited: false };
+    role: "poster", reason: "The spec asks.", class: "external", edited: false,
+    arguments: { channel: "news", text: "invented" } };
 
-  beforeEach(() => useStore.setState({ approvals: [row, { ...row, ref: "ab12-2", summary: "text: another" }] }));
+  beforeEach(() => useStore.setState({ approvals: [row, { ...row, ref: "ab12-2", summary: "text: another",
+    arguments: { channel: "news", text: "another" } }] }));
+
+  it("says what an approval will do, in words", () => {
+    expect(approvalTitle("mcp.sheets.post_message", { channel: "news", text: "The reservoir is full" }))
+      .toBe("Post message in Sheets: “The reservoir is full”");
+    expect(approvalTitle("skills.propose", {})).toBe("Add or change a skill");
+    expect(argumentLines({ channel: "news", to_address: ["a", "b"] })).toEqual([["Channel", "news"], ["To address", "a, b"]]);
+  });
 
   it("approves only what is ticked", async () => {
     const seen: string[][] = [];
@@ -44,7 +54,7 @@ describe("approvals", () => {
     render(<Approvals />);
     const approve = screen.getByRole("button", { name: /Approve/ });
     expect(approve).toBeDisabled();
-    await userEvent.click(screen.getByRole("checkbox", { name: "Choose text: another" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Choose Post message in Fake: “another”" }));
     expect(approve).toHaveTextContent("Approve (1)");
     await userEvent.click(approve);
     expect(seen).toEqual([["ab12-2"]]);

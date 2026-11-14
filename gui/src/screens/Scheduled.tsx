@@ -1,6 +1,6 @@
 // Scheduled work (design 07): each schedule's name, its spec, and when it runs, in words. On or off,
 // Edit (when it runs, in place) and Delete (moved aside, never erased). New scheduled job: a saved
-// spec, when, and a name.
+// brief (a spec, saved when a job was briefed), when, and a title.
 
 import { useState } from "react";
 import { ConfirmButton } from "../components/ConfirmButton";
@@ -8,6 +8,11 @@ import { useStore } from "../store/store";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 type Often = "daily" | "weekdays" | "weekly" | "monthly" | "cron";
+
+/** A schedule's file name from its title: "News briefing" → "news-briefing". */
+export function slugFor(title: string): string {
+  return title.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "-").replace(/^-+|-+$/g, "");
+}
 
 /** The cron expression for a choice of how often and when. */
 export function cronFor(often: Often, time: string, day: number, cron: string): string {
@@ -130,14 +135,14 @@ export function Scheduled() {
             <button className="primary" onClick={() => setAdding(true)} disabled={!specs.length}>
               New scheduled job
             </button>
-            {!specs.length && <span className="muted">Brief a task first: a schedule starts a saved spec.</span>}
+            {!specs.length && <span className="muted">Brief a task first: a schedule runs a saved brief again.</span>}
           </div>
         ) : (
           <div className="new-schedule">
             <div className="form-row">
-              <input aria-label="Name" placeholder="news-briefing" value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-"))} />
-              <select aria-label="Saved spec" value={spec} onChange={(e) => setSpec(e.target.value)}>
-                <option value="">Which saved spec?</option>
+              <input aria-label="Title" placeholder="Title" value={name} onChange={(e) => setName(e.target.value)} />
+              <select aria-label="Saved brief" value={spec} onChange={(e) => setSpec(e.target.value)}>
+                <option value="">Which brief should it run?</option>
                 {specs.map((sp) => (
                   <option key={sp.name} value={sp.name}>
                     {sp.title || sp.name}
@@ -149,8 +154,9 @@ export function Scheduled() {
               saveLabel="Add"
               onCancel={() => setAdding(false)}
               onSave={async (cron) => {
-                if (!name || !spec) return;
-                await change((api) => api.post("/schedules", { name, spec, cron }));
+                const slug = slugFor(name);
+                if (!slug || !spec) return;
+                await change((api) => api.post("/schedules", { name: slug, spec, cron }));
                 setAdding(false);
                 setName("");
                 setSpec("");

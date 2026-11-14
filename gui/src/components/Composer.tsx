@@ -92,13 +92,17 @@ export function Composer({ conversation }: { conversation: Conversation | null }
     }
   }
 
-  const placeholder = question
-    ? secret
-      ? "Hidden as you type"
-      : "Your answer"
-    : mode === "Brief"
-      ? "Complete the brief interview, or /chat"
-      : "Chat or /brief";
+  // The hint shows on an empty chat only; once it's under way the box is left blank.
+  const started = (conversation?.lines.length ?? 0) > 0;
+  const placeholder = secret
+    ? "Hidden as you type"
+    : started
+      ? ""
+      : question
+        ? "Your answer"
+        : mode === "Brief"
+          ? "Complete the brief interview, or /chat"
+          : "Chat or /brief";
 
   return (
     <div className="foot">
@@ -183,9 +187,9 @@ export function Composer({ conversation }: { conversation: Conversation | null }
               Brief
             </button>
           </div>
-          <span>{summary?.model ?? "No model"}</span>
+          <span className="model">{summary?.model ?? "No model"}</span>
           <span className="hint">/ for commands</span>
-          <span className="usage">{usageText(conversation?.usage ?? null)}</span>
+          <span className="usage">{usageText(conversation?.usage ?? null) || "Usage: 0%"}</span>
         </div>
         {notice && <div className="notice">{notice}</div>}
       </div>

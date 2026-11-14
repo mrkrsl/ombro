@@ -84,3 +84,17 @@ def test_the_command_line_lists_chats_by_title(home, capsys):
     assert main(["chats"]) == 0
     out = capsys.readouterr().out
     assert "Teapot Talk" in out and ".md" not in out
+
+
+def test_opening_a_past_chat_without_saying_anything_keeps_its_place_in_the_list(home):
+    first = ChatSession(home)
+    first([fake.say("Hello.")], ["/rename Older Chat", "Hi"])
+    older = first.chat.path
+    meta = mdfile.read(older)[0]
+    meta["updated_at"] = "2026-01-01T00:00:00Z"  # used long ago
+    mdfile.write_atomic(older, mdfile.dump(meta, mdfile.read(older)[1]))
+
+    second = ChatSession(home)
+    second([], ["/chats", "1", "/quit"])  # opened and closed, nothing said
+    assert second.chat.path == older
+    assert mdfile.read(older)[0]["updated_at"] == "2026-01-01T00:00:00Z"

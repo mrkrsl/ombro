@@ -26,6 +26,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 DEFAULT = Path.home() / "ombro-demo"
@@ -218,7 +219,14 @@ def main(argv: list[str]) -> int:
         if not APP.exists():
             print(f"No built app at {APP}; build it with `npx tauri build --bundles app` in gui/.")
             return 1
-        subprocess.run(["open", "-n", "--env", f"OMBRO_HOME={root}", str(APP)], check=True)
+        # One Ombro at a time: quit one that is running (it may be on another home), then start
+        # this one. `open -n` would start a second copy beside it, with a second Dock icon.
+        subprocess.run(["osascript", "-e", 'quit app id "dev.ombro.desktop"'], check=False)
+        for _ in range(50):
+            if subprocess.run(["pgrep", "-x", "ombro-gui"], capture_output=True).returncode != 0:
+                break
+            time.sleep(0.1)
+        subprocess.run(["open", "--env", f"OMBRO_HOME={root}", str(APP)], check=True)
     return 0
 
 

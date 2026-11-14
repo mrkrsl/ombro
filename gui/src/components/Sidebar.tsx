@@ -17,9 +17,9 @@ export function Sidebar() {
         </button>
       </div>
       <div className="logo-wrap" data-tauri-drag-region>
-        <Logo size={34} />
+        <Logo size={27} />
       </div>
-      <button className="nav" onClick={goHome} aria-current={screen === "home" ? "page" : undefined}>
+      <button className="nav new" onClick={goHome} aria-current={screen === "home" ? "page" : undefined}>
         <Plus size={22} /> New
       </button>
       <ul className="chats" aria-label="Chats">

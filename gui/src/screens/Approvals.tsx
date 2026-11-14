@@ -1,10 +1,11 @@
 // Approvals (design 08, as decided in review): tick one or several, then Approve or Decline. Each
-// row opens to show what it is: the tool, what it will send and where, the role's reason, and
-// the job it came from.
+// row says in words what it will do, with its crew and job beneath, and opens to show who asked
+// and why, and what exactly it will send, as labelled lines rather than JSON.
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ApprovalDetail } from "../api/types";
+import { approvalTitle, argumentLines, toolAction } from "../store/approvals";
 import { useStore } from "../store/store";
 
 export function Approvals() {
@@ -60,36 +61,24 @@ export function Approvals() {
         <div className="rows">
           {approvals.map((a) => {
             const d = open[a.ref];
+            const title = approvalTitle(a.tool, a.arguments);
             return (
               <div key={a.ref} className="row-block">
-                <div className="row">
-                  <input type="checkbox" aria-label={`Choose ${a.summary}`} checked={picked.has(a.ref)} onChange={() => toggle(a.ref)} />
-                  <button className="row-name text-button plain" onClick={() => void expand(a.ref)} aria-expanded={!!d}>
-                    {d ? <ChevronDown size={16} /> : <ChevronRight size={16} />} {a.tool}: {a.summary}
+                <div className="approval">
+                  <input type="checkbox" aria-label={`Choose ${title}`} checked={picked.has(a.ref)} onChange={() => toggle(a.ref)} />
+                  <button className="approval-head" onClick={() => void expand(a.ref)} aria-expanded={!!d}>
+                    <span className="approval-title">{title}</span>
+                    <span className="approval-meta">
+                      {[a.crews.join(", "), a.job_name].filter(Boolean).join(" · ")}
+                    </span>
                   </button>
-                  <span className="row-detail">{a.crews.join(", ")}</span>
-                  <span className="row-when">{a.job_name}</span>
+                  <button className="disclose" aria-label={d ? "Hide the detail" : "Show the detail"} onClick={() => void expand(a.ref)}>
+                    {d ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  </button>
                 </div>
                 {d && (
-                  <div className="row-open">
-                    {d === "loading" ? (
-                      <p className="muted">Opening…</p>
-                    ) : (
-                      <>
-                        <p>
-                          <b>Tool:</b> {d.tool} ({d.class || "outward"}) · <b>Status:</b> {d.status}
-                        </p>
-                        <p>
-                          <b>Why:</b> {d.reason || "No reason given."} <span className="muted">({d.role || "a role"})</span>
-                        </p>
-                        <p>
-                          <b>From the job:</b> {d.job_name}
-                        </p>
-                        <b>What it will send:</b>
-                        <pre>{JSON.stringify(d.arguments, null, 2)}</pre>
-                        {d.skill && <pre>{String((d.skill as { diff?: string; text?: string }).diff || (d.skill as { text?: string }).text || "")}</pre>}
-                      </>
-                    )}
+                  <div className="approval-open">
+                    {d === "loading" ? <p className="muted">Opening…</p> : <Detail d={d} />}
                   </div>
                 )}
               </div>
@@ -114,5 +103,43 @@ export function Approvals() {
         ))}
       </div>
     </div>
+  );
+}
+
+function person(role: string): string {
+  const r = role.replace(/[-_]+/g, " ").trim();
+  return r ? r.charAt(0).toUpperCase() + r.slice(1) : "A role";
+}
+
+function Detail({ d }: { d: ApprovalDetail }) {
+  const lines = argumentLines(d.arguments);
+  const skill = d.skill as { diff?: string; text?: string } | null;
+  return (
+    <>
+      <p>
+        {person(d.role)} asks to {toolAction(d.tool).replace(/^./, (c) => c.toLowerCase())}
+        {d.reason ? `: ${d.reason.replace(/\.$/, "")}.` : "."}
+      </p>
+      <div className="what-it-does">
+        <b>Approving it will {toolAction(d.tool).replace(/^./, (c) => c.toLowerCase())}, with:</b>
+        {lines.length > 0 ? (
+          <dl>
+            {lines.map(([k, v]) => (
+              <div key={k} style={{ display: "contents" }}>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="muted">Nothing more to send.</p>
+        )}
+      </div>
+      {skill && (skill.diff || skill.text) && <pre>{String(skill.diff || skill.text)}</pre>}
+      <p className="muted">
+        From the job {d.job_name}
+        {d.edited ? " · changed since it was staged" : ""}
+      </p>
+    </>
   );
 }

@@ -1,5 +1,5 @@
 // Jobs (the Scheduled work layout, design 07): each job by its readable name, its brief, and its
-// status or when it finished. Running: Stop. Finished: Report and Files.
+// status or when it finished. Running: Stop. Finished: View report and Files.
 
 import { ConfirmButton } from "../components/ConfirmButton";
 import { openLink } from "../platform";
@@ -43,7 +43,7 @@ export function Jobs() {
                 ) : (
                   <>
                     <button className="text-button" onClick={() => void readReport(j.job_id, false)}>
-                      Report
+                      View report
                     </button>
                     <button className="text-button" onClick={() => void openLink(`file://${j.path}/workspace`)}>
                       Files

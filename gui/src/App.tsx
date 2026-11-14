@@ -13,7 +13,7 @@ import { Jobs } from "./screens/Jobs";
 import { Placeholder } from "./screens/Placeholder";
 import { ReportPage } from "./screens/ReportPage";
 import { Scheduled } from "./screens/Scheduled";
-import { isMac, onTrayOpen, setTray } from "./platform";
+import { isMac, onTrayOpen, setTray, startZoom } from "./platform";
 import { useStore } from "./store/store";
 
 export default function App() {
@@ -35,6 +35,8 @@ export default function App() {
     if (counts) void setTray({ active: counts.active, scheduled: counts.scheduled, waiting: counts.waiting, crews_ready: counts.crews_ready });
   }, [counts]);
 
+  useEffect(() => startZoom(), []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
@@ -54,6 +56,10 @@ export default function App() {
   }
 
   const conversation = current ? conversations[current] ?? null : null;
+  // The inspector is about a chat: on the pages (Jobs, Approvals, Scheduled, Settings, a report)
+  // it and its button are hidden.
+  const chatScreen = screen === "home" || screen === "chat";
+  const showInspector = inspector && chatScreen;
   const inChat = screen === "chat" && conversation;
   const PAGE_TITLES: Record<string, string> = {
     jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Report",
@@ -79,7 +85,7 @@ export default function App() {
           <div className="title" data-tauri-drag-region>
             {title}
           </div>
-          {!inspector && (
+          {chatScreen && !inspector && (
             <button className="icon-button" aria-label="Show the inspector" onClick={s.toggleInspector}>
               <PanelRight size={22} />
             </button>
@@ -89,10 +95,10 @@ export default function App() {
         {inChat && <Conversation conversation={conversation} />}
         {!inChat && screen !== "home" && (pages[screen] ?? <Placeholder screen={screen} args={s.screenArgs} />)}
         {screen === "home" && <HomeGreeting />}
-        <Composer conversation={inChat ? conversation : null} />
+        {chatScreen && <Composer conversation={inChat ? conversation : null} />}
         {status === "lost" && <div className="notice column">Reconnecting to Ombro…</div>}
       </main>
-      {inspector && (
+      {showInspector && (
         <div className="inspector-wrap">
           <div className="inspector-top" data-tauri-drag-region>
             <button className="icon-button" aria-label="Hide the inspector" onClick={s.toggleInspector}>

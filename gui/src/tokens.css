@@ -24,7 +24,12 @@
   --hover: #eef6f8;
   --menu-bg: #ffffff;
   --menu-pick: #d6eef5;
-  --fade: #d4ebf2; /* the blue the foot of the window fades into */
+  --fade: #d4ebf2; /* the blue of the arc behind the foot of the window */
+  --input-border: #286e80; /* the design's input stroke */
+  --report-head: #f3f3f3;
+  --pill: var(--ombro-400);
+  --sidebar-glass: rgb(250 250 250 / 0.6); /* the panels let the arc show through */
+  --panel-glass: rgb(255 255 255 / 0.45);
   --error: #8a1c1c;
   --font: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Ubuntu, Cantarell, sans-serif;
   color-scheme: light;
@@ -47,6 +52,11 @@
   --menu-bg: #12323a;
   --menu-pick: #1c4652;
   --fade: #0b2026;
+  --input-border: #2f6b7a;
+  --report-head: #163842;
+  --pill: var(--ombro-200);
+  --sidebar-glass: rgb(11 31 36 / 0.6);
+  --panel-glass: rgb(15 42 49 / 0.45);
   --error: #f3b4b4;
   color-scheme: dark;
 }
@@ -61,6 +71,9 @@ body,
   font-family: var(--font);
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
+  /* An app window, not a page: no scrolling or rubber-banding of the whole view. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 * {

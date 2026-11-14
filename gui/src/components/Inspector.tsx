@@ -68,11 +68,9 @@ export function Inspector() {
           )}
           <section>
             <b>Model:</b> {s.summary?.model ?? "None"}
-            {conversation?.usage && (
-              <p>
-                <b>Usage:</b> {usageText(conversation.usage).replace(/^Usage: /, "")}
-              </p>
-            )}
+            <p>
+              <b>Usage:</b> {usageText(conversation?.usage ?? null).replace(/^Usage: /, "") || "0%"}
+            </p>
           </section>
         </>
       )}

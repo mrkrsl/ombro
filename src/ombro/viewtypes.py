@@ -137,12 +137,11 @@ class ChatDetail(ChatRow):
 
 ApprovalRow = TypedDict("ApprovalRow", {
     "ref": str, "crews": list[str], "long_ref": str, "job_id": str, "job_name": str, "status": str, "tool": str, "summary": str,
-    "role": str, "reason": str, "class": str, "edited": bool,
+    "role": str, "reason": str, "class": str, "edited": bool, "arguments": Any,
 })
 
 
 class ApprovalDetail(ApprovalRow):
-    arguments: Any
     skill: dict[str, Any] | None
 
 

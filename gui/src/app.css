@@ -4,16 +4,21 @@
   display: flex;
   height: 100vh;
   overflow: hidden;
+  /* One arc of blue across the whole foot of the window, deepest in the middle and thinning
+     towards the corners; the sidebar and the inspector are see-through over it. */
+  background:
+    radial-gradient(ellipse 88% 165px at 50% 100%, var(--fade) 0%, var(--fade) 30%, transparent 100%),
+    var(--bg);
 }
 
 /* -- sidebar ------------------------------------------------------------------- */
 
 .sidebar {
-  width: 248px;
+  width: 258px; /* room between the window buttons and the sidebar button */
   flex: none;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(to bottom, var(--sidebar) 70%, var(--fade));
+  background: var(--sidebar-glass);
   padding: 0 0 20px;
   user-select: none;
 }
@@ -32,7 +37,7 @@
 }
 
 .sidebar .logo-wrap {
-  padding: 4px 0 20px 56px;
+  padding: 14px 0 18px 58px;
 }
 
 .nav {
@@ -41,7 +46,7 @@
   gap: 14px;
   width: calc(100% - 16px);
   margin: 0 8px;
-  padding: 8px 14px;
+  padding: 6px 14px;
   border: 0;
   border-radius: 8px;
   background: none;
@@ -61,6 +66,16 @@
   font-weight: 500;
 }
 
+/* New is where the window opens: it doesn't look picked, only hovered. */
+.nav.new[aria-current="page"] {
+  background: none;
+  font-weight: inherit;
+}
+
+.nav.new[aria-current="page"]:hover {
+  background: var(--hover);
+}
+
 .nav svg {
   color: var(--text);
   flex: none;
@@ -78,24 +93,25 @@
   display: block;
   width: calc(100% - 16px);
   margin: 0 8px 2px;
-  padding: 8px 14px;
+  padding: 7px 14px;
   border: 0;
   border-radius: 8px;
   background: none;
   text-align: left;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .sidebar-foot .nav + .nav {
-  margin-top: 4px;
+  margin-top: 1px;
 }
 
-.sidebar-foot .settings {
-  margin-top: 28px;
+/* Jobs, Approvals and Scheduled are a group; Settings stands apart below them. */
+.sidebar-foot .nav.settings {
+  margin-top: 40px;
 }
 
 .icon-button {
@@ -121,7 +137,6 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
 }
 
 .main-top {
@@ -153,6 +168,7 @@
 }
 
 .column {
+  width: 100%; /* in the main column's flex box, a column would otherwise shrink to its text */
   max-width: 780px;
   margin: 0 auto;
   padding: 0 32px;
@@ -277,7 +293,6 @@
 
 .foot {
   flex: none;
-  background: linear-gradient(to bottom, var(--bg), var(--fade));
   padding: 8px 0 18px;
 }
 
@@ -330,7 +345,7 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--input-border);
   border-radius: 16px;
   background: var(--bg);
   padding: 14px 14px 14px 22px;
@@ -368,6 +383,19 @@
   margin-top: 12px;
   font-size: 14px;
   color: var(--accent);
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.footer > * {
+  flex: none;
+}
+
+.footer .model {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .footer .hint {
@@ -380,7 +408,7 @@
 
 .modes {
   display: inline-flex;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--pill);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -390,12 +418,12 @@
   background: none;
   padding: 5px 16px;
   cursor: pointer;
-  color: var(--accent);
+  color: var(--pill);
   font-weight: 600;
 }
 
 .modes button[aria-pressed="true"] {
-  background: var(--accent);
+  background: var(--pill);
   color: var(--bg);
 }
 
@@ -445,12 +473,37 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8%;
   padding: 40px 32px;
 }
 
+/* The wordmark sits level with "Working with …": its middle on that line's middle. */
+.home-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: clamp(40px, 8vw, 120px);
+  align-items: center;
+}
+
 .home .logo-wrap {
-  flex: none;
+  grid-column: 1;
+  grid-row: 1;
+  margin: -40px 0; /* taller than the line: let it overhang rather than push the facts down */
+}
+
+.home .who {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 18px;
+  margin: 0;
+  font-weight: 600;
+  color: var(--strong);
+  line-height: 1.7;
+}
+
+.home .facts {
+  grid-column: 2;
+  grid-row: 2;
+  padding-top: 18px;
 }
 
 .facts {
@@ -484,11 +537,10 @@
   font-weight: 700;
 }
 
+/* The Lead's first line, as it will be in the conversation: same type, same left edge. */
 .greeting {
-  color: var(--greeting);
-  font-size: 18px;
-  font-weight: 500;
-  padding: 0 0 14px 28px;
+  text-align: left;
+  padding: 0 0 2px;
 }
 
 /* -- the wordmark ---------------------------------------------------------------------- */
@@ -528,7 +580,7 @@
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--rule);
-  background: var(--bg);
+  background: var(--panel-glass);
 }
 
 .inspector-top {
@@ -545,16 +597,16 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  font-size: 14px;
+  font-size: 13px; /* the inspector's text is smaller than the conversation's (design 06) */
 }
 
 .inspector section {
-  padding: 14px 22px;
+  padding: 12px 22px;
   border-bottom: 1px solid var(--rule);
 }
 
 .inspector h2 {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   margin: 0 0 4px;
   color: var(--strong);
@@ -568,7 +620,7 @@
   margin: 8px 0 0;
   padding: 0;
   list-style: none;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.7;
 }
 
@@ -588,7 +640,7 @@
   flex: 1;
   overflow-y: auto;
   margin-top: 10px;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -678,11 +730,9 @@
   font-size: 16px;
 }
 
-.row-block > .row:has(> input[type="checkbox"]) {
-  grid-template-columns: auto minmax(160px, 1.6fr) minmax(100px, 0.8fr) minmax(120px, 0.8fr);
-}
-
+/* In a row: the name darkest, what it is in the mid tone, the actions semi-bold and darkest. */
 .row-name {
+  color: var(--strong);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -690,7 +740,7 @@
 
 .row-detail,
 .row-when {
-  color: var(--accent);
+  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -701,6 +751,11 @@
   align-items: center;
   gap: 18px;
   justify-content: flex-end;
+}
+
+.row-actions .text-button {
+  color: var(--strong);
+  font-weight: 600;
 }
 
 .row-open {
@@ -781,12 +836,119 @@
   margin-top: 28px;
 }
 
+/* A page's buttons side by side are one size: Decline as big as Approve. */
+.actions .secondary {
+  padding: 9px 23px; /* plus its 1px border: Approve's size */
+  font-size: inherit;
+  font-weight: 600;
+}
+
 .check-all {
   display: inline-flex;
-  gap: 10px;
+  align-items: center;
+  gap: 14px;
   font-size: 14px;
   color: var(--muted);
   margin-bottom: 6px;
+  cursor: pointer;
+}
+
+/* Ticks: a little larger than the system's, in the brand's mid-dark blue. */
+input[type="checkbox"]:not([role="switch"]) {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Approvals: the title across the width, the crew and job under it, the disclosure arrow at the
+   end. The detail lines up with the title. */
+.approval {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  column-gap: 14px;
+  align-items: start;
+  padding: 14px 0;
+}
+
+.approval > input {
+  margin-top: 3px;
+}
+
+.approval-head {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  min-width: 0;
+}
+
+.approval-title {
+  display: block;
+  font-size: 16px;
+  color: var(--strong);
+  overflow-wrap: anywhere;
+}
+
+.approval-meta {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.disclose {
+  border: 0;
+  background: none;
+  padding: 2px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+}
+
+.approval-open {
+  padding: 0 0 16px 32px;
+  font-size: 14px;
+}
+
+.approval-open pre {
+  background: var(--hover);
+  border-radius: 8px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+
+.approval-open p {
+  margin: 0 0 8px;
+}
+
+.what-it-does {
+  background: var(--hover);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 4px 0 12px;
+}
+
+.what-it-does dl {
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+}
+
+.what-it-does dt {
+  color: var(--muted);
+}
+
+.what-it-does dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .form-row {
@@ -801,11 +963,27 @@
 .form-row select {
   font: inherit;
   font-size: 14px;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text);
+}
+
+/* The system's pop-up ignores height; draw it ourselves so it matches the fields beside it. */
+.form-row select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%231c5665' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  cursor: pointer;
+}
+
+:root[data-theme="dark"] .form-row select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23c7ebf4' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 .new-schedule {
@@ -827,7 +1005,7 @@
   align-items: center;
   gap: 16px;
   padding: 14px 22px;
-  background: var(--hover);
+  background: var(--report-head);
   color: var(--accent);
   font-size: 14px;
 }
@@ -839,6 +1017,17 @@
 .report-tools {
   display: inline-flex;
   gap: 16px;
+}
+
+/* The report page is solid: the window's blue arc doesn't show through it. */
+.report-page {
+  background: var(--bg);
+}
+
+.primary.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .report-body {

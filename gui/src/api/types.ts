@@ -100,6 +100,7 @@ export interface AnswerReply {
  * via the `definition` "ApprovalRow".
  */
 export interface ApprovalRow {
+  arguments: unknown;
   class: string;
   crews: string[];
   edited: boolean;

@@ -228,6 +228,11 @@ class Chat:
         self.remembered = []
         self.specs = []
         self.ended = "you ended the chat"
+        # When the chat was last used, and how many turns (yours and the Lead's) it had then:
+        # saving it with no new turn keeps that time, so opening or closing a chat, or Ombro's
+        # own notes in it, don't move it up the list of chats.
+        self.last_used = ""
+        self.turns_seen = 0
         self.title: str | None = None
         self.titled_by: str | None = None  # model, spec or you; a title you set is never replaced
         self.prior_usage: dict[str, Any] = {}  # what the chat used before it was reopened
@@ -320,6 +325,8 @@ class Chat:
         self.stamp = f"{m.group(1)}-{m.group(2)[:4]}" if m else self.stamp
         self.transcript.started = str(meta.get("started_at") or self.transcript.started)
         self.transcript.entries = entries
+        self.last_used = str(meta.get("updated_at") or "")
+        self.turns_seen = len(list(turns(entries)))
         self.remembered = list(meta.get("remembered") or [])
         self.specs = list(meta.get("specs_saved") or [])
         self.id = str(meta.get("id") or self.id)
@@ -1041,7 +1048,9 @@ class Chat:
             detail = outcome.status if outcome is not None else "could not start"
             self.transcript.note(f"Brief mode ended without a spec ({detail}).")
             self.pending_note += "[Ombro note: the user left Brief mode; no spec was saved.]\n"
-        self.ui.show(ModeChanged("Chat", "Back in Chat mode."))
+        # Stopped by you: the Lead has said so, back in Chat mode included, in one line.
+        stopped = outcome is not None and outcome.status == "quit"
+        self.ui.show(ModeChanged("Chat", "" if stopped else "Back in Chat mode."))
 
     # -- transcript --------------------------------------------------------
 
@@ -1078,13 +1087,16 @@ class Chat:
         if not self.transcript.entries and not self.path.exists():
             return  # nothing was said: no file, so the list of chats has no empty ones
         s = self.gate.snapshot()
+        said = len(list(turns(self.transcript.entries)))
+        unchanged = self.last_used and said == self.turns_seen
+        updated = self.last_used if unchanged else utc_now()
         meta = {
             "kind": "chat",
             "title": self.title or "",
             "titled_by": self.titled_by or "",
             "default_crew": self.crew,
             "started_at": self.transcript.started,
-            "updated_at": utc_now(),
+            "updated_at": updated,
             "ended": self.ended,
             "remembered": self.remembered,
             "specs_saved": self.specs,
@@ -1100,3 +1112,4 @@ class Chat:
                 + "\n\n".join(self.transcript.entries) + "\n")
         text, _ = keys.scrub(self.home, mdfile.dump(meta, body))
         mdfile.write_atomic(self.path, text)
+        self.last_used, self.turns_seen = updated, said

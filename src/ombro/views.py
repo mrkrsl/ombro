@@ -323,7 +323,8 @@ def approval_row(a: outbox.Action, home: Home | None = None) -> vt.ApprovalRow:
         crews = []
     return {"ref": a.ref, "crews": [crew_title(home, c) if home else c for c in crews], "long_ref": a.long_ref, "job_id": a.job_id, "job_name": jobs.job_name(a.job_id),
             "status": a.status, "tool": a.tool, "summary": a.summary(120), "role": str(d.get("role") or ""),
-            "reason": str(d.get("reason") or ""), "class": str(d.get("class") or ""), "edited": a.edited}
+            "reason": str(d.get("reason") or ""), "class": str(d.get("class") or ""), "edited": a.edited,
+            "arguments": a.arguments}
 
 
 def approval_list(home: Home) -> list[vt.ApprovalRow]:
@@ -335,7 +336,7 @@ def approval(home: Home, ref: str) -> vt.ApprovalDetail:
     """One approval in full: what it will send and where, why, and the job it came from."""
     a = outbox.find(home, ref)
     skill = outbox.skill_view(home, a) if a.tool == outbox.SKILL_TOOL else None
-    return {**approval_row(a, home), "arguments": a.arguments, "skill": skill}
+    return {**approval_row(a, home), "skill": skill}
 
 
 def role(home: Home, crew: str, name: str) -> vt.RoleDetail:

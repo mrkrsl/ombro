@@ -227,6 +227,9 @@
     },
     "ApprovalRow": {
       "properties": {
+        "arguments": {
+          "tsType": "unknown"
+        },
         "class": {
           "type": "string"
         },
@@ -279,7 +282,8 @@
         "role",
         "reason",
         "class",
-        "edited"
+        "edited",
+        "arguments"
       ],
       "title": "ApprovalRow",
       "type": "object"

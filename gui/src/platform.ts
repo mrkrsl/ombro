@@ -49,3 +49,54 @@ export async function onTrayOpen(open: (screen: string) => void): Promise<void> 
   const { listen } = await import("@tauri-apps/api/event");
   await listen<string>("open-screen", (e) => open(e.payload));
 }
+
+// -- zoom: Cmd + and Cmd - (Ctrl on Linux) scale the whole window, Cmd 0 goes back --------------
+
+const ZOOMS = [0.6, 0.7, 0.8, 0.85, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+/** The window starts a little smaller than the designs' pixel sizes. */
+export const DEFAULT_ZOOM = 0.9;
+const ZOOM_KEY = "ombro.zoom";
+
+function savedZoom(): number {
+  try {
+    const z = Number(localStorage.getItem(ZOOM_KEY));
+    return ZOOMS.includes(z) ? z : DEFAULT_ZOOM;
+  } catch {
+    return DEFAULT_ZOOM;
+  }
+}
+
+async function applyZoom(level: number): Promise<void> {
+  try {
+    localStorage.setItem(ZOOM_KEY, String(level));
+  } catch {
+    // Not kept, then; it still applies.
+  }
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  await getCurrentWebview().setZoom(level).catch(() => undefined);
+}
+
+/** The next zoom level up or down from `level`, or back to the default (step 0). */
+export function stepZoom(level: number, step: -1 | 0 | 1): number {
+  if (step === 0) return DEFAULT_ZOOM;
+  const i = ZOOMS.findIndex((z) => z >= level - 1e-6);
+  const at = i < 0 ? ZOOMS.length - 1 : i;
+  return ZOOMS[Math.min(Math.max(at + step, 0), ZOOMS.length - 1)];
+}
+
+/** Apply the kept zoom, and listen for the keys. Returns the clean-up. */
+export function startZoom(): () => void {
+  if (!inTauri) return () => undefined; // a browser has its own zoom
+  let level = savedZoom();
+  void applyZoom(level);
+  function onKey(e: KeyboardEvent) {
+    if (!(isMac ? e.metaKey : e.ctrlKey) || e.altKey) return;
+    const step = e.key === "=" || e.key === "+" ? 1 : e.key === "-" || e.key === "_" ? -1 : e.key === "0" ? 0 : null;
+    if (step === null) return;
+    e.preventDefault();
+    level = stepZoom(level, step);
+    void applyZoom(level);
+  }
+  window.addEventListener("keydown", onKey);
+  return () => window.removeEventListener("keydown", onKey);
+}

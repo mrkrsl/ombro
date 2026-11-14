@@ -51,6 +51,7 @@ type State = {
   schedules: ScheduleRow[];
   specs: SpecRow[];
   report: Report | null; // on the report page
+  opener: string | null; // after New from a chat you'd used: the Lead's line that it was saved, in place of the home screen
 };
 
 type Actions = {
@@ -148,6 +149,7 @@ export const useStore = create<State & Actions>((set, get) => {
     schedules: [],
     specs: [],
     report: null,
+    opener: null,
 
     async start() {
       if (started) return; // React runs effects twice in development
@@ -223,7 +225,15 @@ export const useStore = create<State & Actions>((set, get) => {
     },
 
     goHome() {
-      set({ screen: "home", current: null, notice: "", chatOn: null, report: null });
+      // New, from a chat you'd typed in: as in the terminal, the Lead says it's saved and asks
+      // what's next, on an empty page. From anywhere else: the home screen.
+      const { current, conversations, titles } = get();
+      const used = !!current && !!conversations[current]?.lines.some((l) => l.kind === "you");
+      const title = current ? titles[current] : "";
+      const opener = used
+        ? `${title ? `I've saved the last chat, '${title}'.` : "I've saved the last chat."} This is a new chat. How would you like me to help?`
+        : null;
+      set({ screen: "home", current: null, notice: "", chatOn: null, report: null, opener });
       void get().refresh();
     },
 
@@ -325,7 +335,8 @@ export const useStore = create<State & Actions>((set, get) => {
         let id = current;
         if (!id || !conversations[id] || conversations[id].state === "ended") {
           // From the home screen: the greeting carries into the new chat.
-          id = await openSession({}, [{ key: "local-0", kind: "lead", text: greeting(summary?.name ?? "") }]);
+          const first = get().opener ?? greeting(summary?.name ?? "");
+          id = await openSession({}, [{ key: "local-0", kind: "lead", text: first }]);
         }
         set({ screen: "chat" }); // typed on a page: the conversation comes back
         const c = get().conversations[id];

@@ -189,8 +189,8 @@ def test_the_lead_never_switches_on_its_own(chat, home):
 
 def test_slash_brief_then_slash_chat_writes_nothing(chat, home):
     chat([fake.say("Tell me about the task.")], ["/brief Find invented kettles.", "/chat", "/quit"])
-    assert "Back in Chat mode." in chat.output
-    assert "Interview stopped. Nothing was written." in chat.output
+    assert "Back in Chat mode." not in chat.output  # said once, in the Lead's line
+    assert "I've stopped the interview. Nothing was written, and we're back in Chat mode." in chat.output
     assert not list((home.specs_dir).glob("*.md"))
     first = chat.client.calls[0]["messages"][1]["content"]
     assert "Find invented kettles." in first

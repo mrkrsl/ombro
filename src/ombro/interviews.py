@@ -380,6 +380,7 @@ class BriefPurpose(Purpose):
     intro = ("Task brief: I'll ask you about this one piece of work, then write a spec the crew can work from "
              "without needing to ask you anything. It's usually 5 to 8 questions. Type /quit to stop; nothing is "
              "written unless you accept it.")
+    stopped = "I've stopped the interview. Nothing was written, and we're back in Chat mode."
     proposal_intro = ("Here's the spec I've written for this task. Have a read through. You can then choose one "
                       "of the options at the end to save it, ask me to change it, or edit it yourself.")
     rules = prompts.BRIEF_INTERVIEW

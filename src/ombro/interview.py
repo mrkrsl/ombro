@@ -81,6 +81,7 @@ class Purpose:
     kind = ""
     title = ""
     intro = ""  # what the user is told as the interview starts; built from title and typical if empty
+    stopped = "I've stopped the interview. Nothing was written."  # what the Lead says when you stop it
     proposal_intro = ("Here's what I've written. Have a read through. You can then choose one of the options "
                       "at the end to save it, ask me to change it, or edit it yourself.")
     rules = ""
@@ -306,7 +307,7 @@ class Interview:
         self.ui.say(p.intro or (
             f"{p.title}" + (f" It is {p.typical}." if p.typical else "")
             + " Type /quit to stop; nothing is written unless you accept it."
-        ))
+        ), level="lead")
         try:
             outcome = self._loop(messages, tools)
         except LimitReached as e:
@@ -319,7 +320,7 @@ class Interview:
             outcome = Outcome("failed", detail=str(e))
         except (KeyboardInterrupt, EOFError):
             self.transcript.note("You stopped the interview.")
-            self.ui.say("Interview stopped. Nothing was written.", spaced=True)
+            self.ui.say(self.purpose.stopped, spaced=True, level="lead")
             outcome = Outcome("quit", detail="stopped by you")
         outcome.usage = self.gate.snapshot()
         outcome.answers = list(self.answers)
