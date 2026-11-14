@@ -1,0 +1,31 @@
+/* Ombro blues 100–700 (tui/look.py), as light and dark tokens. */
+:root {
+  --ombro-100: #edf8fb;
+  --ombro-200: #c7ebf4;
+  --ombro-300: #8cc2d0;
+  --ombro-400: #2f8196;
+  --ombro-500: #1c5665;
+  --ombro-600: #0e2c33;
+  --ombro-700: #031216;
+
+  --bg: #ffffff;
+  --sidebar: #fafafa;
+  --text: var(--ombro-700);
+  --strong: var(--ombro-500);
+  --muted: var(--ombro-400);
+  --rule: var(--ombro-200);
+  --font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Ubuntu, Cantarell, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--ombro-700);
+    --sidebar: var(--ombro-600);
+    --text: var(--ombro-100);
+    --strong: var(--ombro-200);
+    --muted: var(--ombro-300);
+    --rule: var(--ombro-500);
+  }
+}
+
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }

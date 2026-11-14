@@ -1,0 +1,7 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+# The frozen serve, made by `npm run sidecar`
+src-tauri/binaries/ombro-serve-*
+build/

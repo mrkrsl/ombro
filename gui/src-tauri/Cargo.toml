@@ -1,0 +1,27 @@
+[package]
+name = "ombro-gui"
+version = "0.1.0"
+description = "Ombro desktop app"
+edition = "2021"
+publish = false
+
+[lib]
+name = "ombro_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.3", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.4", features = [] }
+tauri-plugin-shell = "=2.5.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

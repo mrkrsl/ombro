@@ -1051,6 +1051,15 @@ def cmd_folders(args) -> int:
     return run(args)
 
 
+def cmd_serve(args) -> int:
+    from ombro.serve import run
+
+    try:
+        return run(args.port, args.handshake, args.dev)
+    except KeyboardInterrupt:
+        return 0
+
+
 def cmd_tick(args) -> int:
     from ombro.schedule_cmd import cmd_tick as run
 
@@ -1261,6 +1270,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("tick", help="start due scheduled jobs (called each minute by the system scheduler)")
     s.add_argument("--dry-run", action="store_true", help="show what would start or be noted, and change nothing")
     s.set_defaults(func=cmd_tick)
+
+    s = sub.add_parser("serve", help="the local API for the desktop app (127.0.0.1, a fresh token each start)")
+    from ombro.serve import add_arguments
+
+    add_arguments(s)
+    s.set_defaults(func=cmd_serve)
 
     s = sub.add_parser("_exec")  # internal: the detached job process
     s.add_argument("job_dir")
