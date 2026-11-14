@@ -177,7 +177,7 @@ describe("Settings › Folders, Tools and Skills", () => {
     replies["DELETE /folders/big-inc"] = { ...folders, folders: [] };
     render(<Settings />);
     expect(await screen.findByText("~/Projects/big-inc")).toBeInTheDocument();
-    expect(screen.getByText("Can read and change")).toBeInTheDocument();
+    expect(screen.getByText("Can read and write")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Remove" }));
     await userEvent.click(screen.getByRole("button", { name: "Yes" }));
     await waitFor(() => expect(screen.getByText("No folders are shared yet.")).toBeInTheDocument());

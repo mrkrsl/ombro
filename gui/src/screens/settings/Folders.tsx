@@ -7,7 +7,7 @@ import { inTauri } from "../../api/serve";
 import type { FolderList } from "../../api/types";
 import { Field, Item, Problem, shortPath, useAction, useView } from "./common";
 
-export const ACCESS: Record<string, string> = { read: "Can read", write: "Can read and change" };
+export const ACCESS: Record<string, string> = { read: "Can read", write: "Can read and write" };
 
 async function pickFolder(): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
@@ -49,7 +49,7 @@ export function Folders() {
               title={f.path}
               details={[
                 ACCESS[f.access] ?? f.access,
-                f.problem ? <span className="problem-inline">{f.problem}</span> : f.backup,
+                f.problem ? <span className="problem-inline">{f.problem}</span> : null,
               ]}
               actions={
                 asking === f.name ? (
@@ -107,7 +107,7 @@ export function Folders() {
             <span className="form-row tight">
               <select aria-label="Access" value={access} onChange={(e) => setAccess(e.target.value)}>
                 <option value="read">Read only</option>
-                <option value="write">Read and change</option>
+                <option value="write">Read and write</option>
               </select>
             </span>
           </Field>
