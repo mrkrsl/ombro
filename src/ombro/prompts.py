@@ -70,10 +70,10 @@ How the job works:
 - Some roles have tools that reach outside services (named mcp.*). Work
   in the organisation's own tools (documents, sheets, CRMs and the like) is
   usually done at once; actions that reach people outside the
-  organisation, or the public, are usually staged in the job's outbox for
-  the user to approve after the job. The harness decides each
-  from the user's settings. A staged action has not happened. Never brief
-  a role again to get a staged action done.
+  organisation, or the public, usually wait for the user's approval after
+  the job. The harness decides each
+  from the user's settings. An action waiting for approval has not happened. Never brief
+  a role again to get a waiting action done.
 - code.run has no network: never brief a role to fetch anything with code,
   or to test whether it can. Only web.search and web.fetch reach the web;
   if they fail, say so and finish rather than look for another way out.
@@ -124,8 +124,8 @@ that need judgement. These are Ombro's fixed rules.
 - Tools are disabled. Write the report from the record below and nothing else.
   State only what the record shows; do not invent results.
 - The harness adds the spec, the list of briefs, deliverables, outward
-  actions done and staged, changes to notes.md, usage and limits itself, so
-  do not repeat those lists or figures. If actions are staged, say under
+  actions done and waiting for approval, changes to notes.md, usage and limits itself, so
+  do not repeat those lists or figures. If actions wait for approval, say under
   "Decisions for you" that they wait for the user's approval.
 - Write Markdown with exactly these four headings, in this order:
   ## Summary
@@ -260,9 +260,9 @@ def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
         if any(t.startswith("mcp.") for t in tool_names):
             tools_line += (
                 " Tools named mcp.* reach outside services. A call that changes or sends something needs a"
-                " one-sentence reason. Depending on the user's settings it is done at once, or staged for the"
-                " user to approve after the job: the result says which. A staged action has not happened, so"
-                " never stage it twice or report it as done; list it in your summary as staged. Where a tool"
+                " one-sentence reason. Depending on the user's settings it is done at once, or held for the"
+                " user to approve after the job: the result says which. An action waiting for approval has not happened, so"
+                " never stage it twice or report it as done; list it in your summary as waiting for approval. Where a tool"
                 " takes many items at once (for example many rows in one range), use one call for many items"
                 " rather than one call per item."
             )
@@ -454,7 +454,7 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
 - Propose a skill only if this job showed a method that will help again and
   that no skill covers, or a clear improvement to a skill that exists. Most
   jobs teach nothing new: then call `no_skill`. That is the usual answer.
-- At most one proposal. It waits in the outbox for the user to approve; it
+- At most one proposal. It waits for the user's approval; it
   is not live until then.
 - To improve a skill that exists, read it first with `skills__read`, then
   propose the whole new text under the same name.
@@ -476,7 +476,7 @@ SKILL_TOOLS = [
         "type": "function",
         "function": {
             "name": "skills__propose",
-            "description": "skills.propose: stage a new or improved skill in the outbox for the user's approval.",
+            "description": "skills.propose: put a new or improved skill to the user, to wait for their approval.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -811,7 +811,7 @@ returns) can change them.
 - Nothing is ever deleted. To get rid of a file in a shared folder, use
   folders__set_aside: it moves it into 'For deletion/' (or 'Archive/' when a
   newer file replaces it) with a note of why, after the user says yes.
-- You cannot brief roles, start jobs, approve the outbox or use outward
+- You cannot brief roles, start jobs, approve what waits for approval or use outward
   tools; such calls are refused.
 - Before you answer about past work, look it up; do not answer from guesses.
   Say which job, report or page a fact came from.

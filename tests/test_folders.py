@@ -239,7 +239,7 @@ def test_a_placement_outside_the_shared_folders_waits_for_approval(job, home, us
     (a,) = outbox.actions(job.job_dir)
     assert a.tool == "workspace.place" and a.status == "pending"
     assert a.arguments == {"to": "~/Documents/Reports/summary.md", "overwrite": False}
-    assert "Staged, waiting for you (1)" in job.report
+    assert "Waiting for your approval (1)" in job.report
     assert any(e["action"] == "staged_duplicate" for e in job.events)
     # Changing the workspace after staging does not change what is approved.
     (job.job_dir / "workspace" / "summary.md").write_text("changed later")
@@ -404,13 +404,13 @@ def test_the_ombro_home_is_refused_whatever_the_spelling(home, user, monkeypatch
 def test_approving_a_placement_rechecks_the_spelling(job, home, user, capsys):
     if not _ignores_case(user / "Library"):
         pytest.skip("this disk tells upper and lower case apart")
-    from ombro import outbox_cmd
+    from ombro import approvals_cmd
 
     (user / "Library" / "LaunchAgents").mkdir()
     place_job(job, home, user, "~/Documents/Reports/")  # staged somewhere ordinary...
     (a,) = outbox.actions(job.job_dir)
     outbox.edit(home, a, {"to": "~/library/LaunchAgents/x.plist", "overwrite": False})  # ...then sent elsewhere
-    outbox_cmd._show(outbox.load(a.path), home)
+    approvals_cmd._show(outbox.load(a.path), home)
     assert "Refused" in capsys.readouterr().out
     with pytest.raises(outbox.OutboxError, match="Library"):
         outbox.approve(home, outbox.load(a.path))

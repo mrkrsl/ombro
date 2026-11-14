@@ -274,13 +274,13 @@ def narrative_input(facts: dict[str, Any]) -> str:
         waiting, decided = _still_waiting(facts, ow.get("staged") or [])
         lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the job "
                      "(internal changes, or external actions the user allowed), "
-                     f"{len(waiting)} staged and waiting for the user's approval"
-                     + (f", {len(decided)} staged and already decided by the user" if decided else "")
+                     f"{len(waiting)} waiting for the user's approval"
+                     + (f", {len(decided)} already decided by the user" if decided else "")
                      + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)"
                         if ow.get("uncertain") else "") + ".")
     for ev in facts.get("skills") or []:
         if ev.get("outcome") == "proposed":
-            lines.append(f"You proposed a skill, {ev.get('skill')}; it waits in the outbox as {ev.get('ref')} "
+            lines.append(f"You proposed a skill, {ev.get('skill')}; it waits for the user's approval as {ev.get('ref')} "
                          "for the user's approval.")
     if facts.get("code_runs"):
         stopped = sum(1 for c in facts["code_runs"] if c.get("limit"))
@@ -453,7 +453,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         text = parts.get(heading) or "None recorded."
         if heading == "Decisions for you" and waiting_skills:
             lines = [f"- A skill waits for your review: {_skill_words(ev)}. See it with "
-                     f"`ombro outbox show {ev.get('ref')}`, then approve or decline it." for ev in waiting_skills]
+                     f"`ombro approvals show {ev.get('ref')}`, then approve or decline it." for ev in waiting_skills]
             text = "\n".join(lines) if text.strip().rstrip(".").lower() in ("none recorded", "none") else \
                 text.rstrip() + "\n\n" + "\n".join(lines)
         out += [f"## {heading}", "", text, ""]
@@ -581,7 +581,7 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     errors, refused, dups = ow.get("errors") or [], ow.get("refused") or [], ow.get("duplicates") or []
     uncertain = ow.get("uncertain") or []
     if not any((staged, done, errors, refused, uncertain)):
-        return ["None: nothing was done outside the job, and nothing is staged."]
+        return ["None: nothing was done outside the job, and nothing is waiting for approval."]
     work = [ev for ev in done if ev.get("effect") in ("internal", "read-only")]
     sent = [ev for ev in done if ev not in work]
     lines: list[str] = []
@@ -601,21 +601,21 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     staged, decided = _still_waiting(f, staged)
     now = f.get("outbox_now") or {}
     if decided:
-        lines.append(f"Staged, and decided by you while the job was going ({len(decided)}):")
+        lines.append(f"Waited for approval, and decided by you while the job was going ({len(decided)}):")
         for ev in decided:
             what = DECIDED.get(now.get(ev.get("ref"), ""), now.get(ev.get("ref"), "decided"))
             lines.append(f"- **{ev.get('ref')}** `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}: {what}")
         lines.append("")
     if staged:
-        lines.append(f"Staged, waiting for you ({len(staged)}). Nothing here has happened:")
+        lines.append(f"Waiting for your approval ({len(staged)}). Nothing here has happened:")
         for ev in staged:
             lines.append(f"- **{ev.get('ref')}** `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}")
             if ev.get("reason"):
                 lines.append(f"  - Reason: {_line(ev['reason'], 200)}")
         if dups:
-            lines.append(f"- ({len(dups)} identical repeat(s) were not staged again.)")
-        lines += ["", "See them with `ombro outbox`; approve or decline each by its reference, e.g. "
-                  f"`ombro outbox show {staged[0].get('ref')}`.", ""]
+            lines.append(f"- ({len(dups)} identical repeat(s) were not added again.)")
+        lines += ["", "See them with `ombro approvals`; approve or decline each by its reference, e.g. "
+                  f"`ombro approvals show {staged[0].get('ref')}`.", ""]
     if uncertain:
         lines.append(f"Uncertain: sent during the job, but no answer came back, so it may or may not have "
                      f"happened ({len(uncertain)}). Check the service:")
@@ -651,7 +651,7 @@ def material_lines(f: dict[str, Any]) -> list[str]:
     if f.get("tainted_staged"):
         if out:
             out.append("")
-        out.append("Staged because the role had read material in that brief, though the job's permissions "
+        out.append("Held for your approval because the role had read material in that brief, though the job's permissions "
                    "would have allowed them: " + ", ".join(f["tainted_staged"]) + ".")
     return out
 

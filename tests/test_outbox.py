@@ -96,7 +96,7 @@ def test_the_report_lists_staged_actions_from_the_harness_record(job, record):
     assert "Internal changes made during the job (1):" in section  # add_row is internal: it runs
     assert "`mcp.fake.add_row` (poster): sheet: Leads" in section
     assert "Permissions for this job: balanced (from preferences)" in section
-    assert "ombro outbox show" in section
+    assert "ombro approvals show" in section
 
 
 def test_balanced_allows_changes_and_reads(job, record):
@@ -201,7 +201,7 @@ def test_a_duplicate_is_not_staged_twice(job, record):
     job(script(post(), post()))
     assert len(outbox.actions(job.job_dir)) == 1
     assert any(r.get("status") == "already_staged" for r in tool_replies(job))
-    assert "identical repeat(s) were not staged again" in job.report
+    assert "identical repeat(s) were not added again" in job.report
 
 
 def test_staging_counts_towards_the_tools_cap(home, job, tmp_path):
@@ -279,7 +279,7 @@ def test_approve_runs_only_the_named_action_once(home, staged, record):
     assert len(fake_sent(record)) == 1
     assert [a.status for a in outbox.actions(staged.job_dir)] == ["pending", "executed", "pending", "pending"]
     assert jobs.read_job(staged.job_dir)[0]["outbox"] == {"pending": 3, "executed": 1}
-    assert "## Outbox decisions" in staged.report and f"{a2.ref} `mcp.fake.post_message`: approved; done" in staged.report
+    assert "## Approvals" in staged.report and f"{a2.ref} `mcp.fake.post_message`: approved; done" in staged.report
     assert [e["action"] for e in staged.events][-2:] == ["outbox_approved", "outbox_executed"]
 
 
@@ -345,7 +345,7 @@ def test_decisions_during_the_job_are_in_its_report_and_the_role_is_not_told(hom
     assert (a1.status, a2.status) == ("executed", "pending")
     report = job.report
     assert "decided by you while the job was going (1)" in report and "approved and done" in report
-    assert "Staged, waiting for you (1)" in report
+    assert "Waiting for your approval (1)" in report
     assert not any("approved" in json.dumps(r) for r in tool_replies(job))  # the role was not told
 
 
@@ -450,28 +450,28 @@ def ombro(home, *args, input=None, timeout=60):
 
 def test_outbox_commands_end_to_end(home, staged, record):
     a1, a2, a3, hook = outbox.actions(staged.job_dir)
-    r = ombro(home, "outbox")
+    r = ombro(home, "approvals")
     assert r.returncode == 0 and "4 action(s) waiting" in r.stdout and a1.ref in r.stdout
-    r = ombro(home, "outbox", "show", a2.ref)
+    r = ombro(home, "approvals", "show", a2.ref)
     assert "Reason    The spec asks for one post." in r.stdout and "text: two" in r.stdout
-    r = ombro(home, "outbox", "approve")
+    r = ombro(home, "approvals", "approve")
     assert r.returncode == 2 and "There is no 'all'" in r.stderr
-    r = ombro(home, "outbox", "approve", a1.ref, a3.ref, input="n\n")
+    r = ombro(home, "approvals", "approve", a1.ref, a3.ref, input="n\n")
     assert "Run these 2 actions?" in r.stdout and "Nothing was done" in r.stdout and fake_sent(record) == []
-    r = ombro(home, "outbox", "approve", a1.ref, a3.ref, input="y\n")
+    r = ombro(home, "approvals", "approve", a1.ref, a3.ref, input="y\n")
     assert r.returncode == 0 and f"{a1.ref}: done." in r.stdout
-    r = ombro(home, "outbox", "decline", a2.ref, "--yes")
+    r = ombro(home, "approvals", "decline", a2.ref, "--yes")
     assert f"{a2.ref}: declined" in r.stdout
-    r = ombro(home, "outbox", "edit", hook.ref, "--arguments", '{"surprise": 1}')
+    r = ombro(home, "approvals", "edit", hook.ref, "--arguments", '{"surprise": 1}')
     assert r.returncode == 0  # the hook's schema has no rules against extra fields
     assert [e["arguments"]["text"] for e in fake_sent(record)] == ["one", "three"]
-    data = json.loads(ombro(home, "outbox", "--all", "--json").stdout)
+    data = json.loads(ombro(home, "approvals", "--all", "--json").stdout)
     assert [d["status"] for d in data] == ["executed", "declined", "executed", "pending"]
     assert data[3]["edited"] is True
     r = ombro(home, "jobs")
     assert "1 waiting" in r.stdout
     r = ombro(home, "status", staged.job_dir.name)
-    assert "Outbox    1 waiting, 2 done, 1 declined" in r.stdout and "Outward   balanced" in r.stdout
+    assert "Approvals 1 waiting, 2 done, 1 declined" in r.stdout and "Outward   balanced" in r.stdout
 
 
 def test_a_process_killed_mid_approval_leaves_it_uncertain_never_resent(home, job, tmp_path):
@@ -480,7 +480,7 @@ def test_a_process_killed_mid_approval_leaves_it_uncertain_never_resent(home, jo
     write_role(home, "poster", kind="helper", tools=ALL)
     job(script(post()))
     [a] = outbox.actions(job.job_dir)
-    proc = subprocess.Popen([sys.executable, "-m", "ombro", "outbox", "approve", a.ref, "--yes"],
+    proc = subprocess.Popen([sys.executable, "-m", "ombro", "approvals", "approve", a.ref, "--yes"],
                             env=cli_env(home), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     deadline = time.time() + 30
     while not fake_sent(record) and time.time() < deadline:  # the call has reached the server
@@ -488,12 +488,12 @@ def test_a_process_killed_mid_approval_leaves_it_uncertain_never_resent(home, jo
     assert outbox.load(a.path).status == "executing"
     os.kill(proc.pid, signal.SIGKILL)
     proc.wait()
-    r = ombro(home, "outbox")
+    r = ombro(home, "approvals")
     assert "uncertain" in r.stdout and "resolve" in r.stdout
-    r = ombro(home, "outbox", "approve", a.ref, "--yes")
+    r = ombro(home, "approvals", "approve", a.ref, "--yes")
     assert r.returncode == 2 and "uncertain" in r.stderr
     assert len(fake_sent(record)) == 1  # sent once, never again
-    r = ombro(home, "outbox", "resolve", a.ref, "sent")
+    r = ombro(home, "approvals", "resolve", a.ref, "sent")
     assert "marked as done" in r.stdout and outbox.load(a.path).status == "executed"
     events = [json.loads(x)["action"] for x in (job.job_dir / "journal.jsonl").read_text().splitlines()]
     assert "outbox_uncertain" in events and events[-1] == "outbox_resolved"
@@ -534,7 +534,7 @@ def test_the_brief_records_what_may_happen_without_you(home, record):
                                             "outward_stage": ["mcp.fake.post_message"]}))
     meta, _ = mdfile.parse(proposal.files[0].text)
     assert meta["outward"] == {"preset": "balanced", "stage": ["mcp.fake.post_message"]}
-    assert any("outward tools: balanced (from spec); staged: mcp.fake.post_message" in w for w in proposal.warnings)
+    assert any("outward tools: balanced (from spec); wait for approval: mcp.fake.post_message" in w for w in proposal.warnings)
 
 
 def test_a_crew_with_only_read_only_and_internal_tools_is_not_asked_about_permissions(home, tmp_path):
@@ -583,12 +583,12 @@ def test_whole_flow_on_the_command_line(home, record):
     spec.write_text(mdfile.dump({"outward": "manual"}, SPEC))
     r = ombro(home, "start", "--spec", str(spec))
     assert r.returncode == 0, r.stderr
-    assert "Staged, waiting for you (2)" in r.stdout and fake_sent(record) == []
+    assert "Waiting for your approval (2)" in r.stdout and fake_sent(record) == []
     first, second = outbox.waiting(home)
-    assert ombro(home, "outbox", "approve", first.ref, "--yes").returncode == 0
-    assert ombro(home, "outbox", "decline", second.ref, "--yes").returncode == 0
+    assert ombro(home, "approvals", "approve", first.ref, "--yes").returncode == 0
+    assert ombro(home, "approvals", "decline", second.ref, "--yes").returncode == 0
     assert [e["arguments"]["text"] for e in fake_sent(record)] == ["first"]
-    assert "Nothing is waiting" in ombro(home, "outbox").stdout
+    assert "Nothing is waiting" in ombro(home, "approvals").stdout
 
 
 def test_a_job_and_an_approval_work_with_a_2026_07_28_server(home, job, tmp_path):

@@ -1,4 +1,4 @@
-"""`ombro outbox` and `ombro tools`: staged actions, and the outward tools behind them.
+"""`ombro approvals` and `ombro tools`: actions waiting for approval, and the outward tools behind them.
 
 Decisions are made on named actions only. There is no "approve all". The
 command line shows each named action in full and asks one question; an
@@ -64,11 +64,11 @@ def _show(a: outbox.Action, home: Home | None = None) -> None:
     print(f"  Tool      {a.tool} ({m.get('class', '?')})")
     print(f"  Role      {m.get('role', '?')}")
     print(f"  Reason    {m.get('reason') or '(none given)'}")
-    print(f"  Staged    {m.get('staged_at')} ({age}) in job {a.job_id}")
+    print(f"  Waiting   since {m.get('staged_at')} ({age}), from job {a.job_id}")
     if days >= OLD_DAYS and a.status == "pending":
-        print(f"  Note      staged more than {OLD_DAYS} days ago; check it still makes sense")
+        print(f"  Note      waiting for more than {OLD_DAYS} days; check it still makes sense")
     if a.edited:
-        print("  Edited    yes: the arguments were changed after staging")
+        print("  Edited    yes: the arguments were changed while it waited")
     for key, label in (("note", "Note"), ("last_error", "Last try"), ("error", "Error"), ("result", "Result")):
         if m.get(key):
             print(f"  {label:<9} {' '.join(str(m[key]).split())[:500]}")
@@ -113,7 +113,7 @@ def _show_skill(a: outbox.Action, home: Home) -> None:
         print(f"  Warning   signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")
     if v["changed_since"] and a.status == "pending":
         print("  Changed   the live skill has changed since this was proposed; approving is refused until you "
-              f"save it again with `ombro outbox edit {a.ref}`")
+              f"save it again with `ombro approvals edit {a.ref}`")
     if v["live"]:
         print("  Diff against today's version:")
         body = v.get("diff") or "(no difference)"
@@ -138,7 +138,7 @@ def _confirm(label: str) -> bool:
     return _cli()._confirm(label)
 
 
-def cmd_outbox(args) -> int:
+def cmd_approvals(args) -> int:
     cli = _cli()
     home = cli._home()
     cli._reap(home)
@@ -149,7 +149,7 @@ def cmd_outbox(args) -> int:
             return _list(home, args)
         if action == "show":
             if len(refs) != 1:
-                raise cli.CliError("Name one action, e.g. `ombro outbox show ab12-3`.")
+                raise cli.CliError("Name one action, e.g. `ombro approvals show ab12-3`.")
             a = outbox.find(home, refs[0])
             outbox.settle(a.job_dir)
             a = outbox.load(a.path)
@@ -163,7 +163,7 @@ def cmd_outbox(args) -> int:
             return _resolve(home, refs, args)
     except outbox.OutboxError as e:
         raise cli.CliError(str(e)) from None
-    raise cli.CliError(f"Unknown outbox action {action!r}.")
+    raise cli.CliError(f"Unknown approvals action {action!r}.")
 
 
 def _list(home: Home, args) -> int:
@@ -181,26 +181,26 @@ def _list(home: Home, args) -> int:
         _print_json([a.as_dict() for a in items])
         return 0
     if not items:
-        print("Nothing is waiting in the outbox." if not args.all else "Nothing has been staged.")
+        print("Nothing is waiting for approval." if not args.all else "Nothing has ever waited for approval.")
         return 0
-    what = "staged" if args.all else "waiting for a decision"
+    what = "that waited for approval" if args.all else "waiting for approval"
     print(f"{len(items)} action(s) {what}:\n")
-    print(f"  {'REF':<10} {'STATUS':<16} {'TOOL':<32} {'STAGED':<9} WHAT")
+    print(f"  {'REF':<10} {'STATUS':<16} {'TOOL':<32} {'WAITING':<9} WHAT")
     for a in items:
         age, _ = _age(a.meta.get("staged_at"))
         print(f"  {a.ref:<10} {_status_label(a):<16} {a.tool[:32]:<32} {age:<9} {a.summary(70)}")
-    print("\nSee one with `ombro outbox show <ref>`; then `ombro outbox approve <ref> ...` or "
-          "`ombro outbox decline <ref> ...`.")
+    print("\nSee one with `ombro approvals show <ref>`; then `ombro approvals approve <ref> ...` or "
+          "`ombro approvals decline <ref> ...`.")
     if any(a.status == "uncertain" for a in items):
         print("An uncertain action may or may not have happened; settle it with "
-              "`ombro outbox resolve <ref> sent` or `not-sent`.")
+              "`ombro approvals resolve <ref> sent` or `not-sent`.")
     return 0
 
 
 def _decide(home: Home, action: str, refs: list[str], args) -> int:
     cli = _cli()
     if not refs:
-        raise cli.CliError(f"Name the actions to {action}, e.g. `ombro outbox {action} ab12-1 ab12-3`. "
+        raise cli.CliError(f"Name the actions to {action}, e.g. `ombro approvals {action} ab12-1 ab12-3`. "
                            "There is no 'all'.")
     items = _find_all(home, refs)
     for a in items:
@@ -250,14 +250,14 @@ def _outcome(a: outbox.Action) -> str:
         return f"failed: {' '.join(str(m.get('error') or '').split())[:300]}"
     if a.status == "uncertain":
         return (f"uncertain: {' '.join(str(m.get('note') or '').split())[:300]} Settle it with "
-                f"`ombro outbox resolve {a.ref} sent` or `not-sent`.")
+                f"`ombro approvals resolve {a.ref} sent` or `not-sent`.")
     return a.status
 
 
 def _edit(home: Home, refs: list[str], args) -> int:
     cli = _cli()
     if len(refs) != 1:
-        raise cli.CliError("Name one action, e.g. `ombro outbox edit ab12-3`.")
+        raise cli.CliError("Name one action, e.g. `ombro approvals edit ab12-3`.")
     a = outbox.find(home, refs[0])
     if a.tool == outbox.SKILL_TOOL and args.arguments is None:
         return _edit_skill(home, a, args)
@@ -301,7 +301,7 @@ def _edit(home: Home, refs: list[str], args) -> int:
         _print_json(done.as_dict())
         return 0
     _show(done, home)
-    print(f"\nSaved. It is still waiting: approve it with `ombro outbox approve {done.ref}`.")
+    print(f"\nSaved. It is still waiting: approve it with `ombro approvals approve {done.ref}`.")
     return 0
 
 
@@ -331,14 +331,14 @@ def _edit_skill(home: Home, a: outbox.Action, args) -> int:
         _print_json(done.as_dict())
         return 0
     _show(done, home)
-    print(f"\nSaved. It is still waiting: approve it with `ombro outbox approve {done.ref}`.")
+    print(f"\nSaved. It is still waiting: approve it with `ombro approvals approve {done.ref}`.")
     return 0
 
 
 def _resolve(home: Home, refs: list[str], args) -> int:
     cli = _cli()
     if len(refs) != 2 or refs[1] not in ("sent", "not-sent"):
-        raise cli.CliError("Use `ombro outbox resolve <ref> sent` (it happened) or `not-sent` (it did not).")
+        raise cli.CliError("Use `ombro approvals resolve <ref> sent` (it happened) or `not-sent` (it did not).")
     a = outbox.find(home, refs[0])
     outbox.settle(a.job_dir)
     done = outbox.resolve(home, outbox.load(a.path), refs[1] == "sent")

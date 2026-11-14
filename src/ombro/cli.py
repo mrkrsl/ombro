@@ -281,7 +281,7 @@ def cmd_jobs(args) -> int:
         return 0
     from ombro import outbox
 
-    print(f"{'JOB':<24} {'CREWS':<16} {'STATUS':<18} {'TOKENS':>9}  {'OUTBOX':<10} BRIEF")
+    print(f"{'JOB':<24} {'CREWS':<16} {'STATUS':<18} {'TOKENS':>9}  {'APPROVALS':<10} BRIEF")
     for job_dir in rows:
         meta, _ = jobs.read_job(job_dir)
         crew = ", ".join(jobs.job_crews(meta))
@@ -291,7 +291,7 @@ def cmd_jobs(args) -> int:
         print(f"{job_dir.name:<24} {crew[:16]:<16} {meta.get('status', '?'):<18} {tokens:>9,}  {box:<10} "
               f"{meta.get('brief', '')[:60]}")
     if any(outbox.waiting_count(d) for d in rows):
-        print("\nSee waiting actions with `ombro outbox`.")
+        print("\nSee waiting actions with `ombro approvals`.")
     return 0
 
 
@@ -333,8 +333,8 @@ def cmd_status(args) -> int:
     from ombro import outbox, outward
 
     c = outbox.counts(job_dir)
-    print(f"\nOutbox    {outbox.describe_counts(c)}"
-          + (" (see them with `ombro outbox`)" if outbox.waiting_count(job_dir) else ""))
+    print(f"\nApprovals {outbox.describe_counts(c)}"
+          + (" (see them with `ombro approvals`)" if outbox.waiting_count(job_dir) else ""))
     if meta.get("outward"):
         print(f"Outward   {outward.describe(meta['outward'])}")
     print(f"\n{int(reserve * 100)}% of the token limit is held back for the report.")
@@ -1011,8 +1011,8 @@ def cmd_schedule(args) -> int:
     return run(args)
 
 
-def cmd_outbox(args) -> int:
-    from ombro.outbox_cmd import cmd_outbox as run
+def cmd_approvals(args) -> int:
+    from ombro.approvals_cmd import cmd_approvals as run
 
     return run(args)
 
@@ -1034,7 +1034,7 @@ def cmd_tools(args) -> int:
         return tool_cmd.flow(_home(), ConsoleUI(), args.server, args.provider, args.max_calls)
     if args.provider or args.max_calls:
         raise CliError("--provider and --max-calls are for a built-in tool, such as `ombro tools web.search`.")
-    from ombro.outbox_cmd import cmd_tools as run
+    from ombro.approvals_cmd import cmd_tools as run
 
     return run(args)
 
@@ -1218,17 +1218,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_schedule)
 
-    s = sub.add_parser("outbox", help="staged outward actions: list, show, approve, decline, edit, resolve")
+    s = sub.add_parser("approvals", help="what waits for your approval: list, show, approve, decline, edit, resolve")
     s.add_argument("action", nargs="?", choices=["list", "show", "approve", "decline", "edit", "resolve"],
                    help="default: list")
-    s.add_argument("refs", nargs="*", help="action references, e.g. ab12-3 (see `ombro outbox`)")
+    s.add_argument("refs", nargs="*", help="action references, e.g. ab12-3 (see `ombro approvals`)")
     s.add_argument("--crew", help="for list: only this crew")
     s.add_argument("--all", action="store_true", help="for list: include actions already decided")
     s.add_argument("--yes", action="store_true", help="for approve and decline: do not ask (an interface "
                    "that has shown the actions passes this)")
     s.add_argument("--arguments", help="for edit: the new arguments as a JSON object, instead of the editor")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
-    s.set_defaults(func=cmd_outbox)
+    s.set_defaults(func=cmd_approvals)
 
     s = sub.add_parser("skills", help="the skills library: list, show <name>, edit <name>, "
                        "give <skill> <crew/role>, add <folder>")

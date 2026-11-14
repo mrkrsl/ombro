@@ -87,7 +87,7 @@ def parse_setting(value: Any, where: str) -> dict[str, Any]:
     allow, stage = _tool_list(value.get("allow"), where, "allow"), _tool_list(value.get("stage"), where, "stage")
     both = sorted(set(allow) & set(stage))
     if both:
-        raise SetupError(f"{where}: {', '.join(both)} cannot be both allowed and staged")
+        raise SetupError(f"{where}: {', '.join(both)} cannot both be allowed and wait for approval")
     return {"preset": preset, "allow": allow, "stage": stage}
 
 
@@ -113,7 +113,7 @@ def describe(setting: dict[str, Any]) -> str:
     if setting.get("allow"):
         text += "; allowed: " + ", ".join(setting["allow"])
     if setting.get("stage"):
-        text += "; staged: " + ", ".join(setting["stage"])
+        text += "; wait for approval: " + ", ".join(setting["stage"])
     return text
 
 

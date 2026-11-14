@@ -8,7 +8,7 @@ Chat reads across every crew (past reports, specs, notes, indexes and
 deliverables), plus web search and fetch, and works in the user's shared
 folders as the user would: reading them, and writing in those shared for
 writing, each write shown to the user and confirmed first. It cannot brief
-roles, start jobs, approve the outbox or use outward tools. Its only other
+roles, start jobs, approve what waits for approval or use outward tools. Its only other
 write is a remember the user has confirmed, into a crew's notes.md
 ("From you").
 
@@ -419,9 +419,9 @@ class Chat:
             self.exchanges.pop(0)
             self.dropped += 1
             if self.dropped == 1:
-                self.ui.say("(The conversation is long, so its oldest turns are no longer sent to the Lead. "
+                self.ui.say("(This chat is long, so from here on only its more recent turns are kept in view. "
                          "The transcript keeps everything.)")
-                self.transcript.note("From here on, the oldest turns were no longer sent to the Lead.")
+                self.transcript.note("From here on, only the more recent turns were kept in view.")
         return [{"role": "system", "content": system}] + [m for ex in self.exchanges for m in ex]
 
     def _usage_line(self) -> None:
@@ -451,7 +451,7 @@ class Chat:
 
     def start(self) -> None:
         self.ui.say(
-            f"Chat with the Lead (default crew: the {crew_title(self.home, self.crew)}). Mode: Chat. Nothing "
+            f"Chat with Ombro Lead (default crew: the {crew_title(self.home, self.crew)}). Mode: Chat. Nothing "
             f"changes unless you say yes (a file in a shared folder, or a /remember). /brief turns this into a task "
             f"brief, /help lists commands, /quit ends. "
             f"(Up to {format_tokens(self.limits.max_tokens)} tokens.)\n"
@@ -609,7 +609,7 @@ class Chat:
             self.refused.append(name)
             self.transcript.note(f"Refused {name}: not available in chat.")
             return {"error": f"{name} is not available in chat. Chat cannot brief roles, start jobs, approve the "
-                             "outbox or use outward tools; files are written only in shared folders, with "
+                             "waiting actions or use outward tools; files are written only in shared folders, with "
                              "folders__write. To turn this into a task, call offer_brief."}, None
         key = tc.raw_arguments if tc.arguments is None else json.dumps(tc.arguments, sort_keys=True)
         try:

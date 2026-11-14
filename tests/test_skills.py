@@ -161,7 +161,7 @@ def test_a_proposal_waits_in_the_outbox_and_approving_makes_it_live(job, home):
     assert not view["live"] and "Check each workshop." in view["text"] and view["for"] == ["default/researcher"]
     # The report: under Decisions for you, and in Ombro's record; not under Outward actions.
     decisions = job.report.split("## Decisions for you")[1].split("##")[0]
-    assert f"ombro outbox show {a.ref}" in decisions and "a new skill, kettle-survey" in decisions
+    assert f"ombro approvals show {a.ref}" in decisions and "a new skill, kettle-survey" in decisions
     assert "None: nothing was done outside the job" in job.report.split("## Outward actions")[1].split("##")[0]
     assert "Proposed by the Lead: a new skill, kettle-survey" in job.report
 
@@ -279,10 +279,10 @@ def test_the_cli_lists_and_shows_a_proposal(job, home, capsys):
     assert "Approved (1)" in approved and "teapot-check" in approved and "kettle-survey" not in approved
     assert "kettle-survey" in waiting
     assert "Every skill is used by: default/researcher" in out
-    assert cli.main(["outbox", "show", a.ref]) == 0
+    assert cli.main(["approvals", "show", a.ref]) == 0
     out = capsys.readouterr().out
     assert "Skill     kettle-survey (new)" in out and "Check each workshop." in out
-    assert cli.main(["outbox", "approve", a.ref, "--yes"]) == 0
+    assert cli.main(["approvals", "approve", a.ref, "--yes"]) == 0
     assert "skill kettle-survey written" in capsys.readouterr().out
 
 

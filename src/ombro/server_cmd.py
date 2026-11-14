@@ -248,7 +248,7 @@ def add_flow(home: Home, args, ui: UI) -> int:
         ui.say("\nWarning: the address is not https, so what is sent to it can be read on the way.")
     if not args.server_class:
         ui.say("\nIts tools are classed by the server's own markings; a tool that changes something and is not "
-              "marked counts as external\n(it waits in the outbox). After adding, `ombro tools "
+              "marked counts as external\n(it waits for your approval). After adding, `ombro tools "
               f"{name}` shows each tool's class.")
     ui.say("")
     if not args.yes and not ui.yes("add", "Add it?"):

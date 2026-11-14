@@ -296,7 +296,7 @@ Tools:
   workspace/ and scratch/ folders, and in shared folders the job was given
   (folders.md). No provider.
 - workspace.place: copies a workspace file to a shared folder, or stages the
-  copy in the outbox when the destination is not shared for writing.
+  copy waiting for your approval when the destination is not shared for writing.
 - code.run: runs a Python script a role writes, in the operating system's
   sandbox: standard library only, no network, nothing outside the job's
   folders and its shared folders. Limits are in limits.md.
@@ -346,7 +346,7 @@ for MCP tools, as well as max_calls:
   (internal or external) covers all its tools that are not read-only; a
   tool's own line wins, so a team chat can be made internal if you wish.
 - permission: refuse, a hard limit that no preference or spec can lift.
-Whether other calls run or wait in the outbox is set by `outward:` in
+Whether other calls run or wait for your approval is set by `outward:` in
 preferences/config.md and in each spec.
 """
 
@@ -360,10 +360,10 @@ PREFERENCES_BODY = """\
 - editor: command used to open files for editing. Empty means $EDITOR.
 - outward: what outward (MCP) tools may do without you, unless a spec says
   otherwise. manual: only read-only calls run; internal and external
-  actions wait in the outbox. balanced: read-only and internal (changes in
+  actions wait for your approval. balanced: read-only and internal (changes in
   your organisation's own tools) run; external actions (reaching people outside your organisation, or the
-  public, or spending money) wait. auto: everything runs. Waiting actions are reviewed with
-  `ombro outbox`.
+  public, or spending money) wait. auto: everything runs. What waits is under Approvals:
+  `ombro approvals`.
 """
 
 INSTRUCTIONS_BODY = """\

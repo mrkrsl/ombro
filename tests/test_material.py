@@ -58,7 +58,7 @@ def test_after_material_an_external_call_is_staged_even_under_auto(job, record):
     [a] = outbox.actions(job.job_dir)
     assert a.tool == "mcp.fake.post_message" and a.status == "pending"
     assert any(e["action"] == "staged" and e.get("tainted") for e in job.events)
-    assert "Staged because the role had read material" in job.report
+    assert "Held for your approval because the role had read material" in job.report
 
 
 def test_a_tool_the_spec_allows_by_name_still_runs_after_material(job, record):  # noqa: F811

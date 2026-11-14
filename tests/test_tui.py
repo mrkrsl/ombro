@@ -484,10 +484,10 @@ def test_declining_from_the_outbox(home, job):
     async def go():
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            await command(pilot, app, "/outbox")
+            await command(pilot, app, "/approvals")
             await settle(pilot, app)
             assert any(a.ref in t and "waiting for your decision" in t for t in _texts(app))
-            await command(pilot, app, f"/outbox decline {a.ref}")
+            await command(pilot, app, f"/approvals decline {a.ref}")
             await answer(pilot, app, "y")
             await settle(pilot, app)
 

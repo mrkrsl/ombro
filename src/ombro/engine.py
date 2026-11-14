@@ -760,7 +760,7 @@ class Engine:
                                **({"tainted": True} if tainted_stage else {}))
             return {"status": "staged", "outbox": rel,
                     "note": "Not done yet. It waits for the user's decision. Do not stage it "
-                    "again; mention it in your summary as staged, not done."}
+                    "again; mention it in your summary as waiting for the user's approval, not done."}
         # allowed: it runs now
         ctx = self._context(role, name)
         try:

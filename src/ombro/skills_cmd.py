@@ -1,6 +1,6 @@
 """`ombro skills`: the skills library, who uses each skill, and proposals waiting.
 
-Proposals are decided in the outbox (`ombro outbox show|approve|decline|edit`),
+Proposals are decided under Approvals (`ombro approvals show|approve|decline|edit`),
 like any staged action; this command lists them so the library and what waits
 for it are seen together.
 """
@@ -85,7 +85,7 @@ def _list(home: Home, args) -> int:
         if w["flags"]:
             print(f"  {'':<10} signs of injected text: {', '.join(w['flags'])}")
     if view["waiting"]:
-        print("\nSee one with `ombro outbox show <ref>`, then `ombro outbox approve <ref>` or `decline <ref>`.")
+        print("\nSee one with `ombro approvals show <ref>`, then `ombro approvals approve <ref>` or `decline <ref>`.")
     print("\nGive a skill to a role with `ombro skills give <skill> <crew/role>`.")
     return 0
 

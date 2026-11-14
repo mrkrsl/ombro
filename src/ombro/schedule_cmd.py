@@ -141,7 +141,7 @@ def _row(home: Home, s: schedules.Schedule, recent: list[tuple[Path, dict]], now
 
         n = outbox.waiting_count(rd)
         if n:
-            last += f" ({n} in outbox)"
+            last += f" ({n} waiting for approval)"
     out = [f"{s.name:<30} {'on' if s.enabled else 'off':<4} {s.cron_text or '?':<18} "
            f"{nxt:<17} {last}"]
     if s.error:

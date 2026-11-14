@@ -38,15 +38,15 @@ from ombro.settings import SetupError, ToolSettings, load_tool_settings
 STATUSES = ("pending", "executing", "executed", "declined", "failed", "uncertain")
 WAITING = ("pending", "uncertain")
 RESULT_CHARS = 1_000
-DECISIONS_HEADING = "## Outbox decisions"
+DECISIONS_HEADING = "## Approvals"
 
 BODY = """\
 Ombro staged this action during job {job_id}. `status` above says where it
 stands: pending means it has not happened and waits for you.
 
-See it with `ombro outbox show {ref}`, then `ombro outbox approve {ref}` or
-`ombro outbox decline {ref}`. You may change `arguments` above, by hand or
-with `ombro outbox edit {ref}`; Ombro checks them again before anything runs.
+See it with `ombro approvals show {ref}`, then `ombro approvals approve {ref}` or
+`ombro approvals decline {ref}`. You may change `arguments` above, by hand or
+with `ombro approvals edit {ref}`; Ombro checks them again before anything runs.
 Everything else in this file is written by Ombro.
 """
 
@@ -168,7 +168,7 @@ def describe_counts(c: dict[str, int]) -> str:
     order = ("pending", "uncertain", "executing", "executed", "failed", "declined")
     labels = {"pending": "waiting", "executed": "done"}
     parts = [f"{c[s]} {labels.get(s, s)}" for s in order if c.get(s)]
-    return ", ".join(parts) or "nothing staged"
+    return ", ".join(parts) or "nothing waiting for approval"
 
 
 def waiting(home: Home, crew: str | None = None) -> list[Action]:
@@ -189,7 +189,7 @@ def find(home: Home, ref: str) -> Action:
     """An action by its reference: `ab12-3`, or the job ID (or a unique part of it) and the number."""
     m = _REF.match(ref.strip())
     if not m:
-        raise OutboxError(f"{ref!r} is not an action reference; they look like ab12-3 (see `ombro outbox`)")
+        raise OutboxError(f"{ref!r} is not an action reference; they look like ab12-3 (see `ombro approvals`)")
     frag, n = m.group("run"), int(m.group("n"))
     matches = [d for d in jobs.all_jobs(home) if d.name == frag]
     if not matches:
@@ -319,7 +319,7 @@ def placement_check(home: Home, a: Action) -> tuple[Path, str | None]:
     if final.exists():
         if not args.get("overwrite"):
             raise OutboxError(f"{a.ref} would replace {to}, which already exists. To replace it, set overwrite "
-                              f"to true with `ombro outbox edit {a.ref}`; otherwise decline it")
+                              f"to true with `ombro approvals edit {a.ref}`; otherwise decline it")
         warning = f"this replaces {to}, which already exists"
     return final, warning
 
@@ -435,11 +435,11 @@ def _approve_skill(home: Home, a: Action) -> Action:
     try:
         skills.check(text, name, max_chars=None)
     except skills.SkillError as e:
-        raise OutboxError(f"{a.ref} cannot be approved: {e}. Fix it with `ombro outbox edit {a.ref}`") from None
+        raise OutboxError(f"{a.ref} cannot be approved: {e}. Fix it with `ombro approvals edit {a.ref}`") from None
     if skills.live_sha(home, name) != str(a.meta.get("base_sha256") or ""):
         raise OutboxError(f"{a.ref}: the skill {name} has changed since this was proposed. See the diff against "
-                          f"today's version with `ombro outbox show {a.ref}`; to approve it after all, open it "
-                          f"with `ombro outbox edit {a.ref}`, save, then approve")
+                          f"today's version with `ombro approvals show {a.ref}`; to approve it after all, open it "
+                          f"with `ombro approvals edit {a.ref}`, save, then approve")
     _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
     _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
     try:
@@ -533,7 +533,7 @@ def _settle_locked(job_dir: Path) -> list[Action]:
     for a in actions(job_dir):
         if a.status == "executing":
             _save(a, status="uncertain", note="Ombro stopped while this action was running, so it may or may not "
-                  "have happened. It is never retried; settle it with `ombro outbox resolve`.")
+                  "have happened. It is never retried; settle it with `ombro approvals resolve`.")
             _journal(job_dir, "outbox_uncertain", a, "Ombro stopped while it was running")
             out.append(a)
     if out:
@@ -559,7 +559,7 @@ def _journal(job_dir: Path, action: str, a: Action, note: str, **extra: Any) -> 
 
 
 def _record(job_dir: Path, a: Action | None = None, line: str | None = None) -> None:
-    """Counts in job.md, and a line in the report's Outbox decisions section."""
+    """Counts in job.md, and a line in the report's Approvals section."""
     try:
         jobs.update_job(job_dir, outbox=counts(job_dir))
     except (OSError, mdfile.FrontMatterError):
@@ -610,12 +610,12 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
         a = _reload(a)
         if a.status != "pending":
             raise OutboxError(f"{a.ref} is {a.status}, so it cannot be approved"
-                              + (" (settle it with `ombro outbox resolve`)" if a.status == "uncertain" else ""))
+                              + (" (settle it with `ombro approvals resolve`)" if a.status == "uncertain" else ""))
         if _refused_now(home, a.tool):
             raise OutboxError(f"{a.tool} is set to `permission: refuse` in tools.md, so it cannot run")
         problem = check_arguments(a)
         if problem:
-            raise OutboxError(f"{a.ref} cannot run: {problem}. Fix it with `ombro outbox edit {a.ref}`")
+            raise OutboxError(f"{a.ref} cannot run: {problem}. Fix it with `ombro approvals edit {a.ref}`")
         if a.tool == PLACE_TOOL:
             return _approve_place(home, a)
         if a.tool == SKILL_TOOL:

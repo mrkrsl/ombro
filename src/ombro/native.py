@@ -418,7 +418,7 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
                ref=action.ref, path=rel, effect="internal", reason=reason, arguments=action.arguments)
     return {"status": "staged", "outbox": rel,
             "note": f"Not copied yet: {shown_dest} is not in a folder shared with this job for writing, so the "
-            "copy waits for the user to approve after the job. Mention it in your summary as staged, not done."}
+            "copy waits for the user to approve after the job. Mention it in your summary as waiting for the user's approval, not done."}
 
 
 def workspace_tools() -> list[Tool]:

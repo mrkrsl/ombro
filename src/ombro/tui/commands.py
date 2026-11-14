@@ -300,9 +300,9 @@ class Commands:
             return None
         return m.group(1)
 
-    # -- the outbox (10e) ----------------------------------------------------------
+    # -- approvals (10e) ----------------------------------------------------------
 
-    def cmd_outbox(self, words: list[str], rest: str) -> None:
+    def cmd_approvals(self, words: list[str], rest: str) -> None:
         action = words[0].lower() if words else "list"
         refs = words[1:]
         try:
@@ -317,7 +317,7 @@ class Commands:
                     out.append(f"  {a.ref}  ", style=f"bold {p.text}")
                     out.append(f"{a.status:<9} {a.tool}  ", style=p.muted)
                     out.append(a.summary(70) + "\n", style=p.text)
-                out.append("/outbox show <ref> for one in full; /outbox approve or decline <ref>...", style=p.muted)
+                out.append("/approvals show <ref> for one in full; /approvals approve or decline <ref>...", style=p.muted)
                 self.rich(out)
                 return
             if action == "show" and refs:
@@ -354,8 +354,8 @@ class Commands:
         except outbox.OutboxError as e:
             self.fail(str(e))
             return
-        self.usage("/outbox, /outbox show <ref>, /outbox approve <ref>..., /outbox decline <ref>..., "
-                   "/outbox resolve <ref> sent|not-sent. To edit one, use `ombro outbox edit <ref>`.")
+        self.usage("/approvals, /approvals show <ref>, /approvals approve <ref>..., /approvals decline <ref>..., "
+                   "/approvals resolve <ref> sent|not-sent. To edit one, use `ombro approvals edit <ref>`.")
 
     def _show_skill_proposal(self, a: outbox.Action, d: dict) -> None:
         v = outbox.skill_view(self.home, a)
@@ -366,7 +366,7 @@ class Commands:
             lines.append(f"Signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")
         if v["changed_since"] and a.status == "pending":
             lines.append(f"The live skill has changed since this was proposed: save it again with "
-                         f"`ombro outbox edit {a.ref}` before approving.")
+                         f"`ombro approvals edit {a.ref}` before approving.")
         lines += ["", v.get("diff") or "(no difference)"] if v["live"] else ["", v["text"].rstrip()]
         self.say("\n".join(lines))
 
@@ -406,8 +406,8 @@ class Commands:
                                + "\n", style=p.text)
                     if w["flags"]:
                         out.append(f"    signs of injected text: {', '.join(w['flags'])}\n", style=p.muted)
-                out.append("\n/skills show <name>; /skills give <skill> <crew/role>; /outbox show <ref>, then "
-                           "/outbox approve or decline <ref>", style=p.muted)
+                out.append("\n/skills show <name>; /skills give <skill> <crew/role>; /approvals show <ref>, then "
+                           "/approvals approve or decline <ref>", style=p.muted)
                 self.rich(out)
                 return
             if action == "show" and len(words) == 2:
@@ -685,7 +685,7 @@ class Commands:
 # ---------------------------------------------------------------------------
 # Following jobs and posting notices (10d)
 
-PROGRESS = {"briefed": "briefed", "returned": "returned", "staged": "staged an action",
+PROGRESS = {"briefed": "briefed", "returned": "returned", "staged": "asked for approval",
             "outward_done": "did an outward action", "limit_reached": "hit a limit", "finish": "finished the work",
             "report_written": "wrote the report", "failed": "failed"}
 
@@ -719,7 +719,7 @@ def notice_text(app: "OmbroApp", job_id: str) -> Text:
         out.append("\n")
     if r["waiting"]:
         n = r["waiting"]
-        out.append(f"{_n(n, 'action')} {'is' if n == 1 else 'are'} waiting for your OK: /outbox\n", style=p.text)
+        out.append(f"{_n(n, 'action')} {'is' if n == 1 else 'are'} waiting for approval: /approvals\n", style=p.text)
     out.append("Read the report", Style(color=p.text, underline=True, bold=True,
                                          meta={"@click": f"app.run_command({'/report ' + job_id!r})"}))
     out.append(f"  (or type /report {job_id})", style=p.muted)

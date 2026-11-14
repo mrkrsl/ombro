@@ -42,7 +42,7 @@ SLASH = [
     ("/report", "a job's report and its deliverables"),
     ("/stop", "stop a job; it writes its report first"),
     ("/open", "open a job's workspace folder"),
-    ("/outbox", "actions waiting for your decision"),
+    ("/approvals", "what waits for your approval"),
     ("/schedule", "scheduled jobs"),
     ("/crew", "crews and their roles"),
     ("/role", "add or edit a role"),
@@ -60,7 +60,7 @@ SLASH = [
     ("/quit", "leave Ombro"),
 ]
 CHAT_COMMANDS = ("/chat", "/new", "/chats", "/rename", "/brief", "/remember")  # handled by chat itself
-TUI_COMMANDS = ("/start", "/jobs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model",
+TUI_COMMANDS = ("/start", "/jobs", "/report", "/stop", "/open", "/approvals", "/schedule", "/crew", "/role", "/model",
                 "/models",
                 "/keys", "/folder", "/folders", "/limits",
                 "/tools", "/skills", "/preferences")
