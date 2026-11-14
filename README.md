@@ -4,15 +4,17 @@ A small, local harness for briefing a crew of AI roles and getting bounded,
 reported work back.
 
 Ombro assumes models will try to do too much, so it puts deterministic limits
-around them. You write a spec, start a run, walk away, and read a report
-later. Every run ends in a report, whether it finished, hit a limit or failed.
+around them. You brief Ombro Lead, which turns what you want into a spec;
+you start a job from it, walk away, and read a report later. The Lead plans
+the job and briefs the crew's roles. Every job ends in a report, whether it
+finished, hit a limit or failed.
 
 **Status: early.** This is the headless core, native tools, interviews,
 memory and chat: the home directory, roles and crews, a model connection,
 the set-up, role and task interviews, the Lead loop, the guardrail gate, the
 result contract, the journal, reports, web search and fetch, workspace files,
-secrets, the run index, standing notes, memory search, `ombro chat`,
-schedules, outside services through MCP with permissions and an outbox, and
+secrets, the job index, standing notes, memory search, `ombro chat`,
+schedules, outside services through MCP with permissions and approvals, and
 Python scripts in the operating system's sandbox, with folders you share.
 
 ## Install
@@ -54,35 +56,35 @@ and to brief a first task.
 
 ```bash
 ombro role add ["Marketing Assistant"] # the Lead interviews you and proposes the role's files
-ombro brief "find three bakeries"      # the Lead interviews you and saves a spec; offers to run it
+ombro brief "find three bakeries"      # the Lead interviews you and saves a spec; offers to start it
 ombro specs                            # saved specs, by name
-ombro run --spec find-bakeries         # run a saved spec (by name or by path)
-ombro run                              # brief a task, then run it as soon as you accept the spec
-ombro run --spec my-spec.md --detach   # keeps going after the terminal closes
-ombro runs                             # list runs
-ombro status [run_id]                  # limits and usage
-ombro journal [run_id] [--follow]      # the event log, readable; --follow shows new events as they come
-ombro report [run]                     # the final report (any part of the run's name; the latest by default)
+ombro start --spec find-bakeries       # start a saved spec (by name or by path)
+ombro start                            # brief a task, then start it as soon as you accept the spec
+ombro start --spec my-spec.md --detach   # keeps going after the terminal closes
+ombro jobs                             # list jobs
+ombro status [job_id]                  # limits and usage
+ombro journal [job_id] [--follow]      # the event log, readable; --follow shows new events as they come
+ombro report [job]                     # the final report (any part of the job's name; the latest by default)
 ombro chat [--resume [title]]          # talk with the Lead; /brief, /remember, /new, /chats inside
 ombro chats                            # saved chats by title
-ombro summary                          # who you are, the crew, what is running and waiting, and runs not yet seen
+ombro summary                          # who you are, the crew, what is running and waiting, and jobs not yet seen
 ombro preferences [edit]               # your name, theme, default crew, editor and outward preset
-ombro stop <run_id>                    # stop a run; it writes its report first
-ombro open [run_id]                    # open a run's workspace folder
-ombro limits                           # what runs and interviews may use
+ombro stop <job_id>                    # stop a job; it writes its report first
+ombro open [job_id]                    # open a job's workspace folder
+ombro limits                           # what jobs and interviews may use
 ombro limits set generous              # change the allowance level
 ombro keys                             # list keys (masked) and what uses them
 ombro keys set FIRECRAWL_API_KEY       # set one; typed into a hidden prompt
-ombro schedule                         # schedules, their next and last runs, and the scheduler entry
+ombro schedule                         # schedules, their next and last jobs, and the scheduler entry
 ombro schedule add <name> --spec <spec> --cron "30 7 * * 1-5"
 ombro schedule show | enable | disable | remove <name>
 ombro schedule install | uninstall     # the one system scheduler entry; asks first
 ombro tick [--dry-run]                 # start what is due (the scheduler calls this each minute)
-ombro outbox                           # outward actions waiting for you, across runs
-ombro outbox show ab12-3               # one in full: tool, arguments, role, reason
-ombro outbox approve ab12-1 ab12-3     # run the named ones (each at most once); asks first
-ombro outbox decline ab12-2            # drop it for good
-ombro outbox edit ab12-3               # change its arguments; it waits for approval again
+ombro approvals                        # what waits for your approval, across jobs
+ombro approvals show ab12-3            # one in full: tool, arguments, role, reason
+ombro approvals approve ab12-1 ab12-3  # run the named ones (each at most once); asks first
+ombro approvals decline ab12-2         # drop it for good
+ombro approvals edit ab12-3            # change its arguments; it waits for approval again
 ombro tools [server]                   # tools and MCP servers; a server's tools and their permission
 ombro tools web.search --provider duckduckgo --max-calls 30   # change a built-in tool
 ombro server add <name>                # add an MCP server to tools.md; asks for any secret hidden
@@ -100,12 +102,12 @@ ombro role edit | remove <crew>/<role> # or the role's own name, where only one 
 ombro role edit lead                   # the one Lead's files
 ombro crew list | add <name> | use <name>   # a new crew starts empty; `use` sets the default crew
 ombro crew add legal --title "Legal Team"   # the title shown; without one, "Legal Crew"
-ombro run --spec <spec> --crew ops     # --crew gives the crews when the spec names none
-ombro run --spec <spec> --role marketing-researcher   # who does the work, this run only
+ombro start --spec <spec> --crew ops   # --crew gives the crews when the spec names none
+ombro start --spec <spec> --role marketing-researcher   # who does the work, this job only
 ```
 
 Every command that lists or shows something takes `--json`, for an interface
-to read: `runs`, `status`, `report` (with its deliverables as `file://`
+to read: `jobs`, `status`, `report` (with its deliverables as `file://`
 links), `journal` (with `--follow`, one event a line), `keys` (names and
 whether each is set, never a value), `specs`, `role list`, `crew list`,
 `limits`, `schedule`, `folder`, `models`, `summary` and `preferences`.
@@ -139,14 +141,14 @@ through it again.
 The `/` commands do what their `ombro` commands do:
 
 - `/brief`, `/chat`, `/new`, `/remember`: as in `ombro chat`. When a brief is
-  confirmed, it offers to run the spec at once, in the background.
-- `/run [spec]`: run a saved spec again, with no interview (no name: choose
+  confirmed, it offers to start the spec at once, in the background.
+- `/start [spec]`: start a saved spec again, with no interview (no name: choose
   from the saved specs, newest first).
-- `/runs`, `/report [run]` (the summary, deliverables and decisions, with every
-  file the run made as a link; `/report <run> full` adds Ombro's record),
-  `/stop <run_id>`, `/open [run_id]`.
-- `/outbox`, `/outbox show | approve | decline <ref>...`,
-  `/outbox resolve <ref> sent | not-sent`; decisions work while a run is going.
+- `/jobs`, `/report [job]` (the summary, deliverables and decisions, with every
+  file the job made as a link; `/report <job> full` adds Ombro's record),
+  `/stop <job_id>`, `/open [job_id]`.
+- `/approvals`, `/approvals show | approve | decline <ref>...`,
+  `/approvals resolve <ref> sent | not-sent`; decisions work while a job is going.
 - `/role`, `/role add [title] [--crew <crew>]`, `/role edit <name>`;
   `/crew`, `/crew add <name> [title]`, `/crew use <name>`.
 - `/limits`, `/limits set [level]`: one allowance level for all of Ombro.
@@ -162,19 +164,19 @@ Enter sends; Shift+Return (or Option+Return, Ctrl+J, or `\` then Return)
 starts a new line. While the Lead is working a small glyph turns beneath the
 conversation. `/new` clears the screen and starts a fresh chat.
 
-A run started here shows its progress as it goes (who was briefed, who
-returned). When any run ends while the interface is open, scheduled runs
+A job started here shows its progress as it goes (who was briefed, who
+returned). When any job ends while the interface is open, scheduled jobs
 included, a notice says how it ended, links its deliverables, says what is
 waiting and how to open the report; on opening, it says what finished and what
 is waiting since you were last here. The interface is a layer over the
 commands and files: everything it does, the command line does too. A few
-things are still command-line only: `ombro outbox edit`, `ombro schedule add`,
+things are still command-line only: `ombro approvals edit`, `ombro schedule add`,
 `ombro keys remove`.
 
 ## Interviews
 
 The Lead interviews you in three places: set-up (`ombro init`), adding a role
-(`ombro role add`) and briefing a task (`ombro brief`, or `ombro run` with no
+(`ombro role add`) and briefing a task (`ombro brief`, or `ombro start` with no
 spec). The three are kept apart: set-up records only who you are and how
 you work, for every task; a role describes a kind of work it can be briefed
 for again and again; a brief covers one task. In each the Lead asks pointed
@@ -200,40 +202,40 @@ to it as `name.previous.md`.
 
 - **Roles.** The Lead may propose only tools from the tool registry and
   skills from `skills/` (or `skills: all`); anything else is refused. The harness checks the role
-  the same way a run loads it, and warns when a role has no workspace tools
+  the same way a job loads it, and warns when a role has no workspace tools
   (so it can only work from its brief).
 - **Task briefs.** The Lead must find out what done looks like, who uses the
   result and how, the binding constraint, what would make it a waste, and the
   non-goals. A spec with any of these empty is refused. If answers are
   missing or contradict each other, the Lead lists the gaps and you can answer
-  them; if you end the brief instead (`/end`), `ombro run` records an
-  `insufficient_brief` run whose report names the gaps, and no role is briefed.
+  them; if you end the brief instead (`/end`), `ombro start` records an
+  `insufficient_brief` job whose report names the gaps, and no role is briefed.
 - **Standards are not asked about.** Accuracy, honesty and citing sources
   are Ombro's fixed rules for every Lead, role and interview, so the Lead
   never asks whether you want them.
 - **Keys** are never asked for. Anything you type is scrubbed of the values in
   `secrets/keys.env` and of common key shapes before it reaches the model or the transcript.
 - Each interview has its own token cap (see Limits) and is saved as a
-  transcript in `interviews/`. A run started from an interview
+  transcript in `interviews/`. A job started from an interview
   keeps a copy as `interview.md`, and its report shows the interview's tokens
-  separately from the run's.
+  separately from the job's.
 
 ## One Lead, many crews
 
 There is one Lead, above every crew. It is the role you talk to in chat and
-interviews, and the one that briefs roles in runs. A crew is a named group of
+interviews, and the one that briefs roles in jobs. A crew is a named group of
 roles with its own memory: a team of skills (legal, marketing, ops) or a
 separate project or client (marketing for one project, marketing for
 another), whichever suits you. A fresh install has the Lead and a `default`
 crew with one role in it, `general-assistant`, a generalist for everyday
 tasks that no other role fits.
 
-A spec names the crews its run may use (`crews: [marketing-a, ops]`); a spec
+A spec names the crews its job may use (`crews: [marketing-a, ops]`); a spec
 with no `crews:` line uses the default crew. The brief interview proposes the
 crews, asks which one where two do similar work, and shows them before you
-accept. In a run with more than one crew, roles are named `crew/role`
+accept. In a job with more than one crew, roles are named `crew/role`
 (`marketing-a/writer`); the Lead may use a role's own name where only one of
-the crews has it. Runs, specs, schedules and interview transcripts belong to
+the crews has it. Jobs, specs, schedules and interview transcripts belong to
 no crew.
 
 A spec can also say who does the work (`roles: [marketing-researcher]`),
@@ -242,7 +244,7 @@ those roles for the work itself, and others only for side tasks such as a
 check; the report says who the spec named and who else was briefed. Without
 `roles:`, the Lead chooses from the roles' descriptions.
 
-## How a run works
+## How a job works
 
 1. Ombro loads the Lead, the roles of the crews the spec names, the limits,
    the spec and those crews' memory (see Memory).
@@ -265,45 +267,45 @@ check; the report says who the spec named and who else was briefed. Without
    call per crew, then writes the report
    in a separate call with no tools. If even that is impossible, the harness
    writes the report from the journal.
-7. The harness adds one line for the run to the `memory/index.md` of each
+7. The harness adds one line for the job to the `memory/index.md` of each
    crew the spec names.
 
-A run is named for its spec, then when it started:
-`teapot-survey-20261113-1301`. Commands that take a run take any part of its
-name (`ombro report teapot`), or the latest run by default.
+A job is named for its spec, then when it started:
+`teapot-survey-20261113-1301`. Commands that take a job take any part of its
+name (`ombro report teapot`), or the latest job by default.
 
 The report reads as a report: the task's title and a status line in words,
 then a short summary, the deliverables (in the workspace or a shared folder),
 decisions for you, and what was and was not done. Ombro's own record follows
-after a divider: the run's facts, the briefs, outward actions, code, shared
+after a divider: the job's facts, the briefs, outward actions, code, shared
 folders, flagged material, the changes to each crew's notes, and usage. The
 terminal interface shows reports and the Lead's words as Markdown.
 
 ## Memory
 
-Each crew has its own memory, and a run sees only the memory of the crews its
-spec names. What a run costs stays the same however many runs came before
+Each crew has its own memory, and a job sees only the memory of the crews its
+spec names. What a job costs stays the same however many jobs came before
 it; it grows only with the crews a spec names.
 
-- **`memory/index.md`**: one line per run that named the crew, written by the harness: date, run
-  ID, outcome, one-line brief and the path to its report. Every run gets
+- **`memory/index.md`**: one line per job that named the crew, written by the harness: date, job
+  ID, outcome, one-line brief and the path to its report. Every job gets
   one, including stopped, failed and insufficient briefs.
 - **`memory/notes.md`**: standing lessons in two parts. **From you** holds
   your own dated entries (added by hand or with `/remember` in chat); no
-  model ever changes or drops them. **From runs** is the Lead's: at the end
-  of each run that briefed a role, it rewrites this part from what the roles
+  model ever changes or drops them. **From jobs** is the Lead's: at the end
+  of each job that briefed a role, it rewrites this part from what the roles
   returned, or keeps it as it is. The whole file has a cap of 10,000
   characters. A rewrite over the cap is refused and the Lead is told how much
   room it has; a second refusal leaves the notes as they were. The report's
   "Changes to notes.md" lists what was added and removed, worked out by the
   harness. The old file is kept as `notes.previous.md`.
-- **At the start of a run** the Lead is given the notes.md of each crew the
+- **At the start of a job** the Lead is given the notes.md of each crew the
   spec names and the 20 most recent index entries across those crews, each
   at most 200 characters. Nothing else.
 - **`memory.search`** (the Lead only) finds passages in the past reports of
-  runs that used the spec's crews,
+  jobs that used the spec's crews,
   reports by keyword, up to 4,000 characters in all, and is capped at 8 calls
-  a run. It does not use a round.
+  a job. It does not use a round.
 
 The figures are in `limits.md`, in characters, so they mean the same on
 every model: `memory_notes_max_chars`, `memory_index_entries`,
@@ -328,12 +330,12 @@ when to use it) in the front matter, then the method in Markdown. An optional
   it. The Lead sees the whole library and each role's skills, so a brief can
   say which skill to read. The listing in any prompt is capped at
   `skills_list_chars` (4,000 characters), and a read at `skill_read_chars`
-  (20,000), so a growing library does not grow the cost of a run. The report
+  (20,000), so a growing library does not grow the cost of a job. The report
   says which skills each role read.
-- **Models propose; you decide.** After a completed run in which a role
+- **Models propose; you decide.** After a completed job in which a role
   returned a result, the Lead may propose one skill (a new one, or a better
-  version of one), or none, which is the usual answer. A proposal waits in
-  the outbox as a `skills.propose` action: `ombro outbox show <ref>` gives the
+  version of one), or none, which is the usual answer. A proposal waits for
+  your approval as a `skills.propose` action: `ombro approvals show <ref>` gives the
   whole text, or the diff against today's version, the roles it is for, and
   any signs of injected text in it; `approve` writes it and gives it to those
   roles, `decline` drops it, and `edit` opens the text in your editor. At most
@@ -369,7 +371,7 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   `shared/<name>/...`, and can write a file in one shared for writing: it
   shows you what it will write, and nothing changes until you say yes. It
   never deletes; a file that should go is set aside (below), also after your
-  yes. It cannot brief roles, start runs, approve the outbox or use outward
+  yes. It cannot brief roles, start jobs, approve what waits for approval or use outward
   tools; those calls are refused. Chat transcripts, journals, keys and
   settings cannot be read.
 - **Brief** is the task interview. When the Lead hears a task it offers to
@@ -377,22 +379,22 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   [text]` at any point: the interview starts from what you said in the chat
   (your own messages, most recent first, up to 4,000 characters) and the
   Lead's one-line summary if you accepted its offer. It saves a spec, which
-  you run with `ombro run --spec <name>`. `/chat` goes back with nothing written.
+  you start with `ombro start --spec <name>`. `/chat` goes back with nothing written.
 - **Saved specs.** Ask to restart a task you briefed before and the Lead
   finds its spec and asks, in one question, whether to start it: yes, no, or
-  "change it". It can say who does the work this time (for this run only, as
-  `ombro run --spec <name> --role <role>` does), leaving the saved spec as it
+  "change it". It can say who does the work this time (for this job only, as
+  `ombro start --spec <name> --role <role>` does), leaving the saved spec as it
   is. "change it", or asking for a change to the task itself, opens the saved
   spec: the interview starts from its text, asks only about the change, and
   shows it as a diff (the old text is kept as `<name>.previous.md`).
 - **`/new`** saves the chat and starts a fresh one, with its own token cap
-  and usage from zero. Nothing from the old one is sent to the Lead.
+  and usage from zero. Nothing from the old one carries over.
 - **Titles.** After the first exchange a small model call names the chat in
   a few words (a confirmed brief gives it the spec's title; `/rename <title>`
   sets your own, which is kept). The file is named to match:
   `chats/teapot-makers-20261113-1417.md`.
 - **Carry on.** `/chats` lists past chats by title and reopens one: the
-  conversation is shown again and sent to the Lead, as any conversation is
+  conversation is shown again and you carry on where you left off
   (tool results from before are not kept). `ombro chats` and
   `ombro chat --resume <part of a title>` do the same on the command line.
 - **`/remember [@crew] <text>`** adds a dated line to a crew's notes.md
@@ -407,7 +409,7 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   conversation passes `chat_history_chars` (30,000), the oldest turns are no
   longer sent to the model.
 - **Saved.** Each chat is saved in `chats/`. Transcripts are never loaded into
-  a run and never searched; only what you chose to remember carries into runs.
+  a job and never searched; only what you chose to remember carries into jobs.
 
 In chat and interviews, a line that starts with `"""` begins a block of
 several lines, ended by a line that ends with `"""`, so a pasted paragraph
@@ -421,7 +423,7 @@ A schedule is a file in `schedules/<name>.md`:
 ---
 name: morning-brief
 cron: "30 7 * * 1-5"          # local time: minute hour day month weekday
-spec: specs/morning-brief.md  # a saved spec, which names the crews; scheduled runs never interview
+spec: specs/morning-brief.md  # a saved spec, which names the crews; scheduled jobs never interview
 enabled: true
 limits: {allowance: conservative, run_timeout: 15m}   # optional; in tokens
 grace: 10m                     # optional; default schedule_grace in limits.md
@@ -429,35 +431,35 @@ grace: 10m                     # optional; default schedule_grace in limits.md
 ```
 
 The files are the source of truth. `ombro schedule install` adds one system
-scheduler entry (a launch agent on macOS, a crontab line elsewhere) that runs
+scheduler entry (a launch agent on macOS, a crontab line elsewhere) that jobs
 `ombro tick` every minute; nothing is installed without your confirmation,
 and `ombro schedule add` offers it when it is missing. Editing a schedule
 needs no reinstalling: the next tick reads it, and the change takes effect
 from the schedule's next slot.
 
 - **Starting.** Tick starts each due slot once, detached, exactly as
-  `ombro run --detach` does, under limits fixed at the start and recorded in
+  `ombro start --detach` does, under limits fixed at the start and recorded in
   job.md. job.md and the report name the schedule and the slot. The limits
   are limits.md, then the spec's `limits:`, then the schedule's. A scheduled
-  run must have a token cap, so `unlimited` is refused.
+  job must have a token cap, so `unlimited` is refused.
 - **Late and missed.** A slot is started if a tick sees it within its grace
   period. A slot missed because the machine was off, asleep or logged out is
   never started late: it is noted in the `index.md` of each crew its spec
   names, one entry per gap:
 
   ```
-  - 2026-11-10 · schedule:morning-brief@2026-11-10T07:30..2026-11-12T07:30 · missed · 3 slots not run: the machine was off or asleep (no tick from 09 Nov 23:00 to 12 Nov 09:14) · schedules/morning-brief.md
+  - 2026-11-10 · schedule:morning-brief@2026-11-10T07:30..2026-11-12T07:30 · missed · 3 slots: the machine was off or asleep (no tick from 09 Nov 23:00 to 12 Nov 09:14) · schedules/morning-brief.md
   ```
-- **Overlap.** If a schedule's previous run is still going, or
-  `schedule_max_running` scheduled runs are going, or this tick has already
+- **Overlap.** If a schedule's previous job is still going, or
+  `schedule_max_running` scheduled jobs are going, or this tick has already
   started `schedule_max_starts`, the slot waits while it is within grace, then
   is skipped and noted with the reason.
 - **Never twice.** Ticks take a lock, and a slot is looked up by its
-  wall-clock time in the runs and the index before it starts. When clocks go
-  back, the repeated hour's slots run once; when they go forward, a slot in
-  the skipped hour runs at the first minute after the change.
+  wall-clock time in the jobs and the index before it starts. When clocks go
+  back, the repeated hour's slots start once; when they go forward, a slot in
+  the skipped hour starts at the first minute after the change.
 - **Never silent.** A due slot that cannot start (a missing spec, invalid
-  limits, no model) becomes a `failed` run with a report and an index entry.
+  limits, no model) becomes a `failed` job with a report and an index entry.
   A schedule file with a problem is shown by `ombro schedule` and logged once.
 - **Logs.** `scheduler/tick.log` has one line per tick and one per start or
   note. `scheduler/scheduler.log` catches anything the system scheduler sees
@@ -472,10 +474,10 @@ A role gets only the tools its `config.md` lists:
 |---|---|
 | `web.search` | Web search through a provider. Returns titles, URLs and snippets. |
 | `web.fetch` | Reads one page as text or Markdown through a provider. |
-| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the run's `workspace/` and `scratch/` folders, and in folders shared with the run. |
-| `workspace.place` | Copies a workspace file outside the run: at once into a folder shared for writing, staged in the outbox anywhere else. |
+| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the job's `workspace/` and `scratch/` folders, and in folders shared with the job. |
+| `workspace.place` | Copies a workspace file outside the job: at once into a folder shared for writing, waiting for your approval anywhere else. |
 | `code.run` | Runs a Python script the role writes, in the operating system's sandbox. See Code and shared folders. |
-| `memory.search` | The Lead only: passages from past reports of runs that used the spec's crews. |
+| `memory.search` | The Lead only: passages from past reports of jobs that used the spec's crews. |
 
 Workspace paths start with `workspace/` (deliverables) or `scratch/` (working
 notes). Absolute paths, `..`, and symlinks that lead outside those folders
@@ -493,7 +495,7 @@ provider backs each one:
 | `firecrawl` | search, fetch | Needs `FIRECRAWL_API_KEY`. |
 | `duckduckgo` | search | No key. Unofficial and rate-limited, so best effort. |
 | `direct` | fetch | No key. A plain download. Local and private network addresses are refused. |
-| `fake` | search, fetch | Invented results. Records every request in the run's `fake-calls.jsonl`. |
+| `fake` | search, fetch | Invented results. Records every request in the job's `fake-calls.jsonl`. |
 
 ```yaml
 ---
@@ -506,18 +508,18 @@ providers:
 ---
 ```
 
-Without `max_calls`, a run may make 20 searches and 30 fetches through
+Without `max_calls`, a job may make 20 searches and 30 fetches through
 Firecrawl, which bills each call, and 60 searches through DuckDuckGo and 100
 direct fetches, which are free. `/tools web.search` changes either.
 
-`max_calls` caps a tool's calls per run, which is also how a service that
+`max_calls` caps a tool's calls per job, which is also how a service that
 bills in its own units, such as Firecrawl credits, is kept in bounds. Like
-limits, tool settings are fixed when a run starts and recorded in `job.md`.
+limits, tool settings are fixed when a job starts and recorded in `job.md`.
 
 Every secret lives in one owner-only folder, `secrets/`: single keys in
 `keys.env`, sign-ins for remote MCP servers in `oauth/`, and key files (such
 as a service account's) by name. Keys are read at the moment of use, so a key
-set with `ombro keys set` is picked up on the next call, even in a run already
+set with `ombro keys set` is picked up on the next call, even in a job already
 going. Nothing in `secrets/` ever reaches a model, a journal or a report. A
 `.env` from an earlier version is moved into `secrets/keys.env` the first
 time Ombro runs, and Ombro says so.
@@ -535,35 +537,35 @@ in the operating system's own sandbox, which limits what any code can reach:
 - **Linux:** bubblewrap (`bwrap`; install it with your package manager, for
   example `sudo apt install bubblewrap`). The script starts in an empty
   file system with no network, holding only what is bound into it.
-- Anywhere the sandbox cannot be set up, `code.run` is left out of the run
+- Anywhere the sandbox cannot be set up, `code.run` is left out of the job
   and the report says why. Code never runs unconfined.
 
-A script can read and write the run's `workspace/` and `scratch/`, and the
-folders shared with the run as granted. It can read what Python needs to
+A script can read and write the job's `workspace/` and `scratch/`, and the
+folders shared with the job as granted. It can read what Python needs to
 start, and nothing else: not the rest of the Ombro home (secrets, settings,
-roles, memory, other runs, this run's journal, `job.md` or report), not the
+roles, memory, other jobs, this job's journal, `job.md` or report), not the
 rest of your files, and not the network. It runs on the Python Ombro runs
 on, isolated, with the standard library only. It cannot start other
 programs (on Linux it can start programs already inside its sandbox, which
 still has no network). Its environment holds no keys. It may change what is
 in `workspace/`, `scratch/` and a writable shared folder, but never the
-folders themselves; if one is ever not a real folder where the run started,
+folders themselves; if one is ever not a real folder where the job started,
 the tools refuse it.
 
-Each script is limited by `code_timeout` (60s, never more than the run has
+Each script is limited by `code_timeout` (60s, never more than the job has
 left), CPU time, `code_max_memory` (1 GB; on macOS by watching the script),
 5 MB for any one file, and `code_output_chars` (8,000 characters of output
 shown to the role: the start and end, with the middle cut). `code_max_total`
-(2 GB) caps everything in a run's `workspace/` and `scratch/`: past it, no
-more scripts run in that run. `code.run` has
-10 calls a run unless `tools.md` says otherwise. The role is told the exit
+(2 GB) caps everything in a job's `workspace/` and `scratch/`: past it, no
+more scripts run in that job. `code.run` has
+10 calls a job unless `tools.md` says otherwise. The role is told the exit
 status, the output, the time, any limit that stopped it, and which files
 were created, changed or removed, worked out by the harness. Each script and
-its output are kept in the run's `code/` folder, which scripts cannot write
+its output are kept in the job's `code/` folder, which scripts cannot write
 to. The journal has a `code_run` event for each, and the report a Code
 section.
 
-**Shared folders.** A run reaches only its own `workspace/` and `scratch/`
+**Shared folders.** A job reaches only its own `workspace/` and `scratch/`
 unless you share a folder. Grants live in `folders.md`, by name:
 
 ```yaml
@@ -576,7 +578,7 @@ declined: [~/Projects/site]
 ```
 
 - **Only you grant.** `ombro folder add <path>` asks read or write. When
-  `ombro brief` (or `ombro run` without a spec) starts in a folder that is
+  `ombro brief` (or `ombro start` without a spec) starts in a folder that is
   not shared, Ombro asks once whether to share it; a "no" is remembered in
   `declined`. In the brief interview the Lead asks which folders the task
   needs; a folder not yet shared is put to you when you accept the spec.
@@ -586,10 +588,10 @@ declined: [~/Projects/site]
   `/run/media` on Linux). Never the root, system folders, your home folder
   itself, hidden folders, `~/Library`, or the Ombro home.
 - **A spec chooses.** Grants apply to every crew, and a spec names the ones
-  its run uses (`folders: [brand, photos]`, or `folders: {photos: read}` to
+  its job uses (`folders: [brand, photos]`, or `folders: {photos: read}` to
   lower write to read). A spec cannot add a folder that is not shared; one
   that is no longer shared is left out and the report says so. Folders are
-  fixed when a run starts and recorded in `job.md`. Runs never stop to ask.
+  fixed when a job starts and recorded in `job.md`. Jobs never stop to ask.
 - **Inside a grant** roles work as you would: `shared/<name>/...` through
   the workspace tools and in scripts. Changes there are internal and run
   without approval; the grant is the permission, and presets do not change it.
@@ -600,13 +602,13 @@ declined: [~/Projects/site]
   newer file replaces it, at the top of the same folder, with a line in that
   folder's `README.md` saying why. The report lists what was set aside. Only
   you empty either folder.
-- **Replacing keeps the old version.** The first time a run replaces a file in
+- **Replacing keeps the old version.** The first time a job replaces a file in
   a shared folder, its old version is copied into `Archive/` with a note (once
-  per file per run). In chat, every replacement keeps the old version. Scripts
+  per file per job). In chat, every replacement keeps the old version. Scripts
   that replace files are covered by the backup clone; scripts are told never
   to delete, though that is not yet enforced.
-- **Backup.** Before a run that can write to a shared folder starts, Ombro
-  clones it into the run's `backup/` if the disk allows (APFS on macOS,
+- **Backup.** Before a job that can write to a shared folder starts, Ombro
+  clones it into the job's `backup/` if the disk allows (APFS on macOS,
   reflinks on Linux). A clone is near-instant and takes almost no space until
   files change. A server share usually cannot be cloned: it stays writable,
   `ombro folder` says no backup will be taken, and the server's own
@@ -614,12 +616,12 @@ declined: [~/Projects/site]
   removed, from a before-and-after comparison by the harness.
 - **Somewhere not shared.** To save a file in a folder that is not shared
   for writing, a role writes it in `workspace/` and calls `workspace.place`.
-  The copy waits in the outbox with a copy of the file as it was; `ombro
-  outbox approve` checks the destination again, and never replaces a file
+  The copy waits for your approval with a copy of the file as it was; `ombro
+  approvals approve` checks the destination again, and never replaces a file
   unless the action says `overwrite: true`. Approving a placement does not
   share the folder. Reading a folder that is not shared is refused, and the
   report lists the paths refused, so you can share the folder before the
-  next run.
+  next job.
 
 ## Untrusted material
 
@@ -635,18 +637,18 @@ noticing:
   copies a fence is neutralised. The fixed rules say fenced text is assessed,
   never obeyed.
 - Once a role has read material in a brief, its external calls in that brief
-  are staged in the outbox even under `auto`, unless the spec allows that tool
-  by name. The report says which were staged for this reason.
+  wait for your approval even under `auto`, unless the spec allows that tool
+  by name. The report says which waited for this reason.
 - `web.fetch` refuses an address with more than `fetch_max_query` (200)
   characters after `?`, so a page cannot have a role send data out in a link.
 - Secrets never enter a prompt, code has no network, and nothing is deleted.
 - Common signs of injected instructions ("ignore previous instructions",
   text addressed to an AI, hidden characters, requests to send or delete
   files) are flagged in the report's Material section, with where they came
-  from. A flag never stops a run; it tells you what to check. In chat, Ombro
+  from. A flag never stops a job; it tells you what to check. In chat, Ombro
   says so in the conversation at once.
 
-## Outside services: MCP, permissions and the outbox
+## Outside services: MCP, permissions and approvals
 
 Ombro builds no integrations of its own. Every tool that reaches an outside
 service (a sheet, a calendar, a social account, a CRM, a design tool, Zapier)
@@ -678,7 +680,7 @@ command or address, and asks for each secret in a hidden prompt: the value goes
 into `secrets/keys.env` and tools.md gets only `${NAME}`, in `env` for a local
 server or `headers` for a remote one. It warns when a package runner's server
 or library is not pinned to an exact version, refuses a `${NAME}` on the
-command line, checks the entry as a run would, and writes nothing until you
+command line, checks the entry as a job would, and writes nothing until you
 confirm. The same as flags, for scripts and interfaces:
 
 ```bash
@@ -717,8 +719,8 @@ service from the server itself, registers itself as a native app (or uses
 a `client_id` you give the server in `tools.md`), and signs in with PKCE,
 binding the token to that server's address. The sign-in is kept in
 `secrets/oauth/<server>.json`, readable only by you, and renews itself. A
-run never opens a browser: if a sign-in has lapsed, that server's tools are
-left out, the report says to connect again, and staged actions keep waiting.
+job never opens a browser: if a sign-in has lapsed, that server's tools are
+left out, the report says to connect again, and actions waiting for approval keep waiting.
 
 **Pin what a server runs.** A package runner such as `uvx` downloads and
 runs the server's code, so name an exact version (`==0.6.3`, never
@@ -727,7 +729,7 @@ those where the server needs it: `mcp-google-sheets` 0.6.3 asks for any
 `mcp>=1.8`, gets 2.x and fails to start, hence `--with "mcp==1.30.0"`. If a
 server can limit the tools it offers (here `--include-tools`), offer only
 those your roles use. When a server fails to start, Ombro shows the last
-lines it printed; in a run, all of it is in the run's `mcp-<server>.log`.
+lines it printed; in a job, all of it is in the job's `mcp-<server>.log`.
 
 **Classes.** Each tool is classed by who it reaches, as you would judge a
 trusted employee's work:
@@ -770,7 +772,7 @@ servers:
 line to add where a tool is external only by default.
 
 **Permissions.** Every outward call is allowed (it runs, and is recorded),
-staged (it waits in the outbox) or refused:
+held for approval (it waits under Approvals) or refused:
 
 | `outward` | read-only | internal | external |
 |---|---|---|---|
@@ -789,27 +791,27 @@ The task interview asks what may happen without you whenever the crew has
 external tools, and writes the answer into the spec. A crew whose tools are
 only read-only and internal needs no answer. `permission: refuse` in
 `tools.md` beats everything, for every class, read-only included: a refused
-tool is not offered to any role. Permissions are fixed when a run starts and
-recorded in `job.md`; scheduled runs follow them like any other.
+tool is not offered to any role. Permissions are fixed when a job starts and
+recorded in `job.md`; scheduled jobs follow them like any other.
 
-**The outbox.** A staged call does not happen. The harness writes it to the
-run's `outbox/` as one file (tool, arguments, the role and its reason, the
-time, a status), tells the role it was staged, and never stages an identical
-call twice in a run. Staging counts towards the tool's `max_calls`. The
-report's Outward actions section lists work done, sends allowed, and
-everything staged, from the harness's own record.
+**Approvals.** A call held for approval does not happen. The harness writes
+it to the job's `outbox/` as one file (tool, arguments, the role and its
+reason, the time, a status), tells the role it waits for approval, and never
+holds an identical call twice in a job. Each one counts towards the tool's
+`max_calls`. The report's Outward actions section lists work done, sends
+allowed, and everything that waited for approval, from the harness's own record.
 
-You can decide while the run is still going. Staging and every decision take
-the run's outbox lock, so the two never cross. An action you approve during
-the run is carried out by the approval, not by the run: the role is not told,
-and nothing it returns reaches the run. The report shows each staged action
+You can decide while the job is still going. Holding an action and every decision take
+the job's outbox lock, so the two never cross. An action you approve during
+the job is carried out by the approval, not by the job: the role is not told,
+and nothing it returns reaches the job. The report shows each action that waited
 as it stood when the report was written (waiting, or decided by you), and
 decisions made after that are added at the end.
 
 You decide on named actions only; there is no "approve all":
 
-- `ombro outbox` lists what is waiting, across runs, by reference (`ab12-3`).
-- `ombro outbox approve ab12-1 ab12-3` shows each in full, asks once, and
+- `ombro approvals` lists what is waiting, across jobs, by reference (`ab12-3`).
+- `ombro approvals approve ab12-1 ab12-3` shows each in full, asks once, and
   runs them. `decline` drops them for good. `edit` changes an action's
   arguments (in your editor, or `--arguments '<json>'`); they are checked
   against the tool's rules and the action waits for approval again. You may
@@ -818,11 +820,11 @@ You decide on named actions only; there is no "approve all":
 - An action runs at most once. Its status is written before and after the
   call, under a lock. If Ombro stops mid-call, or the server does not
   answer, the action becomes `uncertain`: it may or may not have happened,
-  and it is never retried. Settle it with `ombro outbox resolve <ref> sent`
+  and it is never retried. Settle it with `ombro approvals resolve <ref> sent`
   or `not-sent`.
-- Outcomes are recorded in the action's file, the run's journal, job.md and
-  an "Outbox decisions" section added to the report.
-- Every outbox command takes `--json` (as do the other listing commands), and `approve` and `decline` take
+- Outcomes are recorded in the action's file, the job's journal, job.md and
+  an "Approvals" section added to the report.
+- Every `ombro approvals` command takes `--json` (as do the other listing commands), and `approve` and `decline` take
   `--yes`, for an interface that has already shown and selected the actions.
 
 `ombro-fake-mcp` is a fake MCP server, with one tool of each class, that
@@ -835,10 +837,10 @@ Limits are enforced by code, never by asking the model. Every model call and
 tool call passes through one gate that checks all limits before the call and
 records the usage after it.
 
-One word in `limits.md` sets how far runs, chats and interviews may go, for the whole of
+One word in `limits.md` sets how far jobs, chats and interviews may go, for the whole of
 Ombro (`ombro limits set <level>`, or `/limits` in the terminal interface):
 
-| `allowance` | run tokens | rounds | run time | each interview | each chat |
+| `allowance` | job tokens | rounds | job time | each interview | each chat |
 |---|---|---|---|---|---|
 | `conservative` | 300,000 | 4 | 15m | 50,000 | 100,000 |
 | `moderate` (default) | 800,000 | 8 | 30m | 100,000 | 200,000 |
@@ -850,13 +852,13 @@ which wins over the level. Even `unlimited` keeps every other cap:
 
 | Limit | Scope |
 |---|---|
-| `max_tokens` | run; total tokens |
-| `max_rounds` | run; Lead delegation rounds |
-| `run_timeout` | run; wall clock |
+| `max_tokens` | job; total tokens |
+| `max_rounds` | job; Lead delegation rounds |
+| `job_timeout` | job; wall clock |
 | `max_steps` | each brief; model calls a role may make |
-| `tool_max_calls` | each tool, per run (`max_calls` in `tools.md`) |
+| `tool_max_calls` | each tool, per job (`max_calls` in `tools.md`) |
 | `max_output_tokens` | each model call |
-| `outward` | each outward call: allowed, staged or refused (see above) |
+| `outward` | each outward call: allowed, held for approval or refused (see above) |
 | `loop_threshold` | the same tool with the same arguments repeated |
 | `code_timeout`, `code_max_memory`, `code_output_chars` | each script `code.run` runs |
 | `interview_max_tokens`, `interview_max_turns` | each interview |
@@ -864,29 +866,29 @@ which wins over the level. Even `unlimited` keeps every other cap:
 
 Limits and usage are in tokens; Ombro reports no costs. Settings from earlier
 versions (`budget_usd`, prices in `models.md`, `cost_per_call` in `tools.md`,
-`display_currency` in preferences) are accepted and ignored. A run's usage is
-kept under `usage:` in its `job.md`; older runs that call it `spend:` are still
+`display_currency` in preferences) are accepted and ignored. A job's usage is
+kept under `usage:` in its `job.md`; older jobs that call it `spend:` are still
 read.
 
-Tokens, rounds, time and a stop request end the whole run. Narrower limits
-end only what they bound, and the run goes on:
+Tokens, rounds, time and a stop request end the whole job. Narrower limits
+end only what they bound, and the job goes on:
 
 - A role's `max_steps` or loop detection ends that brief. The Lead is told and
   can brief again more narrowly or finish. The report records which limit
   ended which brief.
 - A tool that has used its `max_calls` refuses further calls for the rest of
-  the run. The role is told and carries on without it.
+  the job. The role is told and carries on without it.
 - The Lead's own step limit, and the Lead repeating the same call, still stop
-  the run.
+  the job.
 
 A share of the token limit (`report_reserve`) is held back so the final
 report can always be written. The Lead's rewrite of notes.md also comes out
-of the reserve, and is skipped if it would leave too little for the report. Limits are fixed when a run starts and recorded
+of the reserve, and is skipped if it would leave too little for the report. Limits are fixed when a job starts and recorded
 in its `job.md`. Interviews run under their own gate and cap, so an interview
-never uses a run's allowance.
+never uses a job's allowance.
 
-If a run's process dies, the next `ombro` command that notices writes a report
-from the journal and marks the run `failed`.
+If a job's process dies, the next `ombro` command that notices writes a report
+from the journal and marks the job `failed`.
 
 ## Files
 
@@ -906,7 +908,7 @@ matter, except the journal, which is JSON Lines:
   schedules/<name>.md
   interviews/<time>-<kind>.md
   removed/schedules/<name>.md          schedules removed with `ombro schedule remove`
-  runs/<run_id>/job.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/,
+  jobs/<job_id>/job.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/,
                 code/ (scripts and their output), backup/ (clones of writable shared folders)
   crews/<crew>/
     crew.md
@@ -914,6 +916,9 @@ matter, except the journal, which is JSON Lines:
     memory/index.md, notes.md
     removed/<role>/                    roles removed with `ombro role remove`
 ```
+
+Jobs were once called runs. A home from then keeps its jobs: on start,
+Ombro moves its `runs/` folder to `jobs/`, and each `run.md` to `job.md`.
 
 A home made by an earlier Ombro, with a Lead inside each crew, is refused
 with a message: move it aside (keeping `secrets/` if you want your keys) and
