@@ -65,7 +65,7 @@ class Home:
 
     @property
     def folders(self) -> Path:
-        """Folders the user has shared with runs, and folders they declined to share."""
+        """Folders the user has shared with jobs, and folders they declined to share."""
         return self.root / "folders.md"
 
     @property
@@ -102,8 +102,8 @@ class Home:
         return self.root / "schedules"
 
     @property
-    def runs_dir(self) -> Path:
-        return self.root / "runs"
+    def jobs_dir(self) -> Path:
+        return self.root / "jobs"
 
     @property
     def interviews_dir(self) -> Path:
@@ -166,14 +166,14 @@ LIMITS_META = {
 }
 
 LIMITS_BODY = """\
-Default caps for every run and interview in this home. Limits are fixed when
-a run starts and recorded in that run's run.md; editing this file never
-changes a run already in progress. A spec can override any of them for its
-own run with a `limits:` block in its front matter.
+Default caps for every job and interview in this home. Limits are fixed when
+a job starts and recorded in that job's job.md; editing this file never
+changes a job already in progress. A spec can override any of them for its
+own job with a `limits:` block in its front matter.
 
-allowance: how far a run or interview may go before it is stopped. One of
+allowance: how far a job or interview may go before it is stopped. One of
 
-  level          run tokens   rounds   run time   each interview   each chat
+  level          job tokens   rounds   job time   each interview   each chat
   conservative     300,000       4       15m          50,000         100,000
   moderate         800,000       8       30m         100,000         200,000
   generous       2,000,000      16       1h          250,000       1,000,000
@@ -185,9 +185,9 @@ loop detection and tool calls. `ombro limits` shows what is in force, and
 
 To set one value by hand instead, add it here; it wins over the level:
 
-- max_tokens: total tokens for a run (`unlimited` for no cap).
-- max_rounds: how many times the Lead may brief a role in one run.
-- run_timeout: wall-clock limit for a run, e.g. 90s, 30m, 2h.
+- max_tokens: total tokens for a job (`unlimited` for no cap).
+- max_rounds: how many times the Lead may brief a role in one job.
+- job_timeout: wall-clock limit for a job, e.g. 90s, 30m, 2h.
 - interview_max_tokens: total tokens for one interview (set-up, role or brief).
 - interview_max_turns: how many answers an interview may take.
 - chat_max_tokens: total tokens for one `ombro chat` session.
@@ -200,7 +200,7 @@ Always in force:
 - report_reserve: share of max_tokens held back so the final report can always be written.
 - loop_threshold: how many times a role may make the same tool call with the same arguments.
 - max_steps: model calls a role may make for one brief, by kind. A role's config.md can set its own.
-- tool_max_calls: calls per tool per run. `default` applies to any tool not
+- tool_max_calls: calls per tool per job. `default` applies to any tool not
   named; `max_calls` in tools.md sets one tool's cap.
 - report_max_output_tokens, report_timeout: bounds on the final report call
   (and, separately, on the Lead's rewrite of notes.md just before it).
@@ -210,7 +210,7 @@ Memory, in characters so they can be checked in a text editor:
 - memory_notes_max_chars: the cap on a crew's memory/notes.md, both parts
   together. A rewrite or a remember over the cap is refused.
 - memory_index_entries, memory_index_entry_chars: how many of the most
-  recent index.md entries a run's Lead is given, and how long each may be.
+  recent index.md entries a job's Lead is given, and how long each may be.
 - memory_search_max_chars: the most text one memory.search returns.
 
 Chat:
@@ -227,19 +227,19 @@ Schedules (crews/<crew>/schedules/):
 - schedule_grace: how late `ombro tick` may still start a slot, e.g. 10m.
   A slot not started by then is skipped and noted in the crew's index.md.
   A schedule file can set its own `grace`.
-- schedule_max_running: scheduled runs that may be in progress at once.
-- schedule_max_starts: scheduled runs one tick may start.
+- schedule_max_running: scheduled jobs that may be in progress at once.
+- schedule_max_starts: scheduled jobs one tick may start.
 
 Code (the code.run tool), for each script a role runs:
 
-- code_timeout: wall-clock time, e.g. 60s; never more than the run has left.
+- code_timeout: wall-clock time, e.g. 60s; never more than the job has left.
   CPU time is capped at the same.
 - code_max_memory: memory, e.g. 1GB or 512MB.
 - code_output_chars: how much of a script's output the role sees; the start
-  and the end are kept and the middle cut. The run's code/ folder keeps more.
-- code_max_total: all the files in the run's workspace/ and scratch/
+  and the end are kept and the middle cut. The job's code/ folder keeps more.
+- code_max_total: all the files in the job's workspace/ and scratch/
   together, e.g. 2GB. Once scripts have written more, code.run runs no
-  more scripts in that run, and the report says so.
+  more scripts in that job, and the report says so.
 - code.run has its own max_calls (10 unless tool_max_calls or tools.md says).
 
 Limits and usage are in tokens. Ombro reports no costs.
@@ -281,35 +281,35 @@ TOOLS_META = {
 TOOLS_BODY = """\
 Which provider backs each tool, and per-tool settings. Roles name tools by
 what they do (`web.search`), never by provider, so changing provider here is
-a one-line edit and no role changes. Settings are fixed when a run starts and
-recorded in its run.md.
+a one-line edit and no role changes. Settings are fixed when a job starts and
+recorded in its job.md.
 
 Tools:
 - web.search: providers `firecrawl` (needs a key), `duckduckgo` (no key;
   unofficial and rate-limited, so best effort) or `fake`.
 - web.fetch: providers `firecrawl` (needs a key), `direct` (no key; a plain
   page download that refuses local and private network addresses) or `fake`.
-- Calls a run may make, unless max_calls says otherwise: web.search 20 with
+- Calls a job may make, unless max_calls says otherwise: web.search 20 with
   firecrawl (each call is billed) or 60 with duckduckgo; web.fetch 30 with
   firecrawl or 100 with direct.
-- workspace.read, workspace.write, workspace.list: files in the run's
-  workspace/ and scratch/ folders, and in shared folders the run was given
+- workspace.read, workspace.write, workspace.list: files in the job's
+  workspace/ and scratch/ folders, and in shared folders the job was given
   (folders.md). No provider.
 - workspace.place: copies a workspace file to a shared folder, or stages the
   copy in the outbox when the destination is not shared for writing.
 - code.run: runs a Python script a role writes, in the operating system's
-  sandbox: standard library only, no network, nothing outside the run's
+  sandbox: standard library only, no network, nothing outside the job's
   folders and its shared folders. Limits are in limits.md.
 
 Settings for any tool:
 - provider: which provider backs it.
-- max_calls: calls allowed per run. Tools not named use `default` in limits.md.
+- max_calls: calls allowed per job. Tools not named use `default` in limits.md.
   Services that bill in their own units, such as Firecrawl credits, are
   limited this way too.
 
 providers: settings for each provider. `key` names the variable in secrets/keys.env that
 holds its key (set it with `ombro keys set NAME`). `fake` returns invented
-results and records every request in the run's fake-calls.jsonl.
+results and records every request in the job's fake-calls.jsonl.
 
 servers: MCP servers, which supply every tool that reaches an outside
 service. Each has either `command` and `args` (a server Ombro starts, which
@@ -417,7 +417,7 @@ LEAD_CONFIG = {
     "name": "lead",
     "title": "Lead",
     "kind": "lead",
-    "description": "The one Lead, above every crew. Briefs the crews' roles, keeps the run to the spec and writes "
+    "description": "The one Lead, above every crew. Briefs the crews' roles, keeps the job to the spec and writes "
                    "the report.",
     "model": "default",
 }
@@ -496,7 +496,7 @@ NOTES_BODY = """\
 
 ## From you
 
-## From runs
+## From jobs
 """
 
 
@@ -531,7 +531,8 @@ def ensure_home(home: Home) -> list[Path]:
         os.chmod(home.root, 0o700)
     except OSError:
         pass
-    for sub in ("preferences", "skills", "chats", "crews", "lead", "specs", "schedules", "runs", "interviews"):
+    migrate_jobs(home)
+    for sub in ("preferences", "skills", "chats", "crews", "lead", "specs", "schedules", "jobs", "interviews"):
         (home.root / sub).mkdir(exist_ok=True)
     home.ensure_secrets()
     from ombro.keys import migrate
@@ -554,3 +555,48 @@ def ensure_home(home: Home) -> list[Path]:
         _write_if_missing(folder / "config.md", mdfile.dump(ASSISTANT_CONFIG), created)
         _write_if_missing(folder / "soul.md", ASSISTANT_SOUL, created)
     return created
+
+
+def migrate_jobs(home: Home) -> str | None:
+    """Jobs were once called runs. Move an old home's runs/ folder to jobs/, and in each
+    job rename run.md to job.md (its run_id becoming job_id). Index lines that point at
+    jobs/ follow. Returns a line saying what was done, or None if there was nothing to do."""
+    old = home.root / "runs"
+    new = home.jobs_dir
+    if not old.is_dir() or old.is_symlink():
+        return None
+    if new.exists() and any(new.iterdir()):
+        return None  # both exist and jobs/ is in use: leave jobs/ for the user to look at
+    if new.is_dir():
+        new.rmdir()
+    old.rename(new)
+    moved = 0
+    for d in sorted(new.iterdir()):
+        md = d / "run.md"
+        if not d.is_dir() or not md.is_file() or (d / "job.md").exists():
+            continue
+        try:
+            meta, body = mdfile.read(md)
+        except (OSError, mdfile.FrontMatterError):
+            md.rename(d / "job.md")
+            moved += 1
+            continue
+        if "run_id" in meta:
+            meta = {("job_id" if k == "run_id" else k): v for k, v in meta.items()}
+        limits = meta.get("limits")
+        if isinstance(limits, dict) and "run_timeout" in limits:
+            meta["limits"] = {("job_timeout" if k == "run_timeout" else k): v for k, v in limits.items()}
+        from ombro.jobs import JOB_BODY
+
+        mdfile.write(d / "job.md", meta, JOB_BODY if "the " + "run" in body else body)
+        md.unlink()
+        (d / ".run.lock").unlink(missing_ok=True)
+        moved += 1
+    for crew in home.crews():
+        index = home.crew_dir(crew) / "memory" / "index.md"
+        if index.is_file():
+            text = index.read_text(encoding="utf-8")
+            old_ref = " · " + "runs" + "/"  # spelled apart so renames leave it alone
+            if old_ref in text:
+                mdfile.write_atomic(index, text.replace(old_ref, " · jobs/"))
+    return f"Runs are now called jobs: moved {moved} from {old} to {new}."

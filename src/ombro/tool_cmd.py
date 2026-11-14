@@ -1,5 +1,5 @@
 """Changing a native tool from an interface or the command line: which provider backs it
-(web.search, web.fetch) and how many calls a run may make. Written to tools.md, keeping
+(web.search, web.fetch) and how many calls a job may make. Written to tools.md, keeping
 everything else in it. MCP servers are added and removed elsewhere (server_cmd)."""
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def describe(home: Home, tool: str) -> list[str]:
             lines.append(f"key {key}: {'set' if keys.get_key(home, key) else 'NOT SET'}")
     from ombro.settings import load_limits
 
-    lines.append(f"max calls in a run: {load_limits(home, None, settings).max_calls_for(tool)}")
+    lines.append(f"max calls in a job: {load_limits(home, None, settings).max_calls_for(tool)}")
     return lines
 
 
@@ -81,7 +81,7 @@ def flow(home: Home, ui: UI, tool: str, provider: str | None = None, max_calls: 
             return 1
         keys.set_key(home, name, value)
     if asked:
-        raw = str(ui.ask(Field("max_calls", f"How many {tool} calls may one run make? (Enter keeps it as it is)",
+        raw = str(ui.ask(Field("max_calls", f"How many {tool} calls may one job make? (Enter keeps it as it is)",
                                pattern=r"\d*", invalid="A whole number, or Enter.")) or "").strip()
         max_calls = int(raw) if raw else None
     try:

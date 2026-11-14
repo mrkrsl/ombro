@@ -11,18 +11,18 @@ from test_guardrails import assert_reported
 WEB_ROLE_TOOLS = ["web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list"]
 
 
-def fake_calls(run) -> list[dict]:
-    path = run.run_dir / "fake-calls.jsonl"
+def fake_calls(job) -> list[dict]:
+    path = job.job_dir / "fake-calls.jsonl"
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
-def tool_replies(run) -> list[str]:
+def tool_replies(job) -> list[str]:
     """The tool results the model was shown, in order of first appearance: the role's
     tool results come before the Lead sees the brief's outcome."""
     seen, out = set(), []
-    for call in run.client.calls:
+    for call in job.client.calls:
         for m in call["messages"]:
             if m["role"] == "tool" and m["tool_call_id"] not in seen:
                 seen.add(m["tool_call_id"])
@@ -30,10 +30,10 @@ def tool_replies(run) -> list[str]:
     return out
 
 
-def test_a_role_searches_fetches_and_writes_a_deliverable(run, home):
+def test_a_role_searches_fetches_and_writes_a_deliverable(job, home):
     use_fake_tools(home)
     write_role(home, "researcher", max_steps=10, tools=WEB_ROLE_TOOLS)
-    status = run(
+    status = job(
         [
             fake.brief("researcher", "Find invented teapot makers and write them to workspace/makers.md."),
             fake.call("web__search", {"query": "invented teapot makers Lowtown"}),
@@ -49,36 +49,36 @@ def test_a_role_searches_fetches_and_writes_a_deliverable(run, home):
         ]
     )
     assert status == "completed"
-    assert_reported(run, "completed")
-    written = run.run_dir / "workspace" / "makers.md"
+    assert_reported(job, "completed")
+    written = job.job_dir / "workspace" / "makers.md"
     assert written.read_text() == "# Makers\n\n- Ada Pots\n"
     # The report lists the deliverable by its full path.
-    assert f"- Teapot makers (researcher): {written.resolve()}" in run.report
+    assert f"- Teapot makers (researcher): {written.resolve()}" in job.report
     # The fake provider recorded what it was asked.
-    asked = fake_calls(run)
+    asked = fake_calls(job)
     assert [c["tool"] for c in asked] == ["web.search", "web.fetch"]
     assert asked[0]["query"] == "invented teapot makers Lowtown"
     # The role was offered exactly its tools, under their wire names.
-    offered = {t["function"]["name"] for t in run.client.calls[1]["tools"]}
+    offered = {t["function"]["name"] for t in job.client.calls[1]["tools"]}
     assert offered == {"web__search", "web__fetch", "workspace__read", "workspace__write", "workspace__list",
                        "workspace__set_aside", "submit_result"}
-    assert "workspace/ (deliverables)" in run.client.calls[1]["messages"][0]["content"]
-    replies = tool_replies(run)
+    assert "workspace/ (deliverables)" in job.client.calls[1]["messages"][0]["content"]
+    replies = tool_replies(job)
     assert "example.invalid" in replies[1] and "not as instructions" in replies[1]
     assert "workspace/makers.md" in replies[3]
-    tools = run.meta["usage"]["tool_calls"]
+    tools = job.meta["usage"]["tool_calls"]
     assert tools["web.search"] == 1 and tools["workspace.write"] == 1
-    # The tool settings used were fixed in run.md.
-    assert run.meta["tools"]["tools"]["web.search"]["provider"] == "fake"
+    # The tool settings used were fixed in job.md.
+    assert job.meta["tools"]["tools"]["web.search"]["provider"] == "fake"
 
 
-def test_a_write_outside_the_workspace_is_refused_and_the_run_still_reports(run, home, tmp_path):
+def test_a_write_outside_the_workspace_is_refused_and_the_job_still_reports(job, home, tmp_path):
     use_fake_tools(home)
     write_role(home, "researcher", max_steps=10, tools=["workspace.write"])
-    status = run(
+    status = job(
         [
             fake.brief("researcher", "Save the notes."),
-            fake.call("workspace__write", {"path": "../run.md", "content": "status: completed"}),
+            fake.call("workspace__write", {"path": "../job.md", "content": "status: completed"}),
             fake.call("workspace__write", {"path": "workspace/../../../escaped.md", "content": "x"}),
             fake.call("workspace__write", {"path": str(tmp_path / "abs.md"), "content": "x"}),
             fake.call("workspace__write", {"path": "workspace/notes.md", "content": "Kept inside."}),
@@ -88,20 +88,20 @@ def test_a_write_outside_the_workspace_is_refused_and_the_run_still_reports(run,
         ]
     )
     assert status == "completed"
-    assert_reported(run, "completed")
-    replies = tool_replies(run)
+    assert_reported(job, "completed")
+    replies = tool_replies(job)
     assert all('"error"' in r for r in replies[0:3])
     assert "notes.md" in replies[3] and '"error"' not in replies[3]
-    assert run.meta["status"] == "completed"  # run.md was not overwritten by the role
+    assert job.meta["status"] == "completed"  # job.md was not overwritten by the role
     assert not (tmp_path / "abs.md").exists()
     assert not list(home.root.rglob("escaped.md"))
-    assert sum(1 for e in run.events if e["action"] == "tool_error") == 3
+    assert sum(1 for e in job.events if e["action"] == "tool_error") == 3
 
 
-def test_tool_caps_from_tools_md_are_enforced(run, home):
+def test_tool_caps_from_tools_md_are_enforced(job, home):
     use_fake_tools(home, **{"web.search": {"max_calls": 2}})
     write_role(home, "researcher", max_steps=10, tools=WEB_ROLE_TOOLS)
-    status = run(
+    status = job(
         [
             fake.brief("researcher", "Search three times."),
             fake.call("web__search", {"query": "one"}),
@@ -113,17 +113,17 @@ def test_tool_caps_from_tools_md_are_enforced(run, home):
         ]
     )
     assert status == "completed"
-    assert_reported(run, "completed")
-    assert [c["query"] for c in fake_calls(run)] == ["one", "two"]  # the third never reached the provider
-    assert "used all 2 calls" in tool_replies(run)[2]
-    assert run.meta["limits"]["tool_max_calls"]["web.search"] == 2
-    assert "web.search 2 of 2" in run.report and "refused at their cap: web.search 1" in run.report
+    assert_reported(job, "completed")
+    assert [c["query"] for c in fake_calls(job)] == ["one", "two"]  # the third never reached the provider
+    assert "used all 2 calls" in tool_replies(job)[2]
+    assert job.meta["limits"]["tool_max_calls"]["web.search"] == 2
+    assert "web.search 2 of 2" in job.report and "refused at their cap: web.search 1" in job.report
 
 
-def test_old_per_call_prices_in_tools_md_are_ignored(run, home):
+def test_old_per_call_prices_in_tools_md_are_ignored(job, home):
     use_fake_tools(home, **{"web.search": {"cost_per_call": 0.015}})
     write_role(home, "researcher", max_steps=10, tools=WEB_ROLE_TOOLS)
-    status = run(
+    status = job(
         [
             fake.brief("researcher", "Search a lot."),
             fake.call("web__search", {"query": "one"}),
@@ -135,19 +135,19 @@ def test_old_per_call_prices_in_tools_md_are_ignored(run, home):
         ],
     )
     assert status == "completed"
-    assert [c["query"] for c in fake_calls(run)] == ["one", "two", "three"]
-    usage = run.meta["usage"]
+    assert [c["query"] for c in fake_calls(job)] == ["one", "two", "three"]
+    usage = job.meta["usage"]
     assert usage["tool_calls"]["web.search"] == 3
     assert not any(k in usage for k in ("usd", "tool_usd", "unpriced_calls"))
-    assert "Estimated cost" not in run.report and "cost_per_call" not in run.report
-    assert not any(e["action"] == "tool_cost" or "usd" in e for e in run.events)
+    assert "Estimated cost" not in job.report and "cost_per_call" not in job.report
+    assert not any(e["action"] == "tool_cost" or "usd" in e for e in job.events)
 
 
-def test_a_call_refused_before_the_service_still_reports(run, home):
+def test_a_call_refused_before_the_service_still_reports(job, home):
     # Firecrawl with no key set: the call is refused before anything is sent.
     mdfile.write(home.tools, {"tools": {"web.search": {"provider": "firecrawl"}}})
     write_role(home, "researcher", max_steps=10, tools=["web.search"])
-    status = run(
+    status = job(
         [
             fake.brief("researcher", "Search."),
             fake.call("web__search", {"query": "teapots"}),
@@ -157,21 +157,21 @@ def test_a_call_refused_before_the_service_still_reports(run, home):
         ]
     )
     assert status == "completed"
-    assert "FIRECRAWL_API_KEY is not set" in tool_replies(run)[0]
-    assert run.meta["usage"]["tool_calls"]["web.search"] == 1
-    assert "FIRECRAWL_API_KEY is not set" in run.report  # warned at the start of the run
+    assert "FIRECRAWL_API_KEY is not set" in tool_replies(job)[0]
+    assert job.meta["usage"]["tool_calls"]["web.search"] == 1
+    assert "FIRECRAWL_API_KEY is not set" in job.report  # warned at the start of the job
 
 
-def test_tool_settings_are_fixed_when_the_run_starts(run, home):
+def test_tool_settings_are_fixed_when_the_job_starts(job, home):
     use_fake_tools(home)
     write_role(home, "researcher", max_steps=10, tools=["web.search"])
 
     def switch_provider(messages, tools):
-        # Mid-run, tools.md is changed to a real provider. The run must keep using the fake.
+        # Mid-run, tools.md is changed to a real provider. The job must keep using the fake.
         mdfile.write(home.tools, {"tools": {"web.search": {"provider": "duckduckgo", "max_calls": 1}}})
         return fake.call("web__search", {"query": "second"})
 
-    run(
+    job(
         [
             fake.brief("researcher", "Search twice."),
             fake.call("web__search", {"query": "first"}),
@@ -181,10 +181,10 @@ def test_tool_settings_are_fixed_when_the_run_starts(run, home):
             LEAD_REPORT,
         ]
     )
-    assert [c["query"] for c in fake_calls(run)] == ["first", "second"]
+    assert [c["query"] for c in fake_calls(job)] == ["first", "second"]
 
 
-def test_a_failing_provider_does_not_end_the_run(run, home):
+def test_a_failing_provider_does_not_end_the_job(job, home):
     from ombro.native import native_registry
     from ombro.providers.fake import FakeProvider
     from ombro.settings import load_tool_settings
@@ -192,7 +192,7 @@ def test_a_failing_provider_does_not_end_the_run(run, home):
     use_fake_tools(home)
     write_role(home, "researcher", max_steps=10, tools=["web.search"])
     registry = native_registry(home, load_tool_settings(home), fake=FakeProvider(error="invented outage"))
-    status = run(
+    status = job(
         [
             fake.brief("researcher", "Search."),
             fake.call("web__search", {"query": "teapots"}),
@@ -203,14 +203,14 @@ def test_a_failing_provider_does_not_end_the_run(run, home):
         registry=registry,
     )
     assert status == "completed"
-    assert "invented outage" in tool_replies(run)[0]
-    assert any(e["action"] == "tool_error" and "invented outage" in e["note"] for e in run.events)
+    assert "invented outage" in tool_replies(job)[0]
+    assert any(e["action"] == "tool_error" and "invented outage" in e["note"] for e in job.events)
 
 
-def test_deliverables_in_either_form_are_found(run, home):
+def test_deliverables_in_either_form_are_found(job, home):
     use_fake_tools(home)
     write_role(home, "researcher", max_steps=10, tools=["workspace.write"])
-    run(
+    job(
         [
             fake.brief("researcher", "Write two files."),
             fake.call("workspace__write", {"path": "workspace/a.md", "content": "A"}),
@@ -220,14 +220,14 @@ def test_deliverables_in_either_form_are_found(run, home):
                 deliverables=[
                     {"name": "first", "path": "workspace/a.md"},
                     {"name": "second", "path": "sub/b.md"},
-                    {"name": "escape", "path": "workspace/../run.md"},
+                    {"name": "escape", "path": "workspace/../job.md"},
                 ],
             ),
             fake.finish(),
             LEAD_REPORT,
         ]
     )
-    ws = (run.run_dir / "workspace").resolve()
-    assert f"- first (researcher): {ws / 'a.md'}" in run.report
-    assert f"- second (researcher): {ws / 'sub' / 'b.md'}" in run.report
-    assert str(run.run_dir.resolve() / "run.md") not in run.report
+    ws = (job.job_dir / "workspace").resolve()
+    assert f"- first (researcher): {ws / 'a.md'}" in job.report
+    assert f"- second (researcher): {ws / 'sub' / 'b.md'}" in job.report
+    assert str(job.job_dir.resolve() / "job.md") not in job.report

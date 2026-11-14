@@ -29,9 +29,9 @@ def test_the_common_signs_are_flagged():
     assert material.flags("An invented page about teapots and their glazes.") == []
 
 
-def test_material_is_fenced_flagged_and_reported(run, home):
+def test_material_is_fenced_flagged_and_reported(job, home):
     write_role(home, "researcher", max_steps=10, tools=["workspace.read", "workspace.write"])
-    status = run([
+    status = job([
         fake.brief("researcher", "Read the notes."),
         fake.call("workspace__write", {"path": "workspace/notes.md", "content": INJECTED}),
         fake.call("workspace__read", {"path": "workspace/notes.md"}),
@@ -39,39 +39,39 @@ def test_material_is_fenced_flagged_and_reported(run, home):
         fake.finish(), fake.keep_notes(), LEAD_REPORT,
     ])
     assert status == "completed"
-    shown = [m["content"] for c in run.client.calls for m in c["messages"] if m["role"] == "tool"]
+    shown = [m["content"] for c in job.client.calls for m in c["messages"] if m["role"] == "tool"]
     read = next(x for x in shown if "Ignore all previous" in x)
     assert read.startswith("⟪material ") and " from workspace.read workspace/notes.md⟫" in read
     written = next(x for x in shown if '"bytes"' in x)
     assert not written.startswith("⟪")  # Ombro's own confirmation is not material
-    assert any(e["action"] == "material_flag" for e in run.events)
-    section = run.report.split("## Material", 1)[1]
+    assert any(e["action"] == "material_flag" for e in job.events)
+    section = job.report.split("## Material", 1)[1]
     assert "workspace.read workspace/notes.md (read by researcher): override attempt, asks to send or delete" in section
-    rules = run.client.calls[1]["messages"][0]["content"]
+    rules = job.client.calls[1]["messages"][0]["content"]
     assert "⟪material <id> from <source>⟫" in rules
 
 
-def test_after_material_an_external_call_is_staged_even_under_auto(run, record):  # noqa: F811
+def test_after_material_an_external_call_is_staged_even_under_auto(job, record):  # noqa: F811
     find = fake.call("mcp__fake__find_rows", {"sheet": "Leads"})
-    run(script(find, fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
+    job(script(find, fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
         spec_meta=spec_with("auto"))
-    [a] = outbox.actions(run.run_dir)
+    [a] = outbox.actions(job.job_dir)
     assert a.tool == "mcp.fake.post_message" and a.status == "pending"
-    assert any(e["action"] == "staged" and e.get("tainted") for e in run.events)
-    assert "Staged because the role had read material" in run.report
+    assert any(e["action"] == "staged" and e.get("tainted") for e in job.events)
+    assert "Staged because the role had read material" in job.report
 
 
-def test_a_tool_the_spec_allows_by_name_still_runs_after_material(run, record):  # noqa: F811
+def test_a_tool_the_spec_allows_by_name_still_runs_after_material(job, record):  # noqa: F811
     find = fake.call("mcp__fake__find_rows", {"sheet": "Leads"})
-    run(script(find, fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
+    job(script(find, fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
         spec_meta=spec_with({"preset": "auto", "allow": ["mcp.fake.post_message"]}))
-    assert outbox.actions(run.run_dir) == []
+    assert outbox.actions(job.job_dir) == []
 
 
-def test_without_material_auto_still_sends(run, record):  # noqa: F811
-    run(script(fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
+def test_without_material_auto_still_sends(job, record):  # noqa: F811
+    job(script(fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
         spec_meta=spec_with("auto"))
-    assert outbox.actions(run.run_dir) == []
+    assert outbox.actions(job.job_dir) == []
 
 
 def test_a_fetch_cannot_carry_data_out_in_its_address(home, tmp_path):

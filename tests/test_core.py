@@ -19,13 +19,41 @@ def test_home_honours_ombro_home(tmp_path, monkeypatch):
     assert Home().root == (tmp_path / "elsewhere").resolve()
 
 
+def test_an_old_home_has_its_runs_moved_to_jobs(home, tmp_path):
+    """Jobs were once called runs: their folder, job.md, its job_id and a renamed limit follow."""
+    from ombro import jobs, memory
+    from ombro.home import migrate_jobs
+    from ombro.settings import Limits, load_limits
+
+    job_dir = jobs.create_job(home, ["default"], {}, "# Invented task\n", load_limits(home), source="test")
+    meta, _ = jobs.read_job(job_dir)
+    meta = {("run_id" if k == "job_id" else k): v for k, v in meta.items()}
+    meta["limits"] = {("run_timeout" if k == "job_timeout" else k): v for k, v in meta["limits"].items()}
+    old = home.root / ("run" + "s")
+    home.jobs_dir.rename(old)
+    (old / job_dir.name / "job.md").unlink()
+    mdfile.write(old / job_dir.name / ("run" + ".md"), meta, "Written by Ombro while the run is in progress.\n")
+    index = memory.index_path(home, "default")
+    index.write_text(f"# Index\n- 2026-11-13 · {job_dir.name} · completed · x · run" + f"s/{job_dir.name}/report.md\n")
+    home.limits.write_text("---\nallowance: moderate\nrun_timeout: 5m\n---\n")
+
+    assert "moved 1" in migrate_jobs(home)
+    assert not old.exists() and (home.jobs_dir / job_dir.name / "job.md").is_file()
+    moved, body = jobs.read_job(home.jobs_dir / job_dir.name)
+    assert moved["job_id"] == job_dir.name and "run_id" not in moved
+    assert Limits.from_dict(moved["limits"]).job_timeout > 0
+    assert "the job" in body
+    assert f"jobs/{job_dir.name}/report.md" in index.read_text()
+    assert load_limits(home).job_timeout == 300  # the old name in limits.md is still read
+    assert migrate_jobs(home) is None  # nothing left to move
+
 def test_fresh_home_layout(tmp_path):
     h = Home(tmp_path / "h")
     ensure_home(h)
     for rel in (
         "secrets/keys.env", "limits.md", "models.md", "tools.md",
         "preferences/config.md", "preferences/instructions.md", "skills", "chats",
-        "lead/config.md", "lead/soul.md", "specs", "schedules", "runs", "interviews",
+        "lead/config.md", "lead/soul.md", "specs", "schedules", "jobs", "interviews",
         "crews/default/crew.md", "crews/default/memory/index.md", "crews/default/memory/notes.md",
         "crews/default/roles/general-assistant/config.md", "crews/default/roles/general-assistant/soul.md",
     ):
@@ -190,7 +218,7 @@ def test_journal_reads_past_a_torn_line(tmp_path):
 def test_default_allowance_is_moderate(home):
     lim = load_limits(home)
     assert lim.allowance == "moderate"
-    assert (lim.max_tokens, lim.max_rounds, lim.run_timeout, lim.interview_max_tokens) == (800_000, 8, 1800, 100_000)
+    assert (lim.max_tokens, lim.max_rounds, lim.job_timeout, lim.interview_max_tokens) == (800_000, 8, 1800, 100_000)
 
 
 def test_allowance_sets_the_level_values_and_hand_values_win(home):
@@ -209,7 +237,7 @@ def test_allowance_sets_the_level_values_and_hand_values_win(home):
 def test_old_limits_files_still_load(home):
     from ombro import mdfile
 
-    mdfile.write(home.limits, {"budget_usd": 1.0, "max_tokens": 400000, "max_rounds": 8, "run_timeout": "30m"})
+    mdfile.write(home.limits, {"budget_usd": 1.0, "max_tokens": 400000, "max_rounds": 8, "job_timeout": "30m"})
     lim = load_limits(home)
     assert lim.max_tokens == 400_000 and "budget_usd" not in lim.to_dict()
 
@@ -217,7 +245,7 @@ def test_old_limits_files_still_load(home):
 def test_cost_settings_from_earlier_versions_are_accepted_and_ignored(home):
     """Ombro reports tokens only. Prices, per-call costs and a display currency
     left in older files load without error and do nothing."""
-    from ombro import runs
+    from ombro import jobs
     from ombro.settings import load_preferences, load_tool_settings
 
     meta, body = mdfile.read(home.limits)
@@ -234,10 +262,10 @@ def test_cost_settings_from_earlier_versions_are_accepted_and_ignored(home):
     assert "cost_per_call" not in load_tool_settings(home).tools["web.search"]
     assert not hasattr(load_models(home)["default"], "price_in")
     assert not hasattr(load_preferences(home), "display_currency")
-    # A run.md written before usage was renamed is still read.
-    assert runs.usage({"spend": {"total_tokens": 7}}) == {"total_tokens": 7}
-    assert runs.interview_usage({"interview_spend": {"total_tokens": 3}}) == {"total_tokens": 3}
-    assert runs.usage({"usage": {"total_tokens": 9}, "spend": {"total_tokens": 7}}) == {"total_tokens": 9}
+    # A job.md written before usage was renamed is still read.
+    assert jobs.usage({"spend": {"total_tokens": 7}}) == {"total_tokens": 7}
+    assert jobs.interview_usage({"interview_spend": {"total_tokens": 3}}) == {"total_tokens": 3}
+    assert jobs.usage({"usage": {"total_tokens": 9}, "spend": {"total_tokens": 7}}) == {"total_tokens": 9}
 
 
 def test_fresh_files_mention_no_costs(tmp_path):

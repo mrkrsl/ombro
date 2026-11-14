@@ -1,6 +1,6 @@
 """Native tools: web search and fetch through a provider, and workspace files.
 
-Workspace tools reach only the run's workspace/ and scratch/ folders. A path
+Workspace tools reach only the job's workspace/ and scratch/ folders. A path
 must start with one of them. Absolute paths, `..`, and symlinks that lead
 outside are refused, and nothing is ever written through a symlink.
 """
@@ -51,20 +51,20 @@ WEB_NOTE = (
 
 def _names(ctx: ToolContext) -> str:
     if not ctx.shared:
-        return "No folders are shared with this run."
-    return "Folders shared with this run: " + ", ".join(
+        return "No folders are shared with this job."
+    return "Folders shared with this job: " + ", ".join(
         f"shared/{f.name} ({f.access})" for f in ctx.shared.values()) + "."
 
 
 def _not_granted(path: str, ctx: ToolContext) -> NotGranted:
     return NotGranted(
-        f"{path} is not in a folder shared with this run, so it cannot be reached. {_names(ctx)} "
+        f"{path} is not in a folder shared with this job, so it cannot be reached. {_names(ctx)} "
         "Only the user can share a folder. To save a file somewhere else, write it in workspace/ and use "
         "workspace.place; to read from somewhere else, say in did_not_do which folder you needed.", path)
 
 
 def _absolute(ctx: ToolContext, p: str, write: bool) -> Path:
-    """An absolute path is allowed only inside the run's folders or a shared folder,
+    """An absolute path is allowed only inside the job's folders or a shared folder,
     and is then treated as that folder's own path."""
     raw = Path(os.path.expanduser(p))
     if ".." in raw.parts:
@@ -74,7 +74,7 @@ def _absolute(ctx: ToolContext, p: str, write: bool) -> Path:
         if real == f.path or real.is_relative_to(f.path):
             return resolve_path(ctx, "/".join(["shared", f.name, *real.relative_to(f.path).parts]), write=write)
     for area in AREAS:
-        root = area_path(ctx.run_dir, area)
+        root = area_path(ctx.job_dir, area)
         if real == root or real.is_relative_to(root):
             return resolve_path(ctx, "/".join([area, *real.relative_to(root).parts]), write=write)
     raise _not_granted(p, ctx)
@@ -82,7 +82,7 @@ def _absolute(ctx: ToolContext, p: str, write: bool) -> Path:
 
 def resolve_path(ctx: ToolContext, path: Any, *, write: bool = False) -> Path:
     """The real path for a workspace tool, or ToolInputError if it is not allowed.
-    NotGranted (a ToolInputError) marks a path outside every folder this run may use."""
+    NotGranted (a ToolInputError) marks a path outside every folder this job may use."""
     if not isinstance(path, str) or not path.strip():
         raise ToolInputError("give a path such as workspace/notes.md")
     p = path.strip()
@@ -102,7 +102,7 @@ def resolve_path(ctx: ToolContext, path: Any, *, write: bool = False) -> Path:
         if f is None:
             raise _not_granted(p, ctx)
         if write and not f.writable:
-            raise ToolInputError(f"shared/{f.name} is shared read-only with this run, so nothing in it can be "
+            raise ToolInputError(f"shared/{f.name} is shared read-only with this job, so nothing in it can be "
                                  "changed. To save a file there, write it in workspace/ and use workspace.place.")
         root, rest, label = checked_shared(f), parts[2:], f"shared/{f.name}"
     elif parts and parts[0] in AREAS:
@@ -124,7 +124,7 @@ def _display(ctx: ToolContext, path: Path) -> str:
             rel = path.relative_to(f.path).as_posix()
             return f"shared/{f.name}" if rel == "." else f"shared/{f.name}/{rel}"
     for area in AREAS:
-        root = area_path(ctx.run_dir, area)
+        root = area_path(ctx.job_dir, area)
         if path == root or path.is_relative_to(root):
             rel = path.relative_to(root).as_posix()
             return area if rel == "." else f"{area}/{rel}"
@@ -182,7 +182,7 @@ def _write(args: dict, ctx: ToolContext) -> dict[str, Any]:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(content)
     if created and ctx.archived is not None:
-        ctx.archived.add(str(real))  # made in this run: replacing it later keeps nothing older than the run
+        ctx.archived.add(str(real))  # made in this job: replacing it later keeps nothing older than the job
     out = {"path": _display(ctx, real), "bytes": real.stat().st_size, "mode": mode}
     if kept:
         out["archived"] = f"The version before this one is kept in {kept}."
@@ -237,20 +237,20 @@ def _list(args: dict, ctx: ToolContext) -> dict[str, Any]:
 
 
 PATH_DOC = ("A path starting with workspace/ (deliverables) or scratch/ (working notes), e.g. workspace/leads.csv, "
-            "or shared/<name>/... for a folder shared with this run.")
+            "or shared/<name>/... for a folder shared with this job.")
 
 
 SET_ASIDE = {"for-deletion": "For deletion", "archive": "Archive"}
 
 
 def _root_of(ctx: ToolContext, path: Path) -> tuple[Path, str]:
-    """The root (a shared folder or a run area) a resolved path is in, and its label."""
+    """The root (a shared folder or a job area) a resolved path is in, and its label."""
     real = path.resolve()
     for f in ctx.shared.values():
         if real == f.path or real.is_relative_to(f.path):
             return f.path, f"shared/{f.name}"
     for area in AREAS:
-        root = area_path(ctx.run_dir, area)
+        root = area_path(ctx.job_dir, area)
         if real == root or real.is_relative_to(root):
             return root, area
     raise ToolInputError("that file is not in a folder Ombro may change")
@@ -286,7 +286,7 @@ def _shelve(root: Path, kind: str, real: Path, why: str, *, copy: bool) -> Path:
 
 def archive_before_replacing(ctx: ToolContext, target: Path) -> str | None:
     """Before a file in a shared folder is replaced, keep its old version in Archive/:
-    once per file in a run, every time in chat (ctx.archived is None). Returns where."""
+    once per file in a job, every time in chat (ctx.archived is None). Returns where."""
     from datetime import date
 
     if not target.is_file() or target.is_symlink():
@@ -335,12 +335,12 @@ def _set_aside(args: dict, ctx: ToolContext) -> dict[str, Any]:
 
 
 def _home_root(ctx: ToolContext) -> Path:
-    # A run folder is <home>/runs/<run_id>.
-    return ctx.run_dir.resolve().parents[1]
+    # A job folder is <home>/jobs/<job_id>.
+    return ctx.job_dir.resolve().parents[1]
 
 
 def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
-    """Copy a workspace file outside the run: at once into a writable shared folder,
+    """Copy a workspace file outside the job: at once into a writable shared folder,
     staged in the outbox anywhere else."""
     from ombro import folders, outbox
     from ombro.home import Home
@@ -362,7 +362,7 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
     if ".." in parts or "\x00" in to or "\\" in to:
         raise ToolInputError("`to` cannot contain `..`, backslashes or NUL characters")
     if parts and parts[0] in AREAS:
-        raise ToolInputError(f"{to} is inside the run already; use workspace.write")
+        raise ToolInputError(f"{to} is inside the job already; use workspace.write")
     if parts and parts[0] == "shared":
         if len(parts) < 2 or parts[1] not in ctx.shared:
             raise _not_granted(to, ctx)
@@ -403,7 +403,7 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
         raise ToolInputError(f"{to} cannot be a destination: {e}") from None
     shown_dest = folders.display_path(final)
     try:
-        action, duplicate = outbox.stage_placement(ctx.run_dir, source=src.resolve(), shown_source=shown_src,
+        action, duplicate = outbox.stage_placement(ctx.job_dir, source=src.resolve(), shown_source=shown_src,
                                                    to=shown_dest, overwrite=overwrite, reason=reason, role=ctx.role)
     except outbox.OutboxBusy:
         raise ToolError("the outbox is busy with a decision the user is making, so this was not staged; "
@@ -417,15 +417,15 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
     ctx.record("staged", f"{action.ref} workspace.place {shown_src} -> {shown_dest}", tool="workspace.place",
                ref=action.ref, path=rel, effect="internal", reason=reason, arguments=action.arguments)
     return {"status": "staged", "outbox": rel,
-            "note": f"Not copied yet: {shown_dest} is not in a folder shared with this run for writing, so the "
-            "copy waits for the user to approve after the run. Mention it in your summary as staged, not done."}
+            "note": f"Not copied yet: {shown_dest} is not in a folder shared with this job for writing, so the "
+            "copy waits for the user to approve after the job. Mention it in your summary as staged, not done."}
 
 
 def workspace_tools() -> list[Tool]:
     return [
         Tool(
             name="workspace.read",
-            description="Read a text file from this run's workspace/ or scratch/ folder. Long files come in parts: "
+            description="Read a text file from this job's workspace/ or scratch/ folder. Long files come in parts: "
             "pass next_offset back as offset to read on.",
             parameters={
                 "type": "object",
@@ -441,7 +441,7 @@ def workspace_tools() -> list[Tool]:
         ),
         Tool(
             name="workspace.write",
-            description="Write a text file in this run's workspace/ or scratch/ folder. Creates folders as needed. "
+            description="Write a text file in this job's workspace/ or scratch/ folder. Creates folders as needed. "
             "Deliverables go in workspace/; working notes in scratch/.",
             parameters={
                 "type": "object",
@@ -461,7 +461,7 @@ def workspace_tools() -> list[Tool]:
         ),
         Tool(
             name="workspace.list",
-            description="List files in this run's workspace/ and scratch/ folders, or in one folder within them.",
+            description="List files in this job's workspace/ and scratch/ folders, or in one folder within them.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
@@ -489,9 +489,9 @@ def workspace_tools() -> list[Tool]:
         ),
         Tool(
             name="workspace.place",
-            description="Copy a file from workspace/ or scratch/ to a place outside the run, such as a folder the "
-            "user keeps documents in. Into a folder shared with this run for writing (shared/<name>/...), it is "
-            "copied at once. Anywhere else, the copy is staged for the user to approve after the run.",
+            description="Copy a file from workspace/ or scratch/ to a place outside the job, such as a folder the "
+            "user keeps documents in. Into a folder shared with this job for writing (shared/<name>/...), it is "
+            "copied at once. Anywhere else, the copy is staged for the user to approve after the job.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
@@ -516,7 +516,7 @@ def workspace_tools() -> list[Tool]:
 
 def _with_record_dir(provider: Any, ctx: ToolContext) -> None:
     if isinstance(provider, FakeProvider):
-        provider.record_dir = ctx.run_dir
+        provider.record_dir = ctx.job_dir
 
 
 def web_search_tool(provider: SearchProvider) -> Tool:

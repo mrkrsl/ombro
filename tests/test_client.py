@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from conftest import LEAD_REPORT, write_role
-from ombro import keys, runs
+from ombro import keys, jobs
 from ombro.client import ModelError, OpenAICompatibleClient
 from ombro.engine import Engine
 from ombro.settings import load_limits
@@ -107,8 +107,8 @@ def test_missing_key_fails_without_a_call():
         c.complete([], max_output_tokens=5, timeout=5)
 
 
-def test_keys_never_reach_run_files(home):
-    """A whole run through the real client: the key must not appear in any file of the run."""
+def test_keys_never_reach_job_files(home):
+    """A whole job through the real client: the key must not appear in any file of the run."""
     keys.set_key(home, "TEST_MODEL_KEY", KEY_A)
     replies = iter([
         chat_response(tool_calls=[("brief", {"role": "researcher", "task": "Find invented things."})]),
@@ -130,10 +130,10 @@ def test_keys_never_reach_run_files(home):
         return OpenAICompatibleClient(spec.endpoint, spec.model, lambda: get_key(home, spec.key),
                                       transport=transport, retries=0)
 
-    run_dir = runs.create_run(home, ["default"], {}, "Find invented things.", load_limits(home), source="test")
-    status = Engine(home, run_dir, client_factory=factory).execute()
+    job_dir = jobs.create_job(home, ["default"], {}, "Find invented things.", load_limits(home), source="test")
+    status = Engine(home, job_dir, client_factory=factory).execute()
     assert status == "completed"
-    for path in run_dir.rglob("*"):
+    for path in job_dir.rglob("*"):
         if path.is_file():
             assert KEY_A not in path.read_text(), path
     for body in sent:
@@ -164,7 +164,7 @@ def test_attempts_that_timed_out_are_reported_so_they_can_be_counted():
     assert caught.value.lost_attempts == c.retries + 1
 
 
-def test_a_run_counts_lost_attempts_at_their_worst_case():
+def test_a_job_counts_lost_attempts_at_their_worst_case():
     from ombro.gate import Gate
     from ombro.settings import Limits, resolve_allowance
     from ombro.home import LIMITS_META

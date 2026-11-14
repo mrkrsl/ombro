@@ -12,7 +12,7 @@ import platform
 import pytest
 
 from conftest import LEAD_REPORT, write_role
-from ombro import fake, folders, mdfile, outbox, runs
+from ombro import fake, folders, mdfile, outbox, jobs
 from ombro.folders_cmd import cmd_folders, offer_start_folder
 from ombro.native import native_registry
 from ombro.settings import SetupError, load_limits
@@ -125,30 +125,30 @@ def test_the_start_folder_is_offered_once_and_a_no_is_remembered(home, user):
 
 
 # ---------------------------------------------------------------------------
-# A run's folders
+# A job's folders
 
 
 def test_a_spec_names_grants_and_may_lower_write_to_read(home, user):
     folders.add(home, user / "Documents" / "Brand", "brand", "read")
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
-    got, left = folders.for_run(home, {"folders": {"brand": "write", "photos": "read", "secret": None}})
+    got, left = folders.for_job(home, {"folders": {"brand": "write", "photos": "read", "secret": None}})
     assert [(f["name"], f["access"]) for f in got] == [("brand", "read"), ("photos", "read")]
     assert "not shared" in left[0] and "secret" in left[0]
-    got, _ = folders.for_run(home, {"folders": ["photos"]})
+    got, _ = folders.for_job(home, {"folders": ["photos"]})
     assert got[0]["access"] == "write" and got[0]["path"] == str(user / "Pictures" / "Trip")
-    assert folders.for_run(home, {}) == ([], [])
+    assert folders.for_job(home, {}) == ([], [])
 
 
-def ctx_for(run_dir, user, access="read"):
+def ctx_for(job_dir, user, access="read"):
     shared = {"brand": SharedFolder("brand", user / "Documents" / "Brand", "read"),
               "photos": SharedFolder("photos", user / "Pictures" / "Trip", access)}
-    return ToolContext(run_dir, "researcher", shared=shared)
+    return ToolContext(job_dir, "researcher", shared=shared)
 
 
 def test_workspace_tools_reach_shared_folders_as_granted(home, user):
-    run_dir = runs.create_run(home, ["default"], {}, "# x", load_limits(home), source="test")
+    job_dir = jobs.create_job(home, ["default"], {}, "# x", load_limits(home), source="test")
     reg = native_registry(home)
-    ctx = ctx_for(run_dir, user, access="write")
+    ctx = ctx_for(job_dir, user, access="write")
     read = reg.get("workspace.read").handler
     write = reg.get("workspace.write").handler
     listing = reg.get("workspace.list").handler
@@ -171,11 +171,11 @@ def test_workspace_tools_reach_shared_folders_as_granted(home, user):
     assert "shared/brand (read)" in listing({}, ctx)["shared"]
 
 
-def test_a_run_backs_up_and_lists_changes_in_a_writable_folder(run, home, user):
+def test_a_job_backs_up_and_lists_changes_in_a_writable_folder(job, home, user):
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
     folders.add(home, user / "Documents" / "Brand", "brand", "read")
     write_role(home, "researcher", max_steps=10, tools=["workspace.read", "workspace.write", "workspace.list"])
-    status = run([
+    status = job([
         fake.brief("researcher", "Note the brand colour in the photos folder."),
         fake.call("workspace__read", {"path": "shared/brand/guide.md"}),
         fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
@@ -185,18 +185,18 @@ def test_a_run_backs_up_and_lists_changes_in_a_writable_folder(run, home, user):
         fake.finish(), fake.keep_notes(), LEAD_REPORT,
     ], spec_meta={"folders": ["photos", "brand", "missing"]})
     assert status == "completed"
-    assert_reported(run, "completed")
-    meta = run.meta
+    assert_reported(job, "completed")
+    meta = job.meta
     by_name = {f["name"]: f for f in meta["folders"]}
     assert by_name["brand"]["access"] == "read" and "backup" not in by_name["brand"]
     backup = by_name["photos"].get("backup")
     if platform.system() == "Darwin":
         # The clone holds the folder as it was before the run.
-        assert backup and (run.run_dir / "backup" / "photos" / "IMG_0000.jpg").read_text() == "invented photo 0"
-        assert not (run.run_dir / "backup" / "photos" / "colour.md").exists()
+        assert backup and (job.job_dir / "backup" / "photos" / "IMG_0000.jpg").read_text() == "invented photo 0"
+        assert not (job.job_dir / "backup" / "photos" / "colour.md").exists()
     else:
         assert backup or "no backup" in by_name["photos"]["backup_note"]
-    report = run.report
+    report = job.report
     assert "## Shared folders" in report
     assert "**shared/photos** (read and write)" in report and "**shared/brand** (read only)" in report
     # Replacing IMG_0000.jpg kept its old version in Archive/, with a note of why.
@@ -206,19 +206,19 @@ def test_a_run_backs_up_and_lists_changes_in_a_writable_folder(run, home, user):
     assert "Changed (1):" in report and "- IMG_0000.jpg" in report
     assert "missing" in report and "not shared" in report
     assert str(user / "Library" / "Mail" / "x") in report.split("Refused because")[1]
-    system = run.client.calls[1]["messages"][0]["content"]
+    system = job.client.calls[1]["messages"][0]["content"]
     assert "shared/photos (read and write)" in system and "shared/brand (read only)" in system
-    lead = run.client.calls[0]["messages"][0]["content"]
-    assert "Folders the user shared with this run" in lead and "shared/photos (read and write)" in lead
+    lead = job.client.calls[0]["messages"][0]["content"]
+    assert "Folders the user shared with this job" in lead and "shared/photos (read and write)" in lead
 
 
 # ---------------------------------------------------------------------------
 # Placements
 
 
-def place_run(run, home, user, to, **kw):
+def place_job(job, home, user, to, **kw):
     write_role(home, "researcher", max_steps=10, tools=["workspace.write", "workspace.place"])
-    return run([
+    return job([
         fake.brief("researcher", "Write the summary and save it in the reports folder."),
         fake.call("workspace__write", {"path": "workspace/summary.md", "content": "Invented summary.\n"}),
         fake.call("workspace__place", {"from": "workspace/summary.md", "to": to,
@@ -230,30 +230,30 @@ def place_run(run, home, user, to, **kw):
     ], spec_meta={"folders": ["photos"]} if folders.load(home)[0] else None)
 
 
-def test_a_placement_outside_the_shared_folders_waits_for_approval(run, home, user):
+def test_a_placement_outside_the_shared_folders_waits_for_approval(job, home, user):
     (user / "Documents" / "Reports").mkdir()
-    status = place_run(run, home, user, "~/Documents/Reports/")
+    status = place_job(job, home, user, "~/Documents/Reports/")
     assert status == "completed"
     dest = user / "Documents" / "Reports" / "summary.md"
     assert not dest.exists()
-    (a,) = outbox.actions(run.run_dir)
+    (a,) = outbox.actions(job.job_dir)
     assert a.tool == "workspace.place" and a.status == "pending"
     assert a.arguments == {"to": "~/Documents/Reports/summary.md", "overwrite": False}
-    assert "Staged, waiting for you (1)" in run.report
-    assert any(e["action"] == "staged_duplicate" for e in run.events)
+    assert "Staged, waiting for you (1)" in job.report
+    assert any(e["action"] == "staged_duplicate" for e in job.events)
     # Changing the workspace after staging does not change what is approved.
-    (run.run_dir / "workspace" / "summary.md").write_text("changed later")
+    (job.job_dir / "workspace" / "summary.md").write_text("changed later")
     outbox.approve(home, a)
     assert dest.read_text() == "Invented summary.\n"
     assert outbox.load(a.path).status == "executed"
     assert not folders.find(folders.load(home)[0], dest.parent)  # approving does not share the folder
 
 
-def test_a_placement_never_replaces_a_file_unless_asked(run, home, user):
+def test_a_placement_never_replaces_a_file_unless_asked(job, home, user):
     (user / "Documents" / "Reports").mkdir()
     (user / "Documents" / "Reports" / "summary.md").write_text("the user's own file")
-    place_run(run, home, user, "~/Documents/Reports/summary.md")
-    (a,) = outbox.actions(run.run_dir)
+    place_job(job, home, user, "~/Documents/Reports/summary.md")
+    (a,) = outbox.actions(job.job_dir)
     with pytest.raises(outbox.OutboxError, match="would replace"):
         outbox.approve(home, a)
     assert (user / "Documents" / "Reports" / "summary.md").read_text() == "the user's own file"
@@ -262,19 +262,19 @@ def test_a_placement_never_replaces_a_file_unless_asked(run, home, user):
     assert (user / "Documents" / "Reports" / "summary.md").read_text() == "Invented summary.\n"
 
 
-def test_a_placement_into_a_writable_shared_folder_happens_at_once(run, home, user):
+def test_a_placement_into_a_writable_shared_folder_happens_at_once(job, home, user):
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
-    place_run(run, home, user, "shared/photos/summary.md")
+    place_job(job, home, user, "shared/photos/summary.md")
     assert (user / "Pictures" / "Trip" / "summary.md").read_text() == "Invented summary.\n"
-    assert outbox.actions(run.run_dir) == []
-    assert "Copied into shared folders with workspace.place (1)" in run.report
+    assert outbox.actions(job.job_dir) == []
+    assert "Copied into shared folders with workspace.place (1)" in job.report
     # The second, identical placement was refused rather than replacing the file.
-    assert any("already exists" in e.get("note", "") for e in run.events if e["action"] == "tool_error")
+    assert any("already exists" in e.get("note", "") for e in job.events if e["action"] == "tool_error")
 
 
-def test_a_placement_to_a_place_that_can_never_be_shared_is_refused(run, home, user):
-    place_run(run, home, user, str(user / ".ssh" / "summary.md"))
-    assert outbox.actions(run.run_dir) == []
+def test_a_placement_to_a_place_that_can_never_be_shared_is_refused(job, home, user):
+    place_job(job, home, user, str(user / ".ssh" / "summary.md"))
+    assert outbox.actions(job.job_dir) == []
     assert not (user / ".ssh" / "summary.md").exists()
 
 
@@ -325,13 +325,13 @@ def test_the_brief_refuses_a_folder_that_can_never_be_shared(home, user):
 def test_a_placement_never_writes_through_a_planted_symlink(home, user, tmp_path):
     victim = tmp_path / "victim.txt"
     victim.write_text("the user's own file\n")
-    run_dir = runs.create_run(home, ["default"], {}, "# x", load_limits(home), source="test")
+    job_dir = jobs.create_job(home, ["default"], {}, "# x", load_limits(home), source="test")
     trip = user / "Pictures" / "Trip"
-    # What a script in an earlier run, or this one, could have left in the shared folder.
+    # What a script in an earlier job, or this one, could have left in the shared folder.
     for name in (".summary.md.ombro-tmp", ".summary.md.tmp", "summary.md.ombro-tmp"):
         (trip / name).symlink_to(victim)
-    (run_dir / "workspace" / "summary.md").write_text("Invented summary.\n")
-    ctx = ToolContext(run_dir, "researcher", shared={"photos": SharedFolder("photos", trip, "write")})
+    (job_dir / "workspace" / "summary.md").write_text("Invented summary.\n")
+    ctx = ToolContext(job_dir, "researcher", shared={"photos": SharedFolder("photos", trip, "write")})
     out = native_registry(home).get("workspace.place").handler(
         {"from": "workspace/summary.md", "to": "shared/photos/summary.md", "reason": "invented"}, ctx)
     assert out["status"] == "done"
@@ -340,14 +340,14 @@ def test_a_placement_never_writes_through_a_planted_symlink(home, user, tmp_path
     assert not [p for p in trip.iterdir() if p.name.endswith(".ombro-tmp") and not p.is_symlink()]
 
 
-def test_approving_a_placement_never_writes_through_a_planted_symlink(run, home, user, tmp_path):
+def test_approving_a_placement_never_writes_through_a_planted_symlink(job, home, user, tmp_path):
     reports = user / "Documents" / "Reports"
     reports.mkdir()
     victim = tmp_path / "victim.txt"
     victim.write_text("the user's own file\n")
-    place_run(run, home, user, "~/Documents/Reports/")
+    place_job(job, home, user, "~/Documents/Reports/")
     (reports / ".summary.md.ombro-tmp").symlink_to(victim)
-    (a,) = outbox.actions(run.run_dir)
+    (a,) = outbox.actions(job.job_dir)
     outbox.approve(home, a)
     assert victim.read_text() == "the user's own file\n"
     assert (reports / "summary.md").read_text() == "Invented summary.\n"
@@ -401,14 +401,14 @@ def test_the_ombro_home_is_refused_whatever_the_spelling(home, user, monkeypatch
             folders.check_place(spelling, visible, must_exist=False)
 
 
-def test_approving_a_placement_rechecks_the_spelling(run, home, user, capsys):
+def test_approving_a_placement_rechecks_the_spelling(job, home, user, capsys):
     if not _ignores_case(user / "Library"):
         pytest.skip("this disk tells upper and lower case apart")
     from ombro import outbox_cmd
 
     (user / "Library" / "LaunchAgents").mkdir()
-    place_run(run, home, user, "~/Documents/Reports/")  # staged somewhere ordinary...
-    (a,) = outbox.actions(run.run_dir)
+    place_job(job, home, user, "~/Documents/Reports/")  # staged somewhere ordinary...
+    (a,) = outbox.actions(job.job_dir)
     outbox.edit(home, a, {"to": "~/library/LaunchAgents/x.plist", "overwrite": False})  # ...then sent elsewhere
     outbox_cmd._show(outbox.load(a.path), home)
     assert "Refused" in capsys.readouterr().out
@@ -417,11 +417,11 @@ def test_approving_a_placement_rechecks_the_spelling(run, home, user, capsys):
     assert not (user / "Library" / "LaunchAgents" / "x.plist").exists()
 
 
-def test_approving_a_placement_copies_only_the_file_kept_with_it(run, home, user):
+def test_approving_a_placement_copies_only_the_file_kept_with_it(job, home, user):
     (user / "Documents" / "Reports").mkdir()
-    place_run(run, home, user, "~/Documents/Reports/")
-    (a,) = outbox.actions(run.run_dir)
-    other = run.run_dir / "spec.md"  # something else in the run, named by a hand edit of the action file
+    place_job(job, home, user, "~/Documents/Reports/")
+    (a,) = outbox.actions(job.job_dir)
+    other = job.job_dir / "spec.md"  # something else in the job, named by a hand edit of the action file
     meta, body = mdfile.read(a.path)
     meta.update(file="spec.md", file_sha256=outbox._file_sha(other))
     mdfile.write(a.path, meta, body)
@@ -431,16 +431,16 @@ def test_approving_a_placement_copies_only_the_file_kept_with_it(run, home, user
     assert outbox.load(a.path).status == "pending"
 
 
-def test_a_deliverable_in_a_shared_folder_is_listed_with_its_full_path(run, home, user):
+def test_a_deliverable_in_a_shared_folder_is_listed_with_its_full_path(job, home, user):
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
     write_role(home, "researcher", max_steps=10, tools=["workspace.write"])
-    run([
+    job([
         fake.brief("researcher", "Write the colour note into the photos folder."),
         fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
         fake.result("Wrote the note.", deliverables=[{"name": "Colour note", "path": "shared/photos/colour.md"}]),
         fake.finish(), fake.keep_notes(), LEAD_REPORT,
     ], spec_meta={"folders": ["photos"]})
-    report = run.report
+    report = job.report
     deliverables = report.split("## Deliverables", 1)[1].split("\n## ", 1)[0]
     assert f"- Colour note (researcher): {user / 'Pictures' / 'Trip' / 'colour.md'}" in deliverables
     assert "could not be found" not in deliverables

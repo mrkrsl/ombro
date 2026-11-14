@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from conftest import LEAD_REPORT, SPEC
-from ombro import cli, fake, keys, mdfile, memory, runs, scheduler, schedules
+from ombro import cli, fake, keys, mdfile, memory, jobs, scheduler, schedules
 from ombro import cron as cronmod
 from ombro.engine import Engine
 from ombro.fake import ScriptedClient
@@ -58,10 +58,10 @@ class Starts:
         self.dirs = []
         self.fail = fail
 
-    def __call__(self, home, run_dir):
+    def __call__(self, home, job_dir):
         if self.fail:
             raise self.fail
-        self.dirs.append(run_dir)
+        self.dirs.append(job_dir)
 
 
 def tick(home, now, starter=None, **kw):
@@ -72,8 +72,8 @@ def index_lines(home, crew="default"):
     return [ln for ln in memory.index_path(home, crew).read_text().splitlines() if ln.startswith("- ")]
 
 
-def finish_run(run_dir, status="completed"):
-    runs.update_run(run_dir, status=status)
+def finish_job(job_dir, status="completed"):
+    jobs.update_job(job_dir, status=status)
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ def test_cron_day_of_month_or_day_of_week():
     assert not both.matches(datetime(2026, 11, 20, 9, 0))  # Friday the 20th (even)
 
 
-def test_clocks_going_forward_run_the_skipped_slot_once_after_the_change():
+def test_clocks_going_forward_start_the_skipped_slot_once_after_the_change():
     c = cronmod.parse("30 1 * * *")
     slots = cronmod.slots_between(c, ts(2026, 3, 28, 23, 0), ts(2026, 3, 29, 6, 0), L)
     assert [cronmod.slot_name(w) for w, _ in slots] == ["2026-03-29T01:30"]
@@ -125,7 +125,7 @@ def test_clocks_going_back_never_start_a_slot_twice(home):
     second = datetime(2026, 10, 25, 1, 30, 10, fold=1, tzinfo=L).timestamp()  # GMT, an hour later
     assert second - first == 3600
     a = tick(home, first)
-    finish_run(a.started[0])
+    finish_job(a.started[0])
     b = tick(home, second)
     assert len(a.started) == 1 and not b.started and not b.noted
 
@@ -140,20 +140,20 @@ def test_next_slots_for_display():
 
 
 def test_a_due_slot_starts_once_detached_with_limits_fixed(home):
-    add_schedule(home, limits={"allowance": "conservative", "run_timeout": "15m"})
+    add_schedule(home, limits={"allowance": "conservative", "job_timeout": "15m"})
     starter = Starts()
     r = tick(home, ts(2026, 11, 12, 7, 30, 20), starter)
     assert len(r.started) == 1 and starter.dirs == r.started
-    meta = runs.read_run(r.started[0])[0]
+    meta = jobs.read_job(r.started[0])[0]
     assert meta["schedule"] == "morning" and meta["due"] == "2026-11-12T07:30"
     assert meta["source"] == "schedule morning (schedules/morning.md), due 2026-11-12 07:30"
-    assert meta["limits"]["max_tokens"] == 300_000 and meta["limits"]["run_timeout"] == 900
+    assert meta["limits"]["max_tokens"] == 300_000 and meta["limits"]["job_timeout"] == 900
     assert "fictional teapot makers" in (r.started[0] / "spec.md").read_text()
     # The same minute again, and the next minute: nothing new.
     assert not tick(home, ts(2026, 11, 12, 7, 30, 50), starter).started
     assert not tick(home, ts(2026, 11, 12, 7, 31, 5), starter).started
     log = schedules.log_path(home).read_text()
-    assert "morning due 2026-11-12 07:30: started run" in log
+    assert "morning due 2026-11-12 07:30: started job" in log
     assert log.count("tick: 1 schedule(s)") == 3
 
 
@@ -161,16 +161,16 @@ def test_a_late_tick_within_grace_still_starts(home):
     add_schedule(home)
     tick(home, ts(2026, 11, 12, 7, 20))
     r = tick(home, ts(2026, 11, 12, 7, 38))
-    assert len(r.started) == 1 and runs.read_run(r.started[0])[0]["due"] == "2026-11-12T07:30"
+    assert len(r.started) == 1 and jobs.read_job(r.started[0])[0]["due"] == "2026-11-12T07:30"
 
 
-def test_a_slot_past_grace_is_missed_and_noted_not_run(home):
+def test_a_slot_past_grace_is_missed_and_noted_not_started(home):
     add_schedule(home)
     tick(home, ts(2026, 11, 12, 7, 20))
     r = tick(home, ts(2026, 11, 12, 7, 45))
     assert not r.started
     [line] = index_lines(home)
-    assert "schedule:morning@2026-11-12T07:30 · missed · 07:30 not run" in line
+    assert "schedule:morning@2026-11-12T07:30 · missed · 07:30:" in line
     assert "the machine was off or asleep (no tick from 12 Nov 07:20 to 12 Nov 07:45)" in line
     assert len(line) <= 200
     assert line.endswith("schedules/morning.md")
@@ -183,13 +183,13 @@ def test_a_long_sleep_is_one_entry_per_schedule(home):
     r = tick(home, ts(2026, 11, 12, 9, 14))
     assert not r.started
     [line] = index_lines(home)
-    assert "schedule:morning@2026-11-10T07:30..2026-11-12T07:30 · missed · 3 slots not run" in line
+    assert "schedule:morning@2026-11-10T07:30..2026-11-12T07:30 · missed · 3 slots:" in line
     assert len(line) <= 200
     assert not tick(home, ts(2026, 11, 12, 9, 15)).noted
     assert len(index_lines(home)) == 1
-    # The Lead of the crew's next run sees it among the recent entries.
+    # The Lead of the crew's next job sees it among the recent entries.
     _, recent = memory.lead_context(home, ["default"], schedules.base_limits(home))
-    assert "3 slots not run" in recent
+    assert "3 slots:" in recent
 
 
 def test_without_a_heartbeat_only_the_grace_period_is_considered(home):
@@ -226,19 +226,19 @@ def test_editing_the_file_takes_effect_at_the_next_tick(home):
     os.utime(path, (ts(2026, 11, 12, 7, 0),) * 2)
     assert not tick(home, ts(2026, 11, 12, 7, 30, 5)).started
     r = tick(home, ts(2026, 11, 12, 7, 45, 5))
-    assert runs.read_run(r.started[0])[0]["due"] == "2026-11-12T07:45"
+    assert jobs.read_job(r.started[0])[0]["due"] == "2026-11-12T07:45"
 
 
 def test_a_late_tick_starts_the_newest_slot_and_notes_the_ones_before(home):
     add_schedule(home, cron="* * * * *")
     first = tick(home, ts(2026, 11, 12, 7, 0, 5))
-    finish_run(first.started[0])
+    finish_job(first.started[0])
     r = tick(home, ts(2026, 11, 12, 7, 3, 30))
-    assert [runs.read_run(d)[0]["due"] for d in r.started] == ["2026-11-12T07:03"]
+    assert [jobs.read_job(d)[0]["due"] for d in r.started] == ["2026-11-12T07:03"]
     [line] = index_lines(home)
     assert "schedule:morning@2026-11-12T07:01..2026-11-12T07:02 · skipped" in line
     assert "a later slot, 2026-11-12 07:03, was started instead" in line
-    finish_run(r.started[0])
+    finish_job(r.started[0])
     assert len(tick(home, ts(2026, 11, 12, 7, 4, 10)).started) == 1
     assert len(index_lines(home)) == 1  # 07:01 and 07:02 are not noted again
 
@@ -255,8 +255,8 @@ def test_overlap_waits_within_grace_then_is_skipped_with_the_reason(home):
     r = tick(home, ts(2026, 11, 12, 7, 41))
     assert not r.started and not r.waiting
     [line] = index_lines(home)
-    assert f"skipped · 07:30 not run: not started within the grace period: the previous run {day1.name}" in line
-    finish_run(day1)
+    assert f"skipped · 07:30: not started within the grace period: the previous job {day1.name}" in line
+    finish_job(day1)
     assert len(tick(home, ts(2026, 11, 13, 7, 30, 5)).started) == 1
 
 
@@ -264,7 +264,7 @@ def test_overlap_that_clears_within_grace_starts_late(home):
     add_schedule(home)
     day1 = tick(home, ts(2026, 11, 11, 7, 30, 5)).started[0]
     assert tick(home, ts(2026, 11, 12, 7, 30, 5)).waiting
-    finish_run(day1)
+    finish_job(day1)
     r = tick(home, ts(2026, 11, 12, 7, 33))
     assert len(r.started) == 1 and index_lines(home) == []
 
@@ -276,10 +276,10 @@ def test_caps_on_running_and_starting_scheduled_runs(home):
     add_schedule(home, "beta")
     r = tick(home, ts(2026, 11, 12, 7, 30, 5))
     assert len(r.started) == 1 and r.waiting == ["beta@2026-11-12T07:30"]
-    assert "1 scheduled runs were already running (schedule_max_running)" in "\n".join(r.lines)
+    assert "1 scheduled jobs were already running (schedule_max_running)" in "\n".join(r.lines)
 
     mdfile.write(home.limits, {**meta, "schedule_max_running": 5, "schedule_max_starts": 1}, body)
-    finish_run(r.started[0])
+    finish_job(r.started[0])
     r2 = tick(home, ts(2026, 11, 13, 7, 30, 5))
     assert len(r2.started) == 1 and len(r2.waiting) == 1
     assert "schedule_max_starts" in "\n".join(r2.lines)
@@ -298,9 +298,9 @@ def test_two_ticks_at_once_start_a_slot_once(home):
     add_schedule(home)
     started = []
 
-    def slow(home_, run_dir):
+    def slow(home_, job_dir):
         time.sleep(0.3)
-        started.append(run_dir)
+        started.append(job_dir)
 
     now = ts(2026, 11, 12, 7, 30, 5)
     threads = [threading.Thread(target=tick, args=(home, now, slow)) for _ in range(2)]
@@ -309,51 +309,51 @@ def test_two_ticks_at_once_start_a_slot_once(home):
     for t in threads:
         t.join()
     assert len(started) == 1
-    assert len(runs.all_runs(home)) == 1
+    assert len(jobs.all_jobs(home)) == 1
 
 
 # ---------------------------------------------------------------------------
 # runs that cannot start, and limits
 
 
-def test_a_missing_spec_becomes_a_failed_run_with_a_report(home):
+def test_a_missing_spec_becomes_a_failed_job_with_a_report(home):
     add_schedule(home, spec="no-such-spec")
     r = tick(home, ts(2026, 11, 12, 7, 30, 5))
-    [run_dir] = r.failed
-    meta = runs.read_run(run_dir)[0]
+    [job_dir] = r.failed
+    meta = jobs.read_job(job_dir)[0]
     assert meta["status"] == "failed" and meta["due"] == "2026-11-12T07:30"
-    rep = (run_dir / "report.md").read_text()
-    assert "its spec specs/no-such-spec.md does not exist" in rep and "the run could not start" in rep
-    assert any(run_dir.name in ln and "failed" in ln for ln in index_lines(home))
+    rep = (job_dir / "report.md").read_text()
+    assert "its spec specs/no-such-spec.md does not exist" in rep and "the job could not start" in rep
+    assert any(job_dir.name in ln and "failed" in ln for ln in index_lines(home))
     assert not tick(home, ts(2026, 11, 12, 7, 31)).failed  # recorded once
 
 
-def test_no_model_connected_becomes_a_failed_run(home):
+def test_no_model_connected_becomes_a_failed_job(home):
     keys.remove_key(home, "TEST_MODEL_KEY")
     add_schedule(home)
-    [run_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5)).failed
-    assert "no model is connected" in (run_dir / "report.md").read_text()
+    [job_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5)).failed
+    assert "no model is connected" in (job_dir / "report.md").read_text()
 
 
 def test_a_process_that_cannot_be_started_is_reported(home):
     add_schedule(home)
-    [run_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5), Starts(fail=OSError("invented spawn failure"))).failed
-    assert runs.read_run(run_dir)[0]["status"] == "failed"
-    assert "invented spawn failure" in (run_dir / "report.md").read_text()
+    [job_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5), Starts(fail=OSError("invented spawn failure"))).failed
+    assert jobs.read_job(job_dir)[0]["status"] == "failed"
+    assert "invented spawn failure" in (job_dir / "report.md").read_text()
 
 
-def test_a_scheduled_run_must_have_a_token_cap(home):
+def test_a_scheduled_job_must_have_a_token_cap(home):
     add_schedule(home, limits={"allowance": "unlimited"})
-    [run_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5)).failed
-    assert "must have a token cap" in (run_dir / "report.md").read_text()
+    [job_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5)).failed
+    assert "must have a token cap" in (job_dir / "report.md").read_text()
 
 
 def test_schedule_limits_layer_over_the_spec_and_limits_md(home):
     save_spec(home, "big", meta={"limits": {"allowance": "generous", "max_rounds": 3}})
     add_schedule(home, spec="big", limits={"max_tokens": 50_000, "budget_usd": 0.5})
-    [run_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5)).started
-    lim = runs.read_run(run_dir)[0]["limits"]
-    assert lim["max_tokens"] == 50_000 and lim["max_rounds"] == 3 and lim["run_timeout"] == 3600
+    [job_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5)).started
+    lim = jobs.read_job(job_dir)[0]["limits"]
+    assert lim["max_tokens"] == 50_000 and lim["max_rounds"] == 3 and lim["job_timeout"] == 3600
     assert "budget_usd" not in lim
 
 
@@ -373,29 +373,29 @@ def test_schedule_file_problems_are_found(home):
     assert "must be a saved spec" in err and "enabled must be true or false" in err
 
 
-def test_a_scheduled_run_end_to_end_with_the_fake_model(home):
+def test_a_scheduled_job_end_to_end_with_the_fake_model(home):
     add_schedule(home)
     script = [fake.brief("researcher", "List the teapot makers."), fake.result("Listed three."),
               fake.finish("Done."), fake.keep_notes(), LEAD_REPORT]
 
-    def run_here(home_, run_dir):
+    def run_here(home_, job_dir):
         client = ScriptedClient(script)
-        Engine(home_, run_dir, client_factory=lambda spec: client).execute()
+        Engine(home_, job_dir, client_factory=lambda spec: client).execute()
 
-    [run_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5), run_here).started
-    meta = runs.read_run(run_dir)[0]
+    [job_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5), run_here).started
+    meta = jobs.read_job(job_dir)[0]
     assert meta["status"] == "completed"
-    assert not (run_dir / "interview.md").exists()
-    rep = (run_dir / "report.md").read_text()
+    assert not (job_dir / "interview.md").exists()
+    rep = (job_dir / "report.md").read_text()
     assert "LEAD-REPORT-MARKER" in rep and "_Source: schedule morning" in rep
-    assert any(run_dir.name in ln and "completed" in ln for ln in index_lines(home))
+    assert any(job_dir.name in ln and "completed" in ln for ln in index_lines(home))
 
 
 def test_dry_run_changes_nothing(home):
     add_schedule(home)
     r = tick(home, ts(2026, 11, 12, 7, 30, 5), dry_run=True)
-    assert "morning due 2026-11-12 07:30: would start a run" in "\n".join(r.lines)
-    assert runs.all_runs(home) == [] and schedules.last_tick(home) is None
+    assert "morning due 2026-11-12 07:30: would start a job" in "\n".join(r.lines)
+    assert jobs.all_jobs(home) == [] and schedules.last_tick(home) is None
     assert not schedules.log_path(home).exists()
 
 
@@ -499,7 +499,7 @@ def test_schedule_list_show_enable_disable_remove(home, monkeypatch, capsys):
 
     assert cli.main(["schedule", "show", "morning"]) == 0
     out = capsys.readouterr().out
-    assert "Next due:" in out and "allowance moderate" in out and "No runs yet." in out
+    assert "Next due:" in out and "allowance moderate" in out and "No jobs yet." in out
 
     monkeypatch.setattr("builtins.input", Answers("y"))
     assert cli.main(["schedule", "remove", "morning"]) == 0
@@ -522,10 +522,10 @@ def test_schedule_install_and_uninstall_ask_first(home, monkeypatch, capsys, no_
 
 
 # ---------------------------------------------------------------------------
-# ombro tick as a real command, starting a real detached run (fake model)
+# ombro tick as a real command, starting a real detached job (fake model)
 
 
-def test_ombro_tick_starts_a_detached_run_that_completes(home):
+def test_ombro_tick_starts_a_detached_job_that_completes(home):
     (home.root / "script.json").write_text(json.dumps([
         fake.brief("researcher", "List the teapot makers."), fake.result("Listed three."),
         fake.finish("Done."), fake.keep_notes(),
@@ -538,15 +538,15 @@ def test_ombro_tick_starts_a_detached_run_that_completes(home):
     r = subprocess.run([sys.executable, "-m", "ombro", "tick"], capture_output=True, text=True, timeout=60,
                        env={**os.environ, "OMBRO_HOME": str(home.root)})
     assert r.returncode == 0, r.stderr
-    assert "morning due" in r.stdout and "started run" in r.stdout
-    [run_dir] = runs.all_runs(home)
+    assert "morning due" in r.stdout and "started job" in r.stdout
+    [job_dir] = jobs.all_jobs(home)
     deadline = time.time() + 30
-    while runs.read_run(run_dir)[0]["status"] == "running" and time.time() < deadline:
+    while jobs.read_job(job_dir)[0]["status"] == "running" and time.time() < deadline:
         time.sleep(0.1)
-    meta = runs.read_run(run_dir)[0]
+    meta = jobs.read_job(job_dir)[0]
     assert meta["status"] == "completed" and meta["schedule"] == "morning" and meta["pid"]
-    assert "TICK-REPORT-MARKER" in (run_dir / "report.md").read_text()
-    assert "started run" in schedules.log_path(home).read_text()
+    assert "TICK-REPORT-MARKER" in (job_dir / "report.md").read_text()
+    assert "started job" in schedules.log_path(home).read_text()
 
 
 def test_a_percent_sign_in_a_path_is_escaped_for_crontab(tmp_path, no_system_scheduler):

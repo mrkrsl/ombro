@@ -9,7 +9,7 @@ import shutil
 import pytest
 
 from conftest import LEAD_REPORT, SPEC, write_role
-from ombro import cli, fake, mdfile, memory, prompts, runs, schedules
+from ombro import cli, fake, mdfile, memory, prompts, jobs, schedules
 from ombro.home import ASSISTANT_NAME, Home, ensure_crew, ensure_home
 from ombro.interviews import BriefPurpose
 from test_interviews import talk  # noqa: F401  (a fixture)
@@ -71,7 +71,7 @@ def test_a_crew_cannot_have_a_lead_of_its_own(home):
 def test_an_old_home_with_a_lead_in_a_crew_is_refused(home, capsys):
     (home.roles_dir("default") / "lead").mkdir()
     assert home.old_layout()
-    assert cli.main(["runs"]) == 2
+    assert cli.main(["jobs"]) == 2
     err = capsys.readouterr().err
     assert "made by an earlier Ombro" in err and "ombro init" in err
 
@@ -101,19 +101,19 @@ def test_a_bare_role_name_is_accepted_only_where_one_crew_has_it(crews):
 
 
 def test_spec_crews_default_and_checks(crews):
-    assert runs.spec_crews(crews, {}) == ["default"]
-    assert runs.spec_crews(crews, {}, ["ops"]) == ["ops"]
-    assert runs.spec_crews(crews, {"crews": ["bakery", "ops", "bakery"]}, ["garden"]) == ["bakery", "ops"]
-    assert runs.spec_crews(crews, {"crews": "ops"}) == ["ops"]
+    assert jobs.spec_crews(crews, {}) == ["default"]
+    assert jobs.spec_crews(crews, {}, ["ops"]) == ["ops"]
+    assert jobs.spec_crews(crews, {"crews": ["bakery", "ops", "bakery"]}, ["garden"]) == ["bakery", "ops"]
+    assert jobs.spec_crews(crews, {"crews": "ops"}) == ["ops"]
     with pytest.raises(SetupError, match="no crew named 'nowhere'"):
-        runs.spec_crews(crews, {"crews": ["nowhere"]})
+        jobs.spec_crews(crews, {"crews": ["nowhere"]})
 
 
-# -- a run across crews ------------------------------------------------------------------------
+# -- a job across crews ------------------------------------------------------------------------
 
 
-def two_crew_run(run):
-    return run(
+def two_crew_job(job):
+    return job(
         [
             fake.brief("bakery/writer", "Draft an invented bakery notice."),
             fake.result("Drafted the notice."),
@@ -128,78 +128,78 @@ def two_crew_run(run):
     )
 
 
-def test_a_run_briefs_roles_in_the_crews_its_spec_names(run, crews):
-    assert two_crew_run(run) == "completed"
-    assert run.meta["crews"] == ["bakery", "ops"]
-    assert run.run_dir.parent == crews.runs_dir
-    briefed = [e for e in run.events if e["action"] == "briefed"]
+def test_a_job_briefs_roles_in_the_crews_its_spec_names(job, crews):
+    assert two_crew_job(job) == "completed"
+    assert job.meta["crews"] == ["bakery", "ops"]
+    assert job.job_dir.parent == crews.jobs_dir
+    briefed = [e for e in job.events if e["action"] == "briefed"]
     assert [(e["target"], e["crew"]) for e in briefed] == [("bakery/writer", "bakery"), ("ops/bookkeeper", "ops")]
     # The Lead was shown only the named crews' roles, by crew/role.
-    system = run.client.calls[0]["messages"][0]["content"]
+    system = job.client.calls[0]["messages"][0]["content"]
     assert "bakery/writer" in system and "ops/bookkeeper" in system and "garden/writer" not in system
-    report = run.report
+    report = job.report
     assert "**Crews:** bakery, ops" in report and "**bakery/writer**" in report
 
 
-def test_each_briefed_crew_gets_its_own_notes_and_every_named_crew_an_index_entry(run, crews):
-    two_crew_run(run)
-    notes = [e for e in run.events if e["action"] == "notes"]
+def test_each_briefed_crew_gets_its_own_notes_and_every_named_crew_an_index_entry(job, crews):
+    two_crew_job(job)
+    notes = [e for e in job.events if e["action"] == "notes"]
     assert [(e["crew"], e["outcome"]) for e in notes] == [("bakery", "changed"), ("ops", "kept")]
-    assert "The bakery likes short notices." in memory.read_notes(crews, "bakery").from_runs
-    assert memory.read_notes(crews, "ops").from_runs.strip() == ""
+    assert "The bakery likes short notices." in memory.read_notes(crews, "bakery").from_jobs
+    assert memory.read_notes(crews, "ops").from_jobs.strip() == ""
     # The notes call names its crew.
-    notes_calls = [c for c in run.client.calls if c.get("tools") and
+    notes_calls = [c for c in job.client.calls if c.get("tools") and
                    c["tools"][0]["function"]["name"] == "memory__write_notes"]
     assert "These are the notes of crew bakery" in notes_calls[0]["messages"][1]["content"]
     assert "These are the notes of crew ops" in notes_calls[1]["messages"][1]["content"]
-    report = run.report
+    report = job.report
     assert "### Crew bakery" in report and "### Crew ops" in report
     for crew in ("bakery", "ops"):
         lines = memory.index_path(crews, crew).read_text()
-        assert f" · {run.run_dir.name} · completed · " in lines
-    assert run.run_dir.name not in memory.index_path(crews, "garden").read_text()
+        assert f" · {job.job_dir.name} · completed · " in lines
+    assert job.job_dir.name not in memory.index_path(crews, "garden").read_text()
 
 
-def test_a_crew_named_but_not_briefed_gets_no_notes_call(run, crews):
-    status = run(
+def test_a_crew_named_but_not_briefed_gets_no_notes_call(job, crews):
+    status = job(
         [fake.brief("bakery/writer", "Draft it."), fake.result(), fake.finish(), fake.keep_notes(), LEAD_REPORT],
         crews=["bakery", "garden"],
     )
     assert status == "completed"
-    assert [e["crew"] for e in run.events if e["action"] == "notes"] == ["bakery"]
-    assert run.run_dir.name in memory.index_path(crews, "garden").read_text()
+    assert [e["crew"] for e in job.events if e["action"] == "notes"] == ["bakery"]
+    assert job.job_dir.name in memory.index_path(crews, "garden").read_text()
 
 
-def test_an_ambiguous_brief_is_refused_with_the_choices(run, crews):
-    status = run(
+def test_an_ambiguous_brief_is_refused_with_the_choices(job, crews):
+    status = job(
         [fake.brief("writer", "Draft it."), fake.brief("garden/writer", "Draft it."), fake.result(),
          fake.finish(), fake.keep_notes(), LEAD_REPORT],
         crews=["bakery", "garden"],
     )
     assert status == "completed"
-    refusal = run.client.calls[1]["messages"][-1]["content"]
+    refusal = job.client.calls[1]["messages"][-1]["content"]
     assert "more than one crew" in refusal and "bakery/writer" in refusal
-    assert [e["target"] for e in run.events if e["action"] == "briefed"] == ["garden/writer"]
+    assert [e["target"] for e in job.events if e["action"] == "briefed"] == ["garden/writer"]
 
 
-def test_a_role_outside_the_named_crews_cannot_be_briefed(run, crews):
-    status = run([fake.brief("ops/bookkeeper", "Total it."), fake.finish(), LEAD_REPORT], crews=["bakery"])
+def test_a_role_outside_the_named_crews_cannot_be_briefed(job, crews):
+    status = job([fake.brief("ops/bookkeeper", "Total it."), fake.finish(), LEAD_REPORT], crews=["bakery"])
     assert status == "completed"
-    assert "no role named 'ops/bookkeeper'" in run.client.calls[1]["messages"][-1]["content"]
-    assert not any(e["action"] == "briefed" for e in run.events)
+    assert "no role named 'ops/bookkeeper'" in job.client.calls[1]["messages"][-1]["content"]
+    assert not any(e["action"] == "briefed" for e in job.events)
 
 
 def test_the_lead_starts_with_the_memory_of_the_named_crews_only(crews):
     for crew, lesson in (("bakery", "Bakery lesson."), ("garden", "Garden lesson."), ("ops", "Ops lesson.")):
-        memory.replace_from_runs(crews, crew, f"- {lesson}", 10_000)
+        memory.replace_from_jobs(crews, crew, f"- {lesson}", 10_000)
     notes, index = memory.lead_context(crews, ["bakery", "ops"], load_limits(crews))
     assert "### Crew bakery" in notes and "Bakery lesson." in notes and "Ops lesson." in notes
     assert "Garden lesson." not in notes
-    assert index == "(no earlier runs in these crews)"
+    assert index == "(no earlier jobs in these crews)"
 
 
-def test_memory_search_is_held_to_the_spec_crews(run, crews):
-    run([fake.brief("garden/writer", "Write about invented ferns."), fake.result("Wrote about ferns."),
+def test_memory_search_is_held_to_the_spec_crews(job, crews):
+    job([fake.brief("garden/writer", "Write about invented ferns."), fake.result("Wrote about ferns."),
          fake.finish("Ferns of Lowtown were covered."), fake.keep_notes(), LEAD_REPORT], crews=["garden"])
     found = memory.search(crews, ["garden"], "ferns")
     assert found["results"] and found["results"][0]["crew"] == "garden"
@@ -230,7 +230,7 @@ def test_the_brief_proposes_crews_and_shows_them(talk, crews):
     assert out.status == "confirmed"
     meta, _ = mdfile.read(crews.specs_dir / "notice.md")
     assert meta["crews"] == ["bakery", "ops"]
-    assert "the run may brief roles in the Bakery Crew and the Ops Crew" in talk.output
+    assert "the job may brief roles in the Bakery Crew and the Ops Crew" in talk.output
     # The Lead was shown every crew's roles, and told to ask between look-alike crews.
     system = talk.client.calls[0]["messages"][0]["content"]
     assert "bakery/writer" in system and "garden/writer" in system and "ask the user which one" in system
@@ -261,8 +261,8 @@ def test_a_schedule_notes_a_missed_slot_in_every_crew_its_spec_names(crews):
     assert "schedule:weekly@" not in memory.index_path(crews, "garden").read_text()
     starts = Starts()
     tick(crews, ts(2026, 11, 13, 7, 31), starter=starts)
-    [run_dir] = starts.dirs
-    assert runs.read_run(run_dir)[0]["crews"] == ["bakery", "ops"]
+    [job_dir] = starts.dirs
+    assert jobs.read_job(job_dir)[0]["crews"] == ["bakery", "ops"]
 
 
 def test_the_chat_lead_is_the_one_lead(home):

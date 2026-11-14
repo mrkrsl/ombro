@@ -133,7 +133,7 @@ def load_roles(home: Home, crews: list[str], limits: Limits) -> dict[str, Role]:
 
 
 def resolve_role(roles: dict[str, Role], name: str) -> tuple[Role | None, str]:
-    """A role by the name it has in the run, by crew/role, or by its own name where only
+    """A role by the name it has in the job, by crew/role, or by its own name where only
     one crew has it. Returns (role, "") or (None, why not)."""
     name = name.strip()
     if name in roles:

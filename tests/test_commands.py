@@ -109,7 +109,7 @@ def test_limits_shows_and_sets_the_allowance(home, capsys):
     assert cli.main(["limits", "set", "lavish"]) == 2
 
 
-def test_run_accepts_the_name_of_a_saved_spec(home):
+def test_start_accepts_the_name_of_a_saved_spec(home):
     from ombro.cli import _spec_path
 
     spec = home.specs_dir / "invented.md"

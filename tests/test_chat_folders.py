@@ -116,7 +116,7 @@ def test_nothing_is_deleted_a_file_is_set_aside_with_a_note(chat, user):
     assert not (user / "Documents" / "Niches" / "master-list.md").exists()
 
 
-def test_set_aside_in_a_run_never_overwrites_and_respects_read_only(tmp_path):
+def test_set_aside_in_a_job_never_overwrites_and_respects_read_only(tmp_path):
     from ombro.native import _set_aside
     from ombro.tools import SharedFolder, ToolContext, ToolInputError
 
@@ -124,13 +124,13 @@ def test_set_aside_in_a_run_never_overwrites_and_respects_read_only(tmp_path):
     (folder / "Archive").mkdir(parents=True)
     (folder / "Archive" / "plan.md").write_text("older")
     (folder / "plan.md").write_text("old")
-    run = tmp_path / "run"
-    (run / "workspace").mkdir(parents=True)
-    ctx = ToolContext(run, "writer", shared={"s": SharedFolder("s", folder.resolve(), "write")})
+    job = tmp_path / "run"
+    (job / "workspace").mkdir(parents=True)
+    ctx = ToolContext(job, "writer", shared={"s": SharedFolder("s", folder.resolve(), "write")})
     out = _set_aside({"path": "shared/s/plan.md", "as": "archive", "why": "A newer plan exists."}, ctx)
     assert out["to"] == "shared/s/Archive/plan (2).md"
     assert (folder / "Archive" / "plan.md").read_text() == "older"
-    ro = ToolContext(run, "writer", shared={"s": SharedFolder("s", folder.resolve(), "read")})
+    ro = ToolContext(job, "writer", shared={"s": SharedFolder("s", folder.resolve(), "read")})
     (folder / "notes.md").write_text("keep")
     with pytest.raises(ToolInputError, match="read-only"):
         _set_aside({"path": "shared/s/notes.md", "why": "x"}, ro)
@@ -165,16 +165,16 @@ def test_replacing_a_file_keeps_the_old_version_in_archive(chat, user):
     assert "keep the current version in Archive/" in chat.output
 
 
-def test_a_run_archives_only_the_first_replacement_of_a_file(tmp_path):
+def test_a_job_archives_only_the_first_replacement_of_a_file(tmp_path):
     from ombro.native import _write
     from ombro.tools import SharedFolder, ToolContext
 
     folder = tmp_path / "Shared"
     folder.mkdir()
     (folder / "draft.md").write_text("v0")
-    run = tmp_path / "run"
-    (run / "workspace").mkdir(parents=True)
-    ctx = ToolContext(run, "writer", shared={"s": SharedFolder("s", folder.resolve(), "write")}, archived=set())
+    job = tmp_path / "run"
+    (job / "workspace").mkdir(parents=True)
+    ctx = ToolContext(job, "writer", shared={"s": SharedFolder("s", folder.resolve(), "write")}, archived=set())
     for v in ("v1", "v2", "v3"):
         _write({"path": "shared/s/draft.md", "content": v}, ctx)
     assert (folder / "draft.md").read_text() == "v3"
@@ -182,7 +182,7 @@ def test_a_run_archives_only_the_first_replacement_of_a_file(tmp_path):
     assert (folder / "Archive" / "draft.md").read_text() == "v0"
     _write({"path": "workspace/notes.md", "content": "a"}, ctx)
     _write({"path": "workspace/notes.md", "content": "b"}, ctx)
-    assert not (run / "workspace" / "Archive").exists()  # the run's own folders are not archived
+    assert not (job / "workspace" / "Archive").exists()  # the job's own folders are not archived
 
 
 def test_chat_says_when_something_it_read_looks_like_an_injection(chat, user):

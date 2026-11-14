@@ -13,8 +13,8 @@ import sys
 import time
 from pathlib import Path
 
-from ombro import __version__, journal, keys, mdfile, runs
-from ombro.home import Home
+from ombro import __version__, journal, keys, mdfile, jobs
+from ombro.home import Home, migrate_jobs
 from ombro.settings import SetupError, format_duration, format_tokens, load_limits, load_preferences, load_tool_settings
 
 
@@ -29,7 +29,7 @@ def _home(require: bool = True) -> Home:
     if home.exists() and home.old_layout():
         raise CliError(
             f"The Ombro home at {home.root} was made by an earlier Ombro, with a Lead in each crew. There is now "
-            "one Lead above every crew, and runs, specs and schedules are kept outside the crews. Move that folder "
+            "one Lead above every crew, and jobs, specs and schedules are kept outside the crews. Move that folder "
             "aside (keep its secrets/ folder if you want your keys) and run `ombro init` for a new home."
         )
     if home.exists():
@@ -39,6 +39,12 @@ def _home(require: bool = True) -> Home:
             moved = keys.migrate(home)
         except OSError as e:
             moved = f"Could not move {home.legacy_env} into {home.env}: {e}. Keys are still read from it."
+        if moved:
+            print(moved, file=sys.stderr)
+        try:
+            moved = migrate_jobs(home)
+        except OSError as e:
+            moved = f"Could not move {home.root / 'jobs'} to {home.jobs_dir}: {e}."
         if moved:
             print(moved, file=sys.stderr)
     return home
@@ -51,18 +57,18 @@ def _crew(home: Home, name: str | None) -> str:
     return crew
 
 
-def _resolve_run(home: Home, run_id: str | None, crew: str | None) -> Path:
+def _resolve_job(home: Home, job_id: str | None, crew: str | None) -> Path:
     try:
-        if run_id:
-            return runs.find_run(home, run_id)
-        return runs.latest_run(home, _crew(home, crew))
-    except runs.RunNotFound as e:
+        if job_id:
+            return jobs.find_job(home, job_id)
+        return jobs.latest_job(home, _crew(home, crew))
+    except jobs.JobNotFound as e:
         raise CliError(str(e)) from None
 
 
 def _reap(home: Home) -> None:
-    for run_dir in runs.reap_dead_runs(home):
-        print(f"Run {run_dir.name} had stopped without finishing; marked failed and wrote its report.", file=sys.stderr)
+    for job_dir in jobs.reap_dead_jobs(home):
+        print(f"Job {job_dir.name} had stopped without finishing; marked failed and wrote its report.", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +92,7 @@ def cmd_init(args) -> int:
 
 
 # ---------------------------------------------------------------------------
-# run
+# start
 
 
 def _echo(event: dict) -> None:
@@ -135,7 +141,7 @@ def saved_specs(home: Home, crew: str | None = None) -> list[tuple[str, Path]]:
 
 def _spec_crews_or_none(home: Home, path: Path) -> list[str]:
     try:
-        return runs.spec_crews(home, mdfile.read(path)[0])
+        return jobs.spec_crews(home, mdfile.read(path)[0])
     except (OSError, mdfile.FrontMatterError, SetupError):
         return []
 
@@ -156,8 +162,8 @@ def cmd_specs(args) -> int:
         _, body = mdfile.read(path)
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(path.stat().st_mtime))
         crews = ", ".join(_spec_crews_or_none(home, path)) or "?"
-        print(f"  {name:<28} {when}  {crews:<20} {runs.first_line(body, 60)}")
-    print("\nRun one with `ombro run --spec <name>`.")
+        print(f"  {name:<28} {when}  {crews:<20} {jobs.first_line(body, 60)}")
+    print("\nRun one with `ombro start --spec <name>`.")
     return 0
 
 
@@ -168,7 +174,7 @@ def _require_model(home: Home) -> None:
         raise CliError("No model is connected. Run `ombro init`.")
 
 
-def cmd_run(args) -> int:
+def cmd_start(args) -> int:
     home = _home()
     _reap(home)
     if args.spec and args.skip_interview:
@@ -184,18 +190,18 @@ def cmd_run(args) -> int:
         source = "--skip-interview (no interview was held)"
     else:
         _require_model(home)
-        outcome = _brief_interview(home, given, "", then_run=True)
+        outcome = _brief_interview(home, given, "", then_start=True)
         if outcome.status == "insufficient" or outcome.status == "limit":
             from ombro.interviews import record_insufficient_brief
 
             tool_settings = load_tool_settings(home)
-            run_dir = record_insufficient_brief(
-                home, runs.spec_crews(home, {}, given), load_limits(home, None, tool_settings), outcome,
+            job_dir = record_insufficient_brief(
+                home, jobs.spec_crews(home, {}, given), load_limits(home, None, tool_settings), outcome,
                 _first_answer(outcome),
                 tools=tool_settings.to_dict(),
             )
-            print(f"\nRun {run_dir.name} ended: insufficient_brief\n")
-            print((run_dir / "report.md").read_text(encoding="utf-8"))
+            print(f"\nRun {job_dir.name} ended: insufficient_brief\n")
+            print((job_dir / "report.md").read_text(encoding="utf-8"))
             return 1
         if not outcome.confirmed:
             return 1
@@ -207,13 +213,13 @@ def cmd_run(args) -> int:
         raise CliError("The spec is empty.")
 
     try:
-        crews = runs.spec_crews(home, spec_meta, given)
+        crews = jobs.spec_crews(home, spec_meta, given)
     except SetupError as e:
         raise CliError(str(e)) from None
     if args.role:
-        # For this run only: who does the work, in place of the spec's `roles:`. The saved spec is unchanged.
+        # For this job only: who does the work, in place of the spec's `roles:`. The saved spec is unchanged.
         spec_meta = {**spec_meta, "roles": list(dict.fromkeys(args.role))}
-        source += f"; roles for this run: {', '.join(args.role)}"
+        source += f"; roles for this job: {', '.join(args.role)}"
     overrides = spec_meta.get("limits") or {}
     if not isinstance(overrides, dict):
         raise CliError("`limits` in a spec must be a mapping, e.g. limits: {allowance: generous}")
@@ -221,68 +227,68 @@ def cmd_run(args) -> int:
     limits = load_limits(home, overrides, tool_settings)
     _require_model(home)
 
-    run_dir = runs.create_run(home, crews, spec_meta, spec_body, limits, source=source, tools=tool_settings.to_dict())
-    run_id = run_dir.name
+    job_dir = jobs.create_job(home, crews, spec_meta, spec_body, limits, source=source, tools=tool_settings.to_dict())
+    job_id = job_dir.name
     if interview is not None:
         from ombro.interviews import _interview_usage
 
-        shutil.copy2(interview.transcript, run_dir / "interview.md")
-        runs.update_run(run_dir, interview_usage=_interview_usage(interview))
+        shutil.copy2(interview.transcript, job_dir / "interview.md")
+        jobs.update_job(job_dir, interview_usage=_interview_usage(interview))
     if args.detach:
-        pid = runs.start_detached(home, run_dir)
-        # The child records its own pid in run.md; writing it here too would race its updates.
-        print(f"Started run {run_id} in the background (pid {pid}).")
-        print(f"Follow it with `ombro status {run_id}` or `ombro journal {run_id}`.")
+        pid = jobs.start_detached(home, job_dir)
+        # The child records its own pid in job.md; writing it here too would race its updates.
+        print(f"Started job {job_id} in the background (pid {pid}).")
+        print(f"Follow it with `ombro status {job_id}` or `ombro journal {job_id}`.")
         return 0
 
-    print(f"Run {run_id} (crew{'s' if len(crews) > 1 else ''} {', '.join(crews)}). "
+    print(f"Job {job_id} (crew{'s' if len(crews) > 1 else ''} {', '.join(crews)}). "
           "Ctrl-C stops it and still writes the report.\n")
-    status = _execute(home, run_dir, echo=_echo)
-    print(f"\nRun {run_id} ended: {status}\n")
-    print((run_dir / "report.md").read_text(encoding="utf-8"))
+    status = _execute(home, job_dir, echo=_echo)
+    print(f"\nRun {job_id} ended: {status}\n")
+    print((job_dir / "report.md").read_text(encoding="utf-8"))
     return 0 if status == "completed" else 1
 
 
-def _execute(home: Home, run_dir: Path, echo=None) -> str:
+def _execute(home: Home, job_dir: Path, echo=None) -> str:
     from ombro.engine import Engine
 
-    engine = Engine(home, run_dir, echo=echo)
+    engine = Engine(home, job_dir, echo=echo)
     _install_stop_handlers(engine)
     return engine.execute()
 
 
 def cmd_exec(args) -> int:
     home = _home()
-    status = _execute(home, Path(args.run_dir))
+    status = _execute(home, Path(args.job_dir))
     return 0 if status == "completed" else 1
 
 
 # ---------------------------------------------------------------------------
-# runs, status, report, journal, stop
+# jobs, status, report, journal, stop
 
 
-def cmd_runs(args) -> int:
+def cmd_jobs(args) -> int:
     home = _home()
     _reap(home)
     crew = _crew(home, args.crew) if args.crew else None
     if args.json:
         from ombro import views
 
-        return _print_json(views.run_list(home, crew))
-    rows = runs.all_runs(home, crew)
+        return _print_json(views.job_list(home, crew))
+    rows = jobs.all_jobs(home, crew)
     if not rows:
-        print("No runs yet.")
+        print("No jobs yet.")
         return 0
     from ombro import outbox
 
-    print(f"{'RUN':<24} {'CREWS':<16} {'STATUS':<18} {'TOKENS':>9}  {'OUTBOX':<10} BRIEF")
-    for run_dir in rows:
-        meta, _ = runs.read_run(run_dir)
-        crew = ", ".join(runs.run_crews(meta))
-        tokens = runs.usage(meta).get("total_tokens", 0)
-        n = outbox.waiting_count(run_dir)
+    print(f"{'JOB':<24} {'CREWS':<16} {'STATUS':<18} {'TOKENS':>9}  {'OUTBOX':<10} BRIEF")
+    for job_dir in rows:
+        meta, _ = jobs.read_job(job_dir)
+        crew = ", ".join(jobs.job_crews(meta))
+        tokens = jobs.usage(meta).get("total_tokens", 0)
+        n = outbox.waiting_count(job_dir)
         box = f"{n} waiting" if n else "-"
-        print(f"{run_dir.name:<24} {crew[:16]:<16} {meta.get('status', '?'):<18} {tokens:>9,}  {box:<10} "
+        print(f"{job_dir.name:<24} {crew[:16]:<16} {meta.get('status', '?'):<18} {tokens:>9,}  {box:<10} "
               f"{meta.get('brief', '')[:60]}")
     if any(outbox.waiting_count(d) for d in rows):
         print("\nSee waiting actions with `ombro outbox`.")
@@ -292,15 +298,15 @@ def cmd_runs(args) -> int:
 def cmd_status(args) -> int:
     home = _home()
     _reap(home)
-    run_dir = _resolve_run(home, args.run_id, args.crew)
+    job_dir = _resolve_job(home, args.job_id, args.crew)
     if args.json:
         from ombro import views
 
-        return _print_json(views.status(run_dir))
-    meta, _ = runs.read_run(run_dir)
-    lim, sp = meta.get("limits") or {}, runs.usage(meta)
+        return _print_json(views.status(job_dir))
+    meta, _ = jobs.read_job(job_dir)
+    lim, sp = meta.get("limits") or {}, jobs.usage(meta)
     reserve = lim.get("report_reserve", 0)
-    print(f"Run       {meta.get('run_id')}  (crews {', '.join(runs.run_crews(meta))})")
+    print(f"Job       {meta.get('job_id')}  (crews {', '.join(jobs.job_crews(meta))})")
     print(f"Status    {meta.get('status')}" + (f", stopped by {meta['limit_hit']}" if meta.get("limit_hit") else ""))
     print(f"Brief     {meta.get('brief', '')}")
     print(f"Started   {meta.get('started_at') or '-'}   Finished {meta.get('finished_at') or '-'}")
@@ -314,7 +320,7 @@ def cmd_status(args) -> int:
     print(f"{'Rounds':<14}{sp.get('rounds', 0):>16}  {lim.get('max_rounds', 0):>14}")
     print(
         f"{'Time':<14}{format_duration(sp.get('elapsed_seconds', 0)):>16}  "
-        f"{format_duration(lim.get('run_timeout', 0)):>14}"
+        f"{format_duration(lim.get('job_timeout', 0)):>14}"
     )
     print(f"{'Model calls':<14}{sp.get('model_calls', 0):>16}")
     tools = sp.get("tool_calls") or {}
@@ -326,9 +332,9 @@ def cmd_status(args) -> int:
         print(f"{'  ' + name:<14}{n:>16}  {cap:>14}{extra}")
     from ombro import outbox, outward
 
-    c = outbox.counts(run_dir)
+    c = outbox.counts(job_dir)
     print(f"\nOutbox    {outbox.describe_counts(c)}"
-          + (" (see them with `ombro outbox`)" if outbox.waiting_count(run_dir) else ""))
+          + (" (see them with `ombro outbox`)" if outbox.waiting_count(job_dir) else ""))
     if meta.get("outward"):
         print(f"Outward   {outward.describe(meta['outward'])}")
     print(f"\n{int(reserve * 100)}% of the token limit is held back for the report.")
@@ -338,35 +344,35 @@ def cmd_status(args) -> int:
 def cmd_report(args) -> int:
     home = _home()
     _reap(home)
-    run_dir = _resolve_run(home, args.run_id, args.crew)
-    path = run_dir / "report.md"
+    job_dir = _resolve_job(home, args.job_id, args.crew)
+    path = job_dir / "report.md"
     if args.json:
         from ombro import views
 
-        data = views.report(home, run_dir)
+        data = views.report(home, job_dir)
         if path.is_file():
-            runs.mark_seen(run_dir)
+            jobs.mark_seen(job_dir)
         return _print_json(data)
     if not path.is_file():
-        meta, _ = runs.read_run(run_dir)
-        print(f"Run {run_dir.name} has no report yet (status {meta.get('status')}).")
+        meta, _ = jobs.read_job(job_dir)
+        print(f"Job {job_dir.name} has no report yet (status {meta.get('status')}).")
         return 1
     print(path.read_text(encoding="utf-8"), end="")
-    runs.mark_seen(run_dir)
+    jobs.mark_seen(job_dir)
     return 0
 
 
 def cmd_journal(args) -> int:
     home = _home()
     _reap(home)
-    run_dir = _resolve_run(home, args.run_id, args.crew)
+    job_dir = _resolve_job(home, args.job_id, args.crew)
     if args.follow:
-        return _follow_journal(run_dir, args)
+        return _follow_journal(job_dir, args)
     if args.json:
         from ombro import views
 
-        return _print_json(views.journal_events(run_dir, args.all))
-    events = journal.read(run_dir / "journal.jsonl")
+        return _print_json(views.journal_events(job_dir, args.all))
+    events = journal.read(job_dir / "journal.jsonl")
     if not events:
         print("The journal is empty.")
     for ev in events:
@@ -376,11 +382,11 @@ def cmd_journal(args) -> int:
     return 0
 
 
-def _follow_journal(run_dir: Path, args, poll: float = 0.5, clock=time.time, sleep=time.sleep) -> int:
+def _follow_journal(job_dir: Path, args, poll: float = 0.5, clock=time.time, sleep=time.sleep) -> int:
     """`ombro journal --follow`: the events so far, then new ones as they are written,
-    until the run has ended and nothing more comes. With --json, one JSON object a line."""
+    until the job has ended and nothing more comes. With --json, one JSON object a line."""
     home = _home()
-    follower = journal.Follower(run_dir / "journal.jsonl")
+    follower = journal.Follower(job_dir / "journal.jsonl")
 
     def show(events: list[dict]) -> None:
         for ev in events:
@@ -392,13 +398,13 @@ def _follow_journal(run_dir: Path, args, poll: float = 0.5, clock=time.time, sle
     try:
         while True:
             show(follower.new_events())
-            meta, _ = runs.read_run(run_dir)
-            if meta.get("status") != "running" or runs.is_dead(meta):
-                if runs.is_dead(meta):
-                    runs.reap_dead_runs(home)
+            meta, _ = jobs.read_job(job_dir)
+            if meta.get("status") != "running" or jobs.is_dead(meta):
+                if jobs.is_dead(meta):
+                    jobs.reap_dead_jobs(home)
                 show(follower.new_events())
                 if not args.json:
-                    print(f"(The run has ended: {runs.read_run(run_dir)[0].get('status')}.)")
+                    print(f"(The job has ended: {jobs.read_job(job_dir)[0].get('status')}.)")
                 return 0
             sleep(poll)
     except KeyboardInterrupt:
@@ -429,11 +435,11 @@ def cmd_summary(args) -> int:
         if not crew["roles"]:
             print("   (no roles yet)")
     print()
-    print(", ".join([f"{n(c['crews_ready'], 'crew')} ready to work", n(c["active_runs"], "active run"),
-                     n(c["scheduled_runs"], "scheduled run"), n(c["waiting"], "item") + " to approve"]))
+    print(", ".join([f"{n(c['crews_ready'], 'crew')} ready to work", n(c["active_jobs"], "active job"),
+                     n(c["scheduled_jobs"], "scheduled job"), n(c["waiting"], "item") + " to approve"]))
     if s["unseen"]:
-        print(f"\nFinished, and not yet looked at: " + ", ".join(r["run_id"] for r in s["unseen"])
-              + ". See one with `ombro report <run_id>`.")
+        print(f"\nFinished, and not yet looked at: " + ", ".join(r["job_id"] for r in s["unseen"])
+              + ". See one with `ombro report <job_id>`.")
     return 0
 
 
@@ -446,8 +452,8 @@ def cmd_preferences(args) -> int:
         from ombro.ui import ConsoleUI
 
         open_in_editor(home, [home.preferences_config, home.instructions], ConsoleUI(home=home))
-        load_preferences(home)  # read back, so a mistake shows now rather than at the next run
-        print("Saved. They are used from the next chat, interview or run.")
+        load_preferences(home)  # read back, so a mistake shows now rather than at the next job
+        print("Saved. They are used from the next chat, interview or job.")
         return 0
     p = views.preferences(home)
     if args.json:
@@ -466,25 +472,25 @@ def cmd_preferences(args) -> int:
 def cmd_stop(args) -> int:
     home = _home()
     _reap(home)
-    run_dir = _resolve_run(home, args.run_id, None)
-    meta, _ = runs.read_run(run_dir)
+    job_dir = _resolve_job(home, args.job_id, None)
+    meta, _ = jobs.read_job(job_dir)
     if meta.get("status") != "running":
-        print(f"Run {run_dir.name} is not running (status {meta.get('status')}).")
+        print(f"Job {job_dir.name} is not running (status {meta.get('status')}).")
         return 1
     pid = meta.get("pid")
-    if not pid and not runs.is_dead(meta):
-        print(f"Run {run_dir.name} is still starting; try again in a moment.")
+    if not pid and not jobs.is_dead(meta):
+        print(f"Job {job_dir.name} is still starting; try again in a moment.")
         return 1
-    if not pid or not runs.pid_alive(int(pid)):
-        runs.reap_dead_runs(home)
-        print(f"Run {run_dir.name} had no live process; marked failed and wrote its report.")
+    if not pid or not jobs.pid_alive(int(pid)):
+        jobs.reap_dead_jobs(home)
+        print(f"Job {job_dir.name} had no live process; marked failed and wrote its report.")
         return 0
     os.kill(int(pid), signal.SIGTERM)
-    print(f"Asked run {run_dir.name} to stop. It finishes its current call, then writes its report.")
+    print(f"Asked job {job_dir.name} to stop. It finishes its current call, then writes its report.")
     deadline = time.time() + args.wait
     while time.time() < deadline:
-        if runs.read_run(run_dir)[0].get("status") != "running":
-            print(f"Stopped. Report: {run_dir / 'report.md'}")
+        if jobs.read_job(job_dir)[0].get("status") != "running":
+            print(f"Stopped. Report: {job_dir / 'report.md'}")
             return 0
         time.sleep(0.25)
     print("Still finishing. Check with `ombro status`.")
@@ -515,8 +521,8 @@ def _launch(folder: Path) -> bool:
 
 def cmd_open(args) -> int:
     home = _home()
-    run_dir = _resolve_run(home, args.run_id, args.crew)
-    folder = run_dir / "workspace"
+    job_dir = _resolve_job(home, args.job_id, args.crew)
+    folder = job_dir / "workspace"
     if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
         raise CliError(f"{folder} is not a real folder (it has been replaced, for example by a symlink), so Ombro "
                        "will not open it. Look at it with care before opening anything in it.")
@@ -554,7 +560,7 @@ def cmd_connect(args) -> int:
         return 1
     print(f"Connected {args.server}, signed in with {done.issuer}"
           + (f" (access: {done.scope})" if done.scope else "") + ".")
-    print("It renews itself, so runs can use it unattended." if done.refreshes else
+    print("It renews itself, so jobs can use it unattended." if done.refreshes else
           "The service gave no renewal token, so you will need to connect again when it expires.")
     print(f"The sign-in is kept in {oauth.store_path(home, args.server)}, readable only by you.")
     return 0
@@ -662,14 +668,14 @@ def _first_answer(outcome) -> str:
     return outcome.answers[0] if outcome.answers else ""
 
 
-def _brief_interview(home: Home, crews: list[str], task: str, *, then_run: bool):
+def _brief_interview(home: Home, crews: list[str], task: str, *, then_start: bool):
     from ombro.folders_cmd import offer_start_folder
     from ombro.interviews import BriefPurpose, start
 
     offer_start_folder(home)
     limits = load_limits(home)
     default = _crew(home, None)
-    purpose = BriefPurpose(home, default, limits, task, then_run=then_run, start_dir=Path.cwd(), crews=crews)
+    purpose = BriefPurpose(home, default, limits, task, then_start=then_start, start_dir=Path.cwd(), crews=crews)
     return start(home, purpose, default, limits)
 
 
@@ -677,13 +683,13 @@ def cmd_brief(args) -> int:
     home = _home()
     _require_model(home)
     crews = [_crew(home, c) for c in (args.crew or [])]
-    outcome = _brief_interview(home, crews, " ".join(args.text or []), then_run=False)
+    outcome = _brief_interview(home, crews, " ".join(args.text or []), then_start=False)
     if outcome.confirmed:
         name = outcome.proposal.data["name"]
         print(f"\nSpec saved as {name!r} ({outcome.proposal.files[0].path}).")
-        if _confirm("Run it now? It runs in the background; follow it with `ombro journal --follow`."):
-            return main(["run", "--spec", name, "--detach"])
-        print(f"Run it with:   ombro run --spec {name}")
+        if _confirm("Start it now? It works in the background; follow it with `ombro journal --follow`."):
+            return main(["start", "--spec", name, "--detach"])
+        print(f"Start it with:   ombro start --spec {name}")
         print("List saved specs with `ombro specs`.")
         return 0
     if outcome.status in ("insufficient", "limit"):
@@ -853,7 +859,7 @@ def cmd_role(args) -> int:
         try:
             load_role(folder, load_limits(home))
         except RoleError as e:
-            print(f"The role has a problem, and runs will refuse to start until it is fixed:\n  {e}")
+            print(f"The role has a problem, and jobs will refuse to start until it is fixed:\n  {e}")
             return 1
         print(f"{label} is valid.")
         return 0
@@ -886,7 +892,7 @@ def set_key_flow(home: Home, name: str, ui) -> int:
         ui.say("Cancelled; nothing changed.")
         return 1
     keys.set_key(home, name, value)
-    ui.say(f"Saved {name} ({keys.mask(value)}). It is used from the next call, even in a run already going.",
+    ui.say(f"Saved {name} ({keys.mask(value)}). It is used from the next call, even in a job already going.",
            level="done")
     return 0
 
@@ -974,19 +980,19 @@ def cmd_limits(args) -> int:
     meta, _ = mdfile.read(home.limits)
     by_hand = [k for k in LEVEL_KEYS if k in meta]
     print(f"Allowance: {lim.allowance}" + (f" (set by hand: {', '.join(by_hand)})" if by_hand else ""))
-    print(f"  run tokens       {format_tokens(lim.max_tokens)}")
+    print(f"  job tokens       {format_tokens(lim.max_tokens)}")
     print(f"  rounds           {lim.max_rounds}")
-    print(f"  run time         {format_duration(lim.run_timeout)}")
+    print(f"  job time         {format_duration(lim.job_timeout)}")
     print(f"  each interview   {format_tokens(lim.interview_max_tokens)} tokens, {lim.interview_max_turns} answers")
     print(f"  each chat        {format_tokens(lim.chat_max_tokens)} tokens")
-    print(f"  notes.md         {lim.memory_notes_max_chars:,} characters; a run's Lead sees the last "
+    print(f"  notes.md         {lim.memory_notes_max_chars:,} characters; a job's Lead sees the last "
           f"{lim.memory_index_entries} index entries")
     print(f"  per model call   {lim.max_output_tokens:,} output tokens")
     from ombro.settings import format_size
 
     print(f"  each script      {format_duration(lim.code_timeout)}, {format_size(lim.code_max_memory)}, "
           f"{lim.code_output_chars:,} characters of output to the role (code.run)")
-    print(f"  scripts in all   {format_size(lim.code_max_total)} in a run's workspace/ and scratch/ (code.run)")
+    print(f"  scripts in all   {format_size(lim.code_max_total)} in a job's workspace/ and scratch/ (code.run)")
     print(f"\nLevels: {', '.join(ALLOWANCES)}. Change with `ombro limits set <level>`; details in {home.limits}.")
     retired = [k for k in RETIRED_LIMITS if k in meta]
     if retired:
@@ -1062,16 +1068,16 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("init", help="create the home directory and connect a model")
     s.set_defaults(func=cmd_init)
 
-    s = sub.add_parser("run", help="start a run")
+    s = sub.add_parser("start", help="start a job")
     s.add_argument("--spec", help="a confirmed spec: a file, or the name of one saved with `ombro brief`")
-    s.add_argument("--skip-interview", metavar="BRIEF", help="run from a one-line brief with no interview (recorded)")
+    s.add_argument("--skip-interview", metavar="BRIEF", help="start from a one-line brief with no interview (recorded)")
     s.add_argument("--detach", action="store_true", help="keep running after the terminal closes")
     s.add_argument("--crew", action="append",
-                   help="a crew the run may use when the spec names none; repeat for several (default from preferences)")
+                   help="a crew the job may use when the spec names none; repeat for several (default from preferences)")
     s.add_argument("--role", action="append",
-                   help="for this run only, who does the work (crew/role or a role's name), in place of the spec's "
+                   help="for this job only, who does the work (crew/role or a role's name), in place of the spec's "
                    "roles:; repeat for several")
-    s.set_defaults(func=cmd_run)
+    s.set_defaults(func=cmd_start)
 
     s = sub.add_parser("brief", help="interview about a task and save a confirmed spec")
     s.add_argument("text", nargs="*", help="the task in your own words (optional)")
@@ -1114,10 +1120,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="for show: print JSON, for interfaces")
     s.set_defaults(func=cmd_limits)
 
-    s = sub.add_parser("runs", help="list runs and their status")
+    s = sub.add_parser("jobs", help="list jobs and their status")
     s.add_argument("--crew")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
-    s.set_defaults(func=cmd_runs)
+    s.set_defaults(func=cmd_jobs)
 
     s = sub.add_parser("summary", help="who you are, the crew, and what is running, scheduled and waiting")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
@@ -1129,26 +1135,26 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_preferences)
 
     for name, func, helptext in (
-        ("status", cmd_status, "limits and usage for a run"),
-        ("report", cmd_report, "show a run's report"),
-        ("journal", cmd_journal, "show a run's journal"),
+        ("status", cmd_status, "limits and usage for a job"),
+        ("report", cmd_report, "show a job's report"),
+        ("journal", cmd_journal, "show a job's journal"),
     ):
         s = sub.add_parser(name, help=helptext)
-        s.add_argument("run_id", nargs="?", help="run ID or a unique prefix (default: latest)")
+        s.add_argument("job_id", nargs="?", help="job ID or a unique prefix (default: latest)")
         s.add_argument("--crew")
         s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
         if name == "journal":
             s.add_argument("--all", action="store_true", help="include every model call")
-            s.add_argument("--follow", "-f", action="store_true", help="keep showing new events until the run ends")
+            s.add_argument("--follow", "-f", action="store_true", help="keep showing new events until the job ends")
         s.set_defaults(func=func)
 
-    s = sub.add_parser("stop", help="stop a run; it writes its report first")
-    s.add_argument("run_id")
+    s = sub.add_parser("stop", help="stop a job; it writes its report first")
+    s.add_argument("job_id")
     s.add_argument("--wait", type=float, default=15.0, help=argparse.SUPPRESS)
     s.set_defaults(func=cmd_stop)
 
-    s = sub.add_parser("open", help="open a run's workspace folder")
-    s.add_argument("run_id", nargs="?", help="run ID or a unique prefix (default: latest)")
+    s = sub.add_parser("open", help="open a job's workspace folder")
+    s.add_argument("job_id", nargs="?", help="job ID or a unique prefix (default: latest)")
     s.add_argument("--crew")
     s.add_argument("--print", dest="print_only", action="store_true", help="only print the folder's path")
     s.set_defaults(func=cmd_open)
@@ -1204,9 +1210,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--crew")
     s.add_argument("--spec", help="for add: a spec saved in the crew (by name)")
     s.add_argument("--cron", help='for add: when, in local time, e.g. "30 7 * * 1-5"')
-    s.add_argument("--allowance", choices=["conservative", "moderate", "generous"], help="for add: the runs' allowance")
-    s.add_argument("--max-tokens", type=int, help="for add: the runs' token cap")
-    s.add_argument("--run-timeout", help="for add: the runs' time limit, e.g. 15m")
+    s.add_argument("--allowance", choices=["conservative", "moderate", "generous"], help="for add: the jobs' allowance")
+    s.add_argument("--max-tokens", type=int, help="for add: the jobs' token cap")
+    s.add_argument("--job-timeout", help="for add: the jobs' time limit, e.g. 15m")
     s.add_argument("--grace", help="for add: how late a slot may still start, e.g. 10m")
     s.add_argument("--disabled", action="store_true", help="for add: save it switched off")
     s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
@@ -1238,26 +1244,26 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("server", nargs="?", help="an MCP server named in tools.md, or a built-in tool such as "
                    "web.search to see or change it")
     s.add_argument("--provider", help="for a built-in tool: the provider to use (e.g. duckduckgo, firecrawl)")
-    s.add_argument("--max-calls", type=int, help="for a built-in tool: the most calls one run may make")
+    s.add_argument("--max-calls", type=int, help="for a built-in tool: the most calls one job may make")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_tools)
 
     s = sub.add_parser("folder", aliases=["folders"],
-                       help="folders shared with runs and the Lead: list, add <path>, remove <name>")
+                       help="folders shared with jobs and the Lead: list, add <path>, remove <name>")
     s.add_argument("action", nargs="?", choices=["list", "add", "remove"])
     s.add_argument("target", nargs="?", help="a folder's path (add) or a shared folder's name (remove)")
-    s.add_argument("--name", help="the name runs and specs use for it (add)")
+    s.add_argument("--name", help="the name jobs and specs use for it (add)")
     s.add_argument("--access", choices=["read", "write"], help="read, or write to let roles change files (add)")
     s.add_argument("--yes", action="store_true", help="do not ask (add): read unless --access write")
     s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_folders)
 
-    s = sub.add_parser("tick", help="start due scheduled runs (called each minute by the system scheduler)")
+    s = sub.add_parser("tick", help="start due scheduled jobs (called each minute by the system scheduler)")
     s.add_argument("--dry-run", action="store_true", help="show what would start or be noted, and change nothing")
     s.set_defaults(func=cmd_tick)
 
-    s = sub.add_parser("_exec")  # internal: the detached run process
-    s.add_argument("run_dir")
+    s = sub.add_parser("_exec")  # internal: the detached job process
+    s.add_argument("job_dir")
     s.set_defaults(func=cmd_exec)
     return p
 

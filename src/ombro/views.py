@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ombro import journal, keys, mdfile, outbox, runs
+from ombro import journal, keys, mdfile, outbox, jobs
 from ombro.home import Home, crew_title
 from ombro.settings import SetupError, load_limits, load_preferences
 
@@ -74,18 +74,18 @@ def crews(home: Home) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Runs
+# Jobs
 
 
 def _is_active(meta: dict[str, Any]) -> bool:
-    return meta.get("status") == "running" and not runs.is_dead(meta)
+    return meta.get("status") == "running" and not jobs.is_dead(meta)
 
 
-def run_row(run_dir: Path) -> dict[str, Any]:
-    meta, _ = runs.read_run(run_dir)
+def job_row(job_dir: Path) -> dict[str, Any]:
+    meta, _ = jobs.read_job(job_dir)
     return {
-        "run_id": run_dir.name,
-        "crews": runs.run_crews(meta),
+        "job_id": job_dir.name,
+        "crews": jobs.job_crews(meta),
         "status": meta.get("status"),
         "active": _is_active(meta),
         "brief": meta.get("brief", ""),
@@ -94,41 +94,41 @@ def run_row(run_dir: Path) -> dict[str, Any]:
         "started_at": meta.get("started_at"),
         "finished_at": meta.get("finished_at"),
         "limit_hit": meta.get("limit_hit"),
-        "total_tokens": runs.usage(meta).get("total_tokens", 0),
-        "waiting": outbox.waiting_count(run_dir),
+        "total_tokens": jobs.usage(meta).get("total_tokens", 0),
+        "waiting": outbox.waiting_count(job_dir),
         "seen_at": meta.get("seen_at"),
-        "path": str(run_dir),
+        "path": str(job_dir),
     }
 
 
-def run_list(home: Home, crew: str | None = None) -> list[dict[str, Any]]:
-    return [run_row(d) for d in runs.all_runs(home, crew)]
+def job_list(home: Home, crew: str | None = None) -> list[dict[str, Any]]:
+    return [job_row(d) for d in jobs.all_jobs(home, crew)]
 
 
-def status(run_dir: Path) -> dict[str, Any]:
-    meta, _ = runs.read_run(run_dir)
+def status(job_dir: Path) -> dict[str, Any]:
+    meta, _ = jobs.read_job(job_dir)
     lim = meta.get("limits") or {}
     return {
-        **run_row(run_dir),
+        **job_row(job_dir),
         "pid": meta.get("pid") if meta.get("status") == "running" else None,
         "allowance": lim.get("allowance", "custom"),
-        "usage": runs.usage(meta),
-        "interview_usage": runs.interview_usage(meta),
+        "usage": jobs.usage(meta),
+        "interview_usage": jobs.interview_usage(meta),
         "limits": lim,
-        "outbox": outbox.counts(run_dir),
+        "outbox": outbox.counts(job_dir),
         "outward": meta.get("outward") or {},
         "folders": meta.get("folders") or [],
     }
 
 
-def deliverables(home: Home, run_dir: Path) -> list[dict[str, Any]]:
-    """The run's files, from the roles' results and the workspace: name, the
+def deliverables(home: Home, job_dir: Path) -> list[dict[str, Any]]:
+    """The job's files, from the roles' results and the workspace: name, the
     role that made it, its full path, a file:// link, and whether it is still there."""
     from ombro import report
 
-    meta, _ = runs.read_run(run_dir)
+    meta, _ = jobs.read_job(job_dir)
     try:
-        facts = report.gather_facts(home, run_dir, str(meta.get("status") or "running"))
+        facts = report.gather_facts(home, job_dir, str(meta.get("status") or "running"))
     except (OSError, mdfile.FrontMatterError):
         return []
     out = []
@@ -142,7 +142,7 @@ def deliverables(home: Home, run_dir: Path) -> list[dict[str, Any]]:
         for kind in ("created", "changed"):
             for rel in ev.get(kind) or []:
                 if rel.split("/", 1)[0] in ("Archive", "For deletion") or not str(root):
-                    continue  # Ombro's own keeping, not the run's output
+                    continue  # Ombro's own keeping, not the job's output
                 p = root / rel
                 if str(p) in named:
                     continue
@@ -168,7 +168,7 @@ def chat_list(home: Home) -> list[dict[str, Any]]:
         updated = str(meta.get("updated_at") or meta.get("started_at") or "")
         title = str(meta.get("title") or "").strip()
         if not title:
-            m = runs.WHEN.search(p.stem)
+            m = jobs.WHEN.search(p.stem)
             title = f"Chat of {m.group(1)[6:8]}/{m.group(1)[4:6]}/{m.group(1)[:4]}" if m else p.stem
         stamp = datetime.fromtimestamp(p.stat().st_mtime)
         out.append({"name": p.stem, "title": title, "path": str(p), "updated_at": updated,
@@ -177,15 +177,15 @@ def chat_list(home: Home) -> list[dict[str, Any]]:
     return out
 
 
-def report(home: Home, run_dir: Path) -> dict[str, Any]:
-    path = run_dir / "report.md"
+def report(home: Home, job_dir: Path) -> dict[str, Any]:
+    path = job_dir / "report.md"
     text = path.read_text(encoding="utf-8") if path.is_file() else None
-    return {**run_row(run_dir), "report_path": str(path), "report": text,
-            "deliverables": deliverables(home, run_dir), "workspace": str(run_dir / "workspace")}
+    return {**job_row(job_dir), "report_path": str(path), "report": text,
+            "deliverables": deliverables(home, job_dir), "workspace": str(job_dir / "workspace")}
 
 
-def journal_events(run_dir: Path, include_model_calls: bool = False) -> list[dict[str, Any]]:
-    return [e for e in journal.read(run_dir / "journal.jsonl")
+def journal_events(job_dir: Path, include_model_calls: bool = False) -> list[dict[str, Any]]:
+    return [e for e in journal.read(job_dir / "journal.jsonl")
             if include_model_calls or e.get("action") != "model_call"]
 
 
@@ -218,7 +218,7 @@ def schedule_list(home: Home, crew: str | None = None) -> list[dict[str, Any]]:
     from ombro import cron as cronmod
     from ombro import schedules
 
-    by = schedules.scheduled_runs(home)
+    by = schedules.scheduled_jobs(home)
     now = datetime.now()
     out = []
     for s in schedules.all_schedules(home, crew):
@@ -230,10 +230,10 @@ def schedule_list(home: Home, crew: str | None = None) -> list[dict[str, Any]]:
         last = None
         if recent:
             rd, m = recent[-1]
-            last = {"run_id": rd.name, "due": m.get("due"), "status": m.get("status"),
+            last = {"job_id": rd.name, "due": m.get("due"), "status": m.get("status"),
                     "waiting": outbox.waiting_count(rd)}
         out.append({"name": s.name, "enabled": s.enabled, "cron": s.cron_text, "spec": s.spec, "crews": s.crews,
-                    "next": nxt, "last_run": last, "problem": s.error, "path": str(s.path)})
+                    "next": nxt, "last_job": last, "problem": s.error, "path": str(s.path)})
     return out
 
 
@@ -249,7 +249,7 @@ def spec_list(home: Home, crew: str | None = None) -> list[dict[str, Any]]:
         raw = meta.get("crews") or []
         out.append({"name": name, "path": str(path), "modified": _when(path.stat().st_mtime),
                     "crews": [str(c) for c in raw] if isinstance(raw, list) else [str(raw)],
-                    "title": runs.first_line(body, 120)})
+                    "title": jobs.first_line(body, 120)})
     return out
 
 
@@ -294,7 +294,7 @@ def summary(home: Home) -> dict[str, Any]:
     from ombro import schedules
 
     team = crews(home)
-    run_rows = run_list(home)
+    job_rows = job_list(home)
     try:
         enabled = sum(1 for s in schedules.all_schedules(home) if s.enabled and not s.error)
     except (SetupError, OSError):
@@ -314,12 +314,12 @@ def summary(home: Home) -> dict[str, Any]:
         "counts": {
             "crews": len(team["crews"]),
             "crews_ready": sum(1 for c in team["crews"] if any("problem" not in r for r in c["roles"])),
-            "active_runs": sum(1 for r in run_rows if r["active"]),
-            "scheduled_runs": enabled,
-            "waiting": sum(r["waiting"] for r in run_rows),
-            "unseen_runs": len(unseen := [r for r in run_rows if _unseen(r)]),
+            "active_jobs": sum(1 for r in job_rows if r["active"]),
+            "scheduled_jobs": enabled,
+            "waiting": sum(r["waiting"] for r in job_rows),
+            "unseen_jobs": len(unseen := [r for r in job_rows if _unseen(r)]),
         },
-        "unseen": [{k: r[k] for k in ("run_id", "status", "brief", "finished_at", "waiting")} for r in unseen],
+        "unseen": [{k: r[k] for k in ("job_id", "status", "brief", "finished_at", "waiting")} for r in unseen],
     }
 
 
@@ -328,11 +328,11 @@ def _unseen(row: dict[str, Any]) -> bool:
 
 
 def since_last(home: Home) -> dict[str, Any]:
-    """What an interface says on opening: runs finished that you have not seen, and
-    actions waiting. Showing it does not mark anything seen; showing a run's
+    """What an interface says on opening: jobs finished that you have not seen, and
+    actions waiting. Showing it does not mark anything seen; showing a job's
     report or its notice does."""
     s = summary(home)
-    return {"finished": s["counts"]["unseen_runs"], "waiting": s["counts"]["waiting"], "runs": s["unseen"]}
+    return {"finished": s["counts"]["unseen_jobs"], "waiting": s["counts"]["waiting"], "jobs": s["unseen"]}
 
 
 def load_lead_model(home: Home) -> str | None:

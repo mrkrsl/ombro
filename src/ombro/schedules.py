@@ -1,11 +1,11 @@
 """Schedules: one file per scheduled task in crews/<crew>/schedules/, and `ombro tick`.
 
 The schedule files are the source of truth. The system scheduler calls
-`ombro tick` once a minute; tick reads every file and starts any run that is
-due, detached, exactly as `ombro run --detach` does. Editing a file needs no
+`ombro tick` once a minute; tick reads every file and starts any job that is
+due, detached, exactly as `ombro start --detach` does. Editing a file needs no
 reinstallation: the next tick reads it.
 
-What has run is read from the runs themselves (run.md records the schedule
+What has started is read from the jobs themselves (job.md records the schedule
 and the slot it was due for) and from the crew's index.md (slots that were
 skipped or missed). The only other record is scheduler/tick.md, the time of
 the last tick, which is how tick tells "the machine was off" from "not due".
@@ -15,14 +15,14 @@ Rules:
 - A slot is started if a tick sees it within its grace period (10 minutes
   unless set). Slots older than that are skipped and noted in index.md, one
   entry per gap, never started late.
-- A slot that cannot start yet (the schedule's previous run is still going,
-  or the caps on scheduled runs are reached) waits while it is within grace,
+- A slot that cannot start yet (the schedule's previous job is still going,
+  or the caps on scheduled jobs are reached) waits while it is within grace,
   then is skipped and noted with the reason.
 - Slots that fell before the schedule file was last changed are ignored, so
   a new, edited or re-enabled schedule takes effect from its next slot.
 - A slot that is due but cannot start (a missing spec, invalid limits, no
-  model) becomes a failed run with a report and an index entry.
-- Scheduled runs never interview, and must have a token cap.
+  model) becomes a failed job with a report and an index entry.
+- Scheduled jobs never interview, and must have a token cap.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ombro import cron as cronmod
-from ombro import mdfile, memory, report, runs
+from ombro import mdfile, memory, report, jobs
 from ombro.home import LIMITS_META, Home
 from ombro.journal import Journal, utc_now
 from ombro.settings import Limits, SetupError, ToolSettings, load_limits, load_tool_settings, parse_duration, resolve_allowance
@@ -48,16 +48,16 @@ MIN_GRACE, MAX_GRACE = 60.0, 24 * 3600.0
 
 SCHEDULE_BODY = """\
 A scheduled task. `ombro tick`, called once a minute by the system
-scheduler, starts a run of the spec when the cron expression is due. Edit
+scheduler, starts a job of the spec when the cron expression is due. Edit
 this file freely; the next tick reads it, and nothing needs reinstalling.
 
 - cron: five fields in local time: minute hour day-of-month month day-of-week.
-- spec: a saved spec in specs/. The spec names the crews the run uses.
-  Scheduled runs never interview.
+- spec: a saved spec in specs/. The spec names the crews the job uses.
+  Scheduled jobs never interview.
 - enabled: true or false (`ombro schedule enable|disable <name>`).
 - limits: optional, the same keys as a spec's limits (allowance, max_tokens,
-  max_rounds, run_timeout, tool_max_calls…). They are fixed when each run
-  starts and recorded in its run.md. A scheduled run must have a token cap.
+  max_rounds, job_timeout, tool_max_calls…). They are fixed when each job
+  starts and recorded in its job.md. A scheduled job must have a token cap.
 - grace: optional, how late a tick may still start a slot (default
   schedule_grace in limits.md). Later than that, the slot is skipped and
   noted in index.md.
@@ -136,7 +136,7 @@ def load_schedule(home: Home, path: Path) -> Schedule:
     try:
         spec_path = spec_ref_path(home, s.spec)
         spec_meta = mdfile.read(spec_path)[0] if spec_path.is_file() else {}
-        s.crews = runs.spec_crews(home, spec_meta)
+        s.crews = jobs.spec_crews(home, spec_meta)
     except (SetupError, mdfile.FrontMatterError, OSError) as e:
         problems.append(str(e))
     enabled = meta.get("enabled")
@@ -146,7 +146,7 @@ def load_schedule(home: Home, path: Path) -> Schedule:
         s.enabled = enabled
     lim = meta.get("limits")
     if lim is not None and not isinstance(lim, dict):
-        problems.append("limits must be a mapping, e.g. limits: {allowance: conservative, run_timeout: 15m}")
+        problems.append("limits must be a mapping, e.g. limits: {allowance: conservative, job_timeout: 15m}")
     else:
         s.limits = dict(lim or {})
     if meta.get("grace") is not None:
@@ -185,7 +185,7 @@ def find_schedule(home: Home, name: str, crew: str | None = None) -> Schedule:
 
 
 def base_limits(home: Home) -> Limits:
-    """limits.md, or Ombro's defaults if limits.md cannot be read (the runs then fail to start, visibly)."""
+    """limits.md, or Ombro's defaults if limits.md cannot be read (the jobs then fail to start, visibly)."""
     try:
         return load_limits(home)
     except (SetupError, mdfile.FrontMatterError, OSError):
@@ -201,7 +201,7 @@ class Prepared:
 
 
 def prepare(home: Home, s: Schedule) -> Prepared:
-    """Everything a scheduled run needs, checked. Raises SetupError with the reason."""
+    """Everything a scheduled job needs, checked. Raises SetupError with the reason."""
     if s.error:
         raise SetupError(f"the schedule file has a problem: {s.error}")
     path = s.spec_path(home)
@@ -217,11 +217,11 @@ def prepare(home: Home, s: Schedule) -> Prepared:
     from ombro import outward
 
     outward.resolve(home, meta)  # raises SetupError if the spec's outward setting is wrong
-    runs.spec_crews(home, meta)  # and if it names a crew that does not exist
+    jobs.spec_crews(home, meta)  # and if it names a crew that does not exist
     lim = load_limits(home, over, tools, s.limits)
     if lim.max_tokens is None:
         raise SetupError(
-            "a scheduled run must have a token cap, and its limits give none (allowance unlimited or "
+            "a scheduled job must have a token cap, and its limits give none (allowance unlimited or "
             "max_tokens: unlimited). Set another allowance or a max_tokens in the schedule's limits"
         )
     return Prepared(meta, body, lim, tools)
@@ -317,19 +317,19 @@ def write_log(home: Home, lines: list[str], now: float) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Scheduled runs
+# Scheduled jobs
 
 
-def scheduled_runs(home: Home) -> dict[str, list[tuple[Path, dict]]]:
-    """schedule -> its runs, oldest first."""
+def scheduled_jobs(home: Home) -> dict[str, list[tuple[Path, dict]]]:
+    """schedule -> its jobs, oldest first."""
     out: dict[str, list[tuple[Path, dict]]] = {}
-    for run_dir in runs.all_runs(home):
+    for job_dir in jobs.all_jobs(home):
         try:
-            meta, _ = runs.read_run(run_dir)
+            meta, _ = jobs.read_job(job_dir)
         except (OSError, mdfile.FrontMatterError):
             continue
         if meta.get("schedule"):
-            out.setdefault(str(meta["schedule"]), []).append((run_dir, meta))
+            out.setdefault(str(meta["schedule"]), []).append((job_dir, meta))
     return out
 
 
@@ -342,7 +342,7 @@ def _source(s: Schedule, slot: str, note: str = "") -> str:
 
 
 def record_failed_start(home: Home, s: Schedule, slot: str, reason: str, limits: Limits, note: str = "") -> Path:
-    """A due slot that could not start: a failed run with a report, so it is never silent."""
+    """A due slot that could not start: a failed job with a report, so it is never silent."""
     spec_text = f"# Schedule {s.name} could not start\n\n{reason[0].upper() + reason[1:]}."
     try:
         _, body = mdfile.read(s.spec_path(home))
@@ -350,16 +350,16 @@ def record_failed_start(home: Home, s: Schedule, slot: str, reason: str, limits:
             spec_text = body
     except (OSError, mdfile.FrontMatterError, SetupError):
         pass
-    run_dir = runs.create_run(
-        home, s.crews or runs.spec_crews(home, {}), {}, spec_text, limits, source=_source(s, slot, note), tools={},
+    job_dir = jobs.create_job(
+        home, s.crews or jobs.spec_crews(home, {}), {}, spec_text, limits, source=_source(s, slot, note), tools={},
         extra={"schedule": s.name, "due": slot},
     )
-    runs.update_run(run_dir, started_at=utc_now())
-    j = Journal(run_dir / "journal.jsonl")
-    j.write("harness", "run_started", f"from schedule {s.name}, due {_fmt_slot(slot)}")
-    j.write("harness", "failed", f"The scheduled run could not start: {reason}.")
-    report.write_mechanical_report(home, run_dir, status="failed", note="the run could not start")
-    return run_dir
+    jobs.update_job(job_dir, started_at=utc_now())
+    j = Journal(job_dir / "journal.jsonl")
+    j.write("harness", "job_started", f"from schedule {s.name}, due {_fmt_slot(slot)}")
+    j.write("harness", "failed", f"The scheduled job could not start: {reason}.")
+    report.write_mechanical_report(home, job_dir, status="failed", note="the job could not start")
+    return job_dir
 
 
 Starter = Callable[[Home, Path], Any]
@@ -383,18 +383,18 @@ def tick(
     starter: Starter | None = None,
     dry_run: bool = False,
 ) -> TickResult:
-    """Start every scheduled run that is due, note slots that were missed. One at a time."""
+    """Start every scheduled job that is due, note slots that were missed. One at a time."""
     now = clock()
     res = TickResult()
     if dry_run:
-        _tick(home, now, tz, starter or runs.start_detached, True, res)
+        _tick(home, now, tz, starter or jobs.start_detached, True, res)
         return res
     with tick_lock(home) as held:
         if not held:
             res.busy = True
             res.lines.append("another tick is running; this one did nothing")
         else:
-            _tick(home, now, tz, starter or runs.start_detached, False, res)
+            _tick(home, now, tz, starter or jobs.start_detached, False, res)
     try:
         write_log(home, res.lines, now)
     except OSError:
@@ -410,12 +410,12 @@ def _model_problem(home: Home) -> str | None:
 
 def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: bool, res: TickResult) -> None:
     if not dry_run:
-        for run_dir in runs.reap_dead_runs(home):
-            res.lines.append(f"run {run_dir.name} had stopped without finishing; marked failed and reported")
+        for job_dir in jobs.reap_dead_jobs(home):
+            res.lines.append(f"job {job_dir.name} had stopped without finishing; marked failed and reported")
     base = base_limits(home)
     state = read_state(home)
     last = state.last_tick
-    by_schedule = scheduled_runs(home)
+    by_schedule = scheduled_jobs(home)
     running_now = sum(1 for rs in by_schedule.values() for _, m in rs if m.get("status") == "running")
     started = 0
     pending: dict[str, str] = {}
@@ -467,11 +467,11 @@ def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: 
             key = f"{s.name}@{slot}"
             previous = next((rd for rd, m in reversed(own) if m.get("status") == "running"), None)
             if previous is not None:
-                reason = f"the previous run {previous.name} was still running"
+                reason = f"the previous job {previous.name} was still running"
             elif running_now >= base.schedule_max_running:
-                reason = f"{running_now} scheduled runs were already running (schedule_max_running)"
+                reason = f"{running_now} scheduled jobs were already running (schedule_max_running)"
             elif started >= base.schedule_max_starts:
-                reason = f"this tick had already started {started} scheduled runs (schedule_max_starts)"
+                reason = f"this tick had already started {started} scheduled jobs (schedule_max_starts)"
             else:
                 reason = None
             if reason:
@@ -534,32 +534,32 @@ def _start(home: Home, s: Schedule, slot: str, base: Limits, starter: Starter, d
             raise SetupError(problem)
     except (SetupError, OSError, mdfile.FrontMatterError) as e:
         if dry_run:
-            res.lines.append(f"{label}: would record a failed run: {e}")
+            res.lines.append(f"{label}: would record a failed job: {e}")
             res.failed.append(Path("."))
             return
-        run_dir = record_failed_start(home, s, slot, str(e), base, note)
-        res.failed.append(run_dir)
-        res.lines.append(f"{label}: could not start ({e}); recorded failed run {run_dir.name}")
+        job_dir = record_failed_start(home, s, slot, str(e), base, note)
+        res.failed.append(job_dir)
+        res.lines.append(f"{label}: could not start ({e}); recorded failed job {job_dir.name}")
         return
     if dry_run:
-        res.lines.append(f"{label}: would start a run (allowance {p.limits.allowance}, "
+        res.lines.append(f"{label}: would start a job (allowance {p.limits.allowance}, "
                          f"{p.limits.max_tokens:,} tokens)")
         res.started.append(Path("."))
         return
-    run_dir = runs.create_run(
-        home, runs.spec_crews(home, p.spec_meta), p.spec_meta, p.spec_body, p.limits, source=_source(s, slot, note),
+    job_dir = jobs.create_job(
+        home, jobs.spec_crews(home, p.spec_meta), p.spec_meta, p.spec_body, p.limits, source=_source(s, slot, note),
         tools=p.tools.to_dict(), extra={"schedule": s.name, "due": slot},
     )
     try:
-        starter(home, run_dir)
-    except Exception as e:  # the run is recorded and reported whatever happens
-        Journal(run_dir / "journal.jsonl").write("harness", "failed", f"The run's process could not be started: {e}")
-        report.write_mechanical_report(home, run_dir, status="failed", note="the run could not start")
-        res.failed.append(run_dir)
-        res.lines.append(f"{label}: the process could not be started ({e}); recorded failed run {run_dir.name}")
+        starter(home, job_dir)
+    except Exception as e:  # the job is recorded and reported whatever happens
+        Journal(job_dir / "journal.jsonl").write("harness", "failed", f"The job's process could not be started: {e}")
+        report.write_mechanical_report(home, job_dir, status="failed", note="the job could not start")
+        res.failed.append(job_dir)
+        res.lines.append(f"{label}: the process could not be started ({e}); recorded failed job {job_dir.name}")
         return
-    res.started.append(run_dir)
-    res.lines.append(f"{label}: started run {run_dir.name}")
+    res.started.append(job_dir)
+    res.lines.append(f"{label}: started job {job_dir.name}")
 
 
 # ---------------------------------------------------------------------------

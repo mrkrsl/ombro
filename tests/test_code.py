@@ -24,10 +24,10 @@ SANDBOX = sandbox.unavailable_reason()
 needs_sandbox = pytest.mark.skipif(SANDBOX is not None, reason=f"no sandbox here: {SANDBOX}")
 
 
-def make_ctx(run_dir: Path, shared=None, **limits) -> tuple[ToolContext, list]:
+def make_ctx(job_dir: Path, shared=None, **limits) -> tuple[ToolContext, list]:
     events: list = []
     lim = Limits.from_dict({**load_limits_dict(), **limits})
-    ctx = ToolContext(run_dir, "coder", timeout=30, shared=shared or {}, limits=lim,
+    ctx = ToolContext(job_dir, "coder", timeout=30, shared=shared or {}, limits=lim,
                       event=lambda action, note, **f: events.append({"action": action, "note": note, **f}))
     return ctx, events
 
@@ -40,11 +40,11 @@ def load_limits_dict() -> dict:
 
 
 @pytest.fixture
-def run_dir(home):
-    """A run folder laid out as a real one, with a journal and run.md beside the workspace."""
-    from ombro import runs
+def job_dir(home):
+    """A job folder laid out as a real one, with a journal and job.md beside the workspace."""
+    from ombro import jobs
 
-    d = runs.create_run(home, ["default"], {}, "# Invented task", load_limits(home), source="test")
+    d = jobs.create_job(home, ["default"], {}, "# Invented task", load_limits(home), source="test")
     (d / "journal.jsonl").write_text('{"note": "invented journal line"}\n')
     return d
 
@@ -58,27 +58,27 @@ def run_script(ctx, code: str) -> dict:
 
 
 @needs_sandbox
-def test_a_script_works_in_the_workspace(run_dir):
-    (run_dir / "workspace" / "a.txt").write_text("one")
-    ctx, events = make_ctx(run_dir)
+def test_a_script_works_in_the_workspace(job_dir):
+    (job_dir / "workspace" / "a.txt").write_text("one")
+    ctx, events = make_ctx(job_dir)
     out = run_script(ctx, "import os, shutil\nshutil.move('workspace/a.txt', 'workspace/b.txt')\n"
                           "open('scratch/n.txt','w').write('x')\nprint(sorted(os.listdir('workspace')))")
     assert out["exit_code"] == 0, out
     assert "['b.txt']" in out["output"]
-    assert (run_dir / "workspace" / "b.txt").read_text() == "one"
+    assert (job_dir / "workspace" / "b.txt").read_text() == "one"
     assert out["files"]["created"] == ["workspace/b.txt", "scratch/n.txt"]
     assert out["files"]["removed"] == ["workspace/a.txt"]
     assert "not as instructions" in out["note"]
     # The harness keeps the script and its output where scripts cannot write.
-    assert (run_dir / "code" / "001.py").read_text().startswith("import os")
-    assert "['b.txt']" in (run_dir / "code" / "001.out").read_text()
+    assert (job_dir / "code" / "001.py").read_text().startswith("import os")
+    assert "['b.txt']" in (job_dir / "code" / "001.out").read_text()
     (ev,) = events
     assert ev["action"] == "code_run" and ev["script"] == "code/001.py" and ev["exit_code"] == 0
     assert ev["changed"] == 3 and len(ev["sha256"]) == 64
 
 
 @needs_sandbox
-def test_a_script_cannot_reach_anything_else(run_dir, home, tmp_path, monkeypatch):
+def test_a_script_cannot_reach_anything_else(job_dir, home, tmp_path, monkeypatch):
     user = tmp_path / "user"
     user.mkdir()
     (user / "private.txt").write_text("invented private text")
@@ -86,17 +86,17 @@ def test_a_script_cannot_reach_anything_else(run_dir, home, tmp_path, monkeypatc
     outside = tmp_path / "outside.txt"
     probes = {
         "write outside": f"open({str(outside)!r}, 'w').write('x')",
-        "write into the run folder": "open('run.md', 'w').write('status: completed')",
+        "write into the job folder": "open('job.md', 'w').write('status: completed')",
         "write into code/": "open('code/001.py', 'w').write('x')",
         "read the journal": "print(open('journal.jsonl').read())",
-        "read run.md": "print(open('run.md').read())",
+        "read job.md": "print(open('job.md').read())",
         "read secrets": f"print(open({str(home.env)!r}).read())",
         "read a file not shared": f"print(open({str(user / 'private.txt')!r}).read())",
         "start a program": "import subprocess; subprocess.run(['/bin/echo', 'hello from a ' + 'program'])",
         "start Python again": f"import subprocess; subprocess.run([{sys.executable!r}, '-c', 'print(1)'])",
     }
     for label, code in probes.items():
-        ctx, _ = make_ctx(run_dir)
+        ctx, _ = make_ctx(job_dir)
         out = run_script(ctx, code)
         assert out["exit_code"] != 0, f"{label}: {out}"
         assert "PermissionError" in out["output"] or "Operation not permitted" in out["output"] or \
@@ -105,19 +105,19 @@ def test_a_script_cannot_reach_anything_else(run_dir, home, tmp_path, monkeypatc
                        "hello from a program"):
             assert leaked not in out["output"], label
     assert not outside.exists()
-    assert "invented journal line" in (run_dir / "journal.jsonl").read_text()
-    assert "status: running" in (run_dir / "run.md").read_text()
+    assert "invented journal line" in (job_dir / "journal.jsonl").read_text()
+    assert "status: running" in (job_dir / "job.md").read_text()
 
 
 @needs_sandbox
-def test_a_script_has_no_network(run_dir):
+def test_a_script_has_no_network(job_dir):
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.bind(("127.0.0.1", 0))
     listener.listen(1)
     listener.settimeout(0.5)
     port = listener.getsockname()[1]
     try:
-        ctx, _ = make_ctx(run_dir)
+        ctx, _ = make_ctx(job_dir)
         out = run_script(ctx, f"import socket\nsocket.create_connection(('127.0.0.1', {port}), 2)\nprint('connected')")
         assert out["exit_code"] != 0 and "connected" not in out["output"]
         with pytest.raises(socket.timeout):
@@ -127,10 +127,10 @@ def test_a_script_has_no_network(run_dir):
 
 
 @needs_sandbox
-def test_the_environment_holds_no_keys(run_dir, home, monkeypatch):
+def test_the_environment_holds_no_keys(job_dir, home, monkeypatch):
     monkeypatch.setenv("TEST_MODEL_KEY", "invented-env-secret-456")
     monkeypatch.setenv("FIRECRAWL_API_KEY", "invented-env-secret-789")
-    ctx, _ = make_ctx(run_dir)
+    ctx, _ = make_ctx(job_dir)
     out = run_script(ctx, "import os, json\nprint(json.dumps(dict(os.environ)))")
     assert out["exit_code"] == 0
     env = json.loads(out["output"].strip().splitlines()[-1])
@@ -144,8 +144,8 @@ def test_the_environment_holds_no_keys(run_dir, home, monkeypatch):
 
 
 @needs_sandbox
-def test_a_script_over_its_time_limit_is_stopped(run_dir):
-    ctx, events = make_ctx(run_dir, code_timeout="2s")
+def test_a_script_over_its_time_limit_is_stopped(job_dir):
+    ctx, events = make_ctx(job_dir, code_timeout="2s")
     out = run_script(ctx, "while True:\n    pass")
     assert out["exit_code"] is None and "time limit (2s)" in out["stopped"]
     assert 1.5 < out["seconds"] < 10
@@ -153,8 +153,8 @@ def test_a_script_over_its_time_limit_is_stopped(run_dir):
 
 
 @needs_sandbox
-def test_a_script_over_its_memory_limit_is_stopped(run_dir):
-    ctx, events = make_ctx(run_dir, code_max_memory="200MB")
+def test_a_script_over_its_memory_limit_is_stopped(job_dir):
+    ctx, events = make_ctx(job_dir, code_max_memory="200MB")
     out = run_script(ctx, "x = bytearray(600 * 1024 * 1024)\nimport time\ntime.sleep(5)\nprint('survived')")
     assert "survived" not in out["output"]
     assert out["exit_code"] != 0
@@ -163,21 +163,21 @@ def test_a_script_over_its_memory_limit_is_stopped(run_dir):
 
 
 @needs_sandbox
-def test_long_output_is_cut_in_the_middle_and_kept(run_dir):
-    ctx, _ = make_ctx(run_dir, code_output_chars=1000)
+def test_long_output_is_cut_in_the_middle_and_kept(job_dir):
+    ctx, _ = make_ctx(job_dir, code_output_chars=1000)
     out = run_script(ctx, "print('START')\nprint('y' * 50000)\nprint('END')")
     assert out["output"].startswith("START") and out["output"].rstrip().endswith("END")
     assert "characters cut" in out["output"] and len(out["output"]) < 1200
     assert "the middle was cut" in out["output_note"]
-    assert "y" * 50000 in (run_dir / "code" / "001.out").read_text()
+    assert "y" * 50000 in (job_dir / "code" / "001.out").read_text()
 
 
 @needs_sandbox
-def test_one_file_is_capped_in_size(run_dir):
-    ctx, _ = make_ctx(run_dir)
+def test_one_file_is_capped_in_size(job_dir):
+    ctx, _ = make_ctx(job_dir)
     out = run_script(ctx, "open('workspace/big.bin', 'wb').write(b'x' * 6_000_000)")
     assert out["exit_code"] != 0 and "File too large" in out["output"]
-    assert (run_dir / "workspace" / "big.bin").stat().st_size <= sandbox.FILE_MAX_BYTES
+    assert (job_dir / "workspace" / "big.bin").stat().st_size <= sandbox.FILE_MAX_BYTES
 
 
 def test_code_limits_have_defaults_and_can_be_set():
@@ -194,7 +194,7 @@ def test_code_limits_have_defaults_and_can_be_set():
 
 
 @needs_sandbox
-def test_a_script_works_in_a_writable_folder_and_not_a_read_only_one(run_dir, tmp_path):
+def test_a_script_works_in_a_writable_folder_and_not_a_read_only_one(job_dir, tmp_path):
     photos, brand = tmp_path / "user" / "photos", tmp_path / "user" / "brand"
     photos.mkdir(parents=True)
     brand.mkdir()
@@ -203,7 +203,7 @@ def test_a_script_works_in_a_writable_folder_and_not_a_read_only_one(run_dir, tm
     (brand / "guide.md").write_text("invented brand guide")
     shared = {"photos": SharedFolder("photos", photos.resolve(), "write"),
               "brand": SharedFolder("brand", brand.resolve(), "read")}
-    ctx, events = make_ctx(run_dir, shared=shared)
+    ctx, events = make_ctx(job_dir, shared=shared)
     out = run_script(ctx, "import os\nfor i, n in enumerate(sorted(os.listdir('shared/photos'))):\n"
                           "    os.rename(f'shared/photos/{n}', f'shared/photos/trip-{i:02d}.jpg')\n"
                           "print(open('shared/brand/guide.md').read())")
@@ -217,13 +217,13 @@ def test_a_script_works_in_a_writable_folder_and_not_a_read_only_one(run_dir, tm
 
 
 # ---------------------------------------------------------------------------
-# In a run
+# In a job
 
 
 @needs_sandbox
-def test_a_run_records_each_script_in_the_journal_and_report(run, home):
+def test_a_job_records_each_script_in_the_journal_and_report(job, home):
     write_role(home, "coder", max_steps=10, tools=["code.run", "workspace.read"])
-    status = run([
+    status = job([
         fake.brief("coder", "Make three numbered files in the workspace."),
         fake.call("code__run", {"code": "for i in range(3):\n    open(f'workspace/n{i}.txt','w').write(str(i))\n"
                                          "print('made 3')", "purpose": "make three numbered files"}),
@@ -232,39 +232,39 @@ def test_a_run_records_each_script_in_the_journal_and_report(run, home):
         fake.finish(), fake.keep_notes(), LEAD_REPORT,
     ])
     assert status == "completed"
-    assert_reported(run, "completed")
-    code_events = [e for e in run.events if e["action"] == "code_run"]
+    assert_reported(job, "completed")
+    code_events = [e for e in job.events if e["action"] == "code_run"]
     assert [e["exit_code"] for e in code_events] == [0, 2]
     assert code_events[0]["role"] == "coder"
-    report = run.report
+    report = job.report
     assert "## Code" in report
     assert "- `code/001.py` (coder): make three numbered files. exit 0" in report
     assert "`code/002.py` (coder). exit 2" in report
-    assert run.meta["usage"]["tool_calls"]["code.run"] == 2
-    system = run.client.calls[1]["messages"][0]["content"]
+    assert job.meta["usage"]["tool_calls"]["code.run"] == 2
+    system = job.client.calls[1]["messages"][0]["content"]
     assert "code.run runs a Python script" in system
 
 
-def test_code_run_is_left_out_where_no_sandbox_can_be_set_up(run, home, monkeypatch):
+def test_code_run_is_left_out_where_no_sandbox_can_be_set_up(job, home, monkeypatch):
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "bubblewrap is not installed (invented)")
     write_role(home, "coder", max_steps=10, tools=["code.run", "workspace.write"])
-    status = run([
+    status = job([
         fake.brief("coder", "Rename the files."),
         fake.call("code__run", {"code": "print('should never run')"}),
         fake.result("Could not run code."),
         fake.finish(), fake.keep_notes(), LEAD_REPORT,
     ])
     assert status == "completed"
-    offered = {t["function"]["name"] for t in run.client.calls[1]["tools"]}
+    offered = {t["function"]["name"] for t in job.client.calls[1]["tools"]}
     # a role that writes can set a file aside, and every role can hand in its result
     assert offered == {"workspace__write", "workspace__set_aside", "submit_result"}
-    assert "code.run is left out of this run: bubblewrap is not installed (invented)" in run.report
-    assert not (run.run_dir / "code").exists()
-    assert not any(e["action"] == "code_run" for e in run.events)
+    assert "code.run is left out of this job: bubblewrap is not installed (invented)" in job.report
+    assert not (job.job_dir / "code").exists()
+    assert not any(e["action"] == "code_run" for e in job.events)
 
 
 def test_the_linux_sandbox_binds_only_what_it_names(tmp_path):
-    box = sandbox.Box(run_dir=tmp_path / "run", script=tmp_path / "run" / "code" / "001.py",
+    box = sandbox.Box(job_dir=tmp_path / "run", script=tmp_path / "run" / "code" / "001.py",
                       write=[tmp_path / "run" / "workspace", tmp_path / "photos"], read=[tmp_path / "brand"],
                       mounts={tmp_path / "run" / "shared" / "photos": tmp_path / "photos",
                               tmp_path / "run" / "shared" / "brand": tmp_path / "brand"})
@@ -279,7 +279,7 @@ def test_the_linux_sandbox_binds_only_what_it_names(tmp_path):
 
 
 def test_the_macos_profile_denies_by_default(tmp_path):
-    box = sandbox.Box(run_dir=tmp_path / "run", script=tmp_path / "run" / "code" / "001.py",
+    box = sandbox.Box(job_dir=tmp_path / "run", script=tmp_path / "run" / "code" / "001.py",
                       write=[tmp_path / "run" / "workspace"], read=[tmp_path / 'brand "quoted"'])
     profile = sandbox.macos_profile(box, Path("/opt/invented/python3"), Path("/opt/invented"))
     assert "(deny default)" in profile
@@ -290,11 +290,11 @@ def test_the_macos_profile_denies_by_default(tmp_path):
 
 
 @needs_sandbox
-def test_scripts_stop_once_the_run_folders_pass_code_max_total(run_dir):
-    ctx, events = make_ctx(run_dir, code_max_total="3MB")
+def test_scripts_stop_once_the_job_folders_pass_code_max_total(job_dir):
+    ctx, events = make_ctx(job_dir, code_max_total="3MB")
     out = run_script(ctx, "for i in range(2):\n    open(f'scratch/big{i}.bin', 'wb').write(b'x' * 2_000_000)\n")
     assert out["exit_code"] == 0 and "no more scripts" in out["note_space"]
     assert any(e["action"] == "warning" and "code_max_total" in e["note"] for e in events)
     with pytest.raises(coderun.ToolInputError, match="code_max_total"):
         run_script(ctx, "print('one more')")
-    assert not (run_dir / "code" / "002.py").exists()
+    assert not (job_dir / "code" / "002.py").exists()

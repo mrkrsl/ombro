@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from ombro import fake, mdfile, runs
+from ombro import fake, mdfile, jobs
 from ombro.engine import Engine
 from ombro.fake import FakeClock, ScriptedClient
 from ombro.home import Home, ensure_home
@@ -171,25 +171,25 @@ def use_fake_tools(home: Home, **tool_settings) -> None:
 
 
 class Runner:
-    """Builds a run, executes it with a scripted model, and exposes the results."""
+    """Builds a job, executes it with a scripted model, and exposes the results."""
 
     def __init__(self, home: Home):
         self.home = home
         self.clock = FakeClock()
         self.client: ScriptedClient | None = None
         self.engine: Engine | None = None
-        self.run_dir: Path | None = None
+        self.job_dir: Path | None = None
 
     def __call__(self, script, *, limits=None, registry=None, spec=SPEC, crew="default", today=None,
                  spec_meta=None, crews=None) -> str:
         tools = load_tool_settings(self.home)
         lim = load_limits(self.home, limits, tools)
-        self.run_dir = runs.create_run(self.home, crews or [crew], spec_meta or {}, spec, lim, source="test",
+        self.job_dir = jobs.create_job(self.home, crews or [crew], spec_meta or {}, spec, lim, source="test",
                                        tools=tools.to_dict())
         self.client = ScriptedClient(script, clock=self.clock)
         self.engine = Engine(
             self.home,
-            self.run_dir,
+            self.job_dir,
             client_factory=lambda spec: self.client,
             registry=registry,
             clock=self.clock,
@@ -199,22 +199,22 @@ class Runner:
 
     @property
     def report(self) -> str:
-        return (self.run_dir / "report.md").read_text()
+        return (self.job_dir / "report.md").read_text()
 
     @property
     def meta(self) -> dict:
-        return runs.read_run(self.run_dir)[0]
+        return jobs.read_job(self.job_dir)[0]
 
     @property
     def events(self) -> list[dict]:
-        return [json.loads(line) for line in (self.run_dir / "journal.jsonl").read_text().splitlines() if line]
+        return [json.loads(line) for line in (self.job_dir / "journal.jsonl").read_text().splitlines() if line]
 
     def actions(self) -> list[str]:
         return [e["action"] for e in self.events]
 
 
 @pytest.fixture
-def run(home) -> Runner:
+def job(home) -> Runner:
     return Runner(home)
 
 

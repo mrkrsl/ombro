@@ -1,7 +1,7 @@
-"""The final report. Facts come from the journal and run.md; the Lead adds judgement.
+"""The final report. Facts come from the journal and job.md; the Lead adds judgement.
 
 Building the facts from files (not from memory) means the same code serves a
-normal run, a stopped run and a run whose process died.
+normal job, a stopped job and a job whose process died.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ombro import journal as journal_mod
-from ombro import mdfile, runs
+from ombro import mdfile, jobs
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
 from ombro.settings import format_duration, format_tokens
@@ -34,14 +34,14 @@ def _line(text: str, n: int) -> str:
 CLOSING_NOTE_CAP = 400
 
 
-def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = None) -> dict[str, Any]:
-    run_dir = Path(run_dir)
-    meta, _ = runs.read_run(run_dir)
+def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = None) -> dict[str, Any]:
+    job_dir = Path(job_dir)
+    meta, _ = jobs.read_job(job_dir)
     try:
-        _, spec_body = mdfile.read(run_dir / "spec.md")
+        _, spec_body = mdfile.read(job_dir / "spec.md")
     except (OSError, mdfile.FrontMatterError):
         spec_body = "(spec.md could not be read)"
-    events = journal_mod.read(run_dir / "journal.jsonl")
+    events = journal_mod.read(job_dir / "journal.jsonl")
 
     briefs: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
@@ -125,7 +125,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     if failure:
         failures.append(failure)
 
-    usage = runs.usage(meta)
+    usage = jobs.usage(meta)
     if not usage.get("elapsed_seconds") and meta.get("started_at") and events:
         try:
             start = datetime.strptime(meta["started_at"], "%Y-%m-%dT%H:%M:%SZ")
@@ -134,18 +134,18 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         except (KeyError, ValueError):
             pass
 
-    workspace = area_path(run_dir, "workspace")
-    scratch = area_path(run_dir, "scratch")
-    # A deliverable may be a file in a folder shared with the run: shared/<name>/...
+    workspace = area_path(job_dir, "workspace")
+    scratch = area_path(job_dir, "scratch")
+    # A deliverable may be a file in a folder shared with the job: shared/<name>/...
     shared = {str(x.get("name")): Path(str(x.get("path"))) for x in meta.get("folders") or []
               if isinstance(x, dict) and x.get("name") and x.get("path")}
     # Only files in workspace/ are deliverables. Working files in scratch/ and
-    # inline notes are listed apart, so the list says what the run produced.
+    # inline notes are listed apart, so the list says what the job produced.
     deliverables, working, inline, missing = [], [], [], []
     seen: set[str] = set()
     for b in briefs:
         for d in (b.get("result") or {}).get("deliverables") or []:
-            entry = {"role": b["role"], **_resolve_deliverable(run_dir, d, shared)}
+            entry = {"role": b["role"], **_resolve_deliverable(job_dir, d, shared)}
             if entry.get("path"):
                 if entry["path"] in seen:
                     continue
@@ -164,8 +164,8 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
 
     in_progress = briefs[-1] if briefs and briefs[-1]["status"] == "in_progress" else None
     return {
-        "run_id": meta.get("run_id", run_dir.name),
-        "run_dir": str(run_dir),
+        "job_id": meta.get("job_id", job_dir.name),
+        "job_dir": str(job_dir),
         "crew": ", ".join(str(c) for c in meta.get("crews") or []),
         "status": status,
         "brief": meta.get("brief", ""),
@@ -175,7 +175,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "spec": spec_body.strip(),
         "limits": meta.get("limits") or {},
         "usage": usage,
-        "outbox_now": _outbox_now(run_dir),
+        "outbox_now": _outbox_now(job_dir),
         "briefs": briefs,
         "in_progress": in_progress,
         "limit": limit,
@@ -184,7 +184,7 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
         "failures": failures,
         "brief_limits": brief_limits,
         "gaps": gaps,
-        "interview_usage": runs.interview_usage(meta),
+        "interview_usage": jobs.interview_usage(meta),
         "deliverables": deliverables,
         "working_files": working,
         "inline_notes": inline,
@@ -209,18 +209,18 @@ def gather_facts(home: Home, run_dir: Path, status: str, failure: str | None = N
     }
 
 
-def _outbox_now(run_dir: Path) -> dict[str, str]:
-    """Each staged action's status as it stands now: decisions can be made during a run."""
+def _outbox_now(job_dir: Path) -> dict[str, str]:
+    """Each staged action's status as it stands now: decisions can be made during a job."""
     from ombro import outbox
 
     try:
-        return {a.ref: a.status for a in outbox.actions(run_dir)}
+        return {a.ref: a.status for a in outbox.actions(job_dir)}
     except (OSError, mdfile.FrontMatterError):
         return {}
 
 
 def _still_waiting(f: dict[str, Any], staged: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Staged actions split into those still waiting and those decided during the run."""
+    """Staged actions split into those still waiting and those decided during the job."""
     now = f.get("outbox_now") or {}
     waiting = [ev for ev in staged if now.get(ev.get("ref"), "pending") in ("pending", "uncertain", "executing")]
     return waiting, [ev for ev in staged if ev not in waiting]
@@ -229,9 +229,9 @@ def _still_waiting(f: dict[str, Any], staged: list[dict]) -> tuple[list[dict], l
 DECIDED = {"executed": "approved and done", "declined": "declined", "failed": "approved, but it failed"}
 
 
-def _resolve_deliverable(run_dir: Path, d: dict, shared: dict[str, Path] | None = None) -> dict[str, Any]:
+def _resolve_deliverable(job_dir: Path, d: dict, shared: dict[str, Path] | None = None) -> dict[str, Any]:
     """A deliverable's path may be `workspace/x`, `scratch/x`, plain `x` (in the
-    workspace) or `shared/<name>/x` in a folder shared with the run. Anything that
+    workspace) or `shared/<name>/x` in a folder shared with the job. Anything that
     leads outside those folders is treated as inline text."""
     name, path = str(d.get("name", "")), str(d.get("path", ""))
     if path.startswith("shared/") and "\n" not in path and len(path) < 600:
@@ -246,8 +246,8 @@ def _resolve_deliverable(run_dir: Path, d: dict, shared: dict[str, Path] | None 
         first = path.split("/", 1)[0]
         area = first if first in ("workspace", "scratch") and "/" in path else "workspace"
         rel = path.split("/", 1)[1] if area == first and "/" in path else path
-        root = area_path(run_dir, area)
-        if root.is_symlink():  # replaced during the run: nothing in it is listed as a file
+        root = area_path(job_dir, area)
+        if root.is_symlink():  # replaced during the job: nothing in it is listed as a file
             return {"name": name, "path": None, "inline": None, "missing": path}
         candidate = (root / rel).resolve()
         if candidate.is_relative_to(root) and candidate.is_file():
@@ -262,7 +262,7 @@ def _resolve_deliverable(run_dir: Path, d: dict, shared: dict[str, Path] | None 
 
 
 def narrative_input(facts: dict[str, Any]) -> str:
-    lines = [f"Spec:\n{_short(facts['spec'], 6000)}", "", f"Run status: {facts['status']}"]
+    lines = [f"Spec:\n{_short(facts['spec'], 6000)}", "", f"Job status: {facts['status']}"]
     if facts["limit"]:
         lines.append(f"Stopped by limit `{facts['limit']['limit']}`: {facts['limit']['detail']}")
     for f in facts["failures"]:
@@ -272,7 +272,7 @@ def narrative_input(facts: dict[str, Any]) -> str:
     ow = facts.get("outward") or {}
     if ow.get("staged") or ow.get("done") or ow.get("uncertain"):
         waiting, decided = _still_waiting(facts, ow.get("staged") or [])
-        lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the run "
+        lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the job "
                      "(internal changes, or external actions the user allowed), "
                      f"{len(waiting)} staged and waiting for the user's approval"
                      + (f", {len(decided)} staged and already decided by the user" if decided else "")
@@ -307,7 +307,7 @@ def narrative_input(facts: dict[str, Any]) -> str:
             label = "Stopped" if b["status"] == "stopped_by_limit" else "Failure"
             entry.append(f"{label}: {b['reason']}")
         if b["status"] == "in_progress":
-            entry.append("This brief was still in progress when the run stopped.")
+            entry.append("This brief was still in progress when the job stopped.")
         lines.append(_short("\n".join(entry), PER_BRIEF_CAP))
         lines.append("")
     return _short("\n".join(lines), NARRATIVE_INPUT_CAP)
@@ -325,7 +325,7 @@ def mechanical_narrative(facts: dict[str, Any]) -> str:
                 *[f"- {g}" for g in facts["gaps"]],
                 "",
                 "## Decisions for you",
-                "- Settle the gaps above, then brief the task again with `ombro brief` or `ombro run`.",
+                "- Settle the gaps above, then brief the task again with `ombro brief` or `ombro start`.",
             ]
         )
     done, not_done, decisions = [], [], []
@@ -344,17 +344,17 @@ def mechanical_narrative(facts: dict[str, Any]) -> str:
         elif b["status"] == "stopped_by_limit":
             not_done.append(f"- {b['role']}'s brief was {b.get('reason') or 'stopped by a limit'}")
         elif b["status"] == "in_progress":
-            not_done.append(f"- {b['role']} was working on this when the run stopped: {_short(b['task'], 300)}")
+            not_done.append(f"- {b['role']} was working on this when the job stopped: {_short(b['task'], 300)}")
     if facts["limit"]:
-        not_done.append(f"- The run was stopped by `{facts['limit']['limit']}`: {facts['limit']['detail']}")
+        not_done.append(f"- The job was stopped by `{facts['limit']['limit']}`: {facts['limit']['detail']}")
     for f in facts["failures"]:
-        not_done.append(f"- The run failed: {f}")
+        not_done.append(f"- The job failed: {f}")
     if facts.get("finish") and facts["finish"].get("summary"):
         summary = _short(" ".join(str(facts["finish"]["summary"]).split()), 900)
     elif facts["limit"]:
-        summary = f"The run stopped on its `{facts['limit']['limit']}` limit before it finished."
+        summary = f"The job stopped on its `{facts['limit']['limit']}` limit before it finished."
     else:
-        summary = f"The run ended {facts['status'].replace('_', ' ')}."
+        summary = f"The job ended {facts['status'].replace('_', ' ')}."
     return "\n".join(
         [
             "## Summary",
@@ -411,17 +411,17 @@ def _sections(narrative: str) -> tuple[dict[str, str], str]:
 
 def render(facts: dict[str, Any], narrative: str | None, note: str | None = None) -> str:
     """The report: what the user reads first (summary, deliverables, decisions, what was and
-    was not done), then Ombro's own record of the run (specification 12)."""
+    was not done), then Ombro's own record of the job (specification 12)."""
     f = facts
     lim = f["limits"]
     sp = f["usage"]
-    title = runs.first_line(f["spec"], 100) or f"Run {f['run_id']}"
+    title = jobs.first_line(f["spec"], 100) or f"Job {f['job_id']}"
     out = [f"# {title}", ""]
     status = STATUS_WORDS.get(f["status"], f["status"])
     if f["limit"]:
         status += f": the `{f['limit']['limit']}` limit was reached"
     when = (f.get("finished_at") or "")[:10]
-    out.append(f"**{status}.** {when} · run `{f['run_id']}` · {f['crew']}")
+    out.append(f"**{status}.** {when} · job `{f['job_id']}` · {f['crew']}")
     for fail in f["failures"]:
         out.append(f"\n**Failed:** {fail}")
     out.append("")
@@ -461,8 +461,8 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         out += ["## The Lead's other notes", "", extra, ""]
 
     out += ["---", "", "# Ombro's record", "",
-            "What follows is Ombro's own record of the run, from its journal, for checking.", ""]
-    out += ["## The run", ""]
+            "What follows is Ombro's own record of the job, from its journal, for checking.", ""]
+    out += ["## The job", ""]
     out.append(f"- **Status:** {f['status']}")
     out.append(f"- **{'Crews' if ', ' in f['crew'] else 'Crew'}:** {f['crew']}")
     out.append(f"- **Started:** {f['started_at']}")
@@ -476,7 +476,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         if len(" ".join(str(f["finish"]["summary"] or "").split())) > CLOSING_NOTE_CAP:
             note_text += " (shortened; the full note is in the journal)"
         out.append(f"- **Lead's closing note ({f['finish']['outcome']}):** {note_text}")
-    out += ["", "## What was asked", "", f"{title}. The full spec: {f['run_dir']}/spec.md"]
+    out += ["", "## What was asked", "", f"{title}. The full spec: {f['job_dir']}/spec.md"]
     if f["source"]:
         out += ["", f"_Source: {f['source']}_"]
     out.append("")
@@ -520,7 +520,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     if f.get("skills") or f.get("skill_reads"):
         out += ["## Skills", "", *skill_lines(f), ""]
     out += ["## Changes to notes.md", "",
-            "Lessons the Lead kept in the crew's notes for future runs: housekeeping, not results.", "",
+            "Lessons the Lead kept in the crew's notes for future jobs: housekeeping, not results.", "",
             *all_notes_lines(f.get("notes")), ""]
 
     out += ["## Usage", ""]
@@ -537,7 +537,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     isp = f.get("interview_usage") or {}
     if isp:
         out.append(
-            f"- Task interview (separate from the run's limits): {isp.get('total_tokens', 0):,} tokens, "
+            f"- Task interview (separate from the job's limits): {isp.get('total_tokens', 0):,} tokens, "
             f"{isp.get('model_calls', 0)} model calls"
         )
     tools = sp.get("tool_calls") or {}
@@ -554,9 +554,9 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         )
     out.append(f"- Rounds: {sp.get('rounds', 0)} of {lim.get('max_rounds', 0)}")
     out.append(
-        f"- Time: {format_duration(sp.get('elapsed_seconds', 0.0))} of {format_duration(lim.get('run_timeout', 0))}"
+        f"- Time: {format_duration(sp.get('elapsed_seconds', 0.0))} of {format_duration(lim.get('job_timeout', 0))}"
     )
-    out.append(f"- Limit that stopped the run: {('`' + f['limit']['limit'] + '`') if f['limit'] else 'none'}")
+    out.append(f"- Limit that stopped the job: {('`' + f['limit']['limit'] + '`') if f['limit'] else 'none'}")
     if f.get("brief_limits"):
         out.append(
             "- Limits that ended a brief: "
@@ -581,7 +581,7 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     errors, refused, dups = ow.get("errors") or [], ow.get("refused") or [], ow.get("duplicates") or []
     uncertain = ow.get("uncertain") or []
     if not any((staged, done, errors, refused, uncertain)):
-        return ["None: nothing was done outside the run, and nothing is staged."]
+        return ["None: nothing was done outside the job, and nothing is staged."]
     work = [ev for ev in done if ev.get("effect") in ("internal", "read-only")]
     sent = [ev for ev in done if ev not in work]
     lines: list[str] = []
@@ -589,19 +589,19 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     if setting:
         from ombro.outward import describe
 
-        lines += [f"Permissions for this run: {describe(setting)}.", ""]
+        lines += [f"Permissions for this job: {describe(setting)}.", ""]
     if work:
-        lines.append(f"Internal changes made during the run ({len(work)}):")
+        lines.append(f"Internal changes made during the job ({len(work)}):")
         lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in work]
         lines.append("")
     if sent:
-        lines.append(f"Sent during the run, as your permissions allow ({len(sent)}):")
+        lines.append(f"Sent during the job, as your permissions allow ({len(sent)}):")
         lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in sent]
         lines.append("")
     staged, decided = _still_waiting(f, staged)
     now = f.get("outbox_now") or {}
     if decided:
-        lines.append(f"Staged, and decided by you while the run was going ({len(decided)}):")
+        lines.append(f"Staged, and decided by you while the job was going ({len(decided)}):")
         for ev in decided:
             what = DECIDED.get(now.get(ev.get("ref"), ""), now.get(ev.get("ref"), "decided"))
             lines.append(f"- **{ev.get('ref')}** `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}: {what}")
@@ -617,12 +617,12 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
         lines += ["", "See them with `ombro outbox`; approve or decline each by its reference, e.g. "
                   f"`ombro outbox show {staged[0].get('ref')}`.", ""]
     if uncertain:
-        lines.append(f"Uncertain: sent during the run, but no answer came back, so it may or may not have "
+        lines.append(f"Uncertain: sent during the job, but no answer came back, so it may or may not have "
                      f"happened ({len(uncertain)}). Check the service:")
         lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in uncertain]
         lines.append("")
     if errors:
-        lines.append(f"Tried during the run, but the service reported an error ({len(errors)}):")
+        lines.append(f"Tried during the job, but the service reported an error ({len(errors)}):")
         lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_line(ev.get('note', ''), 200)}" for ev in errors]
         lines.append("")
     if refused:
@@ -651,15 +651,15 @@ def material_lines(f: dict[str, Any]) -> list[str]:
     if f.get("tainted_staged"):
         if out:
             out.append("")
-        out.append("Staged because the role had read material in that brief, though the run's permissions "
+        out.append("Staged because the role had read material in that brief, though the job's permissions "
                    "would have allowed them: " + ", ".join(f["tainted_staged"]) + ".")
     return out
 
 
 def code_lines(f: dict[str, Any]) -> list[str]:
-    """Each script the run executed, from the harness's own record."""
+    """Each script the job executed, from the harness's own record."""
     lines = [f"Scripts run with code.run, in the sandbox ({len(f['code_runs'])}). Each script and its output are "
-             "kept in the run's code/ folder:"]
+             "kept in the job's code/ folder:"]
     for ev in f["code_runs"]:
         status = (f"stopped by `{ev['limit']}`" if ev.get("limit") else f"exit {ev.get('exit_code')}")
         what = f": {_line(ev['purpose'], 160)}" if ev.get("purpose") else ""
@@ -688,13 +688,13 @@ def folder_lines(f: dict[str, Any]) -> list[str]:
         if access != "write":
             continue
         if entry.get("backup"):
-            lines.append(f"  - Backup: cloned before the run to {entry['backup']}. To restore a file, copy it "
+            lines.append(f"  - Backup: cloned before the job to {entry['backup']}. To restore a file, copy it "
                          "back from there.")
         elif entry.get("backup_note"):
             lines.append(f"  - Backup: {entry['backup_note']}.")
         ev = changes.get(str(name))
         if ev is None:
-            lines.append("  - Changes: not recorded (the run ended before the folder could be compared); compare "
+            lines.append("  - Changes: not recorded (the job ended before the folder could be compared); compare "
                          "it with the backup.")
         elif ev.get("too_large"):
             lines.append("  - Changes: the folder has too many files to compare before and after.")
@@ -710,8 +710,8 @@ def folder_lines(f: dict[str, Any]) -> list[str]:
     for note in f.get("folders_left_out") or []:
         lines.append(f"- Left out: {note}")
     if f.get("not_shared"):
-        lines += ["", "Refused because they are not in a folder shared with this run. Share the folder with "
-                  "`ombro folder add <path>` if a later run should reach it:"]
+        lines += ["", "Refused because they are not in a folder shared with this job. Share the folder with "
+                  "`ombro folder add <path>` if a later job should reach it:"]
         lines += [f"- {_line(p, 200)}" for p in f["not_shared"][:20]]
     if not lines:
         lines.append("None.")
@@ -742,10 +742,10 @@ def skill_lines(f: dict[str, Any]) -> list[str]:
         if label not in who:
             who.append(label)
     if reads:
-        lines.append("Read during the run:")
+        lines.append("Read during the job:")
         lines += [f"- {who}: {', '.join(names)}" for who, names in reads.items()]
     else:
-        lines.append("No skill was read during the run.")
+        lines.append("No skill was read during the job.")
     now = f.get("outbox_now") or {}
     for ev in f.get("skills") or []:
         lines.append("")
@@ -756,7 +756,7 @@ def skill_lines(f: dict[str, Any]) -> list[str]:
             if ev.get("flags"):
                 lines.append(f"  - Signs of injected text in it: {', '.join(ev['flags'])}. Read it closely.")
             if ev.get("unknown_roles"):
-                lines.append(f"  - Roles named that this run does not have: {', '.join(ev['unknown_roles'])}")
+                lines.append(f"  - Roles named that this job does not have: {', '.join(ev['unknown_roles'])}")
         else:
             lines.append(f"No skill proposed: {_line(ev.get('note', ''), 300)}")
     return lines
@@ -785,7 +785,7 @@ def notes_lines(ev: dict[str, Any] | None) -> list[str]:
     outcome, note = ev.get("outcome"), ev.get("note", "")
     if outcome == "changed":
         added, removed = ev.get("added") or [], ev.get("removed") or []
-        lines = [f"The Lead rewrote its part (\"From runs\"). notes.md is now {ev.get('size', 0):,} of "
+        lines = [f"The Lead rewrote its part (\"From jobs\"). notes.md is now {ev.get('size', 0):,} of "
                  f"{ev.get('cap', 0):,} characters."]
         for label, items in (("Added", added), ("Removed", removed)):
             if items:
@@ -802,26 +802,26 @@ def notes_lines(ev: dict[str, Any] | None) -> list[str]:
     return [f"None. The notes were not rewritten: {note}."]
 
 
-def write(run_dir: Path, text: str) -> Path:
-    path = Path(run_dir) / "report.md"
+def write(job_dir: Path, text: str) -> Path:
+    path = Path(job_dir) / "report.md"
     mdfile.write_atomic(path, text)
     return path
 
 
 def write_mechanical_report(
     home: Home,
-    run_dir: Path,
+    job_dir: Path,
     status: str,
     failure: str | None = None,
-    note: str = "the run's process ended before the Lead could write it",
+    note: str = "the job's process ended before the Lead could write it",
 ) -> Path:
     """Report without the model, from the journal alone. Used when a process died
-    or a run could not start."""
-    facts = gather_facts(home, run_dir, status, failure=failure)
-    path = write(run_dir, render(facts, None, note))
-    Journal(Path(run_dir) / "journal.jsonl").write("harness", "report_written", "mechanical report from the journal")
-    runs.update_run(run_dir, status=status, finished_at=utc_now())
-    from ombro import memory  # local import: memory depends on runs, which imports this lazily
+    or a job could not start."""
+    facts = gather_facts(home, job_dir, status, failure=failure)
+    path = write(job_dir, render(facts, None, note))
+    Journal(Path(job_dir) / "journal.jsonl").write("harness", "report_written", "mechanical report from the journal")
+    jobs.update_job(job_dir, status=status, finished_at=utc_now())
+    from ombro import memory  # local import: memory depends on jobs, which imports this lazily
 
-    memory.add_index_entry(home, run_dir)
+    memory.add_index_entry(home, job_dir)
     return path

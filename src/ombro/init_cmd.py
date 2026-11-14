@@ -347,7 +347,7 @@ def _set_up(home: Home, ui: UI, client_factory, next_steps: bool = True) -> None
                 brief = start(home, BriefPurpose(home, crew, limits), crew, limits, **kwargs)
                 if brief.confirmed:
                     ui.say(f"Spec saved as {brief.proposal.data['name']!r}. "
-                           f"Run it with:  ombro run --spec {brief.proposal.data['name']}", spaced=True, level="done")
+                           f"Start it with:  ombro start --spec {brief.proposal.data['name']}", spaced=True, level="done")
     if next_steps:
         _next_steps(home, ui)
 
@@ -365,7 +365,7 @@ def _next_steps(home: Home, ui: UI) -> None:
         "  ombro role add          add a role (or `ombro role list` to see the crew)\n"
         "  ombro brief             describe a task; the Lead turns it into a spec\n"
         "  ombro specs             list saved specs, by name\n"
-        "  ombro run               brief a task and run it straight away\n"
+        "  ombro start             brief a task and start it straight away\n"
         "  ombro chat              talk with the Lead about past work (read-only)\n"
-        "  ombro limits            see how far runs and interviews may go"
+        "  ombro limits            see how far jobs and interviews may go"
     )

@@ -7,7 +7,7 @@ user to accept it, ask for a change, edit it by hand, or quit. Only the
 harness writes files, and only after the user accepts.
 
 Every model call goes through its own Gate, under the interview limits in
-limits.md, so interview usage never touches a run's. Anything the user types
+limits.md, so interview usage never touches a job's. Anything the user types
 is scrubbed of keys before it reaches the model or the transcript.
 """
 

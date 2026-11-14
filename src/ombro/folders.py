@@ -1,18 +1,18 @@
-"""Shared folders: places outside a run that the user has granted, by name.
+"""Shared folders: places outside a job that the user has granted, by name.
 
-A run's own workspace/ and scratch/ need no grant. Everything else on the
+A job's own workspace/ and scratch/ need no grant. Everything else on the
 machine does. Grants live in folders.md, are made only by the user (a model
 can suggest a folder, but the harness asks and writes), and apply to every
-crew; a spec names the ones its run uses and may lower write to read.
+crew; a spec names the ones its job uses and may lower write to read.
 
 What can be granted is a fixed rule: a folder inside the user's home folder,
 or on a mounted drive or server share, never the root, system folders, the
 home folder itself, a hidden folder, ~/Library, or anything holding or held
 by the Ombro home.
 
-Before a run that can write to a shared folder starts, the folder is cloned
-into the run's backup/ where the disk allows it (APFS on macOS, reflinks on
-Linux). The run's changes are worked out by comparing the folder before and
+Before a job that can write to a shared folder starts, the folder is cloned
+into the job's backup/ where the disk allows it (APFS on macOS, reflinks on
+Linux). The job's changes are worked out by comparing the folder before and
 after.
 """
 
@@ -39,15 +39,15 @@ MANIFEST_MAX_FILES = 20_000  # a folder with more files is not compared before a
 CHANGES_LISTED = 200
 
 FOLDERS_BODY = """\
-Folders on this machine that runs may use, by name. A run's own workspace/
+Folders on this machine that jobs may use, by name. A job's own workspace/
 and scratch/ need no grant; everything else does. Grants apply to every
-crew, and a spec names the ones its run uses (`folders: [brand, photos]`),
+crew, and a spec names the ones its job uses (`folders: [brand, photos]`),
 and may lower write to read (`folders: {photos: read}`).
 
 - access: read (roles can read and list it) or write (they can also change,
   add and remove files, as you could). Changes are listed in the report.
-- Before a run that can write to a folder starts, Ombro clones it into the
-  run's backup/ folder if the disk allows (same disk as the Ombro home, on
+- Before a job that can write to a folder starts, Ombro clones it into the
+  job's backup/ folder if the disk allows (same disk as the Ombro home, on
   APFS or a file system with reflinks). Server shares usually cannot be
   cloned; their own backups and version history are the remedy.
 - declined: folders you said no to when Ombro offered to share them. Ombro
@@ -308,7 +308,7 @@ def offer_wanted(home: Home, path: str | Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# A run's folders
+# A job's folders
 
 
 def parse_spec(value: Any) -> dict[str, str | None]:
@@ -335,8 +335,8 @@ def parse_spec(value: Any) -> dict[str, str | None]:
     raise SetupError("`folders:` in a spec must be a list of names, or a mapping of names to read or write")
 
 
-def for_run(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str, str]], list[str]]:
-    """The folders a run gets, fixed at its start, and why any it named were left out."""
+def for_job(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str, str]], list[str]]:
+    """The folders a job gets, fixed at its start, and why any it named were left out."""
     wanted = parse_spec((spec_meta or {}).get("folders"))
     if not wanted:
         return [], []
@@ -369,13 +369,13 @@ def for_run(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
 
 
 def for_chat(home: Home) -> tuple[list[dict[str, str]], list[str]]:
-    """Every granted folder, with its own access, checked as a run's are: the Lead in
+    """Every granted folder, with its own access, checked as a job's are: the Lead in
     chat works across all of them, as the user would."""
     try:
         grants, _ = load(home)
     except SetupError as e:
         return [], [f"folders.md could not be read: {e}"]
-    return for_run(home, {"folders": {name: g.access for name, g in grants.items()}})
+    return for_job(home, {"folders": {name: g.access for name, g in grants.items()}})
 
 
 def granted_names(home: Home) -> list[str]:
@@ -434,7 +434,7 @@ def safe_copy(src: Path, final: Path) -> None:
 
 
 def backup_hint(path: str | Path, home: Home) -> str:
-    """Whether a run could clone this folder before writing, as a short phrase."""
+    """Whether a job could clone this folder before writing, as a short phrase."""
     try:
         same = expand(path).resolve().stat().st_dev == home.root.resolve().stat().st_dev
     except OSError:
@@ -442,7 +442,7 @@ def backup_hint(path: str | Path, home: Home) -> str:
     if not same:
         return "no: it is on a different disk from Ombro's home, so no backup can be cloned"
     if platform.system() == "Darwin":
-        return "yes: cloned before each run that can write to it"
+        return "yes: cloned before each job that can write to it"
     return "if the file system supports reflinks (btrfs, xfs); otherwise no"
 
 
@@ -467,9 +467,9 @@ def clone(src: Path, dst: Path) -> None:
         raise OSError(proc.stderr.strip() or "cp could not clone the folder")
 
 
-def backup(run_dir: Path, folder: dict[str, str]) -> dict[str, Any]:
-    """Clone one writable folder into run_dir/backup/<name>. Returns what to record."""
-    dst = Path(run_dir) / "backup" / folder["name"]
+def backup(job_dir: Path, folder: dict[str, str]) -> dict[str, Any]:
+    """Clone one writable folder into job_dir/backup/<name>. Returns what to record."""
+    dst = Path(job_dir) / "backup" / folder["name"]
     try:
         clone(Path(folder["path"]), dst)
     except OSError as e:
@@ -479,7 +479,7 @@ def backup(run_dir: Path, folder: dict[str, str]) -> dict[str, Any]:
                else "the disk cannot clone files" if e.errno in (errno.ENOTSUP, errno.EOPNOTSUPP)
                else str(e.strerror or e))
         return {"backup": None, "backup_note": f"no backup was taken: {why}"}
-    return {"backup": str(dst), "backup_note": "cloned before the run started"}
+    return {"backup": str(dst), "backup_note": "cloned before the job started"}
 
 
 # ---------------------------------------------------------------------------

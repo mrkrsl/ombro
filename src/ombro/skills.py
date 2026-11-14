@@ -11,7 +11,7 @@ run. A role uses the skills its `skills:` line names, or every skill with
 `skills: all`.
 
 A skill a model writes never becomes live without the user's yes: proposals
-from a run wait in its outbox (ombro.outbox), and chat writes one only after
+from a job wait in its outbox (ombro.outbox), and chat writes one only after
 the user confirms it. Replacing a skill keeps the old version in
 skills/Archive/<name>/<date-time>/.
 """

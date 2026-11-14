@@ -65,7 +65,7 @@ def _list(home: Home, args) -> int:
         return 0
     print(f"Approved ({len(view['skills'])}), in {home.skills_dir}:")
     if not view["skills"]:
-        print("  none yet. The Lead can propose one after a run, or write one in chat when you ask it to "
+        print("  none yet. The Lead can propose one after a job, or write one in chat when you ask it to "
               "remember how to do something.")
     for r in view["skills"]:
         who = ", ".join(r["used_by"]) or "no role by name"

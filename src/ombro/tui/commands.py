@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from rich.style import Style
 from rich.text import Text
 
-from ombro import outbox, runs, views
+from ombro import outbox, jobs, views
 from ombro.home import crew_title, find_crew
 from ombro.ui import Failure, Field, Note, Option
 
@@ -30,7 +30,7 @@ def _n(count: int, word: str) -> str:
 
 
 def spec_view(home, spec: dict[str, Any]) -> str:
-    """One saved spec, as /run and chat's offer show it before asking."""
+    """One saved spec, as /start and chat's offer show it before asking."""
     from ombro import mdfile
 
     meta, _ = mdfile.read(Path(spec["path"]))
@@ -51,7 +51,7 @@ RECORD_MARK = "\n# Ombro's record"
 
 def report_markdown(r: dict[str, Any], full: bool = False) -> str:
     """A report as the terminal shows it: the part you read (summary, deliverables, decisions,
-    what was and was not done), then every file the run made as a link, and links to the full
+    what was and was not done), then every file the job made as a link, and links to the full
     report and to Ombro's record. `full` adds the record itself."""
     from urllib.parse import quote
 
@@ -62,12 +62,12 @@ def report_markdown(r: dict[str, Any], full: bool = False) -> str:
     out = [head.rstrip()]
     made = [d for d in r["deliverables"] if d["kind"] != "other"]
     if made:
-        out += ["", "**Open what the run made:**", ""]
+        out += ["", "**Open what the job made:**", ""]
         for d in made:
             label = d["name"] + ("" if d["kind"] == "deliverable" else f" ({d['kind']} in a shared folder)")
             out.append(f"- [{label}]({d['url']})" + ("" if d["exists"] else " (no longer there)"))
     report_url = Path(r["report_path"]).as_uri()
-    rid = quote(str(r["run_id"]))
+    rid = quote(str(r["job_id"]))
     out += ["", f"[Open the full report]({report_url}) · "
                 + (f"[Show Ombro's record](ombro:report/{rid}/full)" if not full else "Ombro's record is below.")]
     if full and record:
@@ -162,50 +162,50 @@ class Commands:
                     return
                 folder = self.home.roles_dir(found[0]) / name.split("/")[-1]
             self.ui.edit([folder / "config.md", folder / "soul.md"])
-            self.say("Saved. The role is read again at the next run.")
+            self.say("Saved. The role is read again at the next job.")
             return
         self.usage("/role, /role add [title], /role add [title] --crew <crew>, /role edit <name>")
 
-    # -- runs (10d) ---------------------------------------------------------------
+    # -- jobs (10d) ---------------------------------------------------------------
 
-    def cmd_runs(self, words: list[str], rest: str) -> None:
-        rows = views.run_list(self.home)
+    def cmd_jobs(self, words: list[str], rest: str) -> None:
+        rows = views.job_list(self.home)
         if not rows:
-            self.say("No runs yet. Brief a task with /brief.")
+            self.say("No jobs yet. Brief a task with /brief.")
             return
         p = self.app.colours
-        out = Text("Runs, newest last:\n", style=p.muted)
+        out = Text("Jobs, newest last:\n", style=p.muted)
         for r in rows[-12:]:
             waiting = f"  {r['waiting']} waiting" if r["waiting"] else ""
             unseen = "  new" if not r["seen_at"] and r["status"] != "running" else ""
-            out.append(f"{r['run_id']}  {r['status']:<18} {r['total_tokens']:>9,} tokens{waiting}{unseen}\n",
+            out.append(f"{r['job_id']}  {r['status']:<18} {r['total_tokens']:>9,} tokens{waiting}{unseen}\n",
                        style=p.text)
             out.append(f"    {r['brief'][:90]}\n", style=p.muted)
-        out.append("See one with /report <run_id>.", style=p.muted)
+        out.append("See one with /report <job_id>.", style=p.muted)
         self.rich(out)
 
-    def _find_run(self, words: list[str]) -> Path | None:
+    def _find_job(self, words: list[str]) -> Path | None:
         try:
             if words:
-                return runs.find_run(self.home, words[0])
-            return runs.latest_run(self.home, None)
-        except (runs.RunNotFound, LookupError) as e:
-            self.say(str(e) or "No runs yet.")
+                return jobs.find_job(self.home, words[0])
+            return jobs.latest_job(self.home, None)
+        except (jobs.JobNotFound, LookupError) as e:
+            self.say(str(e) or "No jobs yet.")
             return None
 
     def cmd_report(self, words: list[str], rest: str) -> None:
         full = bool(words) and words[-1].lower() == "full"
         if full:
             words = words[:-1]
-        run_dir = self._find_run(words)
-        if run_dir is None:
+        job_dir = self._find_job(words)
+        if job_dir is None:
             return
-        r = views.report(self.home, run_dir)
+        r = views.report(self.home, job_dir)
         if r["report"] is None:
-            self.say(f"Run {run_dir.name} has no report yet (status {r['status']}).")
+            self.say(f"Job {job_dir.name} has no report yet (status {r['status']}).")
             return
         self.app.call_from_thread(self.app.add_markdown, report_markdown(r, full), "report")
-        runs.mark_seen(run_dir)
+        jobs.mark_seen(job_dir)
 
     def report_text(self, r: dict[str, Any]) -> Text:
         p = self.app.colours
@@ -225,10 +225,10 @@ class Commands:
     def cmd_open(self, words: list[str], rest: str) -> None:
         from ombro.cli import _launch
 
-        run_dir = self._find_run(words)
-        if run_dir is None:
+        job_dir = self._find_job(words)
+        if job_dir is None:
             return
-        folder = run_dir / "workspace"
+        folder = job_dir / "workspace"
         if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
             self.fail(f"{folder} is not a real folder, so Ombro will not open it.")
             return
@@ -242,28 +242,28 @@ class Commands:
 
     def cmd_stop(self, words: list[str], rest: str) -> None:
         if not words:
-            self.usage("/stop <run_id>")
+            self.usage("/stop <job_id>")
             return
-        run_dir = self._find_run(words)
-        if run_dir is None:
+        job_dir = self._find_job(words)
+        if job_dir is None:
             return
-        meta, _ = runs.read_run(run_dir)
+        meta, _ = jobs.read_job(job_dir)
         if meta.get("status") != "running":
-            self.say(f"Run {run_dir.name} is not running (status {meta.get('status')}).")
+            self.say(f"Job {job_dir.name} is not running (status {meta.get('status')}).")
             return
         pid = meta.get("pid")
-        if not pid or not runs.pid_alive(int(pid)):
-            runs.reap_dead_runs(self.home)
-            self.say(f"Run {run_dir.name} had no live process; it is marked failed and its report written.")
+        if not pid or not jobs.pid_alive(int(pid)):
+            jobs.reap_dead_jobs(self.home)
+            self.say(f"Job {job_dir.name} had no live process; it is marked failed and its report written.")
             return
-        if not self.ui.yes("stop", f"Stop run {run_dir.name}? It finishes its current call, then writes its report."):
+        if not self.ui.yes("stop", f"Stop job {job_dir.name}? It finishes its current call, then writes its report."):
             self.say("Nothing changed.")
             return
         os.kill(int(pid), signal.SIGTERM)
-        self.say(f"Asked run {run_dir.name} to stop. Its notice appears here when it has written its report.")
+        self.say(f"Asked job {job_dir.name} to stop. Its notice appears here when it has written its report.")
 
-    def cmd_run(self, words: list[str], rest: str) -> None:
-        """/run [spec]: run a saved spec again, as `ombro run --spec <spec> --detach` does."""
+    def cmd_start(self, words: list[str], rest: str) -> None:
+        """/start [spec]: start a saved spec again, as `ombro start --spec <spec> --detach` does."""
         from ombro.ui import Field, Option
 
         specs = views.spec_list(self.home)
@@ -280,23 +280,23 @@ class Commands:
             spec = match[0]
         else:
             shown = specs[:20]
-            pick = self.ui.ask(Field("spec", "Which spec would you like to run? (newest first)", "choice",
+            pick = self.ui.ask(Field("spec", "Which spec would you like to start? (newest first)", "choice",
                                      default="1", invalid="Please choose one of the numbers shown.",
                                      options=[Option(str(i), f"{s['name']}: {s['title']}")
                                               for i, s in enumerate(shown, 1)]))
             spec = shown[int(pick) - 1]
-        self.app.offer_run(spec["name"], spec_view(self.home, spec))
+        self.app.offer_start(spec["name"], spec_view(self.home, spec))
 
-    def start_run(self, spec: str, roles: list[str] | None = None) -> str | None:
-        """`ombro run --spec <spec> --detach [--role ...]`, as the command line would. Returns the run ID."""
+    def start_job(self, spec: str, roles: list[str] | None = None) -> str | None:
+        """`ombro start --spec <spec> --detach [--role ...]`, as the command line would. Returns the job ID."""
         env = {**os.environ, "OMBRO_HOME": str(self.home.root)}
         extra = [a for r in roles or [] for a in ("--role", r)]
-        r = subprocess.run([sys.executable, "-m", "ombro", "run", "--spec", spec, "--detach", *extra],
+        r = subprocess.run([sys.executable, "-m", "ombro", "start", "--spec", spec, "--detach", *extra],
                            capture_output=True,
                            text=True, env=env, timeout=120, stdin=subprocess.DEVNULL)
-        m = re.search(r"Started run (\S+)", r.stdout)
+        m = re.search(r"Started job (\S+)", r.stdout)
         if r.returncode != 0 or not m:
-            self.fail(f"The run could not start: {(r.stderr or r.stdout).strip()[-400:]}")
+            self.fail(f"The job could not start: {(r.stderr or r.stdout).strip()[-400:]}")
             return None
         return m.group(1)
 
@@ -327,7 +327,7 @@ class Commands:
                     self._show_skill_proposal(a, d)
                     return
                 lines = [f"{a.ref}: {a.tool} ({d.get('class', '')}), {a.status}",
-                         f"From run {a.run_id}, role {d.get('role', '')}. Reason: {d.get('reason', '')}",
+                         f"From job {a.job_id}, role {d.get('role', '')}. Reason: {d.get('reason', '')}",
                          "Arguments:", json.dumps(a.arguments, ensure_ascii=False, indent=2)]
                 self.say("\n".join(lines))
                 return
@@ -360,7 +360,7 @@ class Commands:
     def _show_skill_proposal(self, a: outbox.Action, d: dict) -> None:
         v = outbox.skill_view(self.home, a)
         lines = [f"{a.ref}: {'a new version of' if v['live'] else 'a new skill,'} {v['name']}, {a.status}",
-                 f"From run {a.run_id}. Reason: {d.get('reason', '')}",
+                 f"From job {a.job_id}. Reason: {d.get('reason', '')}",
                  f"For: {', '.join(v['for']) or 'no role named'}"]
         if v["flags"]:
             lines.append(f"Signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")
@@ -381,7 +381,7 @@ class Commands:
                 view = library_view(self.home)
                 if not view["skills"] and not view["waiting"]:
                     self.say("No skills yet. Ask me to remember how to do something, and I can write one; "
-                             "after a run I may propose one for you to approve.")
+                             "after a job I may propose one for you to approve.")
                     return
                 p = self.app.colours
                 out = Text()
@@ -454,7 +454,7 @@ class Commands:
                 return
             lines = []
             for s in rows:
-                last = f", last {s['last_run']['status']}" if s["last_run"] else ""
+                last = f", last {s['last_job']['status']}" if s["last_job"] else ""
                 nxt = f", next {s['next'].replace('T', ' ')}" if s["next"] else ""
                 lines.append(f"{s['name']}  {'on' if s['enabled'] else 'off'}  {s['cron']}{nxt}{last}"
                              + (f"  (problem: {s['problem']})" if s["problem"] else ""))
@@ -519,7 +519,7 @@ class Commands:
             except SetupError as e:
                 self.say(str(e))
                 return
-            self.say(f"Ombro now uses the {level} level, from this chat on. Runs already going keep their "
+            self.say(f"Ombro now uses the {level} level, from this chat on. Jobs already going keep their "
                      "limits." + (f" Values set by hand were removed so the level "
                      f"applies: {', '.join(dropped)}." if dropped else ""), level="done")
             if self.app.chat is not None:
@@ -533,8 +533,8 @@ class Commands:
         by_hand = [k for k in LEVEL_KEYS if k in meta]
         self.say(f"Ombro uses the {lim.allowance} level" + (f" (set by hand: {', '.join(by_hand)})" if by_hand
                                                              else "") + ":",
-                 items=[f"each run: {format_tokens(lim.max_tokens)} tokens, {lim.max_rounds} rounds, "
-                        f"{format_duration(lim.run_timeout)}",
+                 items=[f"each job: {format_tokens(lim.max_tokens)} tokens, {lim.max_rounds} rounds, "
+                        f"{format_duration(lim.job_timeout)}",
                         f"each chat: {format_tokens(lim.chat_max_tokens)} tokens",
                         f"each interview: {format_tokens(lim.interview_max_tokens)} tokens",
                         f"each model call: {lim.max_output_tokens:,} output tokens"])
@@ -576,7 +576,7 @@ class Commands:
             if action == "list":
                 data = views.folder_list(self.home)
                 if not data["folders"]:
-                    self.say("No folders are shared. Runs reach only their own workspace. Share one with "
+                    self.say("No folders are shared. Jobs reach only their own workspace. Share one with "
                              "/folder add <path>.")
                     return
                 self.say("Shared folders:", items=[f"{f['name']}  {f['access']}  {f['path']}"
@@ -590,7 +590,7 @@ class Commands:
                 return
             if action == "remove" and len(words) > 1:
                 g = folders.remove(self.home, words[1])
-                self.say(f"Removed {g.name!r} ({g.path}). Runs already going keep it.", level="done")
+                self.say(f"Removed {g.name!r} ({g.path}). Jobs already going keep it.", level="done")
                 return
         except (folders.FolderError, SetupError) as e:
             self.fail(str(e))
@@ -671,7 +671,7 @@ class Commands:
     def cmd_preferences(self, words: list[str], rest: str) -> None:
         if words and words[0].lower() == "edit":
             self.ui.edit([self.home.preferences_config, self.home.instructions])
-            self.say("Saved. They are used from the next chat, interview or run.")
+            self.say("Saved. They are used from the next chat, interview or job.")
             return
         p = views.preferences(self.home)
         self.say("Preferences:", items=[f"name: {p['name'] or '(not set)'}", f"theme: {p['theme']}",
@@ -683,30 +683,30 @@ class Commands:
 
 
 # ---------------------------------------------------------------------------
-# Following runs and posting notices (10d)
+# Following jobs and posting notices (10d)
 
 PROGRESS = {"briefed": "briefed", "returned": "returned", "staged": "staged an action",
             "outward_done": "did an outward action", "limit_reached": "hit a limit", "finish": "finished the work",
             "report_written": "wrote the report", "failed": "failed"}
 
 
-def progress_line(run_id: str, ev: dict) -> str | None:
+def progress_line(job_id: str, ev: dict) -> str | None:
     what = PROGRESS.get(str(ev.get("action")))
     if not what:
         return None
     note = " ".join(str(ev.get("note") or "").split())
-    return f"{run_id} · {ev.get('role', '')} {what}" + (f": {note[:100]}" if note else "")
+    return f"{job_id} · {ev.get('role', '')} {what}" + (f": {note[:100]}" if note else "")
 
 
-def notice_text(app: "OmbroApp", run_id: str) -> Text:
-    """What the interface says when a run ends: outcome, deliverables as links,
+def notice_text(app: "OmbroApp", job_id: str) -> Text:
+    """What the interface says when a job ends: outcome, deliverables as links,
     actions waiting, and how to open the report. Written by Ombro, not the model."""
     p = app.colours
     try:
-        run_dir = runs.find_run(app.home, run_id)
-    except (runs.RunNotFound, LookupError):
-        return Text(f"Run {run_id} has ended.", style=p.text)
-    r = views.report(app.home, run_dir)
+        job_dir = jobs.find_job(app.home, job_id)
+    except (jobs.JobNotFound, LookupError):
+        return Text(f"Job {job_id} has ended.", style=p.text)
+    r = views.report(app.home, job_dir)
     out = Text()
     out.append(ended_line(r["status"], r.get("limit_hit")), style=f"bold {p.text}")
     out.append(f"\n{r['brief']}\n", style=p.muted)
@@ -721,19 +721,19 @@ def notice_text(app: "OmbroApp", run_id: str) -> Text:
         n = r["waiting"]
         out.append(f"{_n(n, 'action')} {'is' if n == 1 else 'are'} waiting for your OK: /outbox\n", style=p.text)
     out.append("Read the report", Style(color=p.text, underline=True, bold=True,
-                                         meta={"@click": f"app.run_command({'/report ' + run_id!r})"}))
-    out.append(f"  (or type /report {run_id})", style=p.muted)
+                                         meta={"@click": f"app.run_command({'/report ' + job_id!r})"}))
+    out.append(f"  (or type /report {job_id})", style=p.muted)
     return out
 
 
 def ended_line(status: str, limit: str | None) -> str:
-    """How a run ended, as Ombro says it in a notice."""
+    """How a job ended, as Ombro says it in a notice."""
     if status == "completed":
-        return "Your run has finished."
+        return "Your job has finished."
     if status == "stopped_by_limit":
-        return f"Your run stopped at its {limit or 'run'} limit before finishing."
+        return f"Your job stopped at its {limit or 'job'} limit before finishing."
     if status == "stopped":
-        return "Your run was stopped, as you asked."
+        return "Your job was stopped, as you asked."
     if status == "insufficient_brief":
-        return "Your run needs more from you before it can start."
-    return "Your run didn't finish: something went wrong."
+        return "Your job needs more from you before it can start."
+    return "Your job didn't finish: something went wrong."

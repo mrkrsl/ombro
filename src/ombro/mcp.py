@@ -191,7 +191,7 @@ class _Stdio:
         env = server_env(home, cfg)
         # Values from secrets/keys.env, so they can be hidden from anything the server prints.
         self._secrets = [v for v in (keys.get_key(home, n) for n in cfg.key_refs()) if v]
-        # The server's own output goes to the run's log, or to a temporary file,
+        # The server's own output goes to the job's log, or to a temporary file,
         # so a failure to start can show its last lines.
         self._log_path = log
         self._log = open(log, "ab") if log else tempfile.TemporaryFile()

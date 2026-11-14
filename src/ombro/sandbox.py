@@ -1,7 +1,7 @@
 """Running one Python script inside the operating system's own sandbox.
 
 Ombro never tries to judge code by reading it. It limits what any code can
-reach: the run's workspace/ and scratch/, the shared folders the run was
+reach: the job's workspace/ and scratch/, the shared folders the job was
 given, and what Python needs to start. No network, no other programs, no
 secrets. If the sandbox cannot be set up, nothing runs.
 
@@ -45,7 +45,7 @@ class SandboxUnavailable(Exception):
 class Box:
     """What one script may reach. Every path is a real (resolved) path."""
 
-    run_dir: Path  # the working folder; its own files stay unreadable
+    job_dir: Path  # the working folder; its own files stay unreadable
     script: Path  # the script, readable but not writable
     write: list[Path] = field(default_factory=list)  # read and write: workspace/, scratch/, writable shared folders
     read: list[Path] = field(default_factory=list)  # read only: read-only shared folders
@@ -79,7 +79,7 @@ PY_FLAGS = ["-I", "-S", "-B", "-X", "utf8"]
 
 def environment(box: Box) -> dict[str, str]:
     """An empty environment apart from a temporary folder and the locale. No keys."""
-    tmp = str(box.temp or box.run_dir / "scratch")
+    tmp = str(box.temp or box.job_dir / "scratch")
     return {"LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8", "TMPDIR": tmp, "HOME": tmp, "PATH": ""}
 
 
@@ -101,7 +101,7 @@ def macos_profile(box: Box, exe: Path, prefix: Path) -> str:
         # Names and sizes of files can be looked up; their contents cannot be read.
         "(allow file-read-metadata)",
         '(allow file-read-data (literal "/"))',
-        f"(allow file-read-data (literal {_sb(box.run_dir)}))",
+        f"(allow file-read-data (literal {_sb(box.job_dir)}))",
         "(allow file-read* " + " ".join(f"(subpath {_sb(p)})" for p in [prefix, *system_reads]) + ")",
         '(allow file-read* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))',
         '(allow file-write-data (literal "/dev/null"))',
@@ -151,14 +151,14 @@ def linux_command(box: Box) -> list[str]:
            "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
     for flag, p in _linux_system_binds(exe, prefix):
         cmd += [flag, p, p]
-    cmd += ["--dir", str(box.run_dir)]
+    cmd += ["--dir", str(box.job_dir)]
     for p in box.write:
         cmd += ["--bind", str(p), str(p)]
     for p in box.read:
         cmd += ["--ro-bind", str(p), str(p)]
     for where, real in box.mounts.items():
         cmd += ["--bind" if real in box.write else "--ro-bind", str(real), str(where)]
-    cmd += ["--ro-bind", str(box.script), str(box.script), "--chdir", str(box.run_dir),
+    cmd += ["--ro-bind", str(box.script), str(box.script), "--chdir", str(box.job_dir),
             str(exe), *PY_FLAGS, str(box.script)]
     return cmd
 
@@ -196,7 +196,7 @@ def unavailable_reason() -> str | None:
             (root / "scratch").mkdir()
             script = root / "probe.py"
             script.write_text("print('ok')\n")
-            box = Box(run_dir=root, script=script, write=[root / "scratch"])
+            box = Box(job_dir=root, script=script, write=[root / "scratch"])
             try:
                 out = run(box, timeout=20, cpu_seconds=20, max_memory=512 * 1024 * 1024)
             except (OSError, SandboxUnavailable) as e:
@@ -273,7 +273,7 @@ def run(
     try:
         proc = subprocess.Popen(
             cmd,
-            cwd=str(box.run_dir),
+            cwd=str(box.job_dir),
             env=environment(box),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

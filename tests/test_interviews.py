@@ -7,7 +7,7 @@ import json
 import pytest
 
 from conftest import LEAD_REPORT, TEST_LEAD_SOUL
-from ombro import fake, keys, mdfile, runs
+from ombro import fake, keys, mdfile, jobs
 from ombro.fake import ScriptedClient
 from ombro.home import LEAD_SOUL
 from ombro.interviews import BriefPurpose, RolePurpose, SetupPurpose, record_insufficient_brief, start
@@ -109,7 +109,7 @@ def test_setup_writes_nothing_until_accepted(talk, home):
     assert (soul_path.parent / "soul.previous.md").read_text() == TEST_LEAD_SOUL  # the old text is kept
     # The change request went back to the Lead as the tool's result.
     assert "Make the soul shorter." in talk.tool_replies()[0]
-    # The new preferences are read the way a run reads them.
+    # The new preferences are read the way a job reads them.
     from ombro.settings import load_preferences
 
     assert "invented bakery" in load_preferences(home).instructions
@@ -261,22 +261,22 @@ def test_insufficient_brief_goes_back_to_the_user_first(talk, home):
 def test_insufficient_brief_ends_in_a_report_with_no_roles_briefed(talk, home):
     gaps = ["Who uses the result is not stated.", "The deadline contradicts the scope."]
     out = talk(
-        BriefPurpose(home, "default", load_limits(home), "Something about teapots.", then_run=True),
+        BriefPurpose(home, "default", load_limits(home), "Something about teapots.", then_start=True),
         [fake.call("insufficient", {"gaps": gaps})],
         ["/end"],
     )
     assert out.status == "insufficient" and out.gaps == gaps
     assert not list((home.specs_dir).glob("*.md"))
-    run_dir = record_insufficient_brief(home, ["default"], load_limits(home), out, "Something about teapots.")
-    meta = runs.read_run(run_dir)[0]
+    job_dir = record_insufficient_brief(home, ["default"], load_limits(home), out, "Something about teapots.")
+    meta = jobs.read_job(job_dir)[0]
     assert meta["status"] == "insufficient_brief"
-    actions = [json.loads(line)["action"] for line in (run_dir / "journal.jsonl").read_text().splitlines()]
+    actions = [json.loads(line)["action"] for line in (job_dir / "journal.jsonl").read_text().splitlines()]
     assert "briefed" not in actions and "insufficient_brief" in actions
-    report = (run_dir / "report.md").read_text()
+    report = (job_dir / "report.md").read_text()
     assert "**Status:** insufficient_brief" in report and "No roles were briefed." in report
     for g in gaps:
         assert g in report
-    assert (run_dir / "interview.md").is_file()
+    assert (job_dir / "interview.md").is_file()
 
 
 # -- limits -------------------------------------------------------------------------
@@ -292,12 +292,12 @@ def test_interview_usage_has_its_own_cap(talk, home):
     assert out.status == "limit" and "max_tokens" in out.detail
     assert out.usage["total_tokens"] <= 12000
     assert talk.client.remaining == 1  # the call that would pass the cap never happened
-    # The run cap is untouched by the interview's.
+    # The job cap is untouched by the interview's.
     assert load_limits(home).max_tokens == 800_000
 
 
-def test_interview_usage_is_kept_apart_from_the_run(home, monkeypatch, capsys):
-    """`ombro run` with no spec: interview, confirm, then the run, each with its own usage."""
+def test_interview_usage_is_kept_apart_from_the_job(home, monkeypatch, capsys):
+    """`ombro start` with no spec: interview, confirm, then the job, each with its own usage."""
     from ombro import cli
 
     script = [
@@ -312,30 +312,30 @@ def test_interview_usage_is_kept_apart_from_the_run(home, monkeypatch, capsys):
     mdfile.write(home.models, {"models": {"default": {"api": "fake", "script": "script.json"}, "cheap": "default"}})
     answers = Answers(["Find invented teapot makers.", "a"])
     monkeypatch.setattr("builtins.input", answers)
-    assert cli.main(["run"]) == 0
-    run_dir = runs.latest_run(home, "default")
-    meta = runs.read_run(run_dir)[0]
+    assert cli.main(["start"]) == 0
+    job_dir = jobs.latest_job(home, "default")
+    meta = jobs.read_job(job_dir)[0]
     assert meta["status"] == "completed"
     assert meta["interview_usage"]["total_tokens"] == 4850
-    assert meta["usage"]["total_tokens"] == 440  # the run counts only its own calls
+    assert meta["usage"]["total_tokens"] == 440  # the job counts only its own calls
     assert "interview; spec saved at" in meta["source"]
-    assert (run_dir / "interview.md").is_file()
-    assert "Task interview (separate from the run's limits): 4,850 tokens" in (run_dir / "report.md").read_text()
+    assert (job_dir / "interview.md").is_file()
+    assert "Task interview (separate from the job's limits): 4,850 tokens" in (job_dir / "report.md").read_text()
     assert (home.specs_dir / "teapot-survey.md").is_file()
 
 
-def test_ombro_run_with_an_insufficient_brief(home, monkeypatch):
+def test_ombro_start_with_an_insufficient_brief(home, monkeypatch):
     from ombro import cli
 
     script = [fake.say("What is the task?"), fake.call("insufficient", {"gaps": ["No result was described."]})]
     (home.root / "script.json").write_text(json.dumps(script))
     mdfile.write(home.models, {"models": {"default": {"api": "fake", "script": "script.json"}, "cheap": "default"}})
     monkeypatch.setattr("builtins.input", Answers(["Teapots, somehow.", "/end"]))
-    assert cli.main(["run"]) == 1
-    run_dir = runs.latest_run(home, "default")
-    assert runs.read_run(run_dir)[0]["status"] == "insufficient_brief"
-    assert "Teapots, somehow." in (run_dir / "spec.md").read_text()
-    assert "No result was described." in (run_dir / "report.md").read_text()
+    assert cli.main(["start"]) == 1
+    job_dir = jobs.latest_job(home, "default")
+    assert jobs.read_job(job_dir)[0]["status"] == "insufficient_brief"
+    assert "Teapots, somehow." in (job_dir / "spec.md").read_text()
+    assert "No result was described." in (job_dir / "report.md").read_text()
 
 
 def test_a_lead_that_never_asks_is_stopped(talk, home):

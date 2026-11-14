@@ -14,7 +14,7 @@ A script is a list of entries, consumed in order. Each entry is a dict:
 or a callable taking (messages, tools) and returning such a dict.
 When the script runs out, calls fail with a ModelError.
 
-The Lead's optional skill call at the end of a run (it is offered
+The Lead's optional skill call at the end of a job (it is offered
 `skills__propose`) is answered `no_skill` without using an entry, unless the
 next entry answers it itself (skills__propose, skills__read or no_skill).
 """
@@ -76,7 +76,7 @@ class ScriptedClient:
 
     @classmethod
     def shared(cls, path: str, base: Path | None = None) -> "ScriptedClient":
-        """One client per script file per process, so an interview and the run it
+        """One client per script file per process, so an interview and the job it
         starts read one script in order. A script file that changes starts afresh."""
         p = Path(path).expanduser()
         if not p.is_absolute() and base is not None:
@@ -193,12 +193,12 @@ def say(text: str, **extra) -> dict:
 
 
 def keep_notes(reason: str = "Nothing new to keep.", **extra) -> dict:
-    """The Lead's reply in the notes call at the end of a run that briefed a role."""
+    """The Lead's reply in the notes call at the end of a job that briefed a role."""
     return {"tool_calls": [{"name": "keep_notes", "arguments": {"reason": reason}}], **extra}
 
 
 def write_notes(text: str, **extra) -> dict:
-    return {"tool_calls": [{"name": "memory__write_notes", "arguments": {"from_runs": text}}], **extra}
+    return {"tool_calls": [{"name": "memory__write_notes", "arguments": {"from_jobs": text}}], **extra}
 
 
 def no_skill(reason: str = "Nothing new to keep as a skill.", **extra) -> dict:
@@ -206,7 +206,7 @@ def no_skill(reason: str = "Nothing new to keep as a skill.", **extra) -> dict:
 
 
 def propose_skill(name: str, description: str, body: str, *, for_roles: list[str] | None = None,
-                  reason: str = "It worked in this run.", **extra) -> dict:
+                  reason: str = "It worked in this job.", **extra) -> dict:
     args = {"name": name, "description": description, "body": body, "reason": reason}
     if for_roles is not None:
         args["for"] = for_roles

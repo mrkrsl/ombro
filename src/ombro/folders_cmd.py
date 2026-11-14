@@ -43,7 +43,7 @@ def cmd_folders(args) -> int:
             if not args.target:
                 raise cli.CliError("Name the shared folder: `ombro folder remove <name>`.")
             g = folders.remove(home, args.target)
-            print(f"Removed {g.name!r} ({g.path}). Runs already going keep it; new runs do not get it.")
+            print(f"Removed {g.name!r} ({g.path}). Jobs already going keep it; new jobs do not get it.")
             return 0
     except folders.FolderError as e:
         raise cli.CliError(str(e)) from None
@@ -55,10 +55,10 @@ def cmd_folders(args) -> int:
 def _list(home: Home) -> int:
     grants, declined = folders.load(home)
     if not grants:
-        print("No folders are shared. Runs reach only their own workspace.")
+        print("No folders are shared. Jobs reach only their own workspace.")
         print("Share one with `ombro folder add <path>`; a spec then names it with `folders: [<name>]`.")
     else:
-        print("Shared folders. A spec names the ones its run uses (`folders: [name]`).\n")
+        print("Shared folders. A spec names the ones its job uses (`folders: [name]`).\n")
         for g in grants.values():
             try:
                 folders.check_place(g.path, home)
@@ -105,9 +105,9 @@ def add_flow(home: Home, target: str, name: str | None, access: str | None, yes:
                 ui.say("Nothing shared.")
                 return 1
     if access == "write" and not yes:
-        ui.say(f"Backup before each run that can write to it: {folders.backup_hint(real, home)}.")
+        ui.say(f"Backup before each job that can write to it: {folders.backup_hint(real, home)}.")
         try:
-            go = ui.yes("write", f"Let Ombro change files in {folders.display_path(real)}? Runs can, and the Lead "
+            go = ui.yes("write", f"Let Ombro change files in {folders.display_path(real)}? Jobs can, and the Lead "
                                  "can in chat once you say yes to each change.")
         except (KeyboardInterrupt, EOFError):
             go = False
@@ -131,7 +131,7 @@ def offer_start_folder(home: Home, cwd: Path | None = None, ask: Callable[[str],
     if not folders.offer_wanted(home, here):
         return
     shown = folders.display_path(here)
-    ui.say(f"You are in {shown}, which is not shared with Ombro's runs.")
+    ui.say(f"You are in {shown}, which is not shared with Ombro's jobs.")
     try:
         choice = ui.ask(Field(
             "share_here", "Share it?", "choice", default="s",

@@ -1,15 +1,15 @@
 """The guardrail gate. Every model call and tool call passes through here.
 
 Checks happen before a call; usage is recorded after it. Limits are fixed when
-the gate is built and nothing in a run can change them.
+the gate is built and nothing in a job can change them.
 
 Three outcomes when a check fails:
-- LimitReached: the run stops and goes to its report (tokens, rounds, time,
+- LimitReached: the job stops and goes to its report (tokens, rounds, time,
   a stop request, and the Lead's own step and loop limits).
 - BriefLimit: only the current brief ends, and the Lead is told (a role's
   max_steps or loop detection).
 - ToolRefused: only this call is refused, and the caller is told (a tool that
-  has used its max_calls for the run).
+  has used its max_calls for the job).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ MIN_OUTPUT = 2000  # the shortest reply allowance worth a model call; below it, 
 
 
 class LimitReached(Exception):
-    """A limit stopped the run. `limit` names it; `detail` says what happened."""
+    """A limit stopped the job. `limit` names it; `detail` says what happened."""
 
     def __init__(self, limit: str, detail: str):
         super().__init__(f"{limit}: {detail}")
@@ -34,9 +34,9 @@ class LimitReached(Exception):
 
 
 class BriefLimit(LimitReached):
-    """A limit ended one brief. The run goes on and the Lead is told.
+    """A limit ended one brief. The job goes on and the Lead is told.
 
-    A subclass of LimitReached, so if one is ever not caught it still stops the run."""
+    A subclass of LimitReached, so if one is ever not caught it still stops the job."""
 
 
 class ToolRefused(Exception):
@@ -91,7 +91,7 @@ class Gate:
         return self.clock() - self.started
 
     def timed_out(self) -> bool:
-        return self.phase == "work" and self.elapsed() >= self.limits.run_timeout
+        return self.phase == "work" and self.elapsed() >= self.limits.job_timeout
 
     def request_stop(self, reason: str) -> None:
         if self._stop is None:
@@ -118,10 +118,10 @@ class Gate:
     def _work_checks(self) -> None:
         if self._stop:
             raise LimitReached("stopped", self._stop)
-        if self.elapsed() >= self.limits.run_timeout:
+        if self.elapsed() >= self.limits.job_timeout:
             raise LimitReached(
-                "run_timeout",
-                f"the run reached its time limit of {format_duration(self.limits.run_timeout)}",
+                "job_timeout",
+                f"the job reached its time limit of {format_duration(self.limits.job_timeout)}",
             )
 
     def check_model_call(self, model: str, est_input: int, requested_output: int | None = None) -> tuple[int, float]:
@@ -140,7 +140,7 @@ class Gate:
                     f"{self.scope_role} used all {self.scope_max} model calls allowed for one brief",
                 )
             token_cap = self.work_token_cap
-            timeout = L.run_timeout - self.elapsed()
+            timeout = L.job_timeout - self.elapsed()
             where = "available before the report reserve"
         else:
             now = self.clock()
@@ -148,7 +148,7 @@ class Gate:
                 raise LimitReached("report_timeout", f"no time was left for the {self.phase} call")
             token_cap = L.max_tokens
             timeout = self.report_deadline - now
-            where = "in the run"
+            where = "in the job"
 
         if token_cap is not None:
             # Near the cap, the reply may be shorter, never the total longer: the output allowance
@@ -192,7 +192,7 @@ class Gate:
 
     def check_tool_call(self, role: str, tool: str, args_key: str, brief: bool = False, capped: bool = True) -> None:
         """Check one tool call. brief=True for a role's call inside a brief, where
-        loop detection ends the brief rather than the run. capped=False for the
+        loop detection ends the brief rather than the job. capped=False for the
         Lead's own tools, which max_rounds bounds instead of a per-tool cap."""
         if self.phase != "work":
             raise LimitReached("tools_disabled", "tools are disabled while the report is written")
@@ -213,7 +213,7 @@ class Gate:
         used = self.usage.tool_calls.get(tool, 0)
         if used >= cap:
             self.usage.tool_refused[tool] = self.usage.tool_refused.get(tool, 0) + 1
-            raise ToolRefused("max_calls", f"{tool} has used all {cap} calls allowed in this run")
+            raise ToolRefused("max_calls", f"{tool} has used all {cap} calls allowed in this job")
         self.usage.tool_calls[tool] = used + 1
 
     def forget_reads(self, role: str) -> None:

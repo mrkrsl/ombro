@@ -345,5 +345,5 @@ def model_flow(home: Home, ui, who: str | None = None, name: str | None = None) 
     except SetupError as e:
         ui.say(str(e))
         return 1
-    ui.say(f"{label[0].upper() + label[1:]} will use {name} from the next chat, interview or run.", level="done")
+    ui.say(f"{label[0].upper() + label[1:]} will use {name} from the next chat, interview or job.", level="done")
     return 0

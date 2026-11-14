@@ -15,11 +15,11 @@ from ombro.tools import ToolContext, ToolInputError
 
 @pytest.fixture
 def ctx(tmp_path) -> ToolContext:
-    run_dir = tmp_path / "run"
+    job_dir = tmp_path / "run"
     for sub in ("workspace", "scratch", "outbox"):
-        (run_dir / sub).mkdir(parents=True)
-    (run_dir / "run.md").write_text("---\n---\n")
-    return ToolContext(run_dir, "researcher", timeout=5)
+        (job_dir / sub).mkdir(parents=True)
+    (job_dir / "job.md").write_text("---\n---\n")
+    return ToolContext(job_dir, "researcher", timeout=5)
 
 
 @pytest.fixture
@@ -37,14 +37,14 @@ def tools(home):
     [
         "/etc/passwd",
         "~/notes.md",
-        "../run.md",
-        "workspace/../run.md",
+        "../job.md",
+        "workspace/../job.md",
         "workspace/../../outside.md",
-        "scratch/a/../../run.md",
+        "scratch/a/../../job.md",
         "outbox/staged.md",
-        "run.md",
+        "job.md",
         "notes.md",
-        "workspace\\..\\run.md",
+        "workspace\\..\\job.md",
         "workspace/a\x00b",
         "C:/Windows/x",
         "",
@@ -55,15 +55,15 @@ def test_paths_outside_the_workspace_are_refused(ctx, tools, path):
         tools("workspace.write")({"path": path, "content": "x"}, ctx)
     with pytest.raises(ToolInputError):
         tools("workspace.read")({"path": path}, ctx)
-    assert not (ctx.run_dir.parent / "outside.md").exists()
-    assert (ctx.run_dir / "run.md").read_text() == "---\n---\n"
+    assert not (ctx.job_dir.parent / "outside.md").exists()
+    assert (ctx.job_dir / "job.md").read_text() == "---\n---\n"
 
 
 def test_a_symlinked_folder_that_points_outside_is_refused(ctx, tools, tmp_path):
     outside = tmp_path / "elsewhere"
     outside.mkdir()
     (outside / "secret.txt").write_text("invented secret")
-    os.symlink(outside, ctx.run_dir / "workspace" / "escape")
+    os.symlink(outside, ctx.job_dir / "workspace" / "escape")
     with pytest.raises(ToolInputError, match="outside"):
         tools("workspace.write")({"path": "workspace/escape/new.md", "content": "x"}, ctx)
     with pytest.raises(ToolInputError, match="outside"):
@@ -74,7 +74,7 @@ def test_a_symlinked_folder_that_points_outside_is_refused(ctx, tools, tmp_path)
 def test_a_symlinked_file_that_points_outside_is_refused(ctx, tools, tmp_path):
     target = tmp_path / "target.txt"
     target.write_text("original")
-    os.symlink(target, ctx.run_dir / "scratch" / "link.txt")
+    os.symlink(target, ctx.job_dir / "scratch" / "link.txt")
     with pytest.raises(ToolInputError):
         tools("workspace.write")({"path": "scratch/link.txt", "content": "overwritten"}, ctx)
     with pytest.raises(ToolInputError):
@@ -83,9 +83,9 @@ def test_a_symlinked_file_that_points_outside_is_refused(ctx, tools, tmp_path):
 
 
 def test_writes_never_go_through_a_symlink_even_inside(ctx, tools):
-    real = ctx.run_dir / "workspace" / "real.md"
+    real = ctx.job_dir / "workspace" / "real.md"
     real.write_text("kept")
-    os.symlink(real, ctx.run_dir / "workspace" / "alias.md")
+    os.symlink(real, ctx.job_dir / "workspace" / "alias.md")
     with pytest.raises(ToolInputError, match="symlink"):
         tools("workspace.write")({"path": "workspace/alias.md", "content": "changed"}, ctx)
     assert real.read_text() == "kept"
@@ -95,7 +95,7 @@ def test_listing_does_not_follow_symlinks(ctx, tools, tmp_path):
     outside = tmp_path / "elsewhere"
     outside.mkdir()
     (outside / "hidden.txt").write_text("x")
-    os.symlink(outside, ctx.run_dir / "workspace" / "escape")
+    os.symlink(outside, ctx.job_dir / "workspace" / "escape")
     out = tools("workspace.list")({}, ctx)
     assert {"path": "workspace/escape", "type": "symlink"} in out["entries"]
     assert not any("hidden.txt" in e["path"] for e in out["entries"])
@@ -104,8 +104,8 @@ def test_listing_does_not_follow_symlinks(ctx, tools, tmp_path):
 
 
 def test_resolve_path_keeps_paths_inside(ctx):
-    assert resolve_path(ctx, "workspace/./a/b.md") == (ctx.run_dir / "workspace").resolve() / "a" / "b.md"
-    assert resolve_path(ctx, "scratch") == (ctx.run_dir / "scratch").resolve()
+    assert resolve_path(ctx, "workspace/./a/b.md") == (ctx.job_dir / "workspace").resolve() / "a" / "b.md"
+    assert resolve_path(ctx, "scratch") == (ctx.job_dir / "scratch").resolve()
 
 
 # -- ordinary use -----------------------------------------------------------------
@@ -116,7 +116,7 @@ def test_write_read_append_and_list(ctx, tools):
     assert w({"path": "workspace/drafts/guide.md", "content": "# Guide\n"}, ctx)["path"] == "workspace/drafts/guide.md"
     w({"path": "workspace/drafts/guide.md", "content": "More.\n", "mode": "append"}, ctx)
     w({"path": "scratch/notes.txt", "content": "working"}, ctx)
-    assert (ctx.run_dir / "workspace/drafts/guide.md").read_text() == "# Guide\nMore.\n"
+    assert (ctx.job_dir / "workspace/drafts/guide.md").read_text() == "# Guide\nMore.\n"
     out = tools("workspace.read")({"path": "workspace/drafts/guide.md"}, ctx)
     assert out["content"] == "# Guide\nMore.\n" and "next_offset" not in out
     listing = [e["path"] for e in tools("workspace.list")({}, ctx)["entries"]]
@@ -124,7 +124,7 @@ def test_write_read_append_and_list(ctx, tools):
 
 
 def test_long_files_are_read_in_parts(ctx, tools):
-    (ctx.run_dir / "workspace" / "long.txt").write_text("abcdefghij" * 10)
+    (ctx.job_dir / "workspace" / "long.txt").write_text("abcdefghij" * 10)
     first = tools("workspace.read")({"path": "workspace/long.txt", "max_chars": 30}, ctx)
     assert first["content"] == ("abcdefghij" * 3) and first["next_offset"] == 30
     rest = tools("workspace.read")({"path": "workspace/long.txt", "offset": 90}, ctx)
@@ -161,7 +161,7 @@ def test_fake_provider_records_what_it_was_asked(home, ctx):
     assert "Invented page" in page["content"] or page["title"] == "Invented page"
     assert [c["tool"] for c in fake.calls] == ["web.search", "web.fetch"]
     assert fake.calls[0]["query"] == "invented teapots"
-    recorded = (ctx.run_dir / "fake-calls.jsonl").read_text().splitlines()
+    recorded = (ctx.job_dir / "fake-calls.jsonl").read_text().splitlines()
     assert len(recorded) == 2
 
 

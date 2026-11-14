@@ -1,6 +1,6 @@
 """Outward tools: MCP tools, their class, and the permission each call gets.
 
-Every tool that reaches a service outside the run comes from an MCP server.
+Every tool that reaches a service outside the job comes from an MCP server.
 Each has a class, drawn by who an action reaches. The boundary is the
 organisation, not visibility:
 - read-only: changes nothing;
@@ -92,7 +92,7 @@ def parse_setting(value: Any, where: str) -> dict[str, Any]:
 
 
 def resolve(home: Home, spec_meta: dict[str, Any] | None) -> dict[str, Any]:
-    """The permission setting a run will have: built-in default, then preferences, then the spec."""
+    """The permission setting a job will have: built-in default, then preferences, then the spec."""
     prefs = parse_setting(load_preferences(home).outward, str(home.preferences_config))
     spec = parse_setting((spec_meta or {}).get("outward"), "the spec")
     preset, source = DEFAULT_PRESET, "default"
@@ -242,7 +242,7 @@ def external_tools(home: Home, settings: ToolSettings, names: list[str]) -> list
     for name in dict.fromkeys(names):
         parts = split_name(name)
         if parts is None or parts[0] not in settings.servers:
-            continue  # not a tool any run will be offered
+            continue  # not a tool any job will be offered
         own = settings.tools.get(name, {}).get("class")
         if own:
             if own == "external":
@@ -263,7 +263,7 @@ def external_tools(home: Home, settings: ToolSettings, names: list[str]) -> list
 
 
 class McpPool:
-    """The MCP servers one run (or one approval) uses. Each is started on first
+    """The MCP servers one job (or one approval) uses. Each is started on first
     use and stopped by close()."""
 
     def __init__(self, home: Home, tool_settings: ToolSettings, log_dir: Path | None = None, transport=None):

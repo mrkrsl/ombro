@@ -4,7 +4,7 @@ A server is either local (a command Ombro starts) or remote (an address). Any
 secret it needs is typed into a hidden prompt, stored in secrets/keys.env, and
 written into tools.md only as ${NAME}, in `env` (local) or `headers` (remote),
 never on the command line. Nothing is written until the user confirms what
-will be added. The checks are the same ones a run makes when it loads tools.md.
+will be added. The checks are the same ones a job makes when it loads tools.md.
 
 The building blocks (`server_entry`, `pin_warning`, `add_server`,
 `remove_server`) take plain values, so an interface can ask the same
@@ -105,7 +105,7 @@ def _read_tools(home: Home) -> tuple[dict[str, Any], str]:
 
 
 def add_server(home: Home, name: str, entry: dict[str, Any]) -> None:
-    """Add one server to tools.md, keeping everything else. Checked as a run checks tools.md."""
+    """Add one server to tools.md, keeping everything else. Checked as a job checks tools.md."""
     if not SERVER_NAME.match(name):
         raise ServerError("server names use lower-case letters, digits, - and _ (up to 31)")
     meta, body = _read_tools(home)

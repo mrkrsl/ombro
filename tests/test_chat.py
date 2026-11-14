@@ -73,11 +73,11 @@ def chat(home):
     return ChatSession(home)
 
 
-def past_run(run, summary: str, crew: str = "default") -> str:
-    run([fake.brief("researcher", "Research."), fake.result(summary), fake.finish(), fake.keep_notes(),
+def past_job(job, summary: str, crew: str = "default") -> str:
+    job([fake.brief("researcher", "Research."), fake.result(summary), fake.finish(), fake.keep_notes(),
          fake.say(f"## What was done\n{summary}\n\n## What was not done and why\nNothing.\n\n"
                   "## Decisions for you\nNone.")], crew=crew)
-    return run.meta["run_id"]
+    return job.meta["job_id"]
 
 
 def snapshot(home) -> dict[str, bytes]:
@@ -89,18 +89,18 @@ def snapshot(home) -> dict[str, bytes]:
 # -- answering about past work, across crews ---------------------------------------
 
 
-def test_chat_answers_about_a_past_run_from_every_crew(chat, run, home):
+def test_chat_answers_about_a_past_job_from_every_crew(chat, job, home):
     ensure_crew(home, "podcast")
     write_role(home, "researcher", crew="podcast")
-    teapots = past_run(run, "Found the invented Copperkettle teapot works.")
-    podcast = past_run(run, "Booked the invented Copperkettle podcast guest.", crew="podcast")
+    teapots = past_job(job, "Found the invented Copperkettle teapot works.")
+    podcast = past_job(job, "Booked the invented Copperkettle podcast guest.", crew="podcast")
     chat([
         fake.call("memory__search", {"query": "Copperkettle"}),
-        fake.call("memory__read", {"path": f"runs/{teapots}/report.md"}),
+        fake.call("memory__read", {"path": f"jobs/{teapots}/report.md"}),
         fake.say(f"Run {teapots} found the Copperkettle teapot works."),
     ], ["What did we find about Copperkettle?"])
     search, read = chat.tool_replies()
-    assert {r["run_id"] for r in search["results"]} == {teapots, podcast}
+    assert {r["job_id"] for r in search["results"]} == {teapots, podcast}
     assert "Copperkettle teapot works" in read["content"]
     assert f"Lead: Run {teapots} found the Copperkettle teapot works." in chat.output
     system = chat.client.calls[0]["messages"][0]["content"]
@@ -109,12 +109,12 @@ def test_chat_answers_about_a_past_run_from_every_crew(chat, run, home):
     assert "Copperkettle" not in system  # memory is reached through tools, not loaded
 
 
-def test_chat_reads_only_reports_notes_indexes_specs_and_deliverables(chat, run, home):
-    rid = past_run(run, "Found invented teapots.")
+def test_chat_reads_only_reports_notes_indexes_specs_and_deliverables(chat, job, home):
+    rid = past_job(job, "Found invented teapots.")
     (home.root / "chats" / "20261101-090000.md").write_text("An old chat.")
-    paths = [f"runs/{rid}/journal.jsonl", "chats/20261101-090000.md", ".env", "models.md",
-             f"runs/{rid}/../../../../.env", "crews/default/roles/lead/soul.md",
-             "crews/default/memory/notes.md", f"runs/{rid}/spec.md"]
+    paths = [f"jobs/{rid}/journal.jsonl", "chats/20261101-090000.md", ".env", "models.md",
+             f"jobs/{rid}/../../../../.env", "crews/default/roles/lead/soul.md",
+             "crews/default/memory/notes.md", f"jobs/{rid}/spec.md"]
     reads = {"tool_calls": [{"name": "memory__read", "arguments": {"path": p}} for p in paths]}
     chat([reads, fake.say("Done.")], ["Read things."])
     replies = chat.tool_replies()
@@ -125,13 +125,13 @@ def test_chat_reads_only_reports_notes_indexes_specs_and_deliverables(chat, run,
 # -- read-only ---------------------------------------------------------------------
 
 
-def test_chat_refuses_every_write_and_delegation_tool(chat, run, home):
-    past_run(run, "Found invented teapots.")
+def test_chat_refuses_every_write_and_delegation_tool(chat, job, home):
+    past_job(job, "Found invented teapots.")
     before = snapshot(home)
     attempts = [
         ("brief", {"role": "researcher", "task": "Do it now."}),
         ("finish", {"outcome": "done", "summary": "x"}),
-        ("memory__write_notes", {"from_runs": "- Overwritten."}),
+        ("memory__write_notes", {"from_jobs": "- Overwritten."}),
         ("keep_notes", {"reason": "x"}),
         ("workspace__write", {"path": "workspace/x.md", "content": "x"}),
         ("workspace__read", {"path": "workspace/x.md"}),
@@ -170,7 +170,7 @@ def test_the_lead_offers_a_brief_and_the_chat_becomes_its_starting_point(chat, h
         fake.say("Saved. Anything else?"),
     ], ["I want three invented teapot makers in Lowtown.", "y", "a", "Thanks."])
     assert (home.specs_dir / "find-teapots.md").is_file()
-    assert "ombro run --spec find-teapots" in chat.output
+    assert "ombro start --spec find-teapots" in chat.output
     asked = chat.answers.asked
     assert asked[0].startswith("[Chat]") and asked[1].startswith("[Chat] Shall we start the brief?")
     assert asked[2].startswith("[Brief]")  # the mode is shown in Brief too
@@ -212,7 +212,7 @@ def test_remember_writes_a_dated_entry_only_once_confirmed(chat, home):
     chat([], ["/remember Always cite invented sources.", "e", "Always cite sources, even invented ones.", "y"])
     notes = memory.read_notes(home, "default")
     assert notes.your_entries() == ["- 2026-11-11: Always cite sources, even invented ones."]
-    assert notes.from_runs == ""
+    assert notes.from_jobs == ""
 
 
 def test_the_lead_offers_to_remember_and_the_user_picks_the_crew(chat, home):
@@ -250,7 +250,7 @@ def test_a_remember_over_the_cap_asks_what_to_trim(chat, home):
 # -- bounds ------------------------------------------------------------------------
 
 
-def test_chat_usage_has_its_own_cap(chat, run, home):
+def test_chat_usage_has_its_own_cap(chat, job, home):
     # The first call fits (its prompt and largest reply are under the cap); after it, the second cannot.
     mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_max_tokens": 12500}, mdfile.read(home.limits)[1])
     chat([fake.say("Hello.", usage={"input": 7000, "output": 100})] * 5, ["Hi.", "Again.", "And again."])
@@ -258,13 +258,13 @@ def test_chat_usage_has_its_own_cap(chat, run, home):
     assert len(chat.client.calls) == 1
     assert "[Chat · 7,100 of 12,500 tokens" in chat.output
     assert mdfile.read(chat.chat.path)[0]["ended"].startswith("stopped by the chat limit max_tokens")
-    # A run keeps its own allowance.
-    run([fake.finish(), LEAD_REPORT])
-    assert run.meta["limits"]["max_tokens"] == 800_000
+    # A job keeps its own allowance.
+    job([fake.finish(), LEAD_REPORT])
+    assert job.meta["limits"]["max_tokens"] == 800_000
 
 
-def test_chat_tool_calls_are_capped(chat, run, home):
-    past_run(run, "Found invented teapots.")
+def test_chat_tool_calls_are_capped(chat, job, home):
+    past_job(job, "Found invented teapots.")
     mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_tool_max_calls": {"memory.search": 1}},
                  mdfile.read(home.limits)[1])
     chat([fake.call("memory__search", {"query": "teapots"}), fake.call("memory__search", {"query": "kettles"}),
@@ -294,7 +294,7 @@ def test_old_turns_are_dropped_from_what_is_sent(chat, home):
 # -- saved, not remembered ----------------------------------------------------------
 
 
-def test_transcripts_are_saved_but_never_loaded_into_later_chats_or_runs(chat, run, home):
+def test_transcripts_are_saved_but_never_loaded_into_later_chats_or_jobs(chat, job, home):
     chat([fake.say("Understood.")], ["My invented secret word is PLUMTREE-MARKER."])
     assert "PLUMTREE-MARKER" in chat.transcript
     assert chat.chat.path.parent == home.root / "chats"
@@ -304,8 +304,8 @@ def test_transcripts_are_saved_but_never_loaded_into_later_chats_or_runs(chat, r
     assert chat.chat.path != first
     assert "PLUMTREE-MARKER" not in json.dumps(chat.client.calls[0]["messages"])
     assert chat.tool_replies()[0]["results"] == []
-    run([fake.finish(), LEAD_REPORT])
-    assert "PLUMTREE-MARKER" not in json.dumps(run.client.calls)
+    job([fake.finish(), LEAD_REPORT])
+    assert "PLUMTREE-MARKER" not in json.dumps(job.client.calls)
 
 
 def test_keys_typed_in_chat_never_reach_the_model_or_the_transcript(chat, home):

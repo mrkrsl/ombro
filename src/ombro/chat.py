@@ -8,14 +8,14 @@ Chat reads across every crew (past reports, specs, notes, indexes and
 deliverables), plus web search and fetch, and works in the user's shared
 folders as the user would: reading them, and writing in those shared for
 writing, each write shown to the user and confirmed first. It cannot brief
-roles, start runs, approve the outbox or use outward tools. Its only other
+roles, start jobs, approve the outbox or use outward tools. Its only other
 write is a remember the user has confirmed, into a crew's notes.md
 ("From you").
 
 It has its own gate: a token cap, per-tool call caps and a cap on model
 calls per message. Once the conversation passes a set length the oldest
 turns stop being sent. Each chat is saved in chats/; transcripts are never
-loaded into later chats or runs, and never searched.
+loaded into later chats or jobs, and never searched.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import keys, material, mdfile, memory, prompts, runs, skills
+from ombro import keys, material, mdfile, memory, prompts, jobs, skills
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home, crew_title, find_crew
@@ -46,7 +46,7 @@ WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
 FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write",
                 "folders__set_aside": "folders.set_aside"}
 SKILL_TOOLS = {"skills__read": "skills.read"}
-OFFERS = ("offer_brief", "offer_remember", "offer_run", "offer_skill")
+OFFERS = ("offer_brief", "offer_remember", "offer_start", "offer_skill")
 
 HELP = """\
 Chat mode is a conversation with the Lead. It can look at every crew's reports,
@@ -211,7 +211,7 @@ class Chat:
         self.refused: list[str] = []
         self.remembered: list[dict[str, str]] = []
         self.specs: list[str] = []
-        self.run_offers: list[str] = []  # saved specs the Lead offered to run; the interface asks the user
+        self.start_offers: list[str] = []  # saved specs the Lead offered to start; the interface asks the user
         self._fresh()
 
     def _fresh(self) -> None:
@@ -259,13 +259,13 @@ class Chat:
         if not title or (self.titled_by == "you" and by != "you"):
             return False
         self.title, self.titled_by = title, by
-        from ombro.runs import run_slug
+        from ombro.jobs import job_slug
 
         folder = self.path.parent
-        new = folder / f"{run_slug({'name': title})}-{self.stamp}.md"
+        new = folder / f"{job_slug({'name': title})}-{self.stamp}.md"
         n = 2
         while new.exists() and new != self.path:
-            new = folder / f"{run_slug({'name': title})}-{self.stamp}-{n}.md"
+            new = folder / f"{job_slug({'name': title})}-{self.stamp}-{n}.md"
             n += 1
         if new != self.path:
             if self.path.exists():
@@ -313,7 +313,7 @@ class Chat:
         self.prior_usage = dict(meta.get("usage") or {})
         if meta.get("default_crew") in self.home.crews():
             self.crew = meta["default_crew"]
-        m = runs.WHEN.search(path.stem)
+        m = jobs.WHEN.search(path.stem)
         self.stamp = f"{m.group(1)}-{m.group(2)[:4]}" if m else self.stamp
         self.transcript.started = str(meta.get("started_at") or self.transcript.started)
         self.transcript.entries = entries
@@ -379,16 +379,16 @@ class Chat:
             rdir = self.home.roles_dir(c)
             roles = sorted(p.name for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")) \
                 if rdir.is_dir() else []
-            all_runs = runs.all_runs(self.home, c)
-            latest = runs.run_time(all_runs[-1])[:8] if all_runs else ""
+            all_jobs = jobs.all_jobs(self.home, c)
+            latest = jobs.job_time(all_jobs[-1])[:8] if all_jobs else ""
             when = f", latest {latest[:4]}-{latest[4:6]}-{latest[6:8]}" if latest else ""
             mark = ", the default crew" if c == self.crew else ""
             lines.append(f"- the {crew_title(self.home, c)} (crew name `{c}` for tools{mark}): "
                          f"{meta.get('description', '')} Roles: {', '.join(roles) or 'none'}. "
-                         f"Runs: {len(all_runs)}{when}.")
+                         f"Jobs: {len(all_jobs)}{when}.")
         lines.append("Speak of each crew by its title, never by its crew name.")
-        lines.append("\nFiles are under the home directory: runs/<run_id>/report.md, spec.md and workspace/ "
-                     "(a run may have used several crews); specs/<name>.md; crews/<crew>/memory/notes.md and "
+        lines.append("\nFiles are under the home directory: jobs/<job_id>/report.md, spec.md and workspace/ "
+                     "(a job may have used several crews); specs/<name>.md; crews/<crew>/memory/notes.md and "
                      "index.md.")
         return "\n".join(lines)
 
@@ -443,8 +443,8 @@ class Chat:
                     break
                 if not self.handle(raw):
                     break
-                while self.run_offers:  # the user said yes in chat; the command line starts it here
-                    self._run_offered(self.run_offers.pop(0))
+                while self.start_offers:  # the user said yes in chat; the command line starts it here
+                    self._start_offered(self.start_offers.pop(0))
         finally:
             self.close()
         return self
@@ -563,7 +563,7 @@ class Chat:
             reply = self._model_call(self._messages())
             self.exchanges[-1].append(reply.as_message())
             said = (reply.content or "").strip()
-            offering = any(tc.name in ("offer_run", "offer_brief") for tc in reply.tool_calls or [])
+            offering = any(tc.name in ("offer_start", "offer_brief") for tc in reply.tool_calls or [])
             if said and offering:
                 # The offer says it in the Lead's voice; the same words twice read as a stutter.
                 self.transcript.note(f"The Lead's words with its offer, not shown: {_short(said, 300)}")
@@ -608,7 +608,7 @@ class Chat:
         if name not in OFFERS and (internal is None or (name in WEB_TOOLS and self.registry.get(internal) is None)):
             self.refused.append(name)
             self.transcript.note(f"Refused {name}: not available in chat.")
-            return {"error": f"{name} is not available in chat. Chat cannot brief roles, start runs, approve the "
+            return {"error": f"{name} is not available in chat. Chat cannot brief roles, start jobs, approve the "
                              "outbox or use outward tools; files are written only in shared folders, with "
                              "folders__write. To turn this into a task, call offer_brief."}, None
         key = tc.raw_arguments if tc.arguments is None else json.dumps(tc.arguments, sort_keys=True)
@@ -622,8 +622,8 @@ class Chat:
             return {"error": "the arguments were not a JSON object"}, None
         if name == "offer_brief":
             return self._offer_brief(args)
-        if name == "offer_run":
-            return self._offer_run(args)
+        if name == "offer_start":
+            return self._offer_start(args)
         if name == "offer_remember":
             crew = str(args.get("crew") or self.crew)
             if crew not in self.home.crews():
@@ -641,7 +641,7 @@ class Chat:
                     self.home,
                     [crew] if crew else self.home.crews(),
                     str(args.get("query") or ""),
-                    run_id=str(args.get("run_id") or "") or None,
+                    job_id=str(args.get("job_id") or "") or None,
                     max_chars=self.limits.memory_search_max_chars,
                 ), None
             if internal == "memory.read":
@@ -654,7 +654,7 @@ class Chat:
                 return self._folder_tool(internal, args), None
             if internal == "memory.list":
                 return memory.listing(self.home, str(args.get("crew") or "") or None,
-                                      str(args.get("run_id") or "") or None), None
+                                      str(args.get("job_id") or "") or None), None
             tool = self.registry.get(internal)
             ctx = ToolContext(self.home.root / "chats", "lead", timeout=60.0)
             return tool.handler(args, ctx), None
@@ -673,7 +673,7 @@ class Chat:
 
         given, left = for_chat(self.home)
         shared = {f["name"]: SharedFolder(f["name"], Path(f["path"]), f["access"]) for f in given}
-        # No run folder: chat reaches only shared/<name>/..., never workspace/ or scratch/.
+        # No job folder: chat reaches only shared/<name>/..., never workspace/ or scratch/.
         return ToolContext(self.home.root / "chats" / ".none", "lead", timeout=60.0, shared=shared), left
 
     def _folder_tool(self, internal: str, args: dict) -> dict[str, Any]:
@@ -742,10 +742,10 @@ class Chat:
         path = self.home.specs_dir / f"{name}.md"
         return path if name and "/" not in name and path.is_file() else None
 
-    def _offer_run(self, args: dict) -> tuple[dict[str, Any], tuple | None]:
-        """The Lead offers to run a saved spec again, in its own voice: yes starts it (the
+    def _offer_start(self, args: dict) -> tuple[dict[str, Any], tuple | None]:
+        """The Lead offers to start a saved spec again, in its own voice: yes starts it (the
         interface does), "change it" opens the spec for changing, and no leaves it. Roles
-        given here apply to this run only; the saved spec is unchanged (10.4)."""
+        given here apply to this job only; the saved spec is unchanged (10.4)."""
         path = self._saved_spec(args.get("spec"))
         if path is None:
             from ombro.cli import saved_specs
@@ -777,16 +777,16 @@ class Chat:
             note += "."
         self.ui.say(f"I found it. It's the spec '{name}'. " + (f"{note} " if note else "")
                     + f"I can restart it {how}.", level="lead")
-        self.transcript.note(f"The Lead offered to run saved spec {name!r} again ({how}).")
+        self.transcript.note(f"The Lead offered to start saved spec {name!r} again ({how}).")
         answer = self.ui.ask(Field(
-            "run_now", 'If you prefer to read through the spec again and change it, just say "change it". '
+            "start_now", 'If you prefer to read through the spec again and change it, just say "change it". '
                        "Otherwise, should I just start it?", "yesno", default=True, other="change it", mode="Chat"))
         if answer == "change it":
             self.transcript.note(f"You chose to change spec {name!r} first.")
             return ({"status": "the user wants to change the spec first; the interview starts now, so do not "
                                "reply"}, (crews, how, name))
         if answer:
-            self.run_offers.append((name, roles))
+            self.start_offers.append((name, roles))
             self.transcript.note(f"You said yes: spec {name!r} starts" + (f" with {', '.join(roles)}" if roles
                                                                             else "") + ".")
             return {"status": f"the user said yes; Ombro starts spec {name!r} now in the background. Say in "
@@ -795,12 +795,12 @@ class Chat:
         return {"status": "the user said no, so it was not started. Carry on the conversation; do not offer it "
                           "again unless they ask."}, None
 
-    def _run_offered(self, offer) -> None:
-        """The command line starts a run the user said yes to in chat."""
+    def _start_offered(self, offer) -> None:
+        """The command line starts a job the user said yes to in chat."""
         from ombro.cli import main
 
         spec, roles = offer if isinstance(offer, tuple) else (offer, [])
-        main(["run", "--spec", spec, "--detach", *[a for r in roles for a in ("--role", r)]])
+        main(["start", "--spec", spec, "--detach", *[a for r in roles for a in ("--role", r)]])
 
     def _offer_brief(self, args: dict) -> tuple[dict, tuple | None]:
         summary = _short(args.get("summary") or "", 300)
@@ -878,7 +878,7 @@ class Chat:
             self.ui.say(
                 f"That would make the {crew_title(self.home, crew)}'s notes.md {new.size:,} characters, "
                 f"over the cap of {cap:,}. "
-                f"Your part is {len(notes.from_you):,} characters and the Lead's is {len(notes.from_runs):,}."
+                f"Your part is {len(notes.from_you):,} characters and the Lead's is {len(notes.from_jobs):,}."
             )
             if yours:
                 self.ui.say("Your entries:")
@@ -1020,11 +1020,11 @@ class Chat:
             self.specs.append(name)
             spec_path = self.home.specs_dir / f"{name}.md"
             if spec_path.is_file():  # the chat takes the spec's title, unless you named it
-                self.set_title(runs.first_line(mdfile.read(spec_path)[1], 70) or name, "spec")
-            self.ui.say(f"Spec saved as {name!r}. Run it with:  ombro run --spec {name}", spaced=True, level="done")
+                self.set_title(jobs.first_line(mdfile.read(spec_path)[1], 70) or name, "spec")
+            self.ui.say(f"Spec saved as {name!r}. Start it with:  ombro start --spec {name}", spaced=True, level="done")
             self.transcript.note(f"Brief mode ended: spec {name!r} saved (transcript {outcome.transcript}).")
             self.pending_note += (f"[Ombro note: in Brief mode the user confirmed a spec, saved as {name!r}. "
-                                  "It has not been run.]\n")
+                                  "It has not been started.]\n")
         else:
             detail = outcome.status if outcome is not None else "could not start"
             self.transcript.note(f"Brief mode ended without a spec ({detail}).")

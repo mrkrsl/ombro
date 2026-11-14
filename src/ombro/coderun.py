@@ -1,8 +1,8 @@
 """code.run: a Python script a role writes, run in the operating system's sandbox.
 
-The harness writes the script to the run's code/ folder, compares the
+The harness writes the script to the job's code/ folder, compares the
 folders the script may change before and after, runs it in the sandbox
-(ombro.sandbox) within the run's code limits, and keeps its output. The role
+(ombro.sandbox) within the job's code limits, and keeps its output. The role
 gets the exit status, the start and end of the output, the time taken, any
 limit that stopped it, and the files that changed. The journal gets one
 `code_run` event per script, which the report lists.
@@ -30,13 +30,13 @@ LIMIT_TEXT = {
     "code_timeout": "it ran for longer than its time limit ({timeout}) and was stopped",
     "code_max_memory": "it used more than its memory limit ({memory}) and was stopped",
     "cpu": "it used more than its CPU time limit ({timeout}) and was stopped",
-    "stopped": "the run is stopping, so the script was stopped",
+    "stopped": "the job is stopping, so the script was stopped",
 }
 
 DESCRIPTION = (
     "Run a Python script you write, for work on files: renaming, moving, converting, editing in bulk, counting, "
     "checking. Python standard library only. The script's working folder holds workspace/, scratch/ and "
-    "shared/<name>/ for each folder shared with this run; use those relative paths. It has NO network at all: no "
+    "shared/<name>/ for each folder shared with this job; use those relative paths. It has NO network at all: no "
     "internet, no web APIs, no downloads; for anything online use web.search and web.fetch. It cannot start other "
     "programs or reach anything else on the machine. You get its exit status, its output (long "
     "output is cut in the middle), and the files it created, changed or removed. Print what you need to know; "
@@ -105,7 +105,7 @@ def _shown(ch: dict[str, Any], n: int = CHANGES_SHOWN) -> dict[str, Any]:
 
 
 def _space_used(roots: dict[str, Path]) -> int | None:
-    """Bytes in the run's own workspace/ and scratch/, or None if there are too many
+    """Bytes in the job's own workspace/ and scratch/, or None if there are too many
     files to count."""
     total = 0
     for label in ("workspace", "scratch"):
@@ -118,11 +118,11 @@ def _space_used(roots: dict[str, Path]) -> int | None:
 
 def _space_note(used: int | None, cap: int) -> str | None:
     if used is None:
-        return (f"the run's workspace/ and scratch/ hold more than {folders.MANIFEST_MAX_FILES:,} files, so no more "
-                "scripts run in this run")
+        return (f"the job's workspace/ and scratch/ hold more than {folders.MANIFEST_MAX_FILES:,} files, so no more "
+                "scripts run in this job")
     if used > cap:
-        return (f"the run's workspace/ and scratch/ hold {format_size(used)}, more than code_max_total "
-                f"({format_size(cap)}), so no more scripts run in this run")
+        return (f"the job's workspace/ and scratch/ hold {format_size(used)}, more than code_max_total "
+                f"({format_size(cap)}), so no more scripts run in this job")
     return None
 
 
@@ -146,16 +146,16 @@ def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     full = _space_note(_space_used(_roots(ctx)), cap)
     if full:
         raise ToolInputError(full + ". Carry on without code.run, and say so in did_not_do.")
-    code_dir = ctx.run_dir / "code"
+    code_dir = ctx.job_dir / "code"
     code_dir.mkdir(exist_ok=True)
     n = _next_number(code_dir)
     script = (code_dir / f"{n:03d}.py").resolve()
     script.write_text(code, encoding="utf-8")
     sha = hashlib.sha256(code.encode()).hexdigest()
 
-    # shared/<name> in the run folder points at each shared folder, so the
+    # shared/<name> in the job folder points at each shared folder, so the
     # script uses the same paths as the workspace tools.
-    shared_dir = ctx.run_dir / "shared"
+    shared_dir = ctx.job_dir / "shared"
     for f in ctx.shared.values():
         link = shared_dir / f.name
         if not link.is_symlink():
@@ -164,11 +164,11 @@ def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     roots = _roots(ctx)
     before = _snapshot(roots)
     box = sandbox.Box(
-        run_dir=Path(os.path.realpath(ctx.run_dir)),
+        job_dir=Path(os.path.realpath(ctx.job_dir)),
         script=script,
         write=[roots["workspace"], roots["scratch"], *(f.path for f in ctx.shared.values() if f.writable)],
         read=[f.path for f in ctx.shared.values() if not f.writable],
-        mounts={area_path(ctx.run_dir, "shared") / f.name: f.path for f in ctx.shared.values()},
+        mounts={area_path(ctx.job_dir, "shared") / f.name: f.path for f in ctx.shared.values()},
         temp=roots["scratch"] / TEMP,
     )
     outcome = sandbox.run(box, timeout=timeout, cpu_seconds=math.ceil(timeout) + 1, max_memory=memory,

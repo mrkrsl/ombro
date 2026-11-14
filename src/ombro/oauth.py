@@ -15,7 +15,7 @@
 5. Swap the code for tokens, sending `resource` again.
 
 The sign-in is kept in secrets/oauth/<server>.json (owner-only), keyed by the
-issuer, and refreshed as needed. A run never opens a browser: if the sign-in
+issuer, and refreshed as needed. A job never opens a browser: if the sign-in
 has lapsed, the server is not reached and the user is told to connect again.
 Tokens are never logged, and each goes only to the server it was issued for.
 """
@@ -467,7 +467,7 @@ def _token_request(client: httpx.Client, endpoint: str, form: dict[str, str],
 
 
 class Session:
-    """The sign-in for one server, as a run or an approval uses it. Never opens
+    """The sign-in for one server, as a job or an approval uses it. Never opens
     a browser: when it cannot renew itself, it raises SignInNeeded."""
 
     def __init__(self, home: Home, server: str, url: str, transport: httpx.BaseTransport | None = None):

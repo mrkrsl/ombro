@@ -1,4 +1,4 @@
-"""Run directories and run.md: created, updated, listed, found and reaped."""
+"""Job folders and job.md: created, updated, listed, found and reaped."""
 
 from __future__ import annotations
 
@@ -22,21 +22,21 @@ STATUSES = ("running", "completed", "stopped", "stopped_by_limit", "insufficient
 ORPHAN_GRACE_SECONDS = 120
 
 
-class RunNotFound(LookupError):
+class JobNotFound(LookupError):
     pass
 
 
-def run_slug(spec_meta: dict[str, Any] | None, spec_body: str = "") -> str:
-    """The friendly part of a run's name: the spec's name, else its title, made into
+def job_slug(spec_meta: dict[str, Any] | None, spec_body: str = "") -> str:
+    """The friendly part of a job's name: the spec's name, else its title, made into
     lower-case words joined by hyphens."""
     raw = str((spec_meta or {}).get("name") or "") or first_line(spec_body or "", 80)
     slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
-    return slug[:48].rstrip("-") or "run"
+    return slug[:48].rstrip("-") or "job"
 
 
-def new_run_id(slug: str = "run", n: int = 1) -> str:
-    """A run's name: what it is, then when it started (local time), so it can be found
-    by either: indie-author-creator-research-20261113-1301. A second run of the same spec
+def new_job_id(slug: str = "job", n: int = 1) -> str:
+    """A job's name: what it is, then when it started (local time), so it can be found
+    by either: indie-author-creator-research-20261113-1301. A second job of the same spec
     in the same minute gets -2, and so on."""
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     return f"{slug}-{stamp}" + (f"-{n}" if n > 1 else "")
@@ -46,10 +46,10 @@ WHEN = re.compile(r"(\d{8})-(\d{4,6})")
 _WHEN = WHEN
 
 
-def run_time(run_dir: Path) -> str:
-    """When a run started, from its name (YYYYMMDDHHMMSS), for sorting; old names start
+def job_time(job_dir: Path) -> str:
+    """When a job started, from its name (YYYYMMDDHHMMSS), for sorting; old names start
     with the time, new ones end with it."""
-    m = _WHEN.search(run_dir.name)
+    m = _WHEN.search(job_dir.name)
     return (m.group(1) + m.group(2).ljust(6, "0")) if m else ""
 
 
@@ -62,7 +62,7 @@ def first_line(text: str, limit: int = 120) -> str:
 
 
 def spec_crews(home: Home, spec_meta: dict[str, Any] | None, given: list[str] | None = None) -> list[str]:
-    """The crews a run may use: the spec's `crews:`, else those given (--crew), else the default crew.
+    """The crews a job may use: the spec's `crews:`, else those given (--crew), else the default crew.
     Raises SetupError for a crew that does not exist."""
     from ombro.settings import load_preferences
 
@@ -83,18 +83,18 @@ def spec_crews(home: Home, spec_meta: dict[str, Any] | None, given: list[str] | 
     return out
 
 
-def run_crews(meta: dict[str, Any]) -> list[str]:
+def job_crews(meta: dict[str, Any]) -> list[str]:
     raw = meta.get("crews")
     return [str(c) for c in raw] if isinstance(raw, list) else []
 
 
-RUN_BODY = """\
-This file is written by Ombro while the run is in progress. Edits are overwritten.
-Limits, tool settings, outward permissions and shared folders above were fixed when the run started and cannot change during it.
+JOB_BODY = """\
+This file is written by Ombro while the job is in progress. Edits are overwritten.
+Limits, tool settings, outward permissions and shared folders above were fixed when the job started and cannot change during it.
 """
 
 
-def create_run(
+def create_job(
     home: Home,
     crews: list[str],
     spec_meta: dict[str, Any],
@@ -106,7 +106,7 @@ def create_run(
     extra: dict[str, Any] | None = None,
     outward: dict[str, Any] | None = None,
 ) -> Path:
-    """A new run folder and run.md. `outward`, the permission for outward tools,
+    """A new job folder and job.md. `outward`, the permission for outward tools,
     comes from preferences and the spec unless given; it is fixed from here on."""
     if outward is None:
         from ombro import outward as outward_mod
@@ -115,27 +115,27 @@ def create_run(
     from ombro import folders as folders_mod
 
     try:
-        shared, left_out = folders_mod.for_run(home, spec_meta)
+        shared, left_out = folders_mod.for_job(home, spec_meta)
     except SetupError as e:
         shared, left_out = [], [f"no shared folder was given: {e}"]
-    runs_dir = home.runs_dir
-    runs_dir.mkdir(parents=True, exist_ok=True)
-    slug, n = run_slug(spec_meta, spec_body), 1
+    jobs_dir = home.jobs_dir
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    slug, n = job_slug(spec_meta, spec_body), 1
     while True:
-        run_id = new_run_id(slug, n)
+        job_id = new_job_id(slug, n)
         n += 1
-        run_dir = runs_dir / run_id
+        job_dir = jobs_dir / job_id
         try:
-            run_dir.mkdir()
+            job_dir.mkdir()
             break
         except FileExistsError:
             continue
     for sub in ("workspace", "scratch", "outbox"):
-        (run_dir / sub).mkdir()
-    mdfile.write(run_dir / "spec.md", spec_meta, spec_body)
-    (run_dir / "journal.jsonl").touch()
+        (job_dir / sub).mkdir()
+    mdfile.write(job_dir / "spec.md", spec_meta, spec_body)
+    (job_dir / "journal.jsonl").touch()
     meta = {
-        "run_id": run_id,
+        "job_id": job_id,
         "crews": list(crews),
         "status": "running",
         "pid": None,
@@ -153,20 +153,20 @@ def create_run(
         "usage": {},
         **(extra or {}),
     }
-    mdfile.write(run_dir / "run.md", meta, RUN_BODY)
-    return run_dir
+    mdfile.write(job_dir / "job.md", meta, JOB_BODY)
+    return job_dir
 
 
-def start_detached(home: Home, run_dir: Path) -> int:
-    """Start `python -m ombro _exec <run_dir>` in its own session, logging to process.log.
-    The child records its own pid in run.md. Returns the child's pid."""
+def start_detached(home: Home, job_dir: Path) -> int:
+    """Start `python -m ombro _exec <job_dir>` in its own session, logging to process.log.
+    The child records its own pid in job.md. Returns the child's pid."""
     import subprocess
     import sys
 
-    log = open(Path(run_dir) / "process.log", "ab")
+    log = open(Path(job_dir) / "process.log", "ab")
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "ombro", "_exec", str(run_dir)],
+            [sys.executable, "-m", "ombro", "_exec", str(job_dir)],
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,
@@ -179,7 +179,7 @@ def start_detached(home: Home, run_dir: Path) -> int:
 
 
 def usage(meta: dict[str, Any]) -> dict[str, Any]:
-    """A run's usage so far. Runs from before step 10a-0 kept it as `spend`."""
+    """A job's usage so far. Jobs from before step 10a-0 kept it as `spend`."""
     return dict(meta.get("usage") or meta.get("spend") or {})
 
 
@@ -187,16 +187,16 @@ def interview_usage(meta: dict[str, Any]) -> dict[str, Any]:
     return dict(meta.get("interview_usage") or meta.get("interview_spend") or {})
 
 
-def read_run(run_dir: Path) -> tuple[dict[str, Any], str]:
-    return mdfile.read(Path(run_dir) / "run.md")
+def read_job(job_dir: Path) -> tuple[dict[str, Any], str]:
+    return mdfile.read(Path(job_dir) / "job.md")
 
 
 @contextmanager
-def run_lock(run_dir: Path):
-    """Held while run.md is read, changed and written back. The run, outbox
-    decisions and interfaces all change run.md; under the lock none of their
+def job_lock(job_dir: Path):
+    """Held while job.md is read, changed and written back. The job, outbox
+    decisions and interfaces all change job.md; under the lock none of their
     changes is lost. Each holds it only for a moment, so waiting is fine."""
-    with open(Path(run_dir) / ".run.lock", "a") as f:
+    with open(Path(job_dir) / ".job.lock", "a") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
             yield
@@ -204,32 +204,32 @@ def run_lock(run_dir: Path):
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
-def update_run(run_dir: Path, **fields: Any) -> dict[str, Any]:
-    with run_lock(run_dir):
-        meta, body = read_run(run_dir)
+def update_job(job_dir: Path, **fields: Any) -> dict[str, Any]:
+    with job_lock(job_dir):
+        meta, body = read_job(job_dir)
         meta.update(fields)
-        mdfile.write(Path(run_dir) / "run.md", meta, body or RUN_BODY)
+        mdfile.write(Path(job_dir) / "job.md", meta, body or JOB_BODY)
     return meta
 
 
-def mark_seen(run_dir: Path) -> bool:
-    """Record that a finished run's report, or the notice that it ended, has been
+def mark_seen(job_dir: Path) -> bool:
+    """Record that a finished job's report, or the notice that it ended, has been
     shown. Only the first time counts. Returns True if it was not seen before."""
-    with run_lock(run_dir):
-        meta, body = read_run(run_dir)
+    with job_lock(job_dir):
+        meta, body = read_job(job_dir)
         if meta.get("seen_at") or meta.get("status") == "running":
             return False
         meta["seen_at"] = utc_now()
-        mdfile.write(Path(run_dir) / "run.md", meta, body or RUN_BODY)
+        mdfile.write(Path(job_dir) / "job.md", meta, body or JOB_BODY)
     return True
 
 
-def unseen_runs(home: Home) -> list[Path]:
-    """Finished runs whose report has not been shown yet, oldest first."""
+def unseen_jobs(home: Home) -> list[Path]:
+    """Finished jobs whose report has not been shown yet, oldest first."""
     out = []
-    for d in all_runs(home):
+    for d in all_jobs(home):
         try:
-            meta, _ = read_run(d)
+            meta, _ = read_job(d)
         except (OSError, mdfile.FrontMatterError):
             continue
         if meta.get("status") != "running" and not meta.get("seen_at") and (d / "report.md").is_file():
@@ -237,43 +237,43 @@ def unseen_runs(home: Home) -> list[Path]:
     return out
 
 
-def all_runs(home: Home, crew: str | None = None) -> list[Path]:
-    """Every run, oldest first; with a crew, only the runs that used it."""
-    rdir = home.runs_dir
+def all_jobs(home: Home, crew: str | None = None) -> list[Path]:
+    """Every job, oldest first; with a crew, only the jobs that used it."""
+    rdir = home.jobs_dir
     if not rdir.is_dir():
         return []
     out = []
     for d in rdir.iterdir():
-        if not (d.is_dir() and (d / "run.md").is_file()):
+        if not (d.is_dir() and (d / "job.md").is_file()):
             continue
         if crew:
             try:
-                if crew not in run_crews(read_run(d)[0]):
+                if crew not in job_crews(read_job(d)[0]):
                     continue
             except (OSError, mdfile.FrontMatterError):
                 continue
         out.append(d)
-    out.sort(key=lambda d: (run_time(d), d.name))
+    out.sort(key=lambda d: (job_time(d), d.name))
     return out
 
 
-def find_run(home: Home, run_id: str) -> Path:
-    """A run by its name, the start of it, or any part of it ("indie", "20261113").
+def find_job(home: Home, job_id: str) -> Path:
+    """A job by its name, the start of it, or any part of it ("indie", "20261113").
     Where several match, the newest; an exact name always wins."""
-    every = all_runs(home)
-    want = run_id.strip()
+    every = all_jobs(home)
+    want = job_id.strip()
     for test in (lambda n: n == want, lambda n: n.startswith(want), lambda n: want.lower() in n.lower()):
         matches = [d for d in every if test(d.name)]
         if matches:
             return matches[-1]
-    raise RunNotFound(f"no run matching {run_id!r}")
+    raise JobNotFound(f"no job matching {job_id!r}")
 
 
-def latest_run(home: Home, crew: str | None) -> Path:
-    runs = all_runs(home, crew)
-    if not runs:
-        raise RunNotFound("there are no runs yet" + (f" that used crew {crew!r}" if crew else ""))
-    return runs[-1]
+def latest_job(home: Home, crew: str | None) -> Path:
+    jobs = all_jobs(home, crew)
+    if not jobs:
+        raise JobNotFound("there are no jobs yet" + (f" that used crew {crew!r}" if crew else ""))
+    return jobs[-1]
 
 
 def pid_alive(pid: int) -> bool:
@@ -305,23 +305,23 @@ def is_dead(meta: dict[str, Any]) -> bool:
     return _iso_age(meta.get("created_at")) > ORPHAN_GRACE_SECONDS
 
 
-def reap_dead_runs(home: Home) -> list[Path]:
-    """Write a mechanical report for any run whose process has died, and mark it failed."""
+def reap_dead_jobs(home: Home) -> list[Path]:
+    """Write a mechanical report for any job whose process has died, and mark it failed."""
     from ombro import report  # local import: report depends on this module
 
     reaped = []
-    for run_dir in all_runs(home):
+    for job_dir in all_jobs(home):
         try:
-            meta, _ = read_run(run_dir)
+            meta, _ = read_job(job_dir)
         except (OSError, mdfile.FrontMatterError):
             continue
         if not is_dead(meta):
             continue
         report.write_mechanical_report(
             home,
-            run_dir,
+            job_dir,
             status="failed",
-            failure="The run's process ended without finishing; this report was written from the journal.",
+            failure="The job's process ended without finishing; this report was written from the journal.",
         )
-        reaped.append(run_dir)
+        reaped.append(job_dir)
     return reaped

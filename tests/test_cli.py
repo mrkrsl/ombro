@@ -12,7 +12,7 @@ import time
 import pytest
 
 from conftest import write_role
-from ombro import fake, keys, mdfile, runs
+from ombro import fake, keys, mdfile, jobs
 from ombro.client import ModelError, ModelReply
 from ombro.home import Home
 from ombro.init_cmd import connected_model, run_init
@@ -53,90 +53,90 @@ SCRIPT = [
 ]
 
 
-def test_run_attached_then_inspect(home, spec_file):
+def test_start_attached_then_inspect(home, spec_file):
     use_fake_model(home, SCRIPT)
-    r = ombro(home, "run", "--spec", str(spec_file))
+    r = ombro(home, "start", "--spec", str(spec_file))
     assert r.returncode == 0, r.stderr
     assert "CLI-REPORT-MARKER" in r.stdout and "briefed" in r.stdout
-    run_dir = runs.latest_run(home, "default")
-    meta = runs.read_run(run_dir)[0]
+    job_dir = jobs.latest_job(home, "default")
+    meta = jobs.read_job(job_dir)[0]
     assert meta["status"] == "completed"
-    assert meta["limits"]["max_rounds"] == 3  # the spec's override was fixed into the run
-    assert (run_dir / "spec.md").read_text().count("fictional rivers") == 1
+    assert meta["limits"]["max_rounds"] == 3  # the spec's override was fixed into the job
+    assert (job_dir / "spec.md").read_text().count("fictional rivers") == 1
 
-    listing = ombro(home, "runs")
-    assert run_dir.name in listing.stdout and "completed" in listing.stdout
-    status = ombro(home, "status", run_dir.name[:15])
+    listing = ombro(home, "jobs")
+    assert job_dir.name in listing.stdout and "completed" in listing.stdout
+    status = ombro(home, "status", job_dir.name[:15])
     assert "Rounds" in status.stdout and "completed" in status.stdout
     assert "CLI-REPORT-MARKER" in ombro(home, "report").stdout
-    j = ombro(home, "journal", run_dir.name)
+    j = ombro(home, "journal", job_dir.name)
     assert "briefed" in j.stdout and "returned" in j.stdout and "model_call" not in j.stdout
     assert "model_call" in ombro(home, "journal", "--all").stdout
 
 
-def test_run_with_skip_interview_is_recorded(home):
+def test_start_with_skip_interview_is_recorded(home):
     use_fake_model(home, SCRIPT)
-    r = ombro(home, "run", "--skip-interview", "Name two fictional rivers.")
+    r = ombro(home, "start", "--skip-interview", "Name two fictional rivers.")
     assert r.returncode == 0, r.stderr
-    meta = runs.read_run(runs.latest_run(home, "default"))[0]
+    meta = jobs.read_job(jobs.latest_job(home, "default"))[0]
     assert "skip-interview" in meta["source"]
 
 
 def test_commands_without_a_home_say_run_init(tmp_path):
-    r = ombro(Home(tmp_path / "nothing"), "runs")
+    r = ombro(Home(tmp_path / "nothing"), "jobs")
     assert r.returncode == 2 and "ombro init" in r.stderr
 
 
-def wait_for(run_dir, predicate, timeout=30):
+def wait_for(job_dir, predicate, timeout=30):
     deadline = time.time() + timeout
     while time.time() < deadline:
-        meta = runs.read_run(run_dir)[0]
+        meta = jobs.read_job(job_dir)[0]
         if predicate(meta):
             return meta
         time.sleep(0.1)
-    raise AssertionError(f"timed out; run.md says {runs.read_run(run_dir)[0]}")
+    raise AssertionError(f"timed out; job.md says {jobs.read_job(job_dir)[0]}")
 
 
-def test_detached_run_completes(home, spec_file):
+def test_detached_job_completes(home, spec_file):
     use_fake_model(home, SCRIPT)
-    r = ombro(home, "run", "--spec", str(spec_file), "--detach")
+    r = ombro(home, "start", "--spec", str(spec_file), "--detach")
     assert r.returncode == 0, r.stderr
-    run_dir = runs.latest_run(home, "default")
-    assert run_dir.name in r.stdout
-    meta = wait_for(run_dir, lambda m: m["status"] != "running")
+    job_dir = jobs.latest_job(home, "default")
+    assert job_dir.name in r.stdout
+    meta = wait_for(job_dir, lambda m: m["status"] != "running")
     assert meta["status"] == "completed"
-    assert "CLI-REPORT-MARKER" in (run_dir / "report.md").read_text()
+    assert "CLI-REPORT-MARKER" in (job_dir / "report.md").read_text()
 
 
-def test_stop_a_detached_run(home, spec_file):
+def test_stop_a_detached_job(home, spec_file):
     use_fake_model(home, [fake.brief("researcher", "Slow work."), fake.result("Partial.", sleep=2), REPORT])
-    ombro(home, "run", "--spec", str(spec_file), "--detach")
-    run_dir = runs.latest_run(home, "default")
-    wait_for(run_dir, lambda m: m.get("pid") and m.get("usage", {}).get("model_calls", 0) >= 1)
-    r = ombro(home, "stop", run_dir.name)
+    ombro(home, "start", "--spec", str(spec_file), "--detach")
+    job_dir = jobs.latest_job(home, "default")
+    wait_for(job_dir, lambda m: m.get("pid") and m.get("usage", {}).get("model_calls", 0) >= 1)
+    r = ombro(home, "stop", job_dir.name)
     assert r.returncode == 0, r.stdout + r.stderr
-    meta = wait_for(run_dir, lambda m: m["status"] != "running")
+    meta = wait_for(job_dir, lambda m: m["status"] != "running")
     assert meta["status"] == "stopped"
-    report = (run_dir / "report.md").read_text()
+    report = (job_dir / "report.md").read_text()
     assert "ombro stop" in report and "Partial." in report
 
 
-def test_dead_run_is_reaped_by_the_next_command(home):
+def test_dead_job_is_reaped_by_the_next_command(home):
     use_fake_model(home, SCRIPT)
     proc = subprocess.Popen([sys.executable, "-c", "pass"])
     proc.wait()  # a pid that is certainly gone
     from ombro.settings import load_limits
 
-    run_dir = runs.create_run(home, ["default"], {}, "Invented brief.", load_limits(home), source="test")
-    runs.update_run(run_dir, pid=proc.pid, started_at="2026-11-11T10:00:00Z")
-    with (run_dir / "journal.jsonl").open("a") as f:
+    job_dir = jobs.create_job(home, ["default"], {}, "Invented brief.", load_limits(home), source="test")
+    jobs.update_job(job_dir, pid=proc.pid, started_at="2026-11-11T10:00:00Z")
+    with (job_dir / "journal.jsonl").open("a") as f:
         f.write(json.dumps({"ts": "2026-11-11T10:00:01Z", "role": "lead", "action": "briefed",
                             "note": "researcher: invented", "target": "researcher", "task": "Invented task."}) + "\n")
-    r = ombro(home, "runs")
+    r = ombro(home, "jobs")
     assert "marked failed" in r.stderr
-    meta = runs.read_run(run_dir)[0]
+    meta = jobs.read_job(job_dir)[0]
     assert meta["status"] == "failed"
-    report = (run_dir / "report.md").read_text()
+    report = (job_dir / "report.md").read_text()
     assert "process ended" in report and "researcher was working on this" in report
 
 
@@ -259,21 +259,21 @@ def test_keys_set_with_nothing_typed_changes_nothing(home, monkeypatch):
     assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-invented-kept"
 
 
-def test_open_opens_the_workspace_of_a_run(home, run, capsys, monkeypatch):
+def test_open_opens_the_workspace_of_a_job(home, job, capsys, monkeypatch):
     from ombro import cli
     from conftest import LEAD_REPORT
 
-    run([fake.finish(), LEAD_REPORT])
+    job([fake.finish(), LEAD_REPORT])
     opened = []
     monkeypatch.setattr(cli, "_launch", lambda folder: opened.append(folder) or True)
-    assert cli.main(["open", run.run_dir.name]) == 0
-    assert opened == [run.run_dir / "workspace"]
-    assert str(run.run_dir / "workspace") in capsys.readouterr().out
+    assert cli.main(["open", job.job_dir.name]) == 0
+    assert opened == [job.job_dir / "workspace"]
+    assert str(job.job_dir / "workspace") in capsys.readouterr().out
     assert cli.main(["open"]) == 0  # latest run
     assert cli.main(["open", "--print"]) == 0 and len(opened) == 2
 
 
-def test_run_with_tools_from_the_command_line(home, spec_file):
+def test_start_with_tools_from_the_command_line(home, spec_file):
     from conftest import use_fake_tools
 
     use_fake_tools(home)
@@ -286,13 +286,13 @@ def test_run_with_tools_from_the_command_line(home, spec_file):
         fake.finish("Done."),
         REPORT,
     ])
-    r = ombro(home, "run", "--spec", str(spec_file))
+    r = ombro(home, "start", "--spec", str(spec_file))
     assert r.returncode == 0, r.stderr
-    run_dir = runs.latest_run(home, "default")
-    assert f"Rivers (researcher): {(run_dir / 'workspace' / 'rivers.md').resolve()}" in r.stdout
-    s = ombro(home, "status", run_dir.name)
+    job_dir = jobs.latest_job(home, "default")
+    assert f"Rivers (researcher): {(job_dir / 'workspace' / 'rivers.md').resolve()}" in r.stdout
+    s = ombro(home, "status", job_dir.name)
     assert "web.search" in s.stdout and "$" not in s.stdout and "cost" not in s.stdout.lower()
-    assert (run_dir / "fake-calls.jsonl").is_file()
+    assert (job_dir / "fake-calls.jsonl").is_file()
 
 
 def test_chat_from_the_command_line(home):

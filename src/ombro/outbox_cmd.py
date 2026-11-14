@@ -64,7 +64,7 @@ def _show(a: outbox.Action, home: Home | None = None) -> None:
     print(f"  Tool      {a.tool} ({m.get('class', '?')})")
     print(f"  Role      {m.get('role', '?')}")
     print(f"  Reason    {m.get('reason') or '(none given)'}")
-    print(f"  Staged    {m.get('staged_at')} ({age}) in run {a.run_id}")
+    print(f"  Staged    {m.get('staged_at')} ({age}) in job {a.job_id}")
     if days >= OLD_DAYS and a.status == "pending":
         print(f"  Note      staged more than {OLD_DAYS} days ago; check it still makes sense")
     if a.edited:
@@ -151,7 +151,7 @@ def cmd_outbox(args) -> int:
             if len(refs) != 1:
                 raise cli.CliError("Name one action, e.g. `ombro outbox show ab12-3`.")
             a = outbox.find(home, refs[0])
-            outbox.settle(a.run_dir)
+            outbox.settle(a.job_dir)
             a = outbox.load(a.path)
             _print_json(a.as_dict()) if args.json else _show(a, home)
             return 0
@@ -169,10 +169,10 @@ def cmd_outbox(args) -> int:
 def _list(home: Home, args) -> int:
     crew = _cli()._crew(home, args.crew) if args.crew else None
     if args.all:
-        from ombro import runs
+        from ombro import jobs
 
         items = []
-        for d in runs.all_runs(home, crew):
+        for d in jobs.all_jobs(home, crew):
             outbox.settle(d)
             items += outbox.actions(d)
     else:
@@ -204,7 +204,7 @@ def _decide(home: Home, action: str, refs: list[str], args) -> int:
                            "There is no 'all'.")
     items = _find_all(home, refs)
     for a in items:
-        outbox.settle(a.run_dir)
+        outbox.settle(a.job_dir)
     items = [outbox.load(a.path) for a in items]
     not_pending = [a for a in items if a.status != "pending"]
     if not_pending:
@@ -340,7 +340,7 @@ def _resolve(home: Home, refs: list[str], args) -> int:
     if len(refs) != 2 or refs[1] not in ("sent", "not-sent"):
         raise cli.CliError("Use `ombro outbox resolve <ref> sent` (it happened) or `not-sent` (it did not).")
     a = outbox.find(home, refs[0])
-    outbox.settle(a.run_dir)
+    outbox.settle(a.job_dir)
     done = outbox.resolve(home, outbox.load(a.path), refs[1] == "sent")
     if args.json:
         _print_json(done.as_dict())

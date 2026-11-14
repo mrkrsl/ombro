@@ -325,7 +325,7 @@ class RolePurpose(Purpose):
             raise ProposalError(f"no such skill: {', '.join(map(str, unknown_skills))}. Skills: {have}")
         if meta.get("model") and meta["model"] not in self.models:
             raise ProposalError(f"no model named {meta['model']!r} in models.md; choose from {', '.join(self.models)}")
-        # The same check a run makes when it loads the role.
+        # The same check a job makes when it loads the role.
         tmp = Path(tempfile.mkdtemp(prefix="ombro-role-")) / name
         try:
             tmp.mkdir()
@@ -391,18 +391,18 @@ class BriefPurpose(Purpose):
 
     def accept_label_for(self, proposal: Proposal) -> str:
         name = proposal.data.get("name", "")
-        return f"save it as {name!r} and start the run" if self.then_run else f"save it as {name!r}"
+        return f"save it as {name!r} and start the job" if self.then_start else f"save it as {name!r}"
 
-    def __init__(self, home: Home, crew: str, limits: Limits, task: str = "", *, then_run: bool = False,
+    def __init__(self, home: Home, crew: str, limits: Limits, task: str = "", *, then_start: bool = False,
                  start_dir: Path | None = None, crews: list[str] | None = None, revise: str | None = None):
         self.home = home
         self.crew = crew  # the default crew, for a spec that names none
         self.suggested = [c for c in (crews or []) if c in home.crews()]
         self.limits = limits
         self.task = task.strip()
-        self.then_run = then_run
+        self.then_start = then_start
         self.start_dir = start_dir
-        self.accept_label = "save the spec and start the run" if then_run else "save the spec"
+        self.accept_label = "save the spec and start the job" if then_start else "save the spec"
         self.revise = revise  # a saved spec to change, rather than a new one
         if revise:
             self.title = f"Changing a saved spec: {revise}"
@@ -454,15 +454,15 @@ class BriefPurpose(Purpose):
     def context(self) -> list[tuple[str, str]]:
         L = self.limits
         out = [
-            ("Crews and their roles (a run may brief roles only in the crews its spec names)",
+            ("Crews and their roles (a job may brief roles only in the crews its spec names)",
              crews_roster(self.home, L)
              + (f"\nThe user started this brief for: {', '.join(self.suggested)}." if self.suggested else "")
              + f"\nThe default crew is {self.crew} (the {crew_title(self.home, self.crew)})."),
-            ("Limits a run will have",
-             f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.run_timeout)}\n"
+            ("Limits a job will have",
+             f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.job_timeout)}\n"
              f"- tokens: {format_tokens(L.max_tokens)}"),
         ]
-        out.append(("Shared folders (outside a run, only folders the user has shared can be reached)",
+        out.append(("Shared folders (outside a job, only folders the user has shared can be reached)",
                     self.folders_context()))
         tools = self.outward_tools()
         if tools:
@@ -494,8 +494,8 @@ class BriefPurpose(Purpose):
             if inside:
                 lines.append(f"The user started this brief in {folders.display_path(here)}, inside shared folder "
                              f"{inside[0].name!r}.")
-        lines.append("A run reaches only its own workspace and the folders its spec names. If the task needs "
-                     "files outside the run (documents to read, or a folder to save results in), ask which "
+        lines.append("A job reaches only its own workspace and the folders its spec names. If the task needs "
+                     "files outside the job (documents to read, or a folder to save results in), ask which "
                      "folder and why, and list it in `folders`: a shared folder by name, or a new one by its full "
                      "path. The harness asks the user before sharing a new folder; you never share one.")
         return "\n".join(lines)
@@ -504,10 +504,10 @@ class BriefPurpose(Purpose):
         props: dict[str, Any] = {
             "name": {"type": "string", "description": "Short lower-case file name for the spec."},
             "crews": {"type": "array", "items": {"type": "string"},
-                      "description": "The crews whose roles the run may brief: the fewest that cover the task."},
+                      "description": "The crews whose roles the job may brief: the fewest that cover the task."},
             "folders": {
                 "type": "array",
-                "description": "Folders outside the run the task needs. Optional.",
+                "description": "Folders outside the job the task needs. Optional.",
                 "items": {
                     "type": "object",
                     "required": ["folder", "access"],
@@ -522,7 +522,7 @@ class BriefPurpose(Purpose):
             },
             "roles": {"type": "array", "items": {"type": "string"},
                       "description": "Optional: the roles the user wants to do the work, as crew/role or the "
-                      "role's name. The run's Lead briefs them for the work."},
+                      "role's name. The job's Lead briefs them for the work."},
             "title": {"type": "string", "description": "One line saying what the task is."},
             "details": {"type": "string", "description": "Anything else the crew needs: scope, sources, where "
                         "the result goes. Optional."},
@@ -717,13 +717,13 @@ class BriefPurpose(Purpose):
         if limits is not None and not isinstance(limits, dict):
             raise ProposalError("`limits` in a spec must be a mapping, e.g. limits: {allowance: generous}")
         warnings = []
-        from ombro import runs
+        from ombro import jobs
 
         try:
-            crews = runs.spec_crews(self.home, meta)
+            crews = jobs.spec_crews(self.home, meta)
         except SetupError as e:
             raise ProposalError(str(e)) from None
-        warnings.append("the run may brief roles in the " + " and the ".join(crew_title(self.home, c) for c in crews)
+        warnings.append("the job may brief roles in the " + " and the ".join(crew_title(self.home, c) for c in crews)
                         + ("" if meta.get("crews") else " (the default crew: the spec names none)") + ".")
         if meta.get("roles"):
             try:
@@ -747,10 +747,10 @@ class BriefPurpose(Purpose):
                                     f"share it ({new[name]['access']}) when you accept.")
                 elif name in grants:
                     final = "read" if "read" in (access, grants[name].access) else "write"
-                    warnings.append(f"the run may {'change files in' if final == 'write' else 'read'} shared "
+                    warnings.append(f"the job may {'change files in' if final == 'write' else 'read'} shared "
                                     f"folder {name} ({grants[name].path}).")
                 else:
-                    warnings.append(f"folder {name!r} is not shared, so a run would leave it out.")
+                    warnings.append(f"folder {name!r} is not shared, so a job would leave it out.")
         if meta.get("outward") is not None:
             from ombro import outward
 
@@ -762,10 +762,10 @@ class BriefPurpose(Purpose):
         if spec.path.is_file():
             warnings.append(f"a spec named {proposal.data['name']!r} already exists and will be replaced "
                             "(its old text is kept as .previous.md).")
-        if self.then_run:
+        if self.then_start:
             warnings.append(
-                f"accepting starts the run at once: up to {self.limits.max_rounds} rounds, "
-                f"{format_duration(self.limits.run_timeout)} and {format_tokens(self.limits.max_tokens)} tokens."
+                f"accepting starts the job at once: up to {self.limits.max_rounds} rounds, "
+                f"{format_duration(self.limits.job_timeout)} and {format_tokens(self.limits.max_tokens)} tokens."
             )
         return Proposal(proposal.files, warnings=warnings, data=proposal.data)
 
@@ -781,7 +781,7 @@ def share_question(ui, name: str, may_write: bool) -> str | None:
     options = ([Option("w", "write")] if may_write else []) + [
         Option("r", "read only" if may_write else "read", ("read", "y", "yes")), Option("n", "no")]
     choice = ui.ask(Field(
-        "share", f"Share it with Ombro's runs as {name!r}?", "choice", options=options,
+        "share", f"Share it with Ombro's jobs as {name!r}?", "choice", options=options,
         invalid="Type " + ("write, read only, or no." if may_write else "read, or no."),
     ))
     return {"w": "write", "r": "read"}.get(choice)
@@ -807,8 +807,8 @@ def start(home: Home, purpose: Purpose, crew: str, limits: Limits, **kwargs):
 
 def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outcome, task: str,
                               tools: dict | None = None) -> Path:
-    """A run that ends as insufficient_brief: no roles briefed, a report naming the gaps."""
-    from ombro import report, runs
+    """A job that ends as insufficient_brief: no roles briefed, a report naming the gaps."""
+    from ombro import report, jobs
     from ombro.journal import Journal, utc_now
 
     gaps = list(outcome.gaps)
@@ -818,24 +818,24 @@ def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outc
         gaps.append("No spec was confirmed.")
     body = task.strip() or "(The task was not stated.)"
     spec_text = f"No spec was confirmed. The task as first given:\n\n{body}"
-    run_dir = runs.create_run(home, crews, {}, spec_text, limits, source="interview (no spec was confirmed)",
+    job_dir = jobs.create_job(home, crews, {}, spec_text, limits, source="interview (no spec was confirmed)",
                               tools=tools)
     if outcome.transcript and Path(outcome.transcript).is_file():
-        shutil.copy2(outcome.transcript, run_dir / "interview.md")
-    j = Journal(run_dir / "journal.jsonl")
+        shutil.copy2(outcome.transcript, job_dir / "interview.md")
+    j = Journal(job_dir / "journal.jsonl")
     now = utc_now()
-    runs.update_run(run_dir, started_at=now, interview_usage=_interview_usage(outcome))
-    j.write("harness", "run_started", "from a task interview")
+    jobs.update_job(job_dir, started_at=now, interview_usage=_interview_usage(outcome))
+    j.write("harness", "job_started", "from a task interview")
     j.write("lead", "insufficient_brief", "; ".join(gaps), gaps=gaps)
-    facts = report.gather_facts(home, run_dir, "insufficient_brief")
-    report.write(run_dir, report.render(facts, None, "no roles were briefed"))
-    runs.update_run(run_dir, status="insufficient_brief", finished_at=utc_now(), usage={},
-                    brief=runs.first_line(task) or "(the task was not stated)")
-    j.write("harness", "run_ended", "insufficient_brief")
+    facts = report.gather_facts(home, job_dir, "insufficient_brief")
+    report.write(job_dir, report.render(facts, None, "no roles were briefed"))
+    jobs.update_job(job_dir, status="insufficient_brief", finished_at=utc_now(), usage={},
+                    brief=jobs.first_line(task) or "(the task was not stated)")
+    j.write("harness", "job_ended", "insufficient_brief")
     from ombro import memory
 
-    memory.add_index_entry(home, run_dir)
-    return run_dir
+    memory.add_index_entry(home, job_dir)
+    return job_dir
 
 
 def _interview_usage(outcome) -> dict:

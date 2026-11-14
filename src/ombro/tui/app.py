@@ -24,7 +24,7 @@ from textual.message import Message
 from textual.widgets import Input, Markdown, OptionList, Static, TextArea
 from textual.widgets.option_list import Option as ListOption
 
-from ombro import runs, views
+from ombro import jobs, views
 from ombro.home import Home
 from ombro.tui import look
 from ombro.ui import (YESNO_AGAIN, UI, ChatCleared, Event, Failure, Field, LeadSaid, ModeChanged, Note, PastTurn,
@@ -37,30 +37,30 @@ SLASH = [
     ("/chats", "your past chats; reopen one and carry on"),
     ("/rename", "give this chat a title"),
     ("/brief", "brief a task: the Lead interviews you for a spec"),
-    ("/run", "run a saved spec again"),
-    ("/runs", "runs and their status"),
-    ("/report", "a run's report and its deliverables"),
-    ("/stop", "stop a run; it writes its report first"),
-    ("/open", "open a run's workspace folder"),
+    ("/start", "start a saved spec again"),
+    ("/jobs", "jobs and their status"),
+    ("/report", "a job's report and its deliverables"),
+    ("/stop", "stop a job; it writes its report first"),
+    ("/open", "open a job's workspace folder"),
     ("/outbox", "actions waiting for your decision"),
-    ("/schedule", "scheduled runs"),
+    ("/schedule", "scheduled jobs"),
     ("/crew", "crews and their roles"),
     ("/role", "add or edit a role"),
     ("/model", "which model the Lead and each role use"),
     ("/models", "your model connections and their models"),
     ("/keys", "which keys are set"),
-    ("/folder", "folders shared with runs and the Lead: list, add, remove"),
+    ("/folder", "folders shared with jobs and the Lead: list, add, remove"),
     ("/tools", "tools and their permissions"),
     ("/skills", "the skills library, who uses each, and proposals waiting"),
     ("/remember", "add a lesson to a crew's notes"),
-    ("/limits", "how far runs, chats and interviews may go"),
+    ("/limits", "how far jobs, chats and interviews may go"),
     ("/preferences", "your name, theme and defaults"),
     ("/theme", "switch between light and dark"),
     ("/help", "what each command does"),
     ("/quit", "leave Ombro"),
 ]
 CHAT_COMMANDS = ("/chat", "/new", "/chats", "/rename", "/brief", "/remember")  # handled by chat itself
-TUI_COMMANDS = ("/run", "/runs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model",
+TUI_COMMANDS = ("/start", "/jobs", "/report", "/stop", "/open", "/outbox", "/schedule", "/crew", "/role", "/model",
                 "/models",
                 "/keys", "/folder", "/folders", "/limits",
                 "/tools", "/skills", "/preferences")
@@ -361,13 +361,13 @@ class OmbroApp(App):
         self.home = home
         self.poll = poll
         self.init_client_factory = (lambda spec, h: client_factory(spec)) if client_factory else None
-        self.active_runs: set[str] = set()
+        self.active_jobs: set[str] = set()
         self.following: dict[str, Any] = {}
         self.last_counts: dict[str, Any] = {}
         self.client_factory = client_factory
         self.summary = views.summary(home)
         self.first_opening = not any((home.root / "chats").glob("*.md")) and not self.summary["unseen"] \
-            and not views.run_list(home)
+            and not views.job_list(home)
         self.mode = "Chat"
         try:
             from ombro.settings import load_limits
@@ -435,9 +435,9 @@ class OmbroApp(App):
             self.start_work(self._set_up)
         else:
             self.greet()
-        self.active_runs = {r["run_id"] for r in views.run_list(self.home) if r["active"]}
+        self.active_jobs = {r["job_id"] for r in views.job_list(self.home) if r["active"]}
         if self.poll:
-            self.set_interval(POLL_SECONDS, self.poll_runs)
+            self.set_interval(POLL_SECONDS, self.poll_jobs)
         self.query_one("#input", PromptArea).focus()
 
     def greet(self) -> None:
@@ -796,58 +796,58 @@ class OmbroApp(App):
             self.call_from_thread(self.leave)
             return
         if len(self.chat.specs) > specs_before:
-            self.offer_run(self.chat.specs[-1])
-        while self.chat.run_offers:  # the user already said yes in chat
-            name, roles = self.chat.run_offers.pop(0)
-            self.offer_run(name, roles=roles, ask=False)
+            self.offer_start(self.chat.specs[-1])
+        while self.chat.start_offers:  # the user already said yes in chat
+            name, roles = self.chat.start_offers.pop(0)
+            self.offer_start(name, roles=roles, ask=False)
 
-    def offer_run(self, spec: str, shown: str | None = None, *, roles: list[str] | None = None,
+    def offer_start(self, spec: str, shown: str | None = None, *, roles: list[str] | None = None,
                   ask: bool = True) -> None:
-        """Run a saved spec now, detached, after the user's yes: after a confirmed brief, on /run, or when the
+        """Start a saved spec now, detached, after the user's yes: after a confirmed brief, on /start, or when the
         Lead in chat offered it and the user said yes there (specification 10.3, 10.4)."""
         if shown:
             self.bridge.say(f"Saved spec {shown}")
-        if ask and not self.bridge.yes("run_now", "Run it now? It runs in the background, and its progress "
+        if ask and not self.bridge.yes("start_now", "Start it now? It works in the background, and its progress "
                                                   "shows here.", True):
-            self.bridge.say(f"Run it later with `ombro run --spec {spec}`.")
+            self.bridge.say(f"Start it later with `ombro start --spec {spec}`.")
             return
-        run_id = self.commands.start_run(spec, roles or [])
-        if run_id:
+        job_id = self.commands.start_job(spec, roles or [])
+        if job_id:
             from ombro.journal import Follower
 
-            self.following[run_id] = Follower(runs.find_run(self.home, run_id) / "journal.jsonl")
-            self.active_runs.add(run_id)
-            self.bridge.say(f"Started run {run_id}. Keep chatting; its progress and its notice appear here.",
+            self.following[job_id] = Follower(jobs.find_job(self.home, job_id) / "journal.jsonl")
+            self.active_jobs.add(job_id)
+            self.bridge.say(f"Started job {job_id}. Keep chatting; its progress and its notice appear here.",
                             level="done")
 
-    # -- runs: progress, notices and the header's counts --------------------------
+    # -- jobs: progress, notices and the header's counts --------------------------
 
-    def poll_runs(self) -> None:
+    def poll_jobs(self) -> None:
         self.run_worker(self._poll, thread=True, exclusive=True, group="poll")
 
     def _poll(self) -> None:
         from ombro.tui.commands import notice_text, progress_line
 
         try:
-            rows = views.run_list(self.home)
-        except Exception:  # noqa: BLE001 - a run being written; try at the next tick
+            rows = views.job_list(self.home)
+        except Exception:  # noqa: BLE001 - a job being written; try at the next tick
             return
-        for run_id, follower in list(self.following.items()):
+        for job_id, follower in list(self.following.items()):
             for ev in follower.new_events():
-                line = progress_line(run_id, ev)
+                line = progress_line(job_id, ev)
                 if line:
                     self.call_from_thread(self.add_line, Progress(line), "progress")
-        active = {r["run_id"] for r in rows if r["active"]}
-        for run_id in sorted(self.active_runs - active):
-            self.following.pop(run_id, None)
-            self.call_from_thread(self.add_text, notice_text(self, run_id), "notice")
+        active = {r["job_id"] for r in rows if r["active"]}
+        for job_id in sorted(self.active_jobs - active):
+            self.following.pop(job_id, None)
+            self.call_from_thread(self.add_text, notice_text(self, job_id), "notice")
             try:
-                runs.mark_seen(runs.find_run(self.home, run_id))
+                jobs.mark_seen(jobs.find_job(self.home, job_id))
             except (LookupError, OSError):
                 pass
-        counts = {"active": sorted(active), "waiting": sum(r["waiting"] for r in rows), "runs": len(rows)}
-        changed = counts != self.last_counts or active != self.active_runs
-        self.active_runs = active
+        counts = {"active": sorted(active), "waiting": sum(r["waiting"] for r in rows), "jobs": len(rows)}
+        changed = counts != self.last_counts or active != self.active_jobs
+        self.active_jobs = active
         self.last_counts = counts
         if changed and self.is_running:
             try:
@@ -980,6 +980,13 @@ def run_app(home: Home | None = None) -> int:
     if home.root.is_dir() and home.old_layout():
         print("ombro: This home was made by an earlier Ombro. Move it aside and run `ombro init`.")
         return 2
+    if home.root.is_dir():
+        from ombro.home import migrate_jobs
+
+        try:
+            migrate_jobs(home)
+        except OSError as e:
+            print(f"ombro: could not move {home.root / 'jobs'} to {home.jobs_dir}: {e}")
     try:
         theme = load_preferences(home).theme if home.root.is_dir() else "auto"
     except Exception:  # noqa: BLE001

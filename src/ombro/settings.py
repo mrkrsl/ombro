@@ -12,7 +12,7 @@ from ombro.home import DEFAULT_CREW, LIMITS_META, Home
 
 
 class SetupError(Exception):
-    """Something in the home directory stops a run from starting."""
+    """Something in the home directory stops a job from starting."""
 
 
 # ---------------------------------------------------------------------------
@@ -45,22 +45,22 @@ def format_duration(seconds: float) -> str:
 
 
 # Allowance levels. One word in limits.md sets the token, round and time caps
-# for runs and interviews, so nothing runs away. Any single value can still be
+# for jobs and interviews, so nothing runs away. Any single value can still be
 # set by hand in limits.md or a spec, which wins over the level.
 ALLOWANCES: dict[str, dict[str, Any]] = {
-    "conservative": {"max_tokens": 300_000, "max_rounds": 4, "run_timeout": "15m", "interview_max_tokens": 50_000,
+    "conservative": {"max_tokens": 300_000, "max_rounds": 4, "job_timeout": "15m", "interview_max_tokens": 50_000,
                      "chat_max_tokens": 100_000},
-    "moderate": {"max_tokens": 800_000, "max_rounds": 8, "run_timeout": "30m", "interview_max_tokens": 100_000,
+    "moderate": {"max_tokens": 800_000, "max_rounds": 8, "job_timeout": "30m", "interview_max_tokens": 100_000,
                  "chat_max_tokens": 200_000},
-    "generous": {"max_tokens": 2_000_000, "max_rounds": 16, "run_timeout": "1h", "interview_max_tokens": 250_000,
+    "generous": {"max_tokens": 2_000_000, "max_rounds": 16, "job_timeout": "1h", "interview_max_tokens": 250_000,
                  "chat_max_tokens": 1_000_000},
-    "unlimited": {"max_tokens": None, "max_rounds": 50, "run_timeout": "4h", "interview_max_tokens": None,
+    "unlimited": {"max_tokens": None, "max_rounds": 50, "job_timeout": "4h", "interview_max_tokens": None,
                   "chat_max_tokens": None},
 }
 DEFAULT_ALLOWANCE = "moderate"
-LEVEL_KEYS = ("max_tokens", "max_rounds", "run_timeout", "interview_max_tokens", "chat_max_tokens")
+LEVEL_KEYS = ("max_tokens", "max_rounds", "job_timeout", "interview_max_tokens", "chat_max_tokens")
 # Memory and chat settings, in characters where they bound text. Defaults for
-# runs recorded before they existed, and for limits.md files that leave them out.
+# jobs recorded before they existed, and for limits.md files that leave them out.
 MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
     "memory_notes_max_chars": 10_000,
     "memory_index_entries": 20,
@@ -75,7 +75,7 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
                             "default": 10},
 }
 # Scheduler settings: how late a tick may start a slot, and how many scheduled
-# runs may start in one tick or run at once.
+# jobs may start in one tick or be in progress at once.
 SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "10m", "schedule_max_running": 2, "schedule_max_starts": 3}
 # Code execution: limits on each script code.run runs.
 CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 8_000,
@@ -83,10 +83,16 @@ CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB"
 # Skills: the listing in a prompt, a read, a model-written SKILL.md, and proposals waiting.
 SKILL_DEFAULTS: dict[str, Any] = {"skills_list_chars": 4_000, "skill_read_chars": 20_000,
                                   "skill_max_chars": 10_000, "skill_proposals_waiting": 10}
-CODE_DEFAULT_CALLS = 10  # code.run's max_calls when neither limits.md nor tools.md sets one
+CODE_DEFAULT_CALLS = 10  # code.job's max_calls when neither limits.md nor tools.md sets one
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
 RETIRED_LIMITS = ("budget_usd", "tool_cost_per_call")
+# Limits that were renamed: read under their old names too (jobs were once called runs).
+RENAMED_LIMITS = {"run_timeout": "job_timeout"}
+
+
+def _renamed(d: dict) -> dict:
+    return {RENAMED_LIMITS.get(k, k): v for k, v in d.items()} if any(k in RENAMED_LIMITS for k in d) else d
 INTERVIEW_TIMEOUT = 6 * 3600.0  # interviews wait on a person; the token and turn caps bound them
 
 
@@ -122,7 +128,7 @@ def format_tokens(n: int | None) -> str:
 class Limits:
     max_tokens: int | None
     max_rounds: int
-    run_timeout: float
+    job_timeout: float
     max_output_tokens: int
     report_reserve: float
     loop_threshold: int
@@ -157,7 +163,7 @@ class Limits:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Limits":
         known = set(cls.__dataclass_fields__)
-        # Absent from runs made before they existed.
+        # Absent from jobs made before they existed.
         d = {
             "allowance": "custom",
             "interview_max_tokens": ALLOWANCES[DEFAULT_ALLOWANCE]["interview_max_tokens"],
@@ -166,7 +172,7 @@ class Limits:
             **SCHEDULE_DEFAULTS,
             **CODE_DEFAULTS,
             **SKILL_DEFAULTS,
-            **{k: v for k, v in d.items() if k not in RETIRED_LIMITS},
+            **{k: v for k, v in _renamed(d).items() if k not in RETIRED_LIMITS},
         }
         unknown = set(d) - known
         if unknown:
@@ -206,7 +212,7 @@ class Limits:
             allowance=str(d["allowance"]),
             max_tokens=token_cap("max_tokens", d["max_tokens"]),
             max_rounds=pos_num("max_rounds", d["max_rounds"], integer=True),
-            run_timeout=pos_num("run_timeout", parse_duration(d["run_timeout"])),
+            job_timeout=pos_num("job_timeout", parse_duration(d["job_timeout"])),
             max_output_tokens=pos_num("max_output_tokens", d["max_output_tokens"], integer=True),
             report_reserve=float(reserve),
             loop_threshold=pos_num("loop_threshold", d["loop_threshold"], integer=True),
@@ -249,7 +255,7 @@ class Limits:
             self,
             max_tokens=self.interview_max_tokens,
             max_rounds=self.interview_max_turns,
-            run_timeout=INTERVIEW_TIMEOUT,
+            job_timeout=INTERVIEW_TIMEOUT,
             report_reserve=0.0,
         )
 
@@ -261,7 +267,7 @@ class Limits:
             self,
             max_tokens=self.chat_max_tokens,
             max_rounds=CHAT_MAX_MESSAGES,
-            run_timeout=INTERVIEW_TIMEOUT,
+            job_timeout=INTERVIEW_TIMEOUT,
             report_reserve=0.0,
             tool_max_calls=dict(self.chat_tool_max_calls),
         )
@@ -280,7 +286,7 @@ def _deep_merge(base: dict, extra: dict) -> dict:
 def _layer(acc: dict, layer: dict) -> dict:
     """Merge one layer of settings. A layer that names an allowance replaces the
     level-set values from earlier layers; values it sets by hand still win."""
-    layer = layer or {}
+    layer = _renamed(layer or {})
     if "allowance" in layer:
         acc = {k: v for k, v in acc.items() if k not in LEVEL_KEYS}
     return _deep_merge(acc, layer)
@@ -323,7 +329,7 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
     "web.fetch": (("firecrawl", "direct", "fake"), "direct"),
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
-# Calls a run may make, by tool and provider, unless tools.md says: fewer where each call is billed.
+# Calls a job may make, by tool and provider, unless tools.md says: fewer where each call is billed.
 PROVIDER_CALLS = {("web.search", "firecrawl"): 20, ("web.fetch", "firecrawl"): 30,
                   ("web.search", "duckduckgo"): 60, ("web.fetch", "direct"): 100,
                   ("web.search", "fake"): 20, ("web.fetch", "fake"): 30}
@@ -398,7 +404,7 @@ class ToolSettings:
             if "permission" in cfg:
                 if cfg["permission"] != "refuse":
                     raise SetupError(f"{where}: permission for {name} can only be `refuse` here; whether a tool "
-                                     "runs or is staged is set by `outward:` in preferences or a spec")
+                                     "runs or waits for approval is set by `outward:` in preferences or a spec")
                 out["permission"] = "refuse"
             tools[name] = out
         providers: dict[str, dict[str, Any]] = {}
@@ -575,7 +581,7 @@ def set_allowance(home, level: str) -> list[str]:
     if level not in ALLOWANCES:
         raise SetupError(f"Choose one of: {', '.join(ALLOWANCES)}.")
     meta, body = mdfile.read(home.limits)
-    dropped = [k for k in (*LEVEL_KEYS, *RETIRED_LIMITS) if k in meta]
+    dropped = [k for k in (*LEVEL_KEYS, *RETIRED_LIMITS, *RENAMED_LIMITS) if k in meta]
     for k in dropped:
         del meta[k]
     meta = {"allowance": level, **{k: v for k, v in meta.items() if k != "allowance"}}
@@ -584,9 +590,9 @@ def set_allowance(home, level: str) -> list[str]:
 
 
 def allowance_table() -> list[str]:
-    """One line per level: what each run, chat and interview may use."""
+    """One line per level: what each job, chat and interview may use."""
     out = []
     for name, v in ALLOWANCES.items():
-        out.append(f"{name}: runs {format_tokens(v['max_tokens'])}, chats {format_tokens(v['chat_max_tokens'])}, "
+        out.append(f"{name}: jobs {format_tokens(v['max_tokens'])}, chats {format_tokens(v['chat_max_tokens'])}, "
                    f"interviews {format_tokens(v['interview_max_tokens'])} tokens")
     return out

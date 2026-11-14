@@ -1,7 +1,7 @@
 """The fake provider: invented results, and a record of every request.
 
 Used by the tests and for dry runs. Each request is kept in `calls` and, when
-the tool context gives a run folder, appended to that run's fake-calls.jsonl.
+the tool context gives a job folder, appended to that job's fake-calls.jsonl.
 Nothing touches the network.
 """
 

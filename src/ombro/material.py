@@ -75,7 +75,7 @@ def flags(text) -> list[str]:
 def source(tool: str, args: dict | None) -> str:
     """Where a tool's result came from, for the fence and the report."""
     args = args if isinstance(args, dict) else {}
-    for key in ("url", "path", "query", "role", "run_id"):
+    for key in ("url", "path", "query", "role", "job_id"):
         v = args.get(key)
         if isinstance(v, str) and v.strip():
             return f"{tool} {v.strip()[:200]}"

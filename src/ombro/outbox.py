@@ -1,6 +1,6 @@
-"""The outbox: outward actions staged during a run, waiting for the user.
+"""The outbox: outward actions staged during a job, waiting for the user.
 
-Each action is one Markdown file in the run's outbox/, written by the harness:
+Each action is one Markdown file in the job's outbox/, written by the harness:
 the tool, its arguments, the role and its stated reason, the time, and a
 status. The user may edit `arguments` by hand; the change is noticed (they
 no longer match the fingerprint taken when they were staged) and the arguments are checked again before
@@ -12,7 +12,7 @@ while it was running: it may or may not have happened).
 
 Decisions are made on named actions only. An action runs at most once:
 `executing` is written before the call and the outcome after it, under a lock
-on the run's outbox, so two approvals cannot overlap. An action left
+on the job's outbox, so two approvals cannot overlap. An action left
 `executing` by a process that died is uncertain and is never retried; the
 user settles it.
 """
@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import mdfile, runs
+from ombro import mdfile, jobs
 from ombro.home import Home
 from ombro.journal import Journal, utc_now
 from ombro.mcp import McpCallLost, McpError, McpNotReached
@@ -41,7 +41,7 @@ RESULT_CHARS = 1_000
 DECISIONS_HEADING = "## Outbox decisions"
 
 BODY = """\
-Ombro staged this action during run {run_id}. `status` above says where it
+Ombro staged this action during job {job_id}. `status` above says where it
 stands: pending means it has not happened and waits for you.
 
 See it with `ombro outbox show {ref}`, then `ombro outbox approve {ref}` or
@@ -63,8 +63,8 @@ def fingerprint(args: Any) -> str:
     return hashlib.sha256(json.dumps(args, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def short_run(run_id: str) -> str:
-    return run_id.rsplit("-", 1)[-1]
+def short_job(job_id: str) -> str:
+    return job_id.rsplit("-", 1)[-1]
 
 
 @dataclass
@@ -77,16 +77,16 @@ class Action:
         return int(self.meta.get("id") or 0)
 
     @property
-    def run_id(self) -> str:
-        return str(self.meta.get("run_id") or self.path.parent.parent.name)
+    def job_id(self) -> str:
+        return str(self.meta.get("job_id") or self.path.parent.parent.name)
 
     @property
     def ref(self) -> str:
-        return f"{short_run(self.run_id)}-{self.number}"
+        return f"{short_job(self.job_id)}-{self.number}"
 
     @property
     def long_ref(self) -> str:
-        return f"{self.run_id}-{self.number}"
+        return f"{self.job_id}-{self.number}"
 
     @property
     def status(self) -> str:
@@ -112,7 +112,7 @@ class Action:
         return False
 
     @property
-    def run_dir(self) -> Path:
+    def job_dir(self) -> Path:
         return self.path.parent.parent
 
     def summary(self, n: int = 90) -> str:
@@ -130,8 +130,8 @@ class Action:
 # Reading
 
 
-def outbox_dir(run_dir: Path) -> Path:
-    return Path(run_dir) / "outbox"
+def outbox_dir(job_dir: Path) -> Path:
+    return Path(job_dir) / "outbox"
 
 
 def load(path: Path) -> Action:
@@ -139,8 +139,8 @@ def load(path: Path) -> Action:
     return Action(Path(path), meta)
 
 
-def actions(run_dir: Path) -> list[Action]:
-    folder = outbox_dir(run_dir)
+def actions(job_dir: Path) -> list[Action]:
+    folder = outbox_dir(job_dir)
     if not folder.is_dir():
         return []
     out = []
@@ -152,15 +152,15 @@ def actions(run_dir: Path) -> list[Action]:
     return sorted(out, key=lambda a: a.number)
 
 
-def counts(run_dir: Path) -> dict[str, int]:
+def counts(job_dir: Path) -> dict[str, int]:
     c: dict[str, int] = {}
-    for a in actions(run_dir):
+    for a in actions(job_dir):
         c[a.status] = c.get(a.status, 0) + 1
     return c
 
 
-def waiting_count(run_dir: Path) -> int:
-    c = counts(run_dir)
+def waiting_count(job_dir: Path) -> int:
+    c = counts(job_dir)
     return sum(c.get(s, 0) for s in (*WAITING, "executing"))
 
 
@@ -172,13 +172,13 @@ def describe_counts(c: dict[str, int]) -> str:
 
 
 def waiting(home: Home, crew: str | None = None) -> list[Action]:
-    """Every action waiting for a decision, oldest run first."""
+    """Every action waiting for a decision, oldest job first."""
     out = []
-    for run_dir in runs.all_runs(home, crew):
-        if not outbox_dir(run_dir).is_dir():
+    for job_dir in jobs.all_jobs(home, crew):
+        if not outbox_dir(job_dir).is_dir():
             continue
-        settle(run_dir)
-        out += [a for a in actions(run_dir) if a.status in (*WAITING, "executing")]
+        settle(job_dir)
+        out += [a for a in actions(job_dir) if a.status in (*WAITING, "executing")]
     return out
 
 
@@ -186,27 +186,27 @@ _REF = re.compile(r"^(?P<run>[0-9A-Za-z][0-9A-Za-z-]*?)-(?P<n>\d+)$")
 
 
 def find(home: Home, ref: str) -> Action:
-    """An action by its reference: `ab12-3`, or the run ID (or a unique part of it) and the number."""
+    """An action by its reference: `ab12-3`, or the job ID (or a unique part of it) and the number."""
     m = _REF.match(ref.strip())
     if not m:
         raise OutboxError(f"{ref!r} is not an action reference; they look like ab12-3 (see `ombro outbox`)")
     frag, n = m.group("run"), int(m.group("n"))
-    matches = [d for d in runs.all_runs(home) if d.name == frag]
+    matches = [d for d in jobs.all_jobs(home) if d.name == frag]
     if not matches:
-        matches = [d for d in runs.all_runs(home) if d.name.endswith(frag) or d.name.startswith(frag)]
+        matches = [d for d in jobs.all_jobs(home) if d.name.endswith(frag) or d.name.startswith(frag)]
     if not matches:
-        raise OutboxError(f"no run matches {frag!r}")
+        raise OutboxError(f"no job matches {frag!r}")
     found = [a for d in matches for a in actions(d) if a.number == n]
     if not found:
         raise OutboxError(f"no staged action {ref}")
     if len(found) > 1:
-        raise OutboxError(f"{ref} matches more than one run; use the long form: "
+        raise OutboxError(f"{ref} matches more than one job; use the long form: "
                           + ", ".join(a.long_ref for a in found))
     return found[0]
 
 
 # ---------------------------------------------------------------------------
-# Staging (during a run)
+# Staging (during a job)
 
 
 def _slug(text: str) -> str:
@@ -217,29 +217,29 @@ def _slug(text: str) -> str:
 STAGE_WAIT = 120.0
 
 
-def stage(run_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str,
+def stage(job_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str,
           input_schema: dict | None) -> tuple[Action, bool]:
     """Write one staged action, under the outbox lock, since decisions can be made
-    while the run is going. Returns (action, duplicate): an exact duplicate of an
-    action already staged in this run is not staged again."""
-    with lock(run_dir, wait=STAGE_WAIT):
-        return _stage_locked(Path(run_dir), tool=tool, effect=effect, arguments=arguments, reason=reason,
+    while the job is going. Returns (action, duplicate): an exact duplicate of an
+    action already staged in this job is not staged again."""
+    with lock(job_dir, wait=STAGE_WAIT):
+        return _stage_locked(Path(job_dir), tool=tool, effect=effect, arguments=arguments, reason=reason,
                              role=role, input_schema=input_schema)
 
 
-def _stage_locked(run_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str,
+def _stage_locked(job_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str,
                   input_schema: dict | None) -> tuple[Action, bool]:
-    run_id = run_dir.name
-    existing = actions(run_dir)
+    job_id = job_dir.name
+    existing = actions(job_dir)
     fp = fingerprint(arguments)
     for a in existing:
         if a.tool == tool and a.meta.get("arguments_sha256") == fp:
             return a, True
     n = max((a.number for a in existing), default=0) + 1
-    path = outbox_dir(run_dir) / f"{n:03d}-{_slug(tool.removeprefix('mcp.'))}.md"
+    path = outbox_dir(job_dir) / f"{n:03d}-{_slug(tool.removeprefix('mcp.'))}.md"
     meta = {
         "id": n,
-        "run_id": run_id,
+        "job_id": job_id,
         "tool": tool,
         "class": effect,
         "role": role,
@@ -251,7 +251,7 @@ def _stage_locked(run_dir: Path, *, tool: str, effect: str, arguments: dict, rea
         "input_schema": input_schema or {},
     }
     a = Action(path, meta)
-    mdfile.write(path, meta, BODY.format(run_id=run_id, ref=a.ref))
+    mdfile.write(path, meta, BODY.format(job_id=job_id, ref=a.ref))
     return a, False
 
 
@@ -274,27 +274,27 @@ def _file_sha(path: Path) -> str:
     return h.hexdigest()
 
 
-def stage_placement(run_dir: Path, *, source: Path, shown_source: str, to: str, overwrite: bool, reason: str,
+def stage_placement(job_dir: Path, *, source: Path, shown_source: str, to: str, overwrite: bool, reason: str,
                     role: str) -> tuple[Action, bool]:
     """Stage copying a workspace file to a place not shared for writing. A copy of the
     file as it is now is kept with the action, so later changes in the workspace do
     not change what is approved."""
     import shutil
 
-    run_dir = Path(run_dir)
+    job_dir = Path(job_dir)
     sha = _file_sha(source)
-    with lock(run_dir, wait=STAGE_WAIT):
-        for a in actions(run_dir):
+    with lock(job_dir, wait=STAGE_WAIT):
+        for a in actions(job_dir):
             if a.tool == PLACE_TOOL and a.meta.get("file_sha256") == sha and isinstance(a.arguments, dict) \
                     and a.arguments.get("to") == to:
                 return a, True
         arguments = {"to": to, "overwrite": overwrite}
-        a, _ = _stage_locked(run_dir, tool=PLACE_TOOL, effect="internal", arguments=arguments, reason=reason,
+        a, _ = _stage_locked(job_dir, tool=PLACE_TOOL, effect="internal", arguments=arguments, reason=reason,
                              role=role, input_schema=PLACE_SCHEMA)
         keep = a.path.with_suffix("") / source.name
         keep.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, keep)
-        _save(a, source=shown_source, file=keep.relative_to(run_dir).as_posix(), file_sha256=sha)
+        _save(a, source=shown_source, file=keep.relative_to(job_dir).as_posix(), file_sha256=sha)
     return a, False
 
 
@@ -327,33 +327,33 @@ def placement_check(home: Home, a: Action) -> tuple[Path, str | None]:
 def _approve_place(home: Home, a: Action) -> Action:
     from ombro import folders
 
-    run_dir = a.run_dir
+    job_dir = a.job_dir
     final, warning = placement_check(home, a)
-    kept = run_dir / str(a.meta.get("file") or "")
+    kept = job_dir / str(a.meta.get("file") or "")
     own = a.path.with_suffix("")  # outbox/<action>/: where the copy was kept when it was staged
     if kept.is_symlink() or not kept.resolve().is_relative_to(own.resolve()) or kept.resolve() == own.resolve():
-        raise OutboxError(f"{a.ref} cannot run: its `file` must be the copy kept in {own.relative_to(run_dir)}/")
+        raise OutboxError(f"{a.ref} cannot run: its `file` must be the copy kept in {own.relative_to(job_dir)}/")
     if not kept.is_file() or _file_sha(kept) != a.meta.get("file_sha256"):
         raise OutboxError(f"{a.ref} cannot run: the copy kept with it is missing or has changed")
     _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
-    _journal(run_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
+    _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
     try:
         final.parent.mkdir(parents=True, exist_ok=True)
         folders.safe_copy(kept, final)
     except OSError as e:
         _save(a, status="failed", error=str(e)[:RESULT_CHARS], decided_at=utc_now())
-        _journal(run_dir, "outbox_failed", a, str(e)[:300])
-        _record(run_dir, a, f"approved; the copy failed: {str(e)[:200]}")
+        _journal(job_dir, "outbox_failed", a, str(e)[:300])
+        _record(job_dir, a, f"approved; the copy failed: {str(e)[:200]}")
         return a
     note = f"copied to {final}" + (f" ({warning})" if warning else "")
     _save(a, status="executed", executed_at=utc_now(), decided_at=utc_now(), result=note)
-    _journal(run_dir, "outbox_executed", a, note)
-    _record(run_dir, a, "approved" + (" after editing" if a.edited else "") + f"; {note}")
+    _journal(job_dir, "outbox_executed", a, note)
+    _record(job_dir, a, "approved" + (" after editing" if a.edited else "") + f"; {note}")
     return a
 
 
 # ---------------------------------------------------------------------------
-# Skills the Lead proposes at the end of a run (specification 4.4). They wait here
+# Skills the Lead proposes at the end of a job (specification 4.4). They wait here
 # like any staged action, but reach nobody outside: approving one makes it live.
 
 SKILL_TOOL = "skills.propose"
@@ -375,9 +375,9 @@ def _text_sha(text: str) -> str:
 def _kept_skill(a: Action) -> Path:
     """The proposed SKILL.md kept with the action, checked to be its own copy."""
     own = a.path.with_suffix("")
-    kept = a.run_dir / str(a.meta.get("file") or "")
+    kept = a.job_dir / str(a.meta.get("file") or "")
     if kept.is_symlink() or kept.resolve().parent != own.resolve() or kept.name != "SKILL.md":
-        raise OutboxError(f"{a.ref}: its `file` must be the SKILL.md kept in {own.relative_to(a.run_dir)}/")
+        raise OutboxError(f"{a.ref}: its `file` must be the SKILL.md kept in {own.relative_to(a.job_dir)}/")
     return kept
 
 
@@ -388,19 +388,19 @@ def skill_text(a: Action) -> str:
         raise OutboxError(f"{a.ref}: the proposed SKILL.md could not be read: {e}") from None
 
 
-def stage_skill(run_dir: Path, *, name: str, text: str, for_roles: list[str], reason: str, base_sha: str,
+def stage_skill(job_dir: Path, *, name: str, text: str, for_roles: list[str], reason: str, base_sha: str,
                 flags: list[str]) -> tuple[Action, bool]:
     """Stage a skill the Lead proposes, keeping its SKILL.md beside the action."""
-    run_dir = Path(run_dir)
-    with lock(run_dir, wait=STAGE_WAIT):
-        for a in actions(run_dir):
+    job_dir = Path(job_dir)
+    with lock(job_dir, wait=STAGE_WAIT):
+        for a in actions(job_dir):
             if a.tool == SKILL_TOOL and a.meta.get("file_sha256") == _text_sha(text):
                 return a, True
-        a, _ = _stage_locked(run_dir, tool=SKILL_TOOL, effect="skill", arguments={"name": name, "for": for_roles},
+        a, _ = _stage_locked(job_dir, tool=SKILL_TOOL, effect="skill", arguments={"name": name, "for": for_roles},
                              reason=reason, role="lead", input_schema=SKILL_SCHEMA)
         keep = a.path.with_suffix("") / "SKILL.md"
         mdfile.write_atomic(keep, text)
-        _save(a, file=keep.relative_to(run_dir).as_posix(), file_sha256=_text_sha(text), base_sha256=base_sha,
+        _save(a, file=keep.relative_to(job_dir).as_posix(), file_sha256=_text_sha(text), base_sha256=base_sha,
               change="update" if base_sha else "new", flags=list(flags))
     return a, False
 
@@ -428,7 +428,7 @@ def _approve_skill(home: Home, a: Action) -> Action:
 
     from ombro import skills
 
-    run_dir = a.run_dir
+    job_dir = a.job_dir
     args = a.arguments if isinstance(a.arguments, dict) else {}
     name = str(args.get("name") or "")
     text = skill_text(a)
@@ -441,13 +441,13 @@ def _approve_skill(home: Home, a: Action) -> Action:
                           f"today's version with `ombro outbox show {a.ref}`; to approve it after all, open it "
                           f"with `ombro outbox edit {a.ref}`, save, then approve")
     _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
-    _journal(run_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
+    _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
     try:
-        kept = skills.write(home, name, text, source=f"run {a.run_id}", accepted=date.today().isoformat())
+        kept = skills.write(home, name, text, source=f"job {a.job_id}", accepted=date.today().isoformat())
     except (OSError, skills.SkillError) as e:
         _save(a, status="failed", error=str(e)[:RESULT_CHARS], decided_at=utc_now())
-        _journal(run_dir, "outbox_failed", a, str(e)[:300])
-        _record(run_dir, a, f"approved; the skill could not be written: {str(e)[:200]}")
+        _journal(job_dir, "outbox_failed", a, str(e)[:300])
+        _record(job_dir, a, f"approved; the skill could not be written: {str(e)[:200]}")
         return a
     given = []
     for who in args.get("for") or []:
@@ -459,8 +459,8 @@ def _approve_skill(home: Home, a: Action) -> Action:
     if given:
         note += "; " + "; ".join(given)
     _save(a, status="executed", executed_at=utc_now(), decided_at=utc_now(), result=note)
-    _journal(run_dir, "outbox_executed", a, note)
-    _record(run_dir, a, "approved" + (" after editing" if a.edited else "") + f"; {note}")
+    _journal(job_dir, "outbox_executed", a, note)
+    _record(job_dir, a, "approved" + (" after editing" if a.edited else "") + f"; {note}")
     return a
 
 
@@ -469,9 +469,9 @@ def edit_skill(home: Home, a: Action, text: str) -> Action:
     today's version of the skill, so it can be approved after a change. It stays waiting."""
     from ombro import skills
 
-    run_dir = a.run_dir
-    with lock(run_dir):
-        _settle_locked(run_dir)
+    job_dir = a.job_dir
+    with lock(job_dir):
+        _settle_locked(job_dir)
         a = _reload(a)
         if a.status != "pending":
             raise OutboxError(f"{a.ref} is {a.status}, so it cannot be edited")
@@ -482,8 +482,8 @@ def edit_skill(home: Home, a: Action, text: str) -> Action:
             raise OutboxError(f"the edit was not saved: {e}") from None
         mdfile.write_atomic(_kept_skill(a), text)
         _save(a, base_sha256=skills.live_sha(home, name), edited_at=utc_now())
-        _journal(run_dir, "outbox_edited", a, "skill text edited; still waiting")
-        _record(run_dir)
+        _journal(job_dir, "outbox_edited", a, "skill text edited; still waiting")
+        _record(job_dir)
         return a
 
 
@@ -492,14 +492,14 @@ def skills_waiting(home: Home) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Deciding (during a run or after it)
+# Deciding (during a job or after it)
 
 
 @contextmanager
-def lock(run_dir: Path, wait: float = 0.0):
-    """One change to a run's outbox at a time: staging by the run, or a decision.
+def lock(job_dir: Path, wait: float = 0.0):
+    """One change to a job's outbox at a time: staging by the job, or a decision.
     Waits up to `wait` seconds, then raises OutboxBusy."""
-    folder = outbox_dir(run_dir)
+    folder = outbox_dir(job_dir)
     folder.mkdir(exist_ok=True)
     import fcntl
 
@@ -511,7 +511,7 @@ def lock(run_dir: Path, wait: float = 0.0):
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise OutboxBusy(f"another outbox command is working on run {Path(run_dir).name}; "
+                    raise OutboxBusy(f"another outbox command is working on job {Path(job_dir).name}; "
                                      "wait for it to finish") from None
                 time.sleep(0.1)
         try:
@@ -526,45 +526,45 @@ def _save(a: Action, **fields: Any) -> None:
     mdfile.write(a.path, a.meta, body)
 
 
-def _settle_locked(run_dir: Path) -> list[Action]:
+def _settle_locked(job_dir: Path) -> list[Action]:
     """With the lock held: an action still `executing` was left by a process that
     died mid-call. It may or may not have happened, so it becomes uncertain."""
     out = []
-    for a in actions(run_dir):
+    for a in actions(job_dir):
         if a.status == "executing":
             _save(a, status="uncertain", note="Ombro stopped while this action was running, so it may or may not "
                   "have happened. It is never retried; settle it with `ombro outbox resolve`.")
-            _journal(run_dir, "outbox_uncertain", a, "Ombro stopped while it was running")
+            _journal(job_dir, "outbox_uncertain", a, "Ombro stopped while it was running")
             out.append(a)
     if out:
-        _record(run_dir)
+        _record(job_dir)
     return out
 
 
-def settle(run_dir: Path) -> None:
+def settle(job_dir: Path) -> None:
     """Settle orphaned `executing` actions if no outbox command is running."""
-    if not any(a.status == "executing" for a in actions(run_dir)):
+    if not any(a.status == "executing" for a in actions(job_dir)):
         return
     try:
-        with lock(run_dir):
-            _settle_locked(run_dir)
+        with lock(job_dir):
+            _settle_locked(job_dir)
     except OutboxBusy:
         pass
 
 
-def _journal(run_dir: Path, action: str, a: Action, note: str, **extra: Any) -> None:
+def _journal(job_dir: Path, action: str, a: Action, note: str, **extra: Any) -> None:
     note = " ".join(str(note).split())  # one line, whatever the server's answer looked like
-    Journal(Path(run_dir) / "journal.jsonl").write("you", action, f"{a.ref} {a.tool}: {note}",
+    Journal(Path(job_dir) / "journal.jsonl").write("you", action, f"{a.ref} {a.tool}: {note}",
                                                    ref=a.ref, tool=a.tool, **extra)
 
 
-def _record(run_dir: Path, a: Action | None = None, line: str | None = None) -> None:
-    """Counts in run.md, and a line in the report's Outbox decisions section."""
+def _record(job_dir: Path, a: Action | None = None, line: str | None = None) -> None:
+    """Counts in job.md, and a line in the report's Outbox decisions section."""
     try:
-        runs.update_run(run_dir, outbox=counts(run_dir))
+        jobs.update_job(job_dir, outbox=counts(job_dir))
     except (OSError, mdfile.FrontMatterError):
         pass
-    report = Path(run_dir) / "report.md"
+    report = Path(job_dir) / "report.md"
     if line and a and report.is_file():
         text = report.read_text(encoding="utf-8")
         if DECISIONS_HEADING not in text:
@@ -593,20 +593,20 @@ def check_arguments(a: Action) -> str | None:
 PoolFactory = Callable[[Home, Path], Any]
 
 
-def _default_pool(home: Home, run_dir: Path):
+def _default_pool(home: Home, job_dir: Path):
     from ombro.outward import McpPool
 
-    meta, _ = runs.read_run(run_dir)
-    return McpPool(home, ToolSettings.from_dict(meta.get("tools"), "run.md tools"), log_dir=run_dir)
+    meta, _ = jobs.read_job(job_dir)
+    return McpPool(home, ToolSettings.from_dict(meta.get("tools"), "job.md tools"), log_dir=job_dir)
 
 
 def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -> Action:
     """Run one action, at most once. Returns it with its outcome recorded."""
     from ombro.outward import split_name
 
-    run_dir = a.run_dir
-    with lock(run_dir):
-        _settle_locked(run_dir)
+    job_dir = a.job_dir
+    with lock(job_dir):
+        _settle_locked(job_dir)
         a = _reload(a)
         if a.status != "pending":
             raise OutboxError(f"{a.ref} is {a.status}, so it cannot be approved"
@@ -624,31 +624,31 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
         if parts is None:
             raise OutboxError(f"{a.ref} names {a.tool!r}, which is not an MCP tool")
         try:
-            pool = (pool_factory or _default_pool)(home, run_dir)
+            pool = (pool_factory or _default_pool)(home, job_dir)
         except SetupError as e:
-            raise OutboxError(f"{a.ref} cannot run: the run's tool settings have a problem: {e}") from None
+            raise OutboxError(f"{a.ref} cannot run: the job's tool settings have a problem: {e}") from None
         _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
-        _journal(run_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""),
+        _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""),
                  edited=a.edited)
         sent: list = []
         try:
             result = pool.call(parts[0], parts[1], a.arguments, sent=sent)
         except McpNotReached as e:
             _save(a, status="pending", last_error=str(e), executing_at=None, executing_pid=None)
-            _journal(run_dir, "outbox_not_reached", a, f"not sent: {e}")
-            _record(run_dir)
+            _journal(job_dir, "outbox_not_reached", a, f"not sent: {e}")
+            _record(job_dir)
             raise OutboxError(f"{a.ref} was not sent, because the server could not be reached: {e}. "
                               "It is still waiting; try again later") from None
         except McpCallLost as e:
             _save(a, status="uncertain", note=f"{e}; it may or may not have happened. It is never retried.",
                   decided_at=utc_now())
-            _journal(run_dir, "outbox_uncertain", a, str(e))
-            _record(run_dir, a, f"approved, but no answer came back ({e}): uncertain")
+            _journal(job_dir, "outbox_uncertain", a, str(e))
+            _record(job_dir, a, f"approved, but no answer came back ({e}): uncertain")
             return a
         except McpError as e:
             _save(a, status="failed", error=str(e)[:RESULT_CHARS], decided_at=utc_now())
-            _journal(run_dir, "outbox_failed", a, str(e)[:300])
-            _record(run_dir, a, f"approved; the service refused it: {str(e)[:200]}")
+            _journal(job_dir, "outbox_failed", a, str(e)[:300])
+            _record(job_dir, a, f"approved; the service refused it: {str(e)[:200]}")
             return a
         finally:
             pool.close()
@@ -657,33 +657,33 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
         text = result_text(result, RESULT_CHARS)
         if result.get("isError"):
             _save(a, status="failed", error=text or "the service reported an error", decided_at=utc_now())
-            _journal(run_dir, "outbox_failed", a, (text or "error")[:300])
-            _record(run_dir, a, f"approved; the service reported an error: {(text or 'no detail')[:200]}")
+            _journal(job_dir, "outbox_failed", a, (text or "error")[:300])
+            _record(job_dir, a, f"approved; the service reported an error: {(text or 'no detail')[:200]}")
         else:
             _save(a, status="executed", executed_at=utc_now(), decided_at=utc_now(), result=text)
-            _journal(run_dir, "outbox_executed", a, (text or "done")[:300])
-            _record(run_dir, a, "approved" + (" after editing" if a.edited else "") + "; done")
+            _journal(job_dir, "outbox_executed", a, (text or "done")[:300])
+            _record(job_dir, a, "approved" + (" after editing" if a.edited else "") + "; done")
         return a
 
 
 def decline(home: Home, a: Action) -> Action:
-    run_dir = a.run_dir
-    with lock(run_dir):
-        _settle_locked(run_dir)
+    job_dir = a.job_dir
+    with lock(job_dir):
+        _settle_locked(job_dir)
         a = _reload(a)
         if a.status != "pending":
             raise OutboxError(f"{a.ref} is {a.status}, so it cannot be declined")
         _save(a, status="declined", decided_at=utc_now())
-        _journal(run_dir, "outbox_declined", a, "declined")
-        _record(run_dir, a, "declined; it will never run")
+        _journal(job_dir, "outbox_declined", a, "declined")
+        _record(job_dir, a, "declined; it will never run")
         return a
 
 
 def edit(home: Home, a: Action, arguments: Any) -> Action:
     """Replace an action's arguments after checking them. It stays waiting."""
-    run_dir = a.run_dir
-    with lock(run_dir):
-        _settle_locked(run_dir)
+    job_dir = a.job_dir
+    with lock(job_dir):
+        _settle_locked(job_dir)
         a = _reload(a)
         if a.status != "pending":
             raise OutboxError(f"{a.ref} is {a.status}, so it cannot be edited")
@@ -692,25 +692,25 @@ def edit(home: Home, a: Action, arguments: Any) -> Action:
         if problem:
             raise OutboxError(f"the edit was not saved: {problem}")
         _save(a, arguments=arguments, edited_at=utc_now())
-        _journal(run_dir, "outbox_edited", a, "arguments edited; still waiting")
-        _record(run_dir)
+        _journal(job_dir, "outbox_edited", a, "arguments edited; still waiting")
+        _record(job_dir)
         return a
 
 
 def resolve(home: Home, a: Action, sent: bool) -> Action:
     """Settle an uncertain action: it happened (executed) or it did not (back to waiting)."""
-    run_dir = a.run_dir
-    with lock(run_dir):
-        _settle_locked(run_dir)
+    job_dir = a.job_dir
+    with lock(job_dir):
+        _settle_locked(job_dir)
         a = _reload(a)
         if a.status != "uncertain":
             raise OutboxError(f"{a.ref} is {a.status}; only an uncertain action needs settling")
         if sent:
             _save(a, status="executed", resolved_at=utc_now(), result="marked as done by you")
-            _journal(run_dir, "outbox_resolved", a, "you marked it as done")
-            _record(run_dir, a, "you marked it as done")
+            _journal(job_dir, "outbox_resolved", a, "you marked it as done")
+            _record(job_dir, a, "you marked it as done")
         else:
             _save(a, status="pending", resolved_at=utc_now(), executing_at=None, executing_pid=None)
-            _journal(run_dir, "outbox_resolved", a, "you marked it as not done; waiting again")
-            _record(run_dir, a, "you marked it as not done; waiting again")
+            _journal(job_dir, "outbox_resolved", a, "you marked it as not done; waiting again")
+            _record(job_dir, a, "you marked it as not done; waiting again")
         return a

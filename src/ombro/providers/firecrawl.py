@@ -1,6 +1,6 @@
 """Firecrawl: search (POST /v2/search) and page retrieval as Markdown (POST /v2/scrape).
 
-Needs a key. The key is read from secrets/keys.env at every call, so a key set while a run
+Needs a key. The key is read from secrets/keys.env at every call, so a key set while a job
 is in progress is used from the next call on. No automatic retries: each
 attempt may cost credits, so a failure goes back to the role instead.
 """

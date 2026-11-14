@@ -141,8 +141,8 @@ def stats_lines(s: dict[str, Any]) -> list[str]:
         f"Working with {who}",
         "",
         f"{_n(c['crews_ready'], 'crew')} ready to work",
-        _n(c["active_runs"], "active run"),
-        _n(c["scheduled_runs"], "scheduled run"),
+        _n(c["active_jobs"], "active job"),
+        _n(c["scheduled_jobs"], "scheduled job"),
         f"{_n(c['waiting'], 'item')} to approve",
         "",
         f"Ombro v{s['version']}",
@@ -152,8 +152,8 @@ def stats_lines(s: dict[str, Any]) -> list[str]:
 def stats_line(s: dict[str, Any]) -> str:
     """The narrow tier's one line of stats."""
     c = s["counts"]
-    return " · ".join([f"{_n(c['crews_ready'], 'crew')} ready", _n(c["active_runs"], "active run"),
-                       _n(c["scheduled_runs"], "scheduled run"), f"{c['waiting']} to approve"])
+    return " · ".join([f"{_n(c['crews_ready'], 'crew')} ready", _n(c["active_jobs"], "active job"),
+                       _n(c["scheduled_jobs"], "scheduled job"), f"{c['waiting']} to approve"])
 
 
 def welcome(name: str, first: bool) -> str:
@@ -173,7 +173,7 @@ def greeting(name: str, now: datetime | None = None) -> str:
 def since_line(since: dict[str, Any]) -> str | None:
     parts = []
     if since["finished"]:
-        parts.append(f"{_n(since['finished'], 'run')} finished")
+        parts.append(f"{_n(since['finished'], 'job')} finished")
     if since["waiting"]:
         parts.append(f"{_n(since['waiting'], 'action')} waiting")
     return f"Since you were last here: {', '.join(parts)}." if parts else None

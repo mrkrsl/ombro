@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ombro import cron as cronmod
-from ombro import mdfile, memory, runs, scheduler, schedules
+from ombro import mdfile, memory, jobs, scheduler, schedules
 from ombro.home import Home
 from ombro.settings import SetupError, format_duration, format_tokens, load_limits
 
@@ -48,7 +48,7 @@ def _ago(ts: float, now: float) -> str:
 
 def _limits_line(lim) -> str:
     return (f"allowance {lim.allowance}: {format_tokens(lim.max_tokens)} tokens, {lim.max_rounds} rounds, "
-            f"{format_duration(lim.run_timeout)}")
+            f"{format_duration(lim.job_timeout)}")
 
 
 def _above(home: Home, lim) -> list[str]:
@@ -58,8 +58,8 @@ def _above(home: Home, lim) -> list[str]:
         out.append(f"tokens {lim.max_tokens:,} > {base.max_tokens:,}")
     if lim.max_rounds > base.max_rounds:
         out.append(f"rounds {lim.max_rounds} > {base.max_rounds}")
-    if lim.run_timeout > base.run_timeout:
-        out.append(f"time {format_duration(lim.run_timeout)} > {format_duration(base.run_timeout)}")
+    if lim.job_timeout > base.job_timeout:
+        out.append(f"time {format_duration(lim.job_timeout)} > {format_duration(base.job_timeout)}")
     return out
 
 
@@ -150,18 +150,18 @@ def _row(home: Home, s: schedules.Schedule, recent: list[tuple[Path, dict]], now
         try:
             schedules.prepare(home, s)
         except (SetupError, OSError, mdfile.FrontMatterError) as e:
-            out.append(f"  problem: its runs would fail to start: {e}")
+            out.append(f"  problem: its jobs would fail to start: {e}")
     return out
 
 
 def cmd_list(home: Home, crew: str | None) -> int:
     rows = schedules.all_schedules(home, crew)
-    by = schedules.scheduled_runs(home)
+    by = schedules.scheduled_jobs(home)
     now = datetime.now()
     if not rows:
         print('No schedules yet. Add one with `ombro schedule add <name> --spec <spec> --cron "30 7 * * 1-5"`.')
     else:
-        print(f"{'SCHEDULE':<30} {'ON':<4} {'CRON':<18} {'NEXT':<17} LAST RUN")
+        print(f"{'SCHEDULE':<30} {'ON':<4} {'CRON':<18} {'NEXT':<17} LAST JOB")
         for s in rows:
             for line in _row(home, s, by.get(s.name, []), now):
                 print(line)
@@ -189,13 +189,13 @@ def cmd_show(home: Home, s: schedules.Schedule) -> int:
                 print(f"          above limits.md: {', '.join(above)}")
             print(f"Grace     {format_duration(s.grace_for(p.limits))}")
         except (SetupError, OSError, mdfile.FrontMatterError) as e:
-            print(f"Problem   its runs would fail to start: {e}")
+            print(f"Problem   its jobs would fail to start: {e}")
     if s.cron:
         print("\nNext due:")
         for w in cronmod.describe_next(s.cron, datetime.now(), 5):
             print(f"  {w}")
-    recent = schedules.scheduled_runs(home).get(s.name, [])
-    print("\nRecent runs:" if recent else "\nNo runs yet.")
+    recent = schedules.scheduled_jobs(home).get(s.name, [])
+    print("\nRecent jobs:" if recent else "\nNo jobs yet.")
     for rd, m in recent[-5:]:
         print(f"  {str(m.get('due', ''))[:16].replace('T', ' ')}  {rd.name}  {m.get('status')}")
     noted = list(dict.fromkeys(ln for c in s.crews for ln in memory.schedule_entries(home, c, s.name)))
@@ -229,8 +229,8 @@ def cmd_add(home: Home, args) -> int:
     if not spec:
         if not saved:
             raise cli.CliError("There are no saved specs. Make one with `ombro brief` first; "
-                               "scheduled runs never interview.")
-        spec = _ask(f"Spec to run (saved: {', '.join(saved)})")
+                               "scheduled jobs never interview.")
+        spec = _ask(f"Spec to start (saved: {', '.join(saved)})")
         if not spec:
             print("Nothing saved.")
             return 1
@@ -253,8 +253,8 @@ def cmd_add(home: Home, args) -> int:
         limits["allowance"] = args.allowance
     if args.max_tokens:
         limits["max_tokens"] = args.max_tokens
-    if args.run_timeout:
-        limits["run_timeout"] = args.run_timeout
+    if args.job_timeout:
+        limits["job_timeout"] = args.job_timeout
     s = schedules.Schedule(name=name, path=path, cron_text=cron.text, cron=cron,
                            spec=f"specs/{spec}.md", enabled=not args.disabled, limits=limits)
     if args.grace:
@@ -265,11 +265,11 @@ def cmd_add(home: Home, args) -> int:
     try:
         p = schedules.prepare(home, s)
     except (SetupError, mdfile.FrontMatterError) as e:
-        raise cli.CliError(f"This schedule's runs could not start: {e}") from None
+        raise cli.CliError(f"This schedule's jobs could not start: {e}") from None
 
     print(f"\nSchedule {name}, saved as {path}")
-    print(f"  spec      {s.spec}: {runs.first_line(p.spec_body, 70)}")
-    print(f"  crews     {', '.join(runs.spec_crews(home, p.spec_meta))} (from the spec)")
+    print(f"  spec      {s.spec}: {jobs.first_line(p.spec_body, 70)}")
+    print(f"  crews     {', '.join(jobs.spec_crews(home, p.spec_meta))} (from the spec)")
     print(f"  cron      {cron.text} (local time)")
     print(f"  next      {'; '.join(cronmod.describe_next(cron, datetime.now(), 3))}")
     print(f"  limits    {_limits_line(p.limits)}")
@@ -317,7 +317,7 @@ def cmd_schedule(args) -> int:
         except OSError as e:
             raise cli.CliError(str(e)) from None
         print("Removed. Schedule files are kept. If you install it again, slots that fell due while it "
-              "was removed (up to a week back) are noted as missed in index.md, not run.")
+              "was removed (up to a week back) are noted as missed in index.md, not started.")
         return 0
     if action == "add":
         return cmd_add(home, args)
@@ -341,7 +341,7 @@ def cmd_schedule(args) -> int:
         s = schedules.load_schedule(home, s.path)
         print(f"{s.name} is {action}d.")
         if s.error:
-            print(f"It has a problem, so it will not run until it is fixed: {s.error}")
+            print(f"It has a problem, so it will not start jobs until it is fixed: {s.error}")
         elif on and s.cron:
             nxt = cronmod.describe_next(s.cron, datetime.now(), 1)
             print(f"It takes effect from its next slot: {nxt[0] if nxt else 'never'}.")
@@ -349,7 +349,7 @@ def cmd_schedule(args) -> int:
         return 0
     if action == "remove":
         if not cli._confirm(f"Remove schedule {s.name}? The file is moved to the "
-                            "removed/schedules/ folder; its runs are kept."):
+                            "removed/schedules/ folder; its jobs are kept."):
             print("Nothing changed.")
             return 1
         folder = home.removed_dir / "schedules"

@@ -95,7 +95,7 @@ class Installer:
             },
             "StartInterval": INTERVAL,
             "RunAtLoad": True,
-            # Runs started by tick live in their own session; never let launchd
+            # Jobs started by tick live in their own session; never let launchd
             # clean them up when tick itself exits.
             "AbandonProcessGroup": True,
             "StandardOutPath": "/dev/null",

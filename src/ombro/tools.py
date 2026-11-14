@@ -22,8 +22,8 @@ class ToolInputError(ToolError):
 
 
 class NotGranted(ToolInputError):
-    """A path outside the run and outside every folder shared with it. Recorded,
-    so the report can say which folders the run asked for."""
+    """A path outside the job and outside every folder shared with it. Recorded,
+    so the report can say which folders the job asked for."""
 
     def __init__(self, message: str, path: str):
         super().__init__(message)
@@ -31,14 +31,14 @@ class NotGranted(ToolInputError):
 
 
 class LayoutChanged(ToolInputError):
-    """A run folder (workspace/, scratch/) or a shared folder's root is no longer
-    a real folder at the path fixed when the run started. Nothing is done there."""
+    """A job folder (workspace/, scratch/) or a shared folder's root is no longer
+    a real folder at the path fixed when the job started. Nothing is done there."""
 
 
 @dataclass(frozen=True)
 class SharedFolder:
     name: str
-    path: Path  # the real path, fixed when the run started
+    path: Path  # the real path, fixed when the job started
     access: str  # read or write
 
     @property
@@ -46,17 +46,17 @@ class SharedFolder:
         return self.access == "write"
 
 
-# The run's own folders and each shared folder have one path, fixed when the run
+# The job's own folders and each shared folder have one path, fixed when the job
 # starts. Tools never work a root out again by following symlinks: a script may
 # change what is inside a folder, and if the folder itself were ever replaced,
 # following it would lead anywhere. So every use checks the root is still a real
 # folder at its fixed path, and refuses if it is not.
 
 
-def area_path(run_dir: Path, area: str) -> Path:
-    """The fixed path of workspace/ or scratch/. The run folder's own path cannot be
+def area_path(job_dir: Path, area: str) -> Path:
+    """The fixed path of workspace/ or scratch/. The job folder's own path cannot be
     changed by a role, so resolving it is safe; the area itself is never followed."""
-    return Path(os.path.realpath(run_dir)) / area
+    return Path(os.path.realpath(job_dir)) / area
 
 
 def _check_root(root: Path, label: str) -> Path:
@@ -70,8 +70,8 @@ def _check_root(root: Path, label: str) -> Path:
     return root
 
 
-def checked_area(run_dir: Path, area: str) -> Path:
-    return _check_root(area_path(run_dir, area), area)
+def checked_area(job_dir: Path, area: str) -> Path:
+    return _check_root(area_path(job_dir, area), area)
 
 
 def checked_shared(folder: SharedFolder) -> Path:
@@ -80,14 +80,14 @@ def checked_shared(folder: SharedFolder) -> Path:
 
 @dataclass
 class ToolContext:
-    run_dir: Path
+    job_dir: Path
     role: str
-    timeout: float = 60.0  # seconds this call may take: the lesser of a per-call cap and the run's time left
-    shared: dict[str, SharedFolder] = field(default_factory=dict)  # folders this run was given, by name
-    limits: Any = None  # the run's Limits, for tools with limits of their own (code.run)
-    cancelled: Callable[[], bool] | None = None  # true once the run is stopping
+    timeout: float = 60.0  # seconds this call may take: the lesser of a per-call cap and the job's time left
+    shared: dict[str, SharedFolder] = field(default_factory=dict)  # folders this job was given, by name
+    limits: Any = None  # the job's Limits, for tools with limits of their own (code.run)
+    cancelled: Callable[[], bool] | None = None  # true once the job is stopping
     event: Callable[..., None] | None = None  # write a journal event as this role: event(action, note, **fields)
-    # Files in shared folders whose old version this run has archived before replacing it.
+    # Files in shared folders whose old version this job has archived before replacing it.
     # None: archive before every replacement (chat, which has no backup clone).
     archived: set[str] | None = None
 
@@ -97,15 +97,15 @@ class ToolContext:
 
     def area(self, name: str) -> Path:
         """workspace/ or scratch/ at its fixed path; LayoutChanged if it is not a real folder."""
-        return checked_area(self.run_dir, name)
+        return checked_area(self.job_dir, name)
 
     @property
     def workspace(self) -> Path:
-        return self.run_dir / "workspace"
+        return self.job_dir / "workspace"
 
     @property
     def scratch(self) -> Path:
-        return self.run_dir / "scratch"
+        return self.job_dir / "scratch"
 
 
 @dataclass
@@ -114,7 +114,7 @@ class Tool:
     description: str
     parameters: dict[str, Any] = field(default_factory=lambda: {"type": "object", "properties": {}})
     handler: Callable[[dict, ToolContext], Any] | None = None
-    outward: bool = False  # reaches a service outside the run (every MCP tool)
+    outward: bool = False  # reaches a service outside the job (every MCP tool)
     effect: str | None = None  # for outward tools: read, change or send
     input_schema: dict[str, Any] | None = None  # the arguments the service takes, without `reason`
     reason_key: str | None = None  # the argument the harness adds for the role's reason, if any

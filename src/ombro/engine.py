@@ -1,4 +1,4 @@
-"""The Lead loop: one run, from spec to report."""
+"""The Lead loop: one job, from spec to report."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro import contract, folders, material, mdfile, memory, outbox, outward, prompts, report, runs
+from ombro import contract, folders, material, mdfile, memory, outbox, outward, prompts, report, jobs
 from ombro import skills as skills_mod
 from ombro import journal as journal_mod
 from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, make_client
@@ -76,7 +76,7 @@ class Engine:
     def __init__(
         self,
         home: Home,
-        run_dir: Path,
+        job_dir: Path,
         *,
         client_factory: Callable[[ModelSpec], ChatClient] | None = None,
         registry: ToolRegistry | None = None,
@@ -85,22 +85,22 @@ class Engine:
         today: date | None = None,
     ):
         self.home = home
-        self.run_dir = Path(run_dir)
-        meta, _ = runs.read_run(self.run_dir)
-        self.run_id = meta["run_id"]
-        self.crews = runs.run_crews(meta)
-        self.limits = Limits.from_dict(meta["limits"])  # fixed at run creation
+        self.job_dir = Path(job_dir)
+        meta, _ = jobs.read_job(self.job_dir)
+        self.job_id = meta["job_id"]
+        self.crews = jobs.job_crews(meta)
+        self.limits = Limits.from_dict(meta["limits"])  # fixed when the job was created
         self.clock = clock
-        self.journal = Journal(self.run_dir / "journal.jsonl", echo=echo)
-        # Tool settings, like limits, were fixed when the run was created.
-        self.tool_settings = ToolSettings.from_dict(meta.get("tools"), "run.md tools")
+        self.journal = Journal(self.job_dir / "journal.jsonl", echo=echo)
+        # Tool settings, like limits, were fixed when the job was created.
+        self.tool_settings = ToolSettings.from_dict(meta.get("tools"), "job.md tools")
         # So are the permissions for outward (MCP) tools.
         self.outward = meta.get("outward") or {"preset": outward.DEFAULT_PRESET, "source": "default"}
         self.pool: outward.McpPool | None = None
         self.refused_tools: set[str] = set()  # set to `permission: refuse` in tools.md: never offered
-        self.archived: set[str] = set()  # shared files whose pre-run version is in Archive/
-        self._learned: set[str] = set()  # models whose own output maximum was learned in this run
-        # So are the shared folders, checked against folders.md when the run was created.
+        self.archived: set[str] = set()  # shared files whose pre-job version is in Archive/
+        self._learned: set[str] = set()  # models whose own output maximum was learned in this job
+        # So are the shared folders, checked against folders.md when the job was created.
         self.shared = {f["name"]: SharedFolder(f["name"], Path(f["path"]), f["access"])
                        for f in meta.get("folders") or []}
         self.folders_left_out = list(meta.get("folders_left_out") or [])
@@ -119,7 +119,7 @@ class Engine:
         self.roles: dict[str, Role] = {}
         self.instructions = ""
         self.finished = False
-        # The local date, fixed for the run, so roles do not guess it.
+        # The local date, fixed for the job, so roles do not guess it.
         self.today = prompts.format_date(today or date.today())
 
     # -- set-up ------------------------------------------------------------
@@ -132,7 +132,7 @@ class Engine:
     def _load(self) -> None:
         self.models = load_models(self.home)
         if not self.crews:
-            raise SetupError("run.md names no crews")
+            raise SetupError("job.md names no crews")
         self.lead = load_lead(self.home, self.limits)
         self.roles = load_roles(self.home, self.crews, self.limits)
         self.instructions = load_preferences(self.home).instructions
@@ -164,7 +164,7 @@ class Engine:
         for s in skills_mod.library(self.home).values():
             if s.warning:
                 self.journal.write("harness", "warning", s.warning)
-        spec_meta, spec_body = mdfile.read(self.run_dir / "spec.md")
+        spec_meta, spec_body = mdfile.read(self.job_dir / "spec.md")
         self.spec_body = spec_body.strip()
         # `roles:` in the spec: who the work goes to (soft: the Lead may brief others for side tasks).
         self.spec_roles: list[str] = []
@@ -187,7 +187,7 @@ class Engine:
                         if t.startswith("mcp.") and self.registry.get(t) is None})
         if not names:
             return
-        self.pool = outward.McpPool(self.home, self.tool_settings, log_dir=self.run_dir)
+        self.pool = outward.McpPool(self.home, self.tool_settings, log_dir=self.job_dir)
         from ombro.mcp import ServerConfig
 
         for server in sorted({p[0] for n in names if (p := outward.split_name(n))}):
@@ -224,7 +224,7 @@ class Engine:
         if reason:
             self.code_unavailable = reason
             self.registry.remove("code.run")
-            self.journal.write("harness", "warning", f"code.run is left out of this run: {reason}. Roles that "
+            self.journal.write("harness", "warning", f"code.run is left out of this job: {reason}. Roles that "
                                "name it carry on without it.", tool="code.run")
 
     def _prepare_folders(self) -> None:
@@ -238,14 +238,14 @@ class Engine:
         for f in self.shared.values():
             entry: dict[str, Any] = {"name": f.name, "path": str(f.path), "access": f.access}
             if f.writable:
-                entry.update(folders.backup(self.run_dir, entry))
+                entry.update(folders.backup(self.job_dir, entry))
                 self._folders_before[f.name] = folders.manifest(f.path)
             recorded.append(entry)
             self.journal.write(
                 "harness", "folder_ready",
                 f"shared/{f.name} ({f.access}): {f.path}"
                 + (f"; {entry['backup_note']}" if f.writable else ""), folder=f.name, **entry)
-        runs.update_run(self.run_dir, folders=recorded)
+        jobs.update_job(self.job_dir, folders=recorded)
 
     def _record_folder_changes(self) -> None:
         """What changed in each writable shared folder, from before and after."""
@@ -264,7 +264,7 @@ class Engine:
 
     def _context(self, role: Role, tool: str) -> ToolContext:
         return ToolContext(
-            self.run_dir, role.name, timeout=self._tool_timeout(tool), shared=self.shared, limits=self.limits,
+            self.job_dir, role.name, timeout=self._tool_timeout(tool), shared=self.shared, limits=self.limits,
             archived=self.archived,
             cancelled=lambda: self.gate.stop_requested or self.gate.timed_out(),
             event=lambda action, note, **fields: self.journal.write(role.name, action, note, **fields),
@@ -315,11 +315,11 @@ class Engine:
     def request_stop(self, reason: str) -> None:
         self.gate.request_stop(reason)
 
-    # -- the run -----------------------------------------------------------
+    # -- the job -----------------------------------------------------------
 
     def execute(self) -> str:
-        runs.update_run(self.run_dir, status="running", pid=os.getpid(), started_at=utc_now())
-        self.journal.write("harness", "run_started", _short(runs.read_run(self.run_dir)[0].get("brief", "")))
+        jobs.update_job(self.job_dir, status="running", pid=os.getpid(), started_at=utc_now())
+        self.journal.write("harness", "job_started", _short(jobs.read_job(self.job_dir)[0].get("brief", "")))
         status, limit_hit = "completed", None
         try:
             self._load()
@@ -334,7 +334,7 @@ class Engine:
         except (ModelError, SetupError) as e:
             status = "failed"
             self.journal.write("harness", "failed", str(e))
-        except Exception as e:  # never leave a run without a report
+        except Exception as e:  # never leave a job without a report
             status = "failed"
             self.journal.write("harness", "failed", f"internal error: {type(e).__name__}: {e}")
             traceback.print_exc(file=sys.stderr)
@@ -346,27 +346,27 @@ class Engine:
         self._notes(status)
         try:
             self._skill_step(status)
-        except Exception as e:  # never leave a run without a report
+        except Exception as e:  # never leave a job without a report
             self.journal.write("harness", "skills", f"the skill step failed: {type(e).__name__}: {e}",
                                outcome="skipped")
         self._report(status)
-        runs.update_run(
-            self.run_dir,
+        jobs.update_job(
+            self.job_dir,
             status=status,
             limit_hit=limit_hit,
             finished_at=utc_now(),
             usage=self.gate.snapshot(),
-            **({"outbox": c} if (c := outbox.counts(self.run_dir)) else {}),
+            **({"outbox": c} if (c := outbox.counts(self.job_dir)) else {}),
         )
-        self.journal.write("harness", "run_ended", status)
+        self.journal.write("harness", "job_ended", status)
         try:
-            memory.add_index_entry(self.home, self.run_dir)
+            memory.add_index_entry(self.home, self.job_dir)
         except OSError as e:
-            print(f"ombro: could not add the run to index.md: {e}", file=sys.stderr)
+            print(f"ombro: could not add the job to index.md: {e}", file=sys.stderr)
         return status
 
     def _save_usage(self) -> None:
-        runs.update_run(self.run_dir, usage=self.gate.snapshot())
+        jobs.update_job(self.job_dir, usage=self.gate.snapshot())
 
     def _model_call(
         self,
@@ -386,7 +386,7 @@ class Engine:
             self._count_lost(role, spec.name, e.lost_attempts, est, max_out)
             self.journal.write(role.name, "model_error", str(e))
             if self.gate.timed_out():
-                raise LimitReached("run_timeout", "the run reached its time limit during a model call") from None
+                raise LimitReached("job_timeout", "the job reached its time limit during a model call") from None
             raise
         self._count_lost(role, spec.name, reply.lost_attempts, est, max_out)
         usage = reply.usage
@@ -465,7 +465,7 @@ class Engine:
             idle = 0
             for tc in reply.tool_calls:
                 if self.finished:
-                    messages.append(_tool_message(tc.id, {"error": "ignored: the run is finishing"}))
+                    messages.append(_tool_message(tc.id, {"error": "ignored: the job is finishing"}))
                     continue
                 out = self._lead_tool(tc)
                 src = None
@@ -481,7 +481,7 @@ class Engine:
         reading = tc.name == "skills__read"
         name = "memory.search" if searching else "skills.read" if reading else tc.name
         try:
-            # The Lead's own tools are bounded by max_rounds; memory.search has a per-run cap.
+            # The Lead's own tools are bounded by max_rounds; memory.search has a per-job cap.
             self.gate.check_tool_call("lead", name, _canonical(tc.arguments, tc.raw_arguments), capped=searching or reading)
         except ToolRefused as e:
             self.journal.write("lead", "tool_refused", f"{tc.name}: {e.detail}", limit=e.limit)
@@ -522,13 +522,13 @@ class Engine:
         query = str(args.get("query") or "")
         out = memory.search(
             self.home,
-            self.crews,  # a run sees only the memory of the crews its spec names
+            self.crews,  # a job sees only the memory of the crews its spec names
             query,
-            run_id=str(args.get("run_id") or "") or None,
-            exclude=self.run_dir,
+            job_id=str(args.get("job_id") or "") or None,
+            exclude=self.job_dir,
             max_chars=self.limits.memory_search_max_chars,
         )
-        found = ", ".join(sorted({r["run_id"] for r in out["results"]})) or "nothing"
+        found = ", ".join(sorted({r["job_id"] for r in out["results"]})) or "nothing"
         self.journal.write("lead", "memory_search", f"{_short(query, 100)}: {found}", tool="memory.search",
                            query=query, results=len(out["results"]))
         return out
@@ -585,7 +585,7 @@ class Engine:
         try:
             return self._role_loop(role, messages, schemas, by_wire)
         except BriefLimit as e:
-            # The brief ends; the run goes on and the Lead decides what to do.
+            # The brief ends; the job goes on and the Lead decides what to do.
             reason = f"stopped by {e.limit}: {e.detail}"
             self.journal.write(role.name, "returned", reason, status="stopped_by_limit", limit=e.limit, reason=reason)
             self._save_usage()
@@ -607,7 +607,7 @@ class Engine:
             messages.append(reply.as_message())
             if getattr(reply, "cut_off", False):
                 # Cut off at the output limit: nothing in the reply can be used. Say so plainly, so the role
-                # writes less at once, rather than calling it an invalid result (journal of the first real run).
+                # writes less at once, rather than calling it an invalid result (journal of the first real job).
                 cut += 1
                 self.journal.write(role.name, "reply_cut_off", f"the reply reached the output limit "
                                    f"({self.gate.limits.max_output_tokens:,} tokens) and was cut off", attempt=cut)
@@ -716,7 +716,7 @@ class Engine:
 
     def _outward_call(self, role: Role, tool: Tool, arguments: dict) -> dict[str, Any]:
         """A call that changes or sends something outside: allowed, staged or refused,
-        as the run's permissions say. Read calls go the ordinary way."""
+        as the job's permissions say. Read calls go the ordinary way."""
         name = tool.name
         args = dict(arguments)
         reason = str(args.pop(tool.reason_key, "") or "").strip() if tool.reason_key else ""
@@ -742,7 +742,7 @@ class Engine:
         args_note = _short(_canonical(args, ""), 120)
         if decision == "stage":
             try:
-                action, duplicate = outbox.stage(self.run_dir, tool=name, effect=tool.effect or "external",
+                action, duplicate = outbox.stage(self.job_dir, tool=name, effect=tool.effect or "external",
                                                  arguments=args, reason=reason, role=role.name,
                                                  input_schema=tool.input_schema)
             except outbox.OutboxBusy as e:
@@ -783,7 +783,7 @@ class Engine:
         from ombro.native import CALL_TIMEOUT
 
         cap = self.limits.code_timeout if tool == "code.run" else CALL_TIMEOUT
-        return max(0.5, min(cap, self.limits.run_timeout - self.gate.elapsed()))
+        return max(0.5, min(cap, self.limits.job_timeout - self.gate.elapsed()))
 
     # -- notes -------------------------------------------------------------
 
@@ -792,14 +792,14 @@ class Engine:
     def _notes(self, status: str) -> None:
         """The Lead rewrites its part of notes.md for each crew whose roles it briefed, one crew
         per call, before the report. Each is recorded as a `notes` event that the report shows."""
-        events = journal_mod.read(self.run_dir / "journal.jsonl")
+        events = journal_mod.read(self.job_dir / "journal.jsonl")
         if self.lead is None or self.lead.model not in self.models:
             self.journal.write("harness", "notes", "the Lead could not be loaded", outcome="skipped")
             return
         briefed = {str(e.get("crew") or "") for e in events if e.get("action") == "briefed"}
         crews = [c for c in self.crews if c in briefed]
         if not crews:
-            self.journal.write("harness", "notes", "no role was briefed, so this run had nothing new to teach",
+            self.journal.write("harness", "notes", "no role was briefed, so this job had nothing new to teach",
                                outcome="skipped")
             return
         self.gate.enter_report_phase("notes")
@@ -816,12 +816,12 @@ class Engine:
             current = memory.read_notes(self.home, crew)
         except OSError as e:
             return record("skipped", f"notes.md could not be read: {e}")
-        room = cap - memory.with_from_runs(current, "").size
-        facts = report.gather_facts(self.home, self.run_dir, status)
+        room = cap - memory.with_from_jobs(current, "").size
+        facts = report.gather_facts(self.home, self.job_dir, status)
         messages: list[dict] = [
             {"role": "system", "content": prompts.notes_system(self.lead, self.instructions, self.today)},
             {"role": "user", "content": prompts.notes_input(
-                current.from_you, current.from_runs, cap, room, report.narrative_input(facts), crew)},
+                current.from_you, current.from_jobs, cap, room, report.narrative_input(facts), crew)},
         ]
         # Keep enough of the reserve for the report: estimate its call before each notes call.
         report_worst = estimate_tokens([{"role": "user", "content": report.narrative_input(facts)}]) + 2_000 \
@@ -856,7 +856,7 @@ class Engine:
                     break
                 continue
             try:
-                old, new = memory.replace_from_runs(self.home, crew, tc.arguments.get("from_runs", ""), cap)
+                old, new = memory.replace_from_jobs(self.home, crew, tc.arguments.get("from_jobs", ""), cap)
             except memory.NotesError as e:
                 refused += 1
                 self.journal.write("lead", "notes_refused", _short(str(e), 300), attempt=refused, crew=crew)
@@ -876,15 +876,15 @@ class Engine:
     SKILL_CALLS = 4  # the proposal, or none, plus a few skill reads
 
     def _skill_step(self, status: str) -> None:
-        """The Lead may propose one skill, into the outbox, after a completed run in which a
+        """The Lead may propose one skill, into the outbox, after a completed job in which a
         role returned a result (specification 4.4). Recorded as a `skills` event."""
         def record(outcome: str, note: str, **extra: Any) -> None:
             self.journal.write("lead" if outcome in ("proposed", "none") else "harness", "skills", note,
                                outcome=outcome, **extra)
 
-        events = journal_mod.read(self.run_dir / "journal.jsonl")
+        events = journal_mod.read(self.job_dir / "journal.jsonl")
         if status != "completed":
-            return record("skipped", "the run did not complete, so no skill was considered", quiet=True)
+            return record("skipped", "the job did not complete, so no skill was considered", quiet=True)
         if not any(e.get("action") == "returned" and e.get("status") == "ok" for e in events):
             return record("skipped", "no role returned a result, so no skill was considered", quiet=True)
         if self.lead is None or self.lead.model not in self.models:
@@ -894,7 +894,7 @@ class Engine:
             return record("skipped", f"{waiting} skill proposals already wait for you, the most allowed; "
                           "no more are made until you decide some")
         self.gate.enter_report_phase("skills")
-        facts = report.gather_facts(self.home, self.run_dir, status)
+        facts = report.gather_facts(self.home, self.job_dir, status)
         cap = self.limits.skill_max_chars
         messages: list[dict] = [
             {"role": "system", "content": prompts.skill_system(self.lead, self.today)},
@@ -949,14 +949,14 @@ class Engine:
         name = str(args.get("name") or "").strip()
         reason = " ".join(str(args.get("reason") or "").split())
         text = skills_mod.compose(name, str(args.get("description") or ""), str(args.get("body") or ""),
-                                  {"source": f"run {self.run_id}"})
+                                  {"source": f"job {self.job_id}"})
         try:
             skills_mod.check(text, name, self.limits.skill_max_chars)
         except skills_mod.SkillError as e:
             self.journal.write("lead", "skills_refused", _short(str(e), 300))
             return {"error": str(e)}
         if not reason:
-            return {"error": "give `reason`: one sentence on what in this run shows the skill helps"}
+            return {"error": "give `reason`: one sentence on what in this job shows the skill helps"}
         raw_for = args.get("for") or []
         for_roles, unknown = [], []
         for who in raw_for if isinstance(raw_for, list) else [raw_for]:
@@ -968,7 +968,7 @@ class Engine:
         signs = material.flags(text)
         base = skills_mod.live_sha(self.home, name)
         try:
-            action, duplicate = outbox.stage_skill(self.run_dir, name=name, text=text, for_roles=for_roles,
+            action, duplicate = outbox.stage_skill(self.job_dir, name=name, text=text, for_roles=for_roles,
                                                    reason=reason, base_sha=base, flags=signs)
         except outbox.OutboxError as e:
             self.journal.write("harness", "skills", f"the proposal could not be staged: {e}", outcome="skipped")
@@ -989,7 +989,7 @@ class Engine:
         self.gate.enter_report_phase()
         narrative, note = None, None
         if self.lead is not None and self.lead.model in self.models:
-            facts = report.gather_facts(self.home, self.run_dir, status)
+            facts = report.gather_facts(self.home, self.job_dir, status)
             messages = [
                 {"role": "system", "content": prompts.report_system(self.lead, self.instructions, self.today)},
                 {"role": "user", "content": report.narrative_input(facts)},
@@ -1014,6 +1014,6 @@ class Engine:
         if note:
             self.journal.write("harness", "warning", f"report written without the Lead: {note}")
         self._save_usage()
-        facts = report.gather_facts(self.home, self.run_dir, status)
-        path = report.write(self.run_dir, report.render(facts, narrative, note))
+        facts = report.gather_facts(self.home, self.job_dir, status)
+        path = report.write(self.job_dir, report.render(facts, narrative, note))
         self.journal.write("lead" if narrative else "harness", "report_written", str(path))
