@@ -326,8 +326,8 @@ export function Crews() {
             </div>
             <div className="rows">
               <div className="row settings-row member">
-                <span className="row-name">{v.lead.title || "Lead"}</span>
-                <span className="row-detail">Over every crew</span>
+                <span className="row-name">{v.lead.title === "Lead" ? "Ombro Lead" : v.lead.title || "Ombro Lead"}</span>
+                <span className="row-detail">Lead</span>
                 <span className="row-detail">Model: {modelLabel(v.lead.model ?? "default", models.data)}</span>
                 <span className="row-actions">
                   <button className="text-button strong" onClick={() => setEditing({ crew: "", role: "lead" })}>

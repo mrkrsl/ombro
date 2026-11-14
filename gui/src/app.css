@@ -1047,7 +1047,7 @@ input[type="checkbox"]:not([role="switch"]) {
 
 /* -- Settings (designs 09–16) ------------------------------------------------------------ */
 
-.settings {
+.settings-screen {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
   gap: 24px;
@@ -1250,12 +1250,21 @@ input[type="checkbox"]:not([role="switch"]) {
 }
 
 /* Rows on the settings pages: name, detail, detail, actions. */
+/* The actions column has a fixed width, so the columns line up from row to row. */
 .settings-row {
-  grid-template-columns: minmax(150px, 0.9fr) minmax(140px, 1.4fr) minmax(120px, 1fr) auto;
+  grid-template-columns: minmax(130px, 1fr) minmax(120px, 1.4fr) minmax(110px, 1fr) 130px;
 }
 
-.settings-row.skill {
-  grid-template-columns: minmax(180px, 1fr) minmax(160px, 1.4fr) auto;
+.settings-row.tool {
+  grid-template-columns: minmax(130px, 1fr) minmax(120px, 1.4fr) minmax(110px, 1fr) 180px;
+}
+
+.settings-row.member {
+  grid-template-columns: minmax(150px, 1.1fr) 100px minmax(170px, 1.6fr) 110px;
+}
+
+.settings-row.three {
+  grid-template-columns: minmax(150px, 1fr) minmax(160px, 2fr) 130px;
 }
 
 .settings-row .row-name {

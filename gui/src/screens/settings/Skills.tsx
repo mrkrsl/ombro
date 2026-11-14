@@ -99,7 +99,7 @@ export function Skills() {
           {l.skills.length === 0 && <p className="muted">No skills yet.</p>}
           {l.skills.map((s) => (
             <div className="row-block" key={s.name}>
-              <div className="row settings-row skill">
+              <div className="row settings-row three">
                 <span className="row-name" title={s.description}>
                   {tidy(s.name)}
                 </span>

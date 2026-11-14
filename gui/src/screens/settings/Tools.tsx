@@ -261,7 +261,7 @@ export function Tools() {
             .filter((n) => n.tool in NATIVE)
             .map((n) => (
               <div className="row-block" key={n.tool}>
-                <div className="row settings-row">
+                <div className="row settings-row tool">
                   <span className="row-name">{NATIVE[n.tool]}</span>
                   <span className="row-detail">{(PROVIDERS[n.provider ?? ""] ?? n.provider ?? "").replace(/ \(.*\)$/, "")}</span>
                   <span className="row-detail">{n.calls ? `Up to ${n.calls} calls a job` : ""}</span>
@@ -280,7 +280,7 @@ export function Tools() {
             const [state, needs] = signInText(s);
             return (
               <div className="row-block" key={s.server}>
-                <div className="row settings-row">
+                <div className="row settings-row tool">
                   <span className="row-name">{tidy(s.server)}</span>
                   <span className="row-detail" title={where(s)}>
                     {where(s)}

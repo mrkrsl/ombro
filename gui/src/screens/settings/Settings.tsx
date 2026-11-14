@@ -29,7 +29,7 @@ export function Settings() {
   };
   return (
     <div className="page">
-      <div className="settings">
+      <div className="settings-screen">
         <nav className="settings-nav" aria-label="Settings">
           {PAGES.map(([id, label, icon]) => (
             <button

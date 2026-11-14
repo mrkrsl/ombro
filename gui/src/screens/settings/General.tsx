@@ -145,7 +145,7 @@ function Providers({ models, onChange }: { models: ModelList; onChange: (m: Mode
       <div className="rows">
         {providers.map((c) => (
           <div className="row-block" key={c.endpoint!}>
-            <div className="row settings-row">
+            <div className="row settings-row three">
               <span className="row-name">{c.label}</span>
               <span className="row-detail" title={c.models.map((m) => m.model).join(", ")}>
                 {c.endpoint}
