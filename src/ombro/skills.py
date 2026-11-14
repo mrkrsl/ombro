@@ -7,7 +7,7 @@ An older skill.md is read the same way.
 
 Prompts carry only each skill's name and description; the method is read on
 demand with `skills.read`, so a growing library does not grow the cost of a
-run. A role uses the skills its `skills:` line names, or every skill with
+job. A role uses the skills its `skills:` line names, or every skill with
 `skills: all`.
 
 A skill a model writes never becomes live without the user's yes: proposals
