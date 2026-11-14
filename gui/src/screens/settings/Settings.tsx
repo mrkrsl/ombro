@@ -1,7 +1,7 @@
 // Settings (designs 09–16): its own sub-navigation beside the page. /preferences, /crew, /folder,
 // /tools and /skills open it at their page.
 
-import { BadgeCheck, CircleUserRound, Folder, UsersRound, Wrench } from "lucide-react";
+import { BadgeCheck, CircleUserRound, Folder, UserRoundGroup, Wrench } from "lucide-react";
 import type { ReactElement } from "react";
 import { useStore, type SettingsPage } from "../../store/store";
 import { Crews } from "./Crews";
@@ -12,7 +12,7 @@ import { Tools } from "./Tools";
 
 const PAGES: [SettingsPage, string, ReactElement][] = [
   ["general", "General", <CircleUserRound key="g" size={22} />],
-  ["crews", "Crews", <UsersRound key="c" size={22} />],
+  ["crews", "Crews", <UserRoundGroup key="c" size={22} />],
   ["folders", "Folders", <Folder key="f" size={22} />],
   ["tools", "Tools", <Wrench key="t" size={22} />],
   ["skills", "Skills", <BadgeCheck key="s" size={22} />],

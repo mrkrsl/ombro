@@ -1019,11 +1019,6 @@ input[type="checkbox"]:not([role="switch"]) {
   gap: 16px;
 }
 
-/* The report page is solid: the window's blue arc doesn't show through it. */
-.report-page {
-  background: var(--bg);
-}
-
 .primary.back {
   display: inline-flex;
   align-items: center;

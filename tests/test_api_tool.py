@@ -151,3 +151,12 @@ def test_an_api_is_added_edited_and_removed_over_http(serve, home):
     assert serve.get("/tools/apis/podcasts/check")["blocked"] is None
     assert serve.http.delete("/tools/apis/podcasts").json()["apis"] == []
     assert "apis" not in mdfile.read(home.tools)[0]
+
+
+def test_the_terminal_lists_apis_too(home, api):
+    from test_outbox import ombro
+
+    out = ombro(home, "tools").stdout
+    assert "Web APIs (tools.md `apis:`)" in out
+    assert "podcasts" in out and "can change things or reach outside, max 5 calls, key PODCASTS_API_KEY" in out
+    assert KEY not in out

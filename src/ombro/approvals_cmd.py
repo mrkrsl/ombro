@@ -393,6 +393,14 @@ def cmd_tools(args) -> int:
 
             how += f"  ({oauth.status(home, r['server'])})"
         print(f"  {r['server']:<18}{how}")
+    print("\nWeb APIs (tools.md `apis:`), offered to every crew member:")
+    if not rows["apis"]:
+        print("  none yet. Add one in the desktop app (Settings › Tools), or under `apis:` in tools.md.")
+    what = {"read-only": "only looks things up", "internal": "changes things in your own tools",
+            "external": "can change things or reach outside"}
+    for r in rows["apis"]:
+        key = "" if not r["key"] else f", key {r['key']}" + ("" if r["key_set"] else " NOT SET")
+        print(f"  {r['name']:<18}{r['url']}  ({what.get(r['access'], r['access'])}, max {r['calls']} calls{key})")
     print(f"\nOutward permissions by default: {outward.describe(pref)}.")
     print("  " + "; ".join(f"{p}: {', '.join(f'{c} {v}' for c, v in outward.PRESETS[p].items())}"
                          for p in outward.PRESETS))
