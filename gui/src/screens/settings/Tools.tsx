@@ -5,7 +5,7 @@
 // their names, and a value left empty keeps the one stored.
 
 import { useEffect, useState } from "react";
-import type { KeyList, NativeTool, ServerRow, ToolList } from "../../api/types";
+import type { ApiRow, KeyList, NativeTool, ServerRow, ToolList } from "../../api/types";
 import { openLink } from "../../platform";
 import { useStore } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, shortPath, tidy, useAction, useRemoval, useView, type Check } from "./common";
@@ -19,7 +19,118 @@ export const PROVIDERS: Record<string, string> = {
 const CHOICES: Record<string, string[]> = { "web.search": ["duckduckgo", "firecrawl"], "web.fetch": ["direct", "firecrawl"] };
 const NEEDS_KEY: Record<string, string> = { firecrawl: "FIRECRAWL_API_KEY" };
 
-type Kind = "remote" | "local" | "builtin";
+type Kind = "remote" | "local" | "api" | "builtin";
+
+export const ACCESS: [string, string][] = [
+  ["read-only", "No, it only looks things up"],
+  ["internal", "Yes, in my own tools"],
+  ["external", "Yes, and it reaches people outside or spends money"],
+];
+const ACCESS_SHORT: Record<string, string> = {
+  "read-only": "Only looks things up",
+  internal: "Can change things in your own tools",
+  external: "Can change things or reach outside",
+};
+
+/** How an API's key is sent, as the form's choice and the name it's given. */
+export function sendKey(value: string): [string, string] {
+  if (value.startsWith("header:")) return ["header", value.slice(7)];
+  if (value.startsWith("query:")) return ["query", value.slice(6)];
+  return ["bearer", ""];
+}
+
+function ApiForm({ current, onDone, onCancel }: { current: ApiRow | null; onDone: (t: ToolList) => void; onCancel: () => void }) {
+  const { run, problem, busy } = useAction();
+  const [name, setName] = useState(current?.name ?? "");
+  const [url, setUrl] = useState(current?.url ?? "");
+  const [key, setKey] = useState("");
+  const [how, setHow] = useState(sendKey(current?.send_key ?? "bearer")[0]);
+  const [param, setParam] = useState(sendKey(current?.send_key ?? "bearer")[1]);
+  const [about, setAbout] = useState(current?.about ?? "");
+  const [howTo, setHowTo] = useState(current?.how_to ?? "");
+  const [access, setAccess] = useState(current?.access ?? "external");
+  const [calls, setCalls] = useState(String(current?.calls ?? 30));
+  const plain = url.trim().startsWith("http://");
+  async function save() {
+    const n = Number(calls);
+    const body = {
+      name, url: url.trim(), key: key || undefined, send_key: how, key_param: how === "bearer" ? undefined : param.trim(),
+      about, how_to: howTo, access, max_calls: Number.isInteger(n) && n > 0 ? n : undefined,
+    };
+    const t = current
+      ? await run((api) => api.put<ToolList>(`/tools/apis/${current.name}`, body))
+      : await run((api) => api.post<ToolList>("/tools/apis", body));
+    if (t) onDone(t);
+  }
+  return (
+    <div className="inline-form">
+      <h3>{current ? `Edit ${tidy(current.name)}` : "Add a web API"}</h3>
+      {!current && (
+        <Field label="Name" hint="A short name crews will know it by, such as podcasts.">
+          <input className="text-input short" value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+      )}
+      <Field
+        label="Address"
+        hint={plain ? "This address isn't https, so the key travels unencrypted. Fine on your own network; take care elsewhere." : "The API's base address, from its docs. Crews can only reach addresses under it."}
+      >
+        <input className="text-input" placeholder="e.g. https://api.podcastlist.com/v2" value={url} onChange={(e) => setUrl(e.target.value)} />
+      </Field>
+      <Field
+        label="Key"
+        hint={current?.key_set ? "A key is kept. Leave this empty to keep it." : "Kept on this computer and only sent to this address. Leave empty if it needs none."}
+      >
+        <input className="text-input" type="password" autoComplete="off" aria-label="Key" value={key} onChange={(e) => setKey(e.target.value)} />
+      </Field>
+      <Field label="How the key is sent" hint="The API's docs say which. Most use a bearer token.">
+        <span className="form-row tight">
+          <select aria-label="How the key is sent" value={how} onChange={(e) => setHow(e.target.value)}>
+            <option value="bearer">As a bearer token</option>
+            <option value="header">In a header</option>
+            <option value="query">In the address</option>
+          </select>
+          {how !== "bearer" && (
+            <input
+              aria-label={how === "header" ? "Header name" : "Name in the address"}
+              placeholder={how === "header" ? "X-API-Key" : "api_key"}
+              value={param}
+              onChange={(e) => setParam(e.target.value)}
+            />
+          )}
+        </span>
+      </Field>
+      <Field label="What it's for" hint="A line or two. The Lead decides from this when the API helps a brief.">
+        <input className="text-input" value={about} onChange={(e) => setAbout(e.target.value)} />
+      </Field>
+      <Field label="How to use it (optional)" hint="Its paths and what they return, pasted from its docs. For example: GET /episodes?q=… searches episodes by title.">
+        <textarea className="text-area" rows={5} value={howTo} maxLength={2000} onChange={(e) => setHowTo(e.target.value)} />
+      </Field>
+      <Field label="Can it change things?" hint="Lookups always run. Changes follow your approval mode, so some wait in Approvals.">
+        <span className="form-row tight">
+          <select aria-label="Can it change things?" value={access} onChange={(e) => setAccess(e.target.value)}>
+            {ACCESS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </span>
+      </Field>
+      <Field label="Calls a job may make">
+        <input className="text-input number" type="number" min={1} aria-label="Calls a job may make" value={calls} onChange={(e) => setCalls(e.target.value)} />
+      </Field>
+      <div className="form-actions">
+        <button className="primary" disabled={busy || (!current && !name.trim()) || !url.trim()} onClick={() => void save()}>
+          {current ? "Save" : "Add"}
+        </button>
+        <button className="secondary" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      <Problem text={problem} />
+    </div>
+  );
+}
 type Secret = { name: string; value: string; kept: boolean };
 
 /** How a server's sign-in reads, and whether it needs one now. */
@@ -253,7 +364,10 @@ export function Tools() {
   return (
     <>
       <h1 className="page-title">Connected tools</h1>
-      <p className="lede">The tools your crews can use. A crew member uses a tool once it's named in their settings.</p>
+      <p className="lede">
+        The tools your crews can use. Web APIs are offered to every crew member; other tools to the members whose
+        settings name them.
+      </p>
       <Problem text={tools.problem} />
       {t && (
         <div className="rows">
@@ -278,6 +392,46 @@ export function Tools() {
                 )}
               </div>
             ))}
+          {t.apis.map((a) => (
+            <div className="row-block" key={`api:${a.name}`}>
+              <Item
+                name={tidy(a.name)}
+                details={[
+                  <span title={a.url}>{a.url}</span>,
+                  ACCESS_SHORT[a.access] ?? a.access,
+                  a.key && !a.key_set ? <span className="problem-inline">No key yet</span> : null,
+                  `Up to ${a.calls} calls a job`,
+                ]}
+                actions={
+                  <>
+                    <button className="text-button strong" onClick={() => { setEditing(`api:${a.name}`); setAdding(null); }}>
+                      Edit
+                    </button>
+                    <button
+                      className="text-button strong"
+                      onClick={() => void removal.ask(`api:${a.name}`, () => useStore.getState().api!.get<Check>(`/tools/apis/${a.name}/check`))}
+                    >
+                      Delete
+                    </button>
+                  </>
+                }
+              />
+              {editing === `api:${a.name}` && (
+                <ApiForm current={a} onCancel={() => setEditing(null)} onDone={(x) => { tools.set(x); setEditing(null); }} />
+              )}
+              {removal.target === `api:${a.name}` && (
+                <RemovePanel
+                  removal={removal}
+                  what={tidy(a.name)}
+                  onConfirm={async () => {
+                    const x = await run((api) => api.del<ToolList>(`/tools/apis/${a.name}`));
+                    if (x) tools.set(x);
+                    return !!x;
+                  }}
+                />
+              )}
+            </div>
+          ))}
           {t.servers.map((s) => {
             const [state, needs] = signInText(s);
             return (
@@ -352,11 +506,14 @@ export function Tools() {
               >
                 <option value="remote">MCP - Online service</option>
                 <option value="local">MCP - On this computer</option>
-                <option value="builtin">API - Web search and reading pages</option>
+                <option value="api">API - Any web service</option>
+                <option value="builtin">Built in - Web search and reading pages</option>
               </select>
             </span>
           </Field>
-          {adding === "builtin" && t ? (
+          {adding === "api" ? (
+            <ApiForm current={null} onCancel={() => setAdding(null)} onDone={(x) => { tools.set(x); setAdding(null); }} />
+          ) : adding === "builtin" && t ? (
             <BuiltinForm tool={null} tools={t} onCancel={() => setAdding(null)} onDone={(x) => { tools.set(x); setAdding(null); }} />
           ) : (
             <ServerForm

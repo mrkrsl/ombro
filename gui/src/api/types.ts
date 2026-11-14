@@ -878,10 +878,28 @@ export interface Counts {
  * via the `definition` "ToolList".
  */
 export interface ToolList {
+  apis: ApiRow[];
   folders: string[];
   native: NativeTool[];
   sandbox: string | null;
   servers: ServerRow[];
+}
+/**
+ * A web API: its address and what it may do. Its key by name only, and whether it is set.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ApiRow".
+ */
+export interface ApiRow {
+  about: string;
+  access: string;
+  calls: number;
+  how_to: string;
+  key: string | null;
+  key_set: boolean;
+  name: string;
+  send_key: string;
+  url: string;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

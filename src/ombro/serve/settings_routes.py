@@ -285,6 +285,77 @@ def settings_routes(s: Serve) -> list[Route]:
         s.signing.pop(name, None)
         return {"signed_out": oauth.disconnect(home, name), **tools_view()}
 
+    # -- web APIs (the API tool design) ---------------------------------------------
+
+    def _api_entry(name: str, data: dict[str, Any], old: dict[str, Any] | None = None) -> tuple[dict, str | None]:
+        """The tools.md entry from the form, and the key to store, if one was typed. A key left
+        empty in an edit keeps the one there; `no_key` removes it."""
+        from ombro import apitool
+
+        how = str(data.get("send_key") or "bearer")
+        param = str(data.get("key_param") or "").strip()
+        if how in ("header", "query"):
+            if not param:
+                raise HttpError(400, "Say what the header or address value is called, as the API's docs do.")
+            how = f"{how}:{param}"
+        access = str(data.get("access") or "external")
+        max_calls = data.get("max_calls")
+        if max_calls is not None and (isinstance(max_calls, bool) or not isinstance(max_calls, int)):
+            raise HttpError(400, "`max_calls` is a whole number")
+        key_value = str(data.get("key") or "").strip()
+        entry: dict[str, Any] = {"url": _need(data, "url").strip(), "send_key": how,
+                                 "about": str(data.get("about") or ""), "class": access}
+        if str(data.get("how_to") or "").strip():
+            entry["how_to"] = str(data["how_to"]).strip()
+        if max_calls:
+            entry["max_calls"] = max_calls
+        if key_value:
+            entry["key"] = (old or {}).get("key") or apitool.key_name(name)
+        elif old and old.get("key") and data.get("no_key") is not True:
+            entry["key"] = old["key"]
+        apitool.check_apis({name: entry}, "the API")
+        return entry, key_value or None
+
+    def add_api(r: Request, data: dict[str, Any]) -> Any:
+        from ombro import apitool
+
+        name = re.sub(r"[^a-z0-9_-]+", "-", _need(data, "name").strip().lower()).strip("-")[:31]
+        if not name:
+            raise HttpError(400, "Give it a name, such as podcasts.")
+        entry, key_value = _api_entry(name, data)
+        apitool.add_api(home, name, entry)
+        if key_value:
+            keys.set_key(home, entry["key"], key_value)
+        return {**tools_view(), "added": name}
+
+    def edit_api(r: Request, data: dict[str, Any]) -> Any:
+        from ombro import apitool
+        from ombro.settings import load_tool_settings
+
+        name = r.path_params["name"]
+        old = load_tool_settings(home).apis.get(name)
+        if old is None:
+            raise LookupError(f"no API called {name!r}")
+        entry, key_value = _api_entry(name, data, old)
+        apitool.update_api(home, name, entry)
+        if key_value:
+            keys.set_key(home, entry["key"], key_value)
+        return tools_view()
+
+    def check_api(r: Request) -> Any:
+        from ombro.settings import load_tool_settings
+
+        if r.path_params["name"] not in load_tool_settings(home).apis:
+            raise LookupError(f"no API called {r.path_params['name']!r}")
+        return {"blocked": None, "warnings": ["Every crew member stops being offered it. Its key stays on this "
+                                              "computer until you remove it."]}
+
+    def remove_api(r: Request) -> Any:
+        from ombro import apitool
+
+        apitool.remove_api(home, r.path_params["name"])
+        return tools_view()
+
     # -- skills (C4) -----------------------------------------------------------------
 
     def skill_view(r: Request) -> Any:
@@ -359,6 +430,10 @@ def settings_routes(s: Serve) -> list[Route]:
         Route("/tools/servers/{name}", _handler(remove_server), methods=["DELETE"]),
         Route("/tools/servers/{name}/sign-in", _handler(sign_in), methods=["POST"]),
         Route("/tools/servers/{name}/sign-in", _handler(sign_out), methods=["DELETE"]),
+        Route("/tools/apis", _handler(add_api, status=201, with_body=True), methods=["POST"]),
+        Route("/tools/apis/{name}", _handler(edit_api, with_body=True), methods=["PUT"]),
+        Route("/tools/apis/{name}/check", _handler(check_api), methods=["GET"]),
+        Route("/tools/apis/{name}", _handler(remove_api), methods=["DELETE"]),
         Route("/tools/{tool}", _handler(set_native, with_body=True), methods=["PUT"]),
         Route("/skills", _handler(new_skill, status=201, with_body=True), methods=["POST"]),
         Route("/skills/{name}", _handler(skill_view), methods=["GET"]),

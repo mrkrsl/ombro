@@ -8,7 +8,8 @@ import { screenFor, useStore } from "../../store/store";
 import { crewName } from "./Crews";
 import { Settings } from "./Settings";
 import { usedBy, type Library } from "./Skills";
-import { signInText } from "./Tools";
+import { approvalTitle } from "../../store/approvals";
+import { sendKey, signInText } from "./Tools";
 import { shortPath } from "./common";
 
 type Call = [string, string, unknown?];
@@ -47,6 +48,8 @@ const tools: ToolList = {
   native: [{ tool: "web.search", provider: "duckduckgo", max_calls: null, calls: 60 },
     { tool: "web.fetch", provider: "direct", max_calls: null, calls: 100 }],
   servers: [remote], sandbox: null, folders: [],
+  apis: [{ name: "podcasts", url: "https://api.podcasts.invalid/v2", about: "Invented list.", how_to: "",
+    access: "read-only", send_key: "bearer", key: "PODCASTS_API_KEY", key_set: true, calls: 30 }],
 };
 const library: Library = {
   skills: [{ name: "fact-check", description: "Checks facts.", source: "you", path: "/x", used_by: ["legal/counsel"], warning: null }],
@@ -91,6 +94,9 @@ describe("the settings rules", () => {
     expect(signInText(remote)).toEqual(["Not signed in", true]);
     expect(signInText({ ...remote, sign_in: "signed in (renews itself)" })).toEqual(["Signed in (renews itself)", false]);
     expect(signInText({ ...remote, url: null, command: "uvx x==1" })).toEqual(["On this computer", false]);
+    expect(sendKey("header:X-API-Key")).toEqual(["header", "X-API-Key"]);
+    expect(approvalTitle("api.podcasts.request", { method: "POST", path: "/playlists", body: { title: "Invented list" } }))
+      .toBe("Send to /playlists in Podcasts: “Invented list”");
     expect(usedBy(library.skills[0], { ...library, all_skills: ["legal/assistant", "ops/clerk"] }, crews)).toBe("Legal Crew, Ops");
   });
 });
@@ -201,6 +207,25 @@ describe("Settings › Folders, Tools and Skills", () => {
     expect(sent("POST", "/tools/servers")).toEqual({ name: "sheets", url: "https://mcp.sheets.invalid", command: undefined,
       secrets: { Authorization: "sk-INVENTED" }, keep: [] });
     opened.mockRestore();
+  });
+
+  it("lists a web API and adds another, key and all", async () => {
+    useStore.setState({ settingsPage: "tools" });
+    replies["POST /tools/apis"] = tools;
+    render(<Settings />);
+    expect(await screen.findByText("Only looks things up")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add a tool" }));
+    await userEvent.selectOptions(screen.getByLabelText("Type"), "api");
+    await userEvent.type(screen.getByLabelText(/^Name/), "weather");
+    await userEvent.type(screen.getByLabelText(/^Address/), "http://192.168.1.20/api");
+    expect(screen.getByText(/the key travels unencrypted/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Key"), "wk-INVENTED");
+    await userEvent.selectOptions(screen.getByLabelText("How the key is sent"), "header");
+    await userEvent.type(screen.getByLabelText("Header name"), "X-API-Key");
+    await userEvent.type(screen.getByLabelText(/^What it's for/), "Invented weather.");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(sent("POST", "/tools/apis")).toEqual({ name: "weather", url: "http://192.168.1.20/api", key: "wk-INVENTED",
+      send_key: "header", key_param: "X-API-Key", about: "Invented weather.", how_to: "", access: "external", max_calls: 30 });
   });
 
   it("writes a new skill", async () => {

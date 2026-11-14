@@ -150,6 +150,58 @@
       "title": "Api",
       "type": "object"
     },
+    "ApiRow": {
+      "description": "A web API: its address and what it may do. Its key by name only, and whether it is set.",
+      "properties": {
+        "about": {
+          "type": "string"
+        },
+        "access": {
+          "type": "string"
+        },
+        "calls": {
+          "type": "integer"
+        },
+        "how_to": {
+          "type": "string"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key_set": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "send_key": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "about",
+        "how_to",
+        "access",
+        "send_key",
+        "key",
+        "key_set",
+        "calls"
+      ],
+      "title": "ApiRow",
+      "type": "object"
+    },
     "ApprovalDetail": {
       "properties": {
         "arguments": {
@@ -2752,6 +2804,12 @@
     },
     "ToolList": {
       "properties": {
+        "apis": {
+          "items": {
+            "$ref": "#/$defs/ApiRow"
+          },
+          "type": "array"
+        },
         "folders": {
           "items": {
             "type": "string"
@@ -2784,6 +2842,7 @@
       "required": [
         "native",
         "servers",
+        "apis",
         "sandbox",
         "folders"
       ],

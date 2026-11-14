@@ -313,6 +313,11 @@ def load_limits(
     per_tool: dict[str, dict] = {"tool_max_calls": {}}
     for name in PROVIDER_TOOLS:  # a free provider gets more calls than one that bills for each
         per_tool["tool_max_calls"][name] = PROVIDER_CALLS.get((name, tools.provider_for(name)), 30)
+    from ombro.apitool import DEFAULT_CALLS, tool_names
+
+    for api, cfg in tools.apis.items():  # each of a web API's tools gets its call limit
+        for name in tool_names(api, cfg):
+            per_tool["tool_max_calls"][name] = cfg.get("max_calls") or DEFAULT_CALLS
     for name, cfg in tools.tools.items():
         if "max_calls" in cfg:
             per_tool["tool_max_calls"][name] = cfg["max_calls"]
@@ -350,19 +355,21 @@ SERVER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,30}$")
 class ToolSettings:
     """Per-tool settings from tools.md. `tools` maps a tool name to its settings;
     `providers` maps a provider name to its own settings (such as which key it uses);
-    `servers` maps an MCP server's name to how to start or reach it."""
+    `servers` maps an MCP server's name to how to start or reach it; `apis` maps a web API's
+    name to its address, key and what it may do (ombro.apitool)."""
 
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
     servers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    apis: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any] | None, where: str = "tools.md") -> "ToolSettings":
         d = d or {}
-        unknown = set(d) - {"tools", "providers", "servers"}
+        unknown = set(d) - {"tools", "providers", "servers", "apis"}
         if unknown:
             raise SetupError(f"{where}: unknown setting(s): {', '.join(sorted(unknown))} "
-                             "(use tools:, providers: and servers:)")
+                             "(use tools:, providers:, servers: and apis:)")
         raw_tools = d.get("tools") or {}
         raw_providers = d.get("providers") or {}
         raw_servers = d.get("servers") or {}
@@ -454,11 +461,17 @@ class ToolSettings:
                 parts = name.split(".", 2)
                 if len(parts) != 3 or not parts[2]:
                     raise SetupError(f"{where}: {name} should be mcp.<server>.<tool>")
-        return cls(tools=tools, providers=providers, servers=servers)
+        from ombro.apitool import check_apis
+
+        apis = check_apis(d.get("apis") or {}, where)
+        return cls(tools=tools, providers=providers, servers=servers, apis=apis)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"tools": copy.deepcopy(self.tools), "providers": copy.deepcopy(self.providers),
-                "servers": copy.deepcopy(self.servers)}
+        out = {"tools": copy.deepcopy(self.tools), "providers": copy.deepcopy(self.providers),
+               "servers": copy.deepcopy(self.servers)}
+        if self.apis:
+            out["apis"] = copy.deepcopy(self.apis)
+        return out
 
     def provider_for(self, tool: str) -> str:
         return self.tools.get(tool, {}).get("provider") or PROVIDER_TOOLS[tool][1]

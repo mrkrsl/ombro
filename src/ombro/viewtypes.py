@@ -241,9 +241,24 @@ class ServerRow(TypedDict):
     problem: str | None  # why the last sign-in from the app failed
 
 
+class ApiRow(TypedDict):
+    """A web API: its address and what it may do. Its key by name only, and whether it is set."""
+
+    name: str
+    url: str
+    about: str
+    how_to: str
+    access: str  # read-only, internal or external: what its changes are
+    send_key: str  # bearer, header:<Name> or query:<param>
+    key: str | None
+    key_set: bool
+    calls: int
+
+
 class ToolList(TypedDict):
     native: list[NativeTool]
     servers: list[ServerRow]
+    apis: list[ApiRow]
     sandbox: str | None  # why code.run can't work here, or None
     folders: list[str]
 

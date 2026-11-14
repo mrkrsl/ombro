@@ -8,7 +8,7 @@ there. --open then starts the built app on it (macOS):
     open --env OMBRO_HOME=~/ombro-demo gui/src-tauri/target/release/bundle/macos/Ombro.app
 
 What is in it: four crews with roles, two skills, three model providers (only the canned one is
-used), built-in tools with providers,
+used), built-in tools with providers, a web API,
 two MCP servers (one local, one remote), two keys (dummy values), a shared folder,
 saved specs, three chats, four finished jobs (one that made a file, one with two
 actions waiting for approval, one that failed), and two schedules.
@@ -102,6 +102,20 @@ def demo_providers(home) -> None:
         models.add_models(home, "http://192.168.1.100:1234/v1", None, ["local-model"])
 
 
+def demo_api(home) -> None:
+    """A web API to see on Settings › Tools, at a placeholder address with a dummy key."""
+    from ombro import apitool, keys
+    from ombro.settings import load_tool_settings
+
+    if "podcasts" in load_tool_settings(home).apis:
+        return
+    apitool.add_api(home, "podcasts", {"url": "https://api.example.com/podcasts/v2", "key": "PODCASTS_API_KEY",
+                                       "send_key": "bearer", "class": "read-only",
+                                       "about": "Our list of podcast episodes, searchable by title and guest.",
+                                       "how_to": "GET /episodes?q=… searches episodes by title."})
+    keys.set_key(home, "PODCASTS_API_KEY", "demo-not-a-real-key")
+
+
 def build(root: Path) -> None:
     os.environ["OMBRO_HOME"] = str(root)
     from ombro import fake, folders, keys, mdfile, schedules, skills
@@ -150,6 +164,7 @@ def build(root: Path) -> None:
         }}, "The demo profile's tools. Nothing here reaches a real service.")
     keys.set_key(home, "FIRECRAWL_API_KEY", "demo-not-a-real-key")
     keys.set_key(home, "NOTION_TOKEN", "demo-not-a-real-token")
+    demo_api(home)
 
     print("a shared folder")
     shared = root.parent / f"{root.name}-files"
@@ -231,6 +246,7 @@ def main(argv: list[str]) -> int:
         from ombro.home import Home
 
         demo_providers(Home(root))  # added in stage 7; a demo made before then gets them too
+        demo_api(Home(root))
     else:
         build(root)
     if "--open" in argv:

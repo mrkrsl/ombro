@@ -321,7 +321,14 @@ def tool_list(home: Home, settings=None, signing: dict | None = None) -> vt.Tool
         servers.append({"server": name, "command": cfg.get("command"), "args": cfg.get("args") or [],
                         "url": cfg.get("url"), "secrets": secrets, "sign_in": sign_in,
                         "signing_in": state.get("state") == "waiting", "problem": state.get("problem")})
-    return {"native": native, "servers": servers, "sandbox": sandbox.unavailable_reason(),
+    from ombro import apitool
+
+    apis: list[vt.ApiRow] = [{"name": n, "url": c["url"], "about": c.get("about") or "", "how_to": c.get("how_to") or "",
+                              "access": c.get("class") or "external", "send_key": c.get("send_key") or "bearer",
+                              "key": c.get("key"), "key_set": bool(c.get("key") and keys.get_key(home, c["key"])),
+                              "calls": c.get("max_calls") or apitool.DEFAULT_CALLS}
+                             for n, c in settings.apis.items()]
+    return {"native": native, "servers": servers, "apis": apis, "sandbox": sandbox.unavailable_reason(),
             "folders": folders.granted_names(home)}
 
 

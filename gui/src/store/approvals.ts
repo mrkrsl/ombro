@@ -21,7 +21,7 @@ function capital(s: string): string {
 /** Where a tool lives, readably: `mcp.sheets.post_message` → "Sheets"; built-ins have none. */
 export function toolPlace(tool: string): string {
   const parts = tool.split(".");
-  if (parts[0] === "mcp" && parts.length >= 3) return parts.slice(1, -1).map((p) => capital(words(p))).join(" ");
+  if ((parts[0] === "mcp" || parts[0] === "api") && parts.length >= 3) return parts.slice(1, -1).map((p) => capital(words(p))).join(" ");
   return "";
 }
 
@@ -56,8 +56,18 @@ export function gist(args: unknown, n = 80): string {
   return text.length <= n ? text : text.slice(0, n - 1) + "…";
 }
 
+// A web API request in words, by its method.
+const METHODS: Record<string, string> = { GET: "Look up", POST: "Send to", PUT: "Replace", PATCH: "Change", DELETE: "Delete" };
+
 /** The row's title: what it will do, and its gist. */
 export function approvalTitle(tool: string, args: unknown): string {
+  if (tool.startsWith("api.") && args && typeof args === "object") {
+    const a = args as Record<string, unknown>;
+    const method = String(a.method ?? (tool.endsWith(".get") ? "GET" : "POST")).toUpperCase();
+    const g = gist(a.body);
+    const what = `${METHODS[method] ?? method} ${String(a.path ?? "")} in ${toolPlace(tool)}`;
+    return g ? `${what}: “${g}”` : what;
+  }
   const g = gist(args);
   return g ? `${toolAction(tool)}: “${g}”` : toolAction(tool);
 }

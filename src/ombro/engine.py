@@ -137,6 +137,7 @@ class Engine:
         self.roles = load_roles(self.home, self.crews, self.limits)
         self.instructions = load_preferences(self.home).instructions
         self._load_mcp()
+        self._load_apis()
         self._prepare_code()
         self._prepare_folders()
         for role in [self.lead, *self.roles.values()]:
@@ -213,6 +214,22 @@ class Engine:
             self.journal.write("harness", "mcp_ready", f"{len(tools)} MCP tool(s): " + ", ".join(
                 f"{t.name} ({t.effect}: {outward.decide(self.outward, t.name, t.effect, self.tool_settings)})"
                 for t in tools), outward=self.outward)
+
+    def _load_apis(self) -> None:
+        """Offer each web API in tools.md to every crew member (not the Lead), as its tools."""
+        from ombro.apitool import api_tools
+
+        tools = [t for t in api_tools(self.home, self.tool_settings.apis)
+                 if not outward.refused(t.name, self.tool_settings)]
+        if not tools:
+            return
+        for t in tools:
+            self.registry.register(t)
+        for role in self.roles.values():
+            role.tools.extend(t.name for t in tools if t.name not in role.tools)
+        self.journal.write("harness", "apis_ready", f"{len(tools)} API tool(s): " + ", ".join(
+            f"{t.name} ({t.effect}: {outward.decide(self.outward, t.name, t.effect or 'external', self.tool_settings)})"
+            for t in tools))
 
     def _prepare_code(self) -> None:
         """code.run is offered only where the sandbox can be set up. Code never runs unconfined."""
