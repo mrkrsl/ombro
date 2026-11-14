@@ -358,3 +358,27 @@ def test_reopening_a_saved_chat_shows_it_again(serve):
     assert serve.get(f"/sessions/{again}")["chat"] == name
     assert serve.http.post("/sessions", json={"chat": "no-such-chat"}).status_code == 404
     ws.close()
+
+
+def test_schedules_over_http(serve, home):
+    mdfile.write(home.specs_dir / "invented-news.md", {"name": "invented-news"}, "# Invented news\n\nCheck it.\n")
+    rows = serve.post("/schedules", {"name": "news-briefing", "spec": "invented-news", "cron": "0 6 * * 1-5"},
+                      status=201)
+    assert rows[0]["when"] == "Runs weekdays at 6am" and rows[0]["enabled"] is True
+    assert serve.http.post("/schedules", json={"name": "news-briefing", "spec": "invented-news",
+                                                "cron": "0 6 * * 1-5"}).status_code == 400  # not new
+    assert serve.http.post("/schedules", json={"name": "bad", "spec": "invented-news",
+                                                "cron": "61 * * * *"}).status_code == 400
+    assert serve.http.put("/schedules/news-briefing", json={"cron": "0 18 * * 4"}).json()[0]["when"] == \
+        "Runs Thursdays at 6pm"
+    assert serve.http.post("/schedules/news-briefing/disable").json() == {"name": "news-briefing", "enabled": False}
+    gone = serve.http.delete("/schedules/news-briefing").json()
+    assert gone["schedules"] == [] and "/removed/schedules/" in gone["moved_to"]
+    assert serve.http.delete("/schedules/news-briefing").status_code == 404
+
+
+def test_the_feed_and_notifications_preferences(serve, home):
+    prefs = serve.get("/preferences")
+    assert prefs["background_feed"] is True and prefs["notifications"] is True
+    assert serve.http.put("/preferences", json={"background_feed": False}).json()["background_feed"] is False
+    assert serve.http.put("/preferences", json={"notifications": "no"}).status_code == 400

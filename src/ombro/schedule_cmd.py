@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import time
 from datetime import datetime
 from pathlib import Path
@@ -352,12 +351,7 @@ def cmd_schedule(args) -> int:
                             "removed/schedules/ folder; its jobs are kept."):
             print("Nothing changed.")
             return 1
-        folder = home.removed_dir / "schedules"
-        folder.mkdir(parents=True, exist_ok=True)
-        target = folder / s.path.name
-        if target.exists():
-            target = folder / f"{s.path.stem}-{time.strftime('%Y%m%d-%H%M%S')}.md"
-        shutil.move(str(s.path), str(target))
+        target = schedules.remove_schedule(home, s)
         print(f"Moved it to {target}.")
         return 0
     raise cli.CliError(f"Unknown schedule action {action!r}.")

@@ -117,6 +117,15 @@ def find_approval(home: Home, ref: str) -> outbox.Action:
         raise
 
 
+def find_schedule(home: Home, name: str):
+    from ombro import schedules
+
+    try:
+        return schedules.find_schedule(home, name)
+    except SetupError as e:
+        raise LookupError(str(e)) from None
+
+
 class Serve:
     """What serve keeps while it runs: the home, the live sessions, the open sockets and the job watcher."""
 
@@ -325,7 +334,8 @@ def _session_routes(s: Serve) -> list[Route]:
     ]
 
 
-PREFERENCE_KEYS = {"name": str, "theme": str, "default_crew": str, "editor": str}
+PREFERENCE_KEYS = {"name": str, "theme": str, "default_crew": str, "editor": str, "background_feed": bool,
+                   "notifications": bool}
 
 
 def _action_routes(s: Serve) -> list[Route]:
@@ -375,10 +385,42 @@ def _action_routes(s: Serve) -> list[Route]:
         def run(r: Request) -> Any:
             from ombro import schedules
 
-            sch = schedules.find_schedule(home, r.path_params["name"])
+            sch = find_schedule(home, r.path_params["name"])
             schedules.set_enabled(sch.path, enabled)
             return {"name": sch.name, "enabled": enabled}
         return run
+
+    def add_schedule(r: Request, data: dict[str, Any]) -> Any:
+        """A new schedule: a saved spec, when (cron), and a name. Off until it is enabled, unless asked."""
+        from ombro import cron as cronmod
+        from ombro import schedules
+        from ombro.roles import NAME
+
+        name, spec, cron_text = _need(data, "name"), _need(data, "spec"), _need(data, "cron")
+        if not NAME.match(name) or (home.schedules_dir / f"{name}.md").exists():
+            raise HttpError(400, "schedule names use lower-case letters, digits, - and _, and must be new")
+        if not (home.specs_dir / f"{spec.removesuffix('.md')}.md").is_file():
+            raise HttpError(400, f"there's no saved spec called {spec!r}")
+        cronmod.parse(cron_text)
+        schedules.write_schedule(home, name, " ".join(cron_text.split()), spec.removesuffix(".md"),
+                                 bool(data.get("enabled", True)))
+        return views.schedule_list(home)
+
+    def edit_schedule(r: Request, data: dict[str, Any]) -> Any:
+        from ombro import schedules
+
+        sch = find_schedule(home, r.path_params["name"])
+        schedules.set_timing(sch.path, _need(data, "cron"))
+        return views.schedule_list(home)
+
+    def delete_schedule(r: Request) -> Any:
+        from ombro import schedules
+
+        sch = find_schedule(home, r.path_params["name"])
+        return {"moved_to": str(schedules.remove_schedule(home, sch)), "schedules": views.schedule_list(home)}
+
+    def seen(r: Request) -> Any:
+        return {"seen": jobs.mark_seen(jobs.find_job(home, r.path_params["job_id"]))}
 
     def add_crew(r: Request, data: dict[str, Any]) -> Any:
         from ombro.home import ensure_crew
@@ -479,6 +521,10 @@ def _action_routes(s: Serve) -> list[Route]:
         Route("/approvals/approve", _handler(decide(True), with_body=True, after=after), methods=["POST"]),
         Route("/approvals/decline", _handler(decide(False), with_body=True, after=after), methods=["POST"]),
         Route("/approvals/{ref}/resolve", _handler(resolve, with_body=True, after=after), methods=["POST"]),
+        Route("/schedules", _handler(add_schedule, status=201, with_body=True, after=after), methods=["POST"]),
+        Route("/schedules/{name}", _handler(edit_schedule, with_body=True), methods=["PUT"]),
+        Route("/schedules/{name}", _handler(delete_schedule, after=after), methods=["DELETE"]),
+        Route("/jobs/{job_id}/seen", _handler(seen, after=after), methods=["POST"]),
         Route("/schedules/{name}/enable", _handler(schedule(True), after=after), methods=["POST"]),
         Route("/schedules/{name}/disable", _handler(schedule(False), after=after), methods=["POST"]),
         Route("/crews", _handler(add_crew, status=201, with_body=True, after=after), methods=["POST"]),

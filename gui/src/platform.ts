@@ -16,3 +16,22 @@ export async function openLink(href: string): Promise<void> {
   if (href.startsWith("file:")) await opener.openPath(decodeURIComponent(new URL(href).pathname));
   else await opener.openUrl(href);
 }
+
+/** A system notification. In the app it asks once for permission; in a browser it uses the
+ * browser's own, where allowed. */
+export async function notify(title: string, body: string): Promise<void> {
+  try {
+    if (inTauri) {
+      const n = await import("@tauri-apps/plugin-notification");
+      let ok = await n.isPermissionGranted();
+      if (!ok) ok = (await n.requestPermission()) === "granted";
+      if (ok) n.sendNotification({ title, body });
+      return;
+    }
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") await Notification.requestPermission();
+    if (Notification.permission === "granted") new Notification(title, { body });
+  } catch {
+    // A notification that can't be shown is not worth an error.
+  }
+}

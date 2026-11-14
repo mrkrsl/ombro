@@ -441,7 +441,9 @@ def test_a_job_ending_posts_a_notice_and_marks_it_seen(home, job):
                 if any("Your job has finished." in t for t in _texts(app)):
                     break
             texts = _texts(app)
-            assert any(f"{job_id} · lead briefed" in t for t in texts)
+            from ombro.jobs import job_name
+
+            assert any(f"{job_name(job_id)} · lead briefed" in t for t in texts)  # by its readable name (C6)
             notice = next(t for t in texts if "Your job has finished." in t)
             assert "Here's what it made:" in notice and "The note:" in notice and f"/report {job_id}" in notice
 

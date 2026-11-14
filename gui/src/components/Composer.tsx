@@ -36,7 +36,9 @@ export function Composer({ conversation }: { conversation: Conversation | null }
     area.current?.focus();
   }, [question?.id, conversation?.id]);
 
-  useEffect(() => setPick(0), [text]);
+  useEffect(() => {
+    setPick(0);
+  }, [text]);
 
   function grow(el: HTMLTextAreaElement) {
     el.style.height = "auto";

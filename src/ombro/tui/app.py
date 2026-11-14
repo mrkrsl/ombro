@@ -381,6 +381,15 @@ class OmbroApp(App):
     def following(self) -> dict[str, Any]:
         return self.watcher.following
 
+    def background_feed(self) -> bool:
+        """Whether jobs' progress lines show in the conversation (a preference, on unless turned off)."""
+        from ombro.settings import load_preferences
+
+        try:
+            return load_preferences(self.home).background_feed
+        except Exception:  # noqa: BLE001 - a preferences file being written
+            return True
+
     def _follow_started(self, job_id: str) -> None:
         from ombro.journal import Follower
 
@@ -589,7 +598,8 @@ class OmbroApp(App):
             self.add_line(Note(event.text, level="done"), "note")
             return
         if isinstance(event, JobProgress):
-            self.add_line(Progress(event.text), "progress")
+            if self.background_feed():
+                self.add_line(Progress(event.text), "progress")
             return
         if isinstance(event, JobEnded):
             from ombro.tui.commands import render_notice

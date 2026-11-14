@@ -158,6 +158,12 @@
         "class": {
           "type": "string"
         },
+        "crews": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "edited": {
           "type": "boolean"
         },
@@ -202,6 +208,7 @@
       },
       "required": [
         "ref",
+        "crews",
         "long_ref",
         "job_id",
         "job_name",
@@ -222,6 +229,12 @@
       "properties": {
         "class": {
           "type": "string"
+        },
+        "crews": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "edited": {
           "type": "boolean"
@@ -256,6 +269,7 @@
       },
       "required": [
         "ref",
+        "crews",
         "long_ref",
         "job_id",
         "job_name",
@@ -1421,6 +1435,12 @@
             }
           ]
         },
+        "tool_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "total_tokens": {
           "type": "integer"
         },
@@ -1456,7 +1476,8 @@
         "limits",
         "outbox",
         "outward",
-        "folders"
+        "folders",
+        "tool_names"
       ],
       "title": "JobStatus",
       "type": "object"
@@ -1838,6 +1859,9 @@
     },
     "Preferences": {
       "properties": {
+        "background_feed": {
+          "type": "boolean"
+        },
         "default_crew": {
           "type": "string"
         },
@@ -1859,6 +1883,9 @@
         "name": {
           "type": "string"
         },
+        "notifications": {
+          "type": "boolean"
+        },
         "outward": {
           "type": "string"
         },
@@ -1874,6 +1901,8 @@
         "editor",
         "outward",
         "instructions_set",
+        "background_feed",
+        "notifications",
         "files"
       ],
       "title": "Preferences",
@@ -2311,6 +2340,12 @@
         },
         "spec": {
           "type": "string"
+        },
+        "spec_title": {
+          "type": "string"
+        },
+        "when": {
+          "type": "string"
         }
       },
       "required": [
@@ -2319,6 +2354,8 @@
         "cron",
         "spec",
         "crews",
+        "when",
+        "spec_title",
         "next",
         "last_job",
         "problem",

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window. Serve is started from Rust, so the web view needs no shell access. It may move the window by its title bar and open links and files with the system.",
+  "description": "The main window. Serve is started from Rust, so the web view needs no shell access. It may move the window by its title bar and open links and files with the system, and send system notifications when a job ends.",
   "windows": [
     "main"
   ],
@@ -16,6 +16,7 @@
           "path": "**"
         }
       ]
-    }
+    },
+    "notification:default"
   ]
 }

@@ -101,6 +101,7 @@ export interface AnswerReply {
  */
 export interface ApprovalRow {
   class: string;
+  crews: string[];
   edited: boolean;
   job_id: string;
   job_name: string;
@@ -119,6 +120,7 @@ export interface ApprovalRow {
 export interface ApprovalDetail {
   arguments: unknown;
   class: string;
+  crews: string[];
   edited: boolean;
   job_id: string;
   job_name: string;
@@ -319,6 +321,7 @@ export interface JobStatus {
   source: string;
   started_at: string | null;
   status: string | null;
+  tool_names: string[];
   total_tokens: number;
   usage: {
     [k: string]: unknown;
@@ -385,6 +388,7 @@ export interface ModelEntry {
  * via the `definition` "Preferences".
  */
 export interface Preferences {
+  background_feed: boolean;
   default_crew: string;
   default_crew_title: string;
   editor: string;
@@ -393,6 +397,7 @@ export interface Preferences {
   };
   instructions_set: boolean;
   name: string;
+  notifications: boolean;
   outward: string;
   theme: string;
 }
@@ -465,6 +470,8 @@ export interface ScheduleRow {
   path: string;
   problem: string | null;
   spec: string;
+  spec_title: string;
+  when: string;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

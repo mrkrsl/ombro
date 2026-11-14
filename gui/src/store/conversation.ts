@@ -6,6 +6,7 @@ import type {
   FileView,
   JobEnded,
   QuestionMessage,
+  Report,
   ServerMessage,
 } from "../api/types";
 
@@ -17,7 +18,8 @@ export type Line =
   | { key: string; kind: "error"; text: string }
   | { key: string; kind: "proposal"; files: FileView[]; warnings: string[] }
   | { key: string; kind: "job"; text: string; jobId: string }
-  | { key: string; kind: "ended"; event: JobEnded };
+  | { key: string; kind: "ended"; event: JobEnded }
+  | { key: string; kind: "report"; report: Report };
 
 export type Mode = "Chat" | "Brief";
 export type SessionState = "working" | "waiting" | "idle" | "ended";
@@ -42,6 +44,21 @@ export function newConversation(id: string, kind = "chat", lines: Line[] = []): 
 export function addLocal(c: Conversation, kind: "you" | "lead", text: string): Conversation {
   const local = c.local + 1;
   return { ...c, local, lines: [...c.lines, { key: `local-${local}`, kind, text }] };
+}
+
+/** A job's report, opened in the conversation (design 19). */
+export function addReport(c: Conversation, report: Report): Conversation {
+  const local = c.local + 1;
+  return { ...c, local, lines: [...c.lines, { key: `local-${local}`, kind: "report", report }] };
+}
+
+/** A report's two parts: what you read, and Ombro's record of how the job went. */
+export function splitReport(text: string): { head: string; record: string } {
+  for (const mark of ["\n---\n# Ombro's record", "\n# Ombro's record"]) {
+    const i = text.indexOf(mark);
+    if (i >= 0) return { head: text.slice(0, i).trimEnd(), record: text.slice(i).replace(/^\n---\n/, "\n").trim() };
+  }
+  return { head: text.trimEnd(), record: "" };
 }
 
 /** Labels that only say "your turn": the question's prompt isn't shown as a line for them. */

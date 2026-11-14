@@ -544,6 +544,8 @@ class Preferences:
     editor: str = ""
     instructions: str = ""
     outward: Any = None
+    background_feed: bool = True  # jobs' progress lines in the conversation
+    notifications: bool = True  # the desktop app's system notifications when a job ends
 
 
 def set_preference(home: Home, key: str, value: Any) -> None:
@@ -576,6 +578,8 @@ def load_preferences(home: Home) -> Preferences:
         prefs.default_crew = str(meta.get("default_crew") or DEFAULT_CREW)
         prefs.editor = str(meta.get("editor") or "")
         prefs.outward = meta.get("outward")
+        prefs.background_feed = meta.get("background_feed") is not False
+        prefs.notifications = meta.get("notifications") is not False
     if home.instructions.is_file():
         _, body = mdfile.read(home.instructions)
         prefs.instructions = mdfile.prompt_text(body)

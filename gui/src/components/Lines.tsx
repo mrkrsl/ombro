@@ -4,6 +4,7 @@ import type { Line } from "../store/conversation";
 import { useStore } from "../store/store";
 import { openLink } from "../platform";
 import { Markdown } from "./Markdown";
+import { ReportCard } from "./ReportCard";
 
 export function Lines({ lines }: { lines: Line[] }) {
   return (
@@ -17,6 +18,8 @@ export function Lines({ lines }: { lines: Line[] }) {
 
 function LineView({ line }: { line: Line }) {
   const show = useStore((s) => s.show);
+  const readReport = useStore((s) => s.readReport);
+  const feedOn = useStore((s) => s.prefs?.background_feed !== false);
   switch (line.kind) {
     case "lead":
       return <Markdown className="line lead" text={line.text} />;
@@ -36,8 +39,16 @@ function LineView({ line }: { line: Line }) {
         </div>
       );
     case "progress":
+      return <div className="line progress">{line.text}</div>;
     case "job":
-      return <div className={`line ${line.kind}`}>{line.text}</div>;
+      // A job's progress, unless "updates in main chat" is off (the inspector still shows it).
+      return feedOn ? (
+        <div className="line job">
+          <b>Background:</b> {line.text}
+        </div>
+      ) : null;
+    case "report":
+      return <ReportCard report={line.report} />;
     case "error":
       return <div className="line error">{line.text}</div>;
     case "proposal":
@@ -95,7 +106,7 @@ function LineView({ line }: { line: Line }) {
               </button>
             </p>
           )}
-          <button className="link-button" onClick={() => show("report", e.job_id)}>
+          <button className="link-button" onClick={() => void readReport(e.job_id, true)}>
             Read the report
           </button>
         </div>

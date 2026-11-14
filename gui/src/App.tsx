@@ -1,19 +1,24 @@
 // The window: sidebar, main column (title bar, page, foot). The page is the home screen, a
 // conversation, or one of the pages to come.
 
-import { useEffect } from "react";
+import { useEffect, type ReactElement } from "react";
 import { PanelLeft, PanelRight } from "lucide-react";
 import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
 import { Conversation } from "./screens/Conversation";
 import { Home, HomeGreeting } from "./screens/Home";
+import { Inspector } from "./components/Inspector";
+import { Approvals } from "./screens/Approvals";
+import { Jobs } from "./screens/Jobs";
 import { Placeholder } from "./screens/Placeholder";
+import { ReportPage } from "./screens/ReportPage";
+import { Scheduled } from "./screens/Scheduled";
 import { isMac } from "./platform";
 import { useStore } from "./store/store";
 
 export default function App() {
   const s = useStore();
-  const { status, problem, screen, current, conversations, sidebar, theme, titles } = s;
+  const { status, problem, screen, current, conversations, sidebar, theme, titles, inspector } = s;
 
   useEffect(() => {
     void useStore.getState().start();
@@ -39,10 +44,16 @@ export default function App() {
 
   const conversation = current ? conversations[current] ?? null : null;
   const inChat = screen === "chat" && conversation;
+  const PAGE_TITLES: Record<string, string> = {
+    jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Report",
+  };
   const title =
     screen === "chat"
       ? (current && titles[current]) || (conversation?.kind === "setup" ? "Setting up Ombro" : "New chat")
-      : "";
+      : PAGE_TITLES[screen] ?? "";
+  const pages: Record<string, ReactElement> = {
+    jobs: <Jobs />, approvals: <Approvals />, scheduled: <Scheduled />, report: <ReportPage />,
+  };
 
   return (
     <div className={`window ${isMac ? "mac" : "linux"}`}>
@@ -57,21 +68,29 @@ export default function App() {
           <div className="title" data-tauri-drag-region>
             {title}
           </div>
-          <button className="icon-button" aria-label="Show the inspector" title="The inspector comes in the next stage" disabled>
-            <PanelRight size={22} />
-          </button>
+          {!inspector && (
+            <button className="icon-button" aria-label="Show the inspector" onClick={s.toggleInspector}>
+              <PanelRight size={22} />
+            </button>
+          )}
         </div>
         {screen === "home" && <Home />}
         {inChat && <Conversation conversation={conversation} />}
-        {!inChat && screen !== "home" && <Placeholder screen={screen} args={s.screenArgs} />}
-        {(screen === "home" || inChat) && (
-          <>
-            {screen === "home" && <HomeGreeting />}
-            <Composer conversation={inChat ? conversation : null} />
-          </>
-        )}
+        {!inChat && screen !== "home" && (pages[screen] ?? <Placeholder screen={screen} args={s.screenArgs} />)}
+        {screen === "home" && <HomeGreeting />}
+        <Composer conversation={inChat ? conversation : null} />
         {status === "lost" && <div className="notice column">Reconnecting to Ombro…</div>}
       </main>
+      {inspector && (
+        <div className="inspector-wrap">
+          <div className="inspector-top" data-tauri-drag-region>
+            <button className="icon-button" aria-label="Hide the inspector" onClick={s.toggleInspector}>
+              <PanelRight size={22} />
+            </button>
+          </div>
+          <Inspector />
+        </div>
+      )}
     </div>
   );
 }

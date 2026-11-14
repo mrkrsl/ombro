@@ -539,3 +539,339 @@
   color: var(--muted);
   text-align: center;
 }
+
+/* -- the inspector (design 06) ------------------------------------------------------ */
+
+.inspector-wrap {
+  width: 300px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.inspector-top {
+  height: 52px;
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.inspector {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+
+.inspector section {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.inspector h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--strong);
+}
+
+.inspector p {
+  margin: 6px 0 0;
+}
+
+.inspector ul.small {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.feed {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 0 !important;
+}
+
+.feed-lines {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.feed-lines p {
+  margin: 0 0 12px;
+}
+
+.feed-lines .ended-line {
+  font-weight: 600;
+}
+
+/* a switch, from a checkbox */
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.switch input {
+  appearance: none;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  position: relative;
+  cursor: pointer;
+  flex: none;
+  margin: 0;
+}
+
+.switch input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: transform 0.15s;
+}
+
+.switch input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch input:checked::after {
+  transform: translateX(16px);
+  background: var(--bg);
+}
+
+/* -- pages: Jobs, Approvals, Scheduled (designs 07, 08) ------------------------------ */
+
+.wide-page {
+  max-width: 960px;
+  padding-top: 24px;
+  padding-bottom: 24px;
+}
+
+.page-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--strong);
+  margin: 0 0 24px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row-block + .row-block,
+.rows > .row + .row {
+  border-top: 1px solid var(--rule);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.1fr) minmax(120px, 1.2fr) minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 0;
+  font-size: 16px;
+}
+
+.row-block > .row:has(> input[type="checkbox"]) {
+  grid-template-columns: auto minmax(160px, 1.6fr) minmax(100px, 0.8fr) minmax(120px, 0.8fr);
+}
+
+.row-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-detail,
+.row-when {
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  justify-content: flex-end;
+}
+
+.row-open {
+  padding: 0 0 16px 28px;
+  font-size: 14px;
+}
+
+.row-open pre {
+  background: var(--hover);
+  border-radius: 8px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+
+.badge {
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--menu-pick);
+  color: var(--accent);
+  vertical-align: middle;
+}
+
+.text-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.text-button.strong {
+  color: var(--strong);
+  font-weight: 600;
+}
+
+.text-button.plain {
+  color: var(--text);
+  text-align: left;
+}
+
+.confirm {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.primary {
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  padding: 10px 24px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary.small {
+  padding: 6px 16px;
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.check-all {
+  display: inline-flex;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.form-row input,
+.form-row select {
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.new-schedule {
+  margin-top: 28px;
+}
+
+/* -- a report (design 19) ------------------------------------------------------------- */
+
+.report-card {
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.05);
+}
+
+.report-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 22px;
+  background: var(--hover);
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.report-head a {
+  color: var(--accent);
+}
+
+.report-tools {
+  display: inline-flex;
+  gap: 16px;
+}
+
+.report-body {
+  padding: 8px 24px 18px;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.report-body h4 {
+  margin: 18px 0 6px;
+}
+
+.report-body .record {
+  color: var(--muted);
+  font-size: 14px;
+}

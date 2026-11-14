@@ -192,5 +192,43 @@ def next_slots(cron: Cron, after: datetime, n: int, horizon_days: int = 366 * 5)
     return out
 
 
+DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
+
+
+def _clock(hour: int, minute: int) -> str:
+    """6am, 6:30pm, noon, midnight."""
+    if (hour, minute) == (12, 0):
+        return "noon"
+    if (hour, minute) == (0, 0):
+        return "midnight"
+    h = hour % 12 or 12
+    return f"{h}{':%02d' % minute if minute else ''}{'am' if hour < 12 else 'pm'}"
+
+
+def describe(cron: Cron) -> str:
+    """When a schedule runs, in words where it is simple ("Runs weekdays at 6am"); otherwise its
+    cron expression. Only a single time a day is put in words."""
+    full_month = cron.months == frozenset(range(1, 13))
+    if len(cron.minutes) != 1 or len(cron.hours) != 1 or not full_month:
+        return f"Runs at {cron.text}"
+    at = _clock(next(iter(cron.hours)), next(iter(cron.minutes)))
+    if cron.day_star and cron.weekday_star:
+        return f"Runs every day at {at}"
+    if cron.day_star:
+        days = sorted(cron.weekdays)
+        if days == [1, 2, 3, 4, 5]:
+            return f"Runs weekdays at {at}"
+        if days == [0, 6]:
+            return f"Runs weekends at {at}"
+        names = [DAY_NAMES[d] for d in days]
+        joined = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        return f"Runs {joined} at {at}"
+    if cron.weekday_star and len(cron.days) == 1:
+        d = next(iter(cron.days))
+        suffix = "th" if 10 <= d % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+        return f"Runs on the {d}{suffix} of each month at {at}"
+    return f"Runs at {cron.text}"
+
+
 def describe_next(cron: Cron, now: datetime, n: int = 3) -> list[str]:
     return [w.strftime("%a %d %b %Y %H:%M") for w in next_slots(cron, now, n)]

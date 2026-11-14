@@ -96,7 +96,7 @@ def progress_line(job_id: str, ev: dict) -> str | None:
     if not what:
         return None
     note = " ".join(str(ev.get("note") or "").split())
-    return f"{job_id} · {ev.get('role', '')} {what}" + (f": {note[:100]}" if note else "")
+    return f"{jobs.job_name(job_id)} · {ev.get('role', '')} {what}" + (f": {note[:100]}" if note else "")
 
 
 def job_progress(job_id: str, ev: dict) -> JobProgress | None:
@@ -260,8 +260,10 @@ class Session:
         if self.chat is not None:
             self.chat.note_job(job_id)
         self.on_started(job_id)
-        self.ui.show(JobStarted(job_id, jobs.job_name(job_id),
-                                f"Started job {job_id}. Keep chatting; its progress and its notice appear here."))
+        name = jobs.job_name(job_id)
+        self.ui.show(JobStarted(job_id, name,
+                                f"Started '{name}' ({job_id}). Keep chatting; its progress and its notice "
+                                "appear here."))
         return job_id
 
     def start_job(self, spec: str, roles: list[str] | None = None) -> str | None:

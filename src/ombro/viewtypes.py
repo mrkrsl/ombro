@@ -92,6 +92,7 @@ class JobStatus(JobRow):
     outbox: dict[str, int]
     outward: dict[str, Any]
     folders: list[Any]
+    tool_names: list[str]
 
 
 class Deliverable(TypedDict):
@@ -135,7 +136,7 @@ class ChatDetail(ChatRow):
 # -- approvals ---------------------------------------------------------------------
 
 ApprovalRow = TypedDict("ApprovalRow", {
-    "ref": str, "long_ref": str, "job_id": str, "job_name": str, "status": str, "tool": str, "summary": str,
+    "ref": str, "crews": list[str], "long_ref": str, "job_id": str, "job_name": str, "status": str, "tool": str, "summary": str,
     "role": str, "reason": str, "class": str, "edited": bool,
 })
 
@@ -179,6 +180,8 @@ class ScheduleRow(TypedDict):
     cron: str
     spec: str
     crews: list[str]
+    when: str  # in words where simple: "Runs weekdays at 6am"
+    spec_title: str
     next: str | None
     last_job: LastJob | None
     problem: str | None
@@ -215,6 +218,8 @@ class Preferences(TypedDict):
     editor: str
     outward: str
     instructions_set: bool
+    background_feed: bool
+    notifications: bool
     files: dict[str, str]
 
 

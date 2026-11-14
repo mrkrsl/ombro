@@ -3,8 +3,24 @@
 
 import { create } from "zustand";
 import { client, events, handshake, type Client, type ServerMessage } from "../api/serve";
-import type { ChatRow, CommandView, CountsMessage, InputReply, SessionView, Summary } from "../api/types";
-import { addLocal, apply, greeting, newConversation, type Conversation } from "./conversation";
+import type {
+  ApprovalRow,
+  ChatRow,
+  CommandView,
+  CountsMessage,
+  InputReply,
+  JobRow,
+  Preferences,
+  Report,
+  ScheduleRow,
+  SessionView,
+  SpecRow,
+  Summary,
+} from "../api/types";
+import { notify } from "../platform";
+import { addLocal, addReport, apply, greeting, newConversation, type Conversation } from "./conversation";
+
+export type FeedLine = { key: number; jobId: string; name: string; line: string; status: string };
 
 export type Screen = "home" | "chat" | "jobs" | "approvals" | "scheduled" | "settings" | "report";
 export type Theme = "light" | "dark";
@@ -27,6 +43,14 @@ type State = {
   theme: Theme;
   notice: string; // a short line under the input, e.g. a failed send
   chatOn: string | null; // the saved chat on screen, by name
+  inspector: boolean;
+  prefs: Preferences | null;
+  feed: FeedLine[]; // every job's progress since the window opened, newest last
+  jobs: JobRow[];
+  approvals: ApprovalRow[];
+  schedules: ScheduleRow[];
+  specs: SpecRow[];
+  report: Report | null; // on the report page
 };
 
 type Actions = {
@@ -41,11 +65,20 @@ type Actions = {
   openChat: (name: string) => Promise<void>;
   setMode: (mode: "Chat" | "Brief") => Promise<void>;
   toggleSidebar: () => void;
+  toggleInspector: () => void;
   setTheme: (theme: Theme, save?: boolean) => void;
+  setPref: (key: "background_feed" | "notifications", value: boolean) => Promise<void>;
+  load: (screen?: Screen) => Promise<void>;
+  readReport: (jobId: string, inChat: boolean) => Promise<void>;
+  decide: (approve: boolean, refs: string[]) => Promise<string[]>;
+  stopJob: (jobId: string) => Promise<void>;
+  call: <T>(fn: (api: Client) => Promise<T>) => Promise<T | undefined>;
 };
 
 let socket: WebSocket | null = null;
 let started = false;
+let feedKey = 0;
+const FEED_KEEP = 300;
 
 function systemTheme(): Theme {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -107,6 +140,14 @@ export const useStore = create<State & Actions>((set, get) => {
     theme: systemTheme(),
     notice: "",
     chatOn: null,
+    inspector: false,
+    prefs: null,
+    feed: [],
+    jobs: [],
+    approvals: [],
+    schedules: [],
+    specs: [],
+    report: null,
 
     async start() {
       if (started) return; // React runs effects twice in development
@@ -135,18 +176,35 @@ export const useStore = create<State & Actions>((set, get) => {
         api.get<Summary>("/summary").catch(() => null),
         api.get<ChatRow[]>("/chats").catch(() => []),
         api.get<CommandView[]>("/commands").catch(() => []),
-        api.get<{ theme: string }>("/preferences").catch(() => null),
+        api.get<Preferences>("/preferences").catch(() => null),
       ]);
-      set({ summary, chats, commands });
+      set({ summary, chats, commands, prefs });
       if (prefs && (prefs.theme === "light" || prefs.theme === "dark")) get().setTheme(prefs.theme, false);
     },
 
     receive(m) {
       if (m.type === "counts") {
+        const before = get().counts;
         set({ counts: m });
+        if (before && (before.waiting !== m.waiting || before.active !== m.active || before.scheduled !== m.scheduled)) {
+          void get().load();
+        }
         return;
       }
-      if (m.type === "job") return; // the background feed comes with the inspector (stage 5)
+      if (m.type === "job") {
+        const line: FeedLine = { key: ++feedKey, jobId: m.job_id, name: m.name, line: m.line, status: m.status };
+        set((s) => ({ feed: [...s.feed, line].slice(-FEED_KEEP) }));
+        if (m.event.type === "job_ended") {
+          const e = m.event;
+          if (get().prefs?.notifications !== false) {
+            const waiting = e.waiting ? ` ${e.waiting} waiting for your approval.` : "";
+            void notify(e.name, `${e.text}${waiting}`);
+          }
+          void get().load();
+          void get().refresh();
+        }
+        return;
+      }
       if (!("session" in m) || !m.session) return;
       const id = m.session;
       const c = get().conversations[id];
@@ -165,12 +223,87 @@ export const useStore = create<State & Actions>((set, get) => {
     },
 
     goHome() {
-      set({ screen: "home", current: null, notice: "", chatOn: null });
+      set({ screen: "home", current: null, notice: "", chatOn: null, report: null });
       void get().refresh();
     },
 
     show(screen, args = "") {
       set({ screen, screenArgs: args });
+      if (screen === "report" && args) void get().readReport(args, false);
+      else void get().load(screen);
+    },
+
+    async load(screen = get().screen) {
+      const api = get().api;
+      if (!api) return;
+      try {
+        if (screen === "jobs") set({ jobs: (await api.get<JobRow[]>("/jobs")).slice().reverse() });
+        if (screen === "approvals") set({ approvals: await api.get<ApprovalRow[]>("/approvals") });
+        if (screen === "scheduled") {
+          const [schedules, specs] = await Promise.all([api.get<ScheduleRow[]>("/schedules"), api.get<SpecRow[]>("/specs")]);
+          set({ schedules, specs });
+        }
+        if (screen === "chat" || get().inspector) {
+          // The inspector shows the chat's job and the approvals waiting for it.
+          const [jobs, approvals, schedules] = await Promise.all([
+            api.get<JobRow[]>("/jobs"),
+            api.get<ApprovalRow[]>("/approvals"),
+            api.get<ScheduleRow[]>("/schedules"),
+          ]);
+          set({ jobs: jobs.slice().reverse(), approvals, schedules });
+        }
+      } catch (e) {
+        set({ notice: e instanceof Error ? e.message : String(e) });
+      }
+    },
+
+    async readReport(jobId, inChat) {
+      const api = get().api;
+      if (!api) return;
+      try {
+        const report = await api.get<Report>(`/jobs/${encodeURIComponent(jobId)}/report`);
+        void api.post(`/jobs/${encodeURIComponent(jobId)}/seen`).catch(() => undefined);
+        const id = get().current;
+        if (inChat && id && get().conversations[id]) {
+          set((s) => ({ conversations: { ...s.conversations, [id]: addReport(s.conversations[id], report) } }));
+        } else {
+          set({ report, screen: "report", screenArgs: jobId });
+        }
+      } catch (e) {
+        set({ notice: e instanceof Error ? e.message : String(e) });
+      }
+    },
+
+    async decide(approve, refs) {
+      const api = get().api;
+      if (!api || !refs.length) return [];
+      try {
+        const r = await api.post<{ results: { ref: string; status: string; error?: string }[] }>(
+          approve ? "/approvals/approve" : "/approvals/decline",
+          { refs },
+        );
+        await get().load("approvals");
+        return r.results.filter((x) => x.error).map((x) => `${x.ref}: ${x.error}`);
+      } catch (e) {
+        return [e instanceof Error ? e.message : String(e)];
+      }
+    },
+
+    async stopJob(jobId) {
+      await get().call((api) => api.post(`/jobs/${encodeURIComponent(jobId)}/stop`));
+      await get().load("jobs");
+    },
+
+    async call(fn) {
+      const api = get().api;
+      if (!api) return undefined;
+      try {
+        set({ notice: "" });
+        return await fn(api);
+      } catch (e) {
+        set({ notice: e instanceof Error ? e.message : String(e) });
+        return undefined;
+      }
     },
 
     async send(text) {
@@ -194,6 +327,7 @@ export const useStore = create<State & Actions>((set, get) => {
           // From the home screen: the greeting carries into the new chat.
           id = await openSession({}, [{ key: "local-0", kind: "lead", text: greeting(summary?.name ?? "") }]);
         }
+        set({ screen: "chat" }); // typed on a page: the conversation comes back
         const c = get().conversations[id];
         if (c.question) {
           await get().answer(trimmed);
@@ -276,6 +410,16 @@ export const useStore = create<State & Actions>((set, get) => {
 
     toggleSidebar() {
       set((s) => ({ sidebar: !s.sidebar }));
+    },
+
+    toggleInspector() {
+      set((s) => ({ inspector: !s.inspector }));
+      if (get().inspector) void get().load();
+    },
+
+    async setPref(key, value) {
+      const prefs = await get().call((api) => api.put<Preferences>("/preferences", { [key]: value }));
+      if (prefs) set({ prefs });
     },
 
     setTheme(theme, save = true) {

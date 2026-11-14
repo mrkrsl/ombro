@@ -122,7 +122,15 @@ def status(job_dir: Path) -> vt.JobStatus:
         "outbox": outbox.counts(job_dir),
         "outward": meta.get("outward") or {},
         "folders": meta.get("folders") or [],
+        "tool_names": _tool_names(meta.get("tools") or {}),
     }
+
+
+def _tool_names(tools: dict[str, Any]) -> list[str]:
+    """The tools a job had, by name: built-in tools set up for it, then its MCP servers. Never their settings."""
+    names = [str(t) for t in (tools.get("tools") or {})] if isinstance(tools.get("tools"), dict) else []
+    servers = tools.get("servers") or {}
+    return names + ([str(s) for s in servers] if isinstance(servers, dict) else [])
 
 
 def deliverables(home: Home, job_dir: Path) -> list[vt.Deliverable]:
@@ -237,7 +245,12 @@ def schedule_list(home: Home, crew: str | None = None) -> list[vt.ScheduleRow]:
             rd, m = recent[-1]
             last = {"job_id": rd.name, "due": m.get("due"), "status": m.get("status"),
                     "waiting": outbox.waiting_count(rd)}
+        try:
+            spec_title = jobs.first_line(mdfile.read(s.spec_path(home))[1], 120) if s.spec else ""
+        except (SetupError, OSError, mdfile.FrontMatterError):
+            spec_title = ""
         out.append({"name": s.name, "enabled": s.enabled, "cron": s.cron_text, "spec": s.spec, "crews": s.crews,
+                    "when": cronmod.describe(s.cron) if s.cron else s.cron_text, "spec_title": spec_title,
                     "next": nxt, "last_job": last, "problem": s.error, "path": str(s.path)})
     return out
 
@@ -302,23 +315,27 @@ def model_list(home: Home) -> vt.ModelList:
     return {"connections": connections, "default": load_lead_model(home)}
 
 
-def approval_row(a: outbox.Action) -> vt.ApprovalRow:
+def approval_row(a: outbox.Action, home: Home | None = None) -> vt.ApprovalRow:
     d = a.as_dict()
-    return {"ref": a.ref, "long_ref": a.long_ref, "job_id": a.job_id, "job_name": jobs.job_name(a.job_id),
+    try:
+        crews = jobs.job_crews(jobs.read_job(a.job_dir)[0])
+    except (OSError, mdfile.FrontMatterError):
+        crews = []
+    return {"ref": a.ref, "crews": [crew_title(home, c) if home else c for c in crews], "long_ref": a.long_ref, "job_id": a.job_id, "job_name": jobs.job_name(a.job_id),
             "status": a.status, "tool": a.tool, "summary": a.summary(120), "role": str(d.get("role") or ""),
             "reason": str(d.get("reason") or ""), "class": str(d.get("class") or ""), "edited": a.edited}
 
 
 def approval_list(home: Home) -> list[vt.ApprovalRow]:
     """What waits for the user's yes, across every job."""
-    return [approval_row(a) for a in outbox.waiting(home)]
+    return [approval_row(a, home) for a in outbox.waiting(home)]
 
 
 def approval(home: Home, ref: str) -> vt.ApprovalDetail:
     """One approval in full: what it will send and where, why, and the job it came from."""
     a = outbox.find(home, ref)
     skill = outbox.skill_view(home, a) if a.tool == outbox.SKILL_TOOL else None
-    return {**approval_row(a), "arguments": a.arguments, "skill": skill}
+    return {**approval_row(a, home), "arguments": a.arguments, "skill": skill}
 
 
 def role(home: Home, crew: str, name: str) -> vt.RoleDetail:
@@ -358,6 +375,7 @@ def preferences(home: Home) -> vt.Preferences:
     return {"name": p.name, "theme": p.theme, "default_crew": p.default_crew,
             "default_crew_title": crew_title(home, p.default_crew), "editor": p.editor,
             "outward": str(preset or "balanced"), "instructions_set": bool(p.instructions.strip()),
+            "background_feed": p.background_feed, "notifications": p.notifications,
             "files": {"config": str(home.preferences_config), "instructions": str(home.instructions)}}
 
 

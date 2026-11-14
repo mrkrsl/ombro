@@ -578,6 +578,30 @@ def write_schedule(home: Home, name: str, cron_text: str, spec_name: str, enable
     return path
 
 
+def set_timing(path: Path, cron_text: str) -> None:
+    """Change when a schedule runs, in place, keeping the rest of its file (plan C7).
+    The expression is checked first: a bad one changes nothing."""
+    cronmod.parse(cron_text)
+    meta, body = mdfile.read(path)
+    meta["cron"] = " ".join(cron_text.split())
+    mdfile.write(path, meta, body)
+
+
+def remove_schedule(home: Home, s: Schedule) -> Path:
+    """Move a schedule's file to removed/schedules/, never erase it (plan C4). Its jobs are kept.
+    Returns where it went."""
+    import shutil
+    import time
+
+    folder = home.removed_dir / "schedules"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / s.path.name
+    if target.exists():
+        target = folder / f"{s.path.stem}-{time.strftime('%Y%m%d-%H%M%S')}.md"
+    shutil.move(str(s.path), str(target))
+    return target
+
+
 def set_enabled(path: Path, enabled: bool) -> None:
     meta, body = mdfile.read(path)
     meta["enabled"] = enabled
