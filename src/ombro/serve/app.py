@@ -28,7 +28,7 @@ from ombro import __version__, jobs, outbox, views
 from ombro.home import Home
 from ombro.serve import DEV_ORIGIN, HOST
 from ombro.serve.live import Busy, Client, Hub, Sessions
-from ombro.session import JobWatcher, StartError, start_saved_spec
+from ombro.session import JobWatcher, StartError, setup_needed, start_saved_spec
 from ombro.settings import SetupError
 from ombro.ui import JobEnded, JobProgress, Note
 
@@ -218,6 +218,7 @@ def _views(s: Serve) -> list[Route]:
 
     table: dict[str, Callable[[Request], Any]] = {
         "/summary": lambda r: views.summary(home),
+        "/setup": lambda r: {"needed": setup_needed(home)},
         "/commands": lambda r: [c.to_dict() for c in core_commands.COMMANDS],
         "/chats": lambda r: views.chat_list(home),
         "/chats/{name}": lambda r: views.chat(home, r.path_params["name"]),

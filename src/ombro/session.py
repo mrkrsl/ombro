@@ -62,6 +62,27 @@ def start_saved_spec(home: Home, spec: str, roles: list[str] | None = None, *, c
     return job_dir.name
 
 
+def setup_needed(home: Home) -> str | None:
+    """Why this home needs set-up, found without a model call (specification 10.1), or None."""
+    if not home.root.is_dir():
+        return "there is no Ombro home."
+    try:
+        from ombro.settings import load_models
+
+        models = load_models(home)
+    except Exception:  # noqa: BLE001
+        return "no model is set in models.md."
+    spec = models.get("default")
+    if spec is None:
+        return "no model is set in models.md."
+    if spec.key:
+        from ombro import keys
+
+        if not keys.get_key(home, spec.key):
+            return f"the model's key ({spec.key}) is not set."
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Jobs as events
 

@@ -152,7 +152,9 @@
     },
     "ApprovalDetail": {
       "properties": {
-        "arguments": {},
+        "arguments": {
+          "tsType": "unknown"
+        },
         "class": {
           "type": "string"
         },
@@ -777,7 +779,8 @@
       "description": "One question. In a form, one field of it.\n\nkind: text (a line, or several if `multiline`), secret (hidden, never shown\nor saved), choice (one of `options`), yesno, or wait (only to go on).\n`pattern` is a regular expression the answer must match in full, and\n`invalid` what to say when it does not (or when a required answer is\nempty). A choice with `other` also takes a free answer, described by it.",
       "properties": {
         "default": {
-          "default": null
+          "default": null,
+          "tsType": "unknown"
         },
         "help": {
           "default": "",
@@ -1333,7 +1336,9 @@
           ]
         },
         "folders": {
-          "items": {},
+          "items": {
+            "tsType": "unknown"
+          },
           "type": "array"
         },
         "interview_usage": {

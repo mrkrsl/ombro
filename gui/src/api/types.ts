@@ -690,9 +690,7 @@ export interface QuestionMessage {
  * via the `definition` "Field".
  */
 export interface Field {
-  default?: {
-    [k: string]: unknown;
-  };
+  default?: unknown;
   help?: string;
   invalid?: string;
   kind?: string;

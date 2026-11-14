@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "Ombro",
-        "width": 1024,
-        "height": 760,
-        "minWidth": 640,
-        "minHeight": 480
+        "width": 1100,
+        "height": 820,
+        "minWidth": 720,
+        "minHeight": 520
       }
     ],
     "security": {
@@ -26,9 +26,22 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "deb", "appimage"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
-    "externalBin": ["binaries/ombro-serve"],
+    "targets": [
+      "app",
+      "dmg",
+      "deb",
+      "appimage"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/ombro-serve"
+    ],
     "category": "Productivity",
     "shortDescription": "Brief a crew of AI roles and get bounded, reported work back."
   }

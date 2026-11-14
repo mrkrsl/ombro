@@ -54,10 +54,33 @@ def build() -> dict:
 
     defs["ServerMessage"] = {"oneOf": [{"$ref": f"#/$defs/{t.__name__}"} for t in protocol.ServerMessage.__args__]}
     _untitle(schema)
+    _any_is_unknown(schema)
     for name, d in defs.items():
         d["title"] = name  # each definition keeps its own name, and only it
     schema["title"] = "OmbroApi"
     return schema
+
+
+SHAPES = ("type", "$ref", "anyOf", "oneOf", "allOf", "const", "enum", "items", "properties")
+
+
+def _any_is_unknown(node, *, names: bool = False) -> None:
+    """A Python Any has no shape in the schema; TypeScript should take it as `unknown`."""
+    if isinstance(node, dict):
+        if not names and not any(k in node for k in SHAPES) and node is not None:
+            node["tsType"] = "unknown"
+        for k, v in node.items():
+            if k == "properties":
+                for prop in v.values():
+                    _any_is_unknown(prop)
+            elif k == "$defs":
+                for d in v.values():
+                    _any_is_unknown(d)
+            elif isinstance(v, (dict, list)):
+                _any_is_unknown(v)
+    elif isinstance(node, list):
+        for v in node:
+            _any_is_unknown(v)
 
 
 def _untitle(node, *, names: bool = False) -> None:

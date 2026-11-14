@@ -1,54 +1,77 @@
-// Stage 1: start serve (the shell does that), connect, and show what it sends.
+// The window: sidebar, main column (title bar, page, foot). The page is the home screen, a
+// conversation, or one of the pages to come.
 
-import { useEffect, useState } from "react";
-import { events, handshake, type CoreEvent, type ServerMessage } from "./api/serve";
-
-type Shown = { key: number; event: CoreEvent; raw: ServerMessage };
-type State = { status: string; messages: Shown[] };
-let shownCount = 0;
+import { useEffect } from "react";
+import { PanelLeft, PanelRight } from "lucide-react";
+import { Composer } from "./components/Composer";
+import { Sidebar } from "./components/Sidebar";
+import { Conversation } from "./screens/Conversation";
+import { Home, HomeGreeting } from "./screens/Home";
+import { Placeholder } from "./screens/Placeholder";
+import { isMac } from "./platform";
+import { useStore } from "./store/store";
 
 export default function App() {
-  const [state, setState] = useState<State>({ status: "Starting Ombro…", messages: [] });
+  const s = useStore();
+  const { status, problem, screen, current, conversations, sidebar, theme, titles } = s;
 
   useEffect(() => {
-    let ws: WebSocket | undefined;
-    let gone = false;
-    handshake()
-      .then((hs) => {
-        if (gone) return;
-        setState((s) => ({ ...s, status: `Connecting to 127.0.0.1:${hs.port}…` }));
-        ws = events(
-          hs,
-          (m) => {
-            // Stage 1 shows the core's events only; the screens come in stage 4.
-            if (m.type !== "event") return;
-            const shown = { key: ++shownCount, event: m.event, raw: m };
-            setState((s) => ({ status: "Connected", messages: [...s.messages, shown] }));
-          },
-          (why) => setState((s) => ({ ...s, status: `Connection ${why}` })),
-        );
-      })
-      .catch((e) => setState((s) => ({ ...s, status: `Could not start: ${e}` })));
-    return () => {
-      gone = true;
-      ws?.close(1000);
-    };
+    void useStore.getState().start();
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  if (status === "starting" && !s.summary) {
+    return <div className="startup">Starting Ombro…</div>;
+  }
+  if (status === "failed") {
+    return (
+      <div className="startup">
+        <div>
+          <p>Ombro could not start.</p>
+          <p>{problem}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const conversation = current ? conversations[current] ?? null : null;
+  const inChat = screen === "chat" && conversation;
+  const title =
+    screen === "chat"
+      ? (current && titles[current]) || (conversation?.kind === "setup" ? "Setting up Ombro" : "New chat")
+      : "";
+
   return (
-    <main style={{ padding: "48px 56px", maxWidth: 720 }}>
-      <h1 style={{ color: "var(--strong)", fontWeight: 600, margin: "0 0 4px" }}>ombro</h1>
-      <p style={{ color: "var(--muted)", margin: "0 0 32px" }} data-testid="status">{state.status}</p>
-      {state.messages.map((m) => (
-        <section key={m.key} style={{ borderTop: "1px solid var(--rule)", padding: "16px 0" }}>
-          <p style={{ fontSize: 20, margin: "0 0 12px" }} data-testid="event-text">
-            {"text" in m.event ? m.event.text : m.event.type}
-          </p>
-          <pre style={{ color: "var(--muted)", fontSize: 12, margin: 0, whiteSpace: "pre-wrap" }}>
-            {JSON.stringify(m.raw, null, 2)}
-          </pre>
-        </section>
-      ))}
-    </main>
+    <div className={`window ${isMac ? "mac" : "linux"}`}>
+      {sidebar && <Sidebar />}
+      <main className="main">
+        <div className={`main-top ${sidebar ? "" : "wide"}`} data-tauri-drag-region>
+          {!sidebar && (
+            <button className="icon-button" aria-label="Show the sidebar" onClick={s.toggleSidebar}>
+              <PanelLeft size={22} />
+            </button>
+          )}
+          <div className="title" data-tauri-drag-region>
+            {title}
+          </div>
+          <button className="icon-button" aria-label="Show the inspector" title="The inspector comes in the next stage" disabled>
+            <PanelRight size={22} />
+          </button>
+        </div>
+        {screen === "home" && <Home />}
+        {inChat && <Conversation conversation={conversation} />}
+        {!inChat && screen !== "home" && <Placeholder screen={screen} args={s.screenArgs} />}
+        {(screen === "home" || inChat) && (
+          <>
+            {screen === "home" && <HomeGreeting />}
+            <Composer conversation={inChat ? conversation : null} />
+          </>
+        )}
+        {status === "lost" && <div className="notice column">Reconnecting to Ombro…</div>}
+      </main>
+    </div>
   );
 }
