@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import type { KeyList, NativeTool, ServerRow, ToolList } from "../../api/types";
 import { openLink } from "../../platform";
 import { useStore } from "../../store/store";
-import { Field, Problem, RemovePanel, tidy, useAction, useRemoval, useView, type Check } from "./common";
+import { Field, Item, Problem, RemovePanel, shortPath, tidy, useAction, useRemoval, useView, type Check } from "./common";
 
 export const NATIVE: Record<string, string> = { "web.search": "Web search", "web.fetch": "Reading web pages" };
 export const PROVIDERS: Record<string, string> = {
@@ -159,7 +159,7 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
   const keySet = !!keyName && !!keyList.data?.keys.find((k) => k.name === keyName && k.set);
   return (
     <div className="inline-form">
-      <h3>{tool ? `Edit ${NATIVE[tool.tool]}` : "Choose how crews search and read the web"}</h3>
+      <h3>{tool ? `Edit ${NATIVE[tool.tool]}` : "Choose the service crews use to search and read the web"}</h3>
       {!tool && (
         <Field label="Tool">
           <span className="form-row tight">
@@ -261,16 +261,18 @@ export function Tools() {
             .filter((n) => n.tool in NATIVE)
             .map((n) => (
               <div className="row-block" key={n.tool}>
-                <div className="row settings-row tool">
-                  <span className="row-name">{NATIVE[n.tool]}</span>
-                  <span className="row-detail">{(PROVIDERS[n.provider ?? ""] ?? n.provider ?? "").replace(/ \(.*\)$/, "")}</span>
-                  <span className="row-detail">{n.calls ? `Up to ${n.calls} calls a job` : ""}</span>
-                  <span className="row-actions">
+                <Item
+                  name={NATIVE[n.tool]}
+                  details={[
+                    `Built in, using ${(PROVIDERS[n.provider ?? ""] ?? n.provider ?? "").replace(/ \(.*\)$/, "")}`,
+                    n.calls ? `Up to ${n.calls} calls a job` : null,
+                  ]}
+                  actions={
                     <button className="text-button strong" onClick={() => { setEditing(n.tool); setAdding(null); }}>
                       Edit
                     </button>
-                  </span>
-                </div>
+                  }
+                />
                 {editing === n.tool && (
                   <BuiltinForm tool={n} tools={t} onCancel={() => setEditing(null)} onDone={(x) => { tools.set(x); setEditing(null); }} />
                 )}
@@ -280,31 +282,31 @@ export function Tools() {
             const [state, needs] = signInText(s);
             return (
               <div className="row-block" key={s.server}>
-                <div className="row settings-row tool">
-                  <span className="row-name">{tidy(s.server)}</span>
-                  <span className="row-detail" title={where(s)}>
-                    {where(s)}
-                  </span>
-                  <span className={`row-detail ${s.problem ? "problem-inline" : ""}`} title={state}>
-                    {state}
-                  </span>
-                  <span className="row-actions">
-                    {s.url && needs && !s.signing_in && (
-                      <button className="text-button strong" onClick={() => void signIn(s.server)}>
-                        Sign in
+                <Item
+                  name={tidy(s.server)}
+                  details={[
+                    <span title={where(s)}>{shortPath(where(s))}</span>,
+                    <span className={s.problem ? "problem-inline" : ""}>{state}</span>,
+                  ]}
+                  actions={
+                    <>
+                      {s.url && needs && !s.signing_in && (
+                        <button className="text-button strong" onClick={() => void signIn(s.server)}>
+                          Sign in
+                        </button>
+                      )}
+                      <button className="text-button strong" onClick={() => { setEditing(s.server); setAdding(null); }}>
+                        Edit
                       </button>
-                    )}
-                    <button className="text-button strong" onClick={() => { setEditing(s.server); setAdding(null); }}>
-                      Edit
-                    </button>
-                    <button
-                      className="text-button strong"
-                      onClick={() => void removal.ask(s.server, () => useStore.getState().api!.get<Check>(`/tools/servers/${s.server}/check`))}
-                    >
-                      Delete
-                    </button>
-                  </span>
-                </div>
+                      <button
+                        className="text-button strong"
+                        onClick={() => void removal.ask(s.server, () => useStore.getState().api!.get<Check>(`/tools/servers/${s.server}/check`))}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  }
+                />
                 {editing === s.server && (
                   <ServerForm
                     current={s}
@@ -348,9 +350,9 @@ export function Tools() {
                   setAdding(e.target.value as Kind);
                 }}
               >
-                <option value="remote">An online service (MCP)</option>
-                <option value="local">A program on this computer (MCP)</option>
-                <option value="builtin">Web search or reading pages (built in)</option>
+                <option value="remote">MCP - Online service</option>
+                <option value="local">MCP - On this computer</option>
+                <option value="builtin">API - Web search and reading pages</option>
               </select>
             </span>
           </Field>

@@ -140,6 +140,7 @@ describe("Settings › Crews", () => {
     const row = (await screen.findByText("Legal Assistant")).closest(".row") as HTMLElement;
     expect(within(row).getByText("Helper")).toBeInTheDocument();
     expect(within(row).getByText("Model: local-model")).toBeInTheDocument();
+    expect(screen.queryByText(/Ombro Lead/)).not.toBeInTheDocument(); // the Lead isn't a crew member
     await userEvent.click(screen.getByRole("button", { name: "Rename" }));
     const title = screen.getByLabelText("New title");
     await userEvent.clear(title);

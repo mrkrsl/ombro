@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import type { Connection, ModelList, Preferences } from "../../api/types";
 import { useStore, type ThemeChoice } from "../../store/store";
-import { Field, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
+import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 
 export const LIMITS: [string, string][] = [
   ["conservative", "Light: up to 300k tokens a job"],
@@ -145,26 +145,31 @@ function Providers({ models, onChange }: { models: ModelList; onChange: (m: Mode
       <div className="rows">
         {providers.map((c) => (
           <div className="row-block" key={c.endpoint!}>
-            <div className="row settings-row three">
-              <span className="row-name">{c.label}</span>
-              <span className="row-detail" title={c.models.map((m) => m.model).join(", ")}>
-                {c.endpoint}
-              </span>
-              <span className="row-actions">
-                <button className="text-button strong" onClick={() => { setEditing(c.endpoint); setAdding(false); }}>
-                  Edit
-                </button>
-                <button
-                  className="text-button strong"
-                  onClick={() => void removal.ask(c.endpoint!, async () => {
-                    const api = useStore.getState().api!;
-                    return api.post<Check>("/models/providers/check", { endpoint: c.endpoint });
-                  })}
-                >
-                  Delete
-                </button>
-              </span>
-            </div>
+            <Item
+              name={c.label}
+              details={[
+                c.endpoint,
+                <span title={c.models.map((m) => m.model).join(", ")}>
+                  {c.models.length === 1 ? "1 model" : `${c.models.length} models`}
+                </span>,
+              ]}
+              actions={
+                <>
+                  <button className="text-button strong" onClick={() => { setEditing(c.endpoint); setAdding(false); }}>
+                    Edit
+                  </button>
+                  <button
+                    className="text-button strong"
+                    onClick={() => void removal.ask(c.endpoint!, async () => {
+                      const api = useStore.getState().api!;
+                      return api.post<Check>("/models/providers/check", { endpoint: c.endpoint });
+                    })}
+                  >
+                    Delete
+                  </button>
+                </>
+              }
+            />
             {editing === c.endpoint && (
               <ProviderForm current={c} onCancel={() => setEditing(null)} onDone={(m) => { onChange(m); setEditing(null); }} />
             )}

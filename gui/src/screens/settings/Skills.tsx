@@ -99,11 +99,11 @@ export function Skills() {
           {l.skills.length === 0 && <p className="muted">No skills yet.</p>}
           {l.skills.map((s) => (
             <div className="row-block" key={s.name}>
-              <div className="row settings-row three">
-                <span className="row-name" title={s.description}>
+              <div className="skill-row">
+                <span className="item-name" title={s.description}>
                   {tidy(s.name)}
                 </span>
-                <span className="row-detail">{usedBy(s, l, crews.data)}</span>
+                <span className="used-by" title="The crews whose members use it">{usedBy(s, l, crews.data)}</span>
                 <span className="row-actions">
                   <button className="text-button strong" onClick={() => { setEditing(s.name); setAdding(false); }}>
                     Edit

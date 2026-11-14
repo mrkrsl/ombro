@@ -155,3 +155,33 @@ export function tidy(name: string): string {
 export function shortPath(path: string): string {
   return path.replace(/^\/(Users|home)\/[^/]+/, "~");
 }
+
+/** A list item on two lines: its name and actions, then what it is, smaller (folders, tools, providers). */
+export function Item({ name, title, details, actions }: {
+  name: ReactNode;
+  title?: string;
+  details: ReactNode[];
+  actions: ReactNode;
+}) {
+  const shown = details.filter((d) => d !== null && d !== undefined && d !== "");
+  return (
+    <div className="item">
+      <div className="item-top">
+        <span className="item-name" title={title}>
+          {name}
+        </span>
+        <span className="row-actions">{actions}</span>
+      </div>
+      {shown.length > 0 && (
+        <div className="item-detail">
+          {shown.map((d, i) => (
+            <span key={i}>
+              {i > 0 && <span className="sep">·</span>}
+              {d}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

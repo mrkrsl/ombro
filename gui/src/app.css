@@ -718,7 +718,7 @@
 
 .row-block + .row-block,
 .rows > .row + .row {
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--list-rule);
 }
 
 .row {
@@ -1047,13 +1047,12 @@ input[type="checkbox"]:not([role="switch"]) {
 
 /* -- Settings (designs 09–16) ------------------------------------------------------------ */
 
+/* Pinned left: the sub-navigation's icons line up under the page title, however wide the window. */
 .settings-screen {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-columns: 190px minmax(440px, 1fr);
   gap: 24px;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 24px 32px 40px 24px;
+  padding: 24px 32px 40px 12px;
 }
 
 .settings-nav {
@@ -1096,7 +1095,7 @@ input[type="checkbox"]:not([role="switch"]) {
 
 .settings-page {
   max-width: 820px;
-  min-width: 0;
+  min-width: 440px; /* narrower than this, the page scrolls sideways rather than breaking its rows */
 }
 
 .settings-page .page-title {
@@ -1214,6 +1213,13 @@ input[type="checkbox"]:not([role="switch"]) {
   margin-top: 6px;
 }
 
+/* The add button under a list: a little more room above it. */
+.rows + .form-actions,
+.rows + .inline-form,
+.crew-block .rows + .form-actions {
+  margin-top: 17px;
+}
+
 .form-actions.top {
   margin: 0 0 32px;
 }
@@ -1260,7 +1266,8 @@ input[type="checkbox"]:not([role="switch"]) {
 }
 
 .settings-row.member {
-  grid-template-columns: minmax(150px, 1.1fr) 100px minmax(170px, 1.6fr) 110px;
+  grid-template-columns: minmax(120px, 1.1fr) 90px minmax(120px, 1.6fr) 110px;
+  gap: 16px;
 }
 
 .settings-row.three {
@@ -1377,4 +1384,66 @@ input[type="checkbox"]:not([role="switch"]) {
   background: var(--hover);
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* A list item on two lines (folders, tools, providers): the name and its actions, then what it is,
+   a little smaller, so a long path or name never squeezes the rest. */
+.item {
+  padding: 12px 0;
+}
+
+.item-top {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.item-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--strong);
+  font-weight: 600;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.item-detail {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.item-detail .sep {
+  margin: 0 7px;
+  color: var(--dim);
+}
+
+.item .row-actions {
+  flex: none;
+}
+
+/* Skills: the name, then who uses it beside the actions. */
+.skill-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 0;
+}
+
+.skill-row .item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-row .used-by {
+  flex: none;
+  max-width: 45%;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -21,6 +21,7 @@
   --you-text: var(--ombro-500);
   --border: var(--ombro-500);
   --rule: #e6eef0;
+  --list-rule: #d2e0e4; /* between the rows of a list: a notch darker than --rule */
   --hover: #eef6f8;
   --menu-bg: #ffffff;
   --menu-pick: #d6eef5;
@@ -48,6 +49,7 @@
   --you-text: var(--ombro-100);
   --border: #2f6b7a;
   --rule: #1b3c45;
+  --list-rule: #285561; /* a notch lighter than --rule */
   --hover: #163842;
   --menu-bg: #12323a;
   --menu-pick: #1c4652;

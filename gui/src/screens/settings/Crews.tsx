@@ -1,4 +1,4 @@
-// Settings › Crews (designs 10, 11): the Lead, then each crew with its members (kind, model). A new
+// Settings › Crews (designs 10, 11): each crew with its members (kind, model). The Lead is not listed. A new
 // crew, renaming (the title only) and deleting (moved aside: C4); a new member is an interview,
 // so it opens a chat; Edit opens a member's soul and model.
 
@@ -23,7 +23,7 @@ export function crewName(title: string): string {
 type Editing = { crew: string; role: string };
 
 function SoulEditor({ who, crewTitle, onBack }: { who: Editing; crewTitle: string; onBack: () => void }) {
-  const path = `/roles/${encodeURIComponent(who.crew || "lead")}/${encodeURIComponent(who.role)}`;
+  const path = `/roles/${encodeURIComponent(who.crew)}/${encodeURIComponent(who.role)}`;
   const role = useView<RoleDetail>(path);
   const models = useView<ModelList>("/models");
   const { run, problem, busy } = useAction();
@@ -32,18 +32,13 @@ function SoulEditor({ who, crewTitle, onBack }: { who: Editing; crewTitle: strin
   const r = role.data;
   if (!r) return <Problem text={role.problem || "Loading…"} />;
   const all = models.data?.connections.flatMap((c) => c.models) ?? [];
-  const lead = who.role === "lead";
   return (
     <>
       <button className="text-button back-link" onClick={onBack}>
         ← All crews
       </button>
-      <h1 className="page-title">{lead ? "Ombro Lead" : `${crewTitle} – ${r.title}`}</h1>
-      <p className="lede">
-        {lead
-          ? "Edit the Lead's soul here: how it talks with you, briefs your crews and reports back."
-          : "Edit their soul here. Be as detailed as you can about what they do and how they work."}
-      </p>
+      <h1 className="page-title">{`${crewTitle} – ${r.title}`}</h1>
+      <p className="lede">Edit their soul here. Be as detailed as you can about what they do and how they work.</p>
       {all.length > 1 && (
         <Field label="Model">
           <span className="form-row tight">
@@ -320,23 +315,6 @@ export function Crews() {
       <Problem text={crews.problem} />
       {v && (
         <>
-          <section className="crew-block">
-            <div className="crew-head">
-              <h2>Ombro Lead</h2>
-            </div>
-            <div className="rows">
-              <div className="row settings-row member">
-                <span className="row-name">{v.lead.title === "Lead" ? "Ombro Lead" : v.lead.title || "Ombro Lead"}</span>
-                <span className="row-detail">Lead</span>
-                <span className="row-detail">Model: {modelLabel(v.lead.model ?? "default", models.data)}</span>
-                <span className="row-actions">
-                  <button className="text-button strong" onClick={() => setEditing({ crew: "", role: "lead" })}>
-                    Edit
-                  </button>
-                </span>
-              </div>
-            </div>
-          </section>
           {v.crews.map((c) => (
             <Crew key={c.name} crew={c} models={models.data} onEdit={setEditing} onChange={crews.set} />
           ))}

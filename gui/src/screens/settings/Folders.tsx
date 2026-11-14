@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { inTauri } from "../../api/serve";
 import type { FolderList } from "../../api/types";
-import { Field, Problem, shortPath, useAction, useView } from "./common";
+import { Field, Item, Problem, shortPath, useAction, useView } from "./common";
 
 export const ACCESS: Record<string, string> = { read: "Can read", write: "Can read and change" };
 
@@ -44,16 +44,15 @@ export function Folders() {
         {list.length === 0 && folders.data && <p className="muted">No folders are shared yet.</p>}
         {list.map((f) => (
           <div className="row-block" key={f.name}>
-            <div className="row settings-row folder">
-              <span className="row-name" title={f.path}>
-                {shortPath(f.path)}
-              </span>
-              <span className="row-detail">{ACCESS[f.access] ?? f.access}</span>
-              <span className="row-detail" title={f.problem ?? f.backup ?? ""}>
-                {f.problem ? <span className="problem-inline">{f.problem}</span> : f.backup ?? ""}
-              </span>
-              <span className="row-actions">
-                {asking === f.name ? (
+            <Item
+              name={shortPath(f.path)}
+              title={f.path}
+              details={[
+                ACCESS[f.access] ?? f.access,
+                f.problem ? <span className="problem-inline">{f.problem}</span> : f.backup,
+              ]}
+              actions={
+                asking === f.name ? (
                   <span className="confirm" role="group" aria-label={`Stop sharing ${shortPath(f.path)}?`}>
                     <span>Stop sharing it? The folder stays as it is.</span>
                     <button
@@ -74,9 +73,9 @@ export function Folders() {
                   <button className="text-button strong" onClick={() => setAsking(f.name)}>
                     Remove
                   </button>
-                )}
-              </span>
-            </div>
+                )
+              }
+            />
           </div>
         ))}
       </div>
