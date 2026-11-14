@@ -288,7 +288,7 @@ def test_old_turns_are_dropped_from_what_is_sent(chat, home):
     assert "FIRST-MARKER" not in json.dumps(chat.client.calls[-1]["messages"])
     assert chat.client.calls[-1]["messages"][0]["role"] == "system"
     assert "FIRST-MARKER" in chat.transcript  # the transcript keeps everything
-    assert "oldest turns are no longer sent" in chat.output
+    assert "only its more recent turns are kept in view" in chat.output
 
 
 # -- saved, not remembered ----------------------------------------------------------

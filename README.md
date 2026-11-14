@@ -437,7 +437,7 @@ from the schedule's next slot.
 
 - **Starting.** Tick starts each due slot once, detached, exactly as
   `ombro run --detach` does, under limits fixed at the start and recorded in
-  run.md. run.md and the report name the schedule and the slot. The limits
+  job.md. job.md and the report name the schedule and the slot. The limits
   are limits.md, then the spec's `limits:`, then the schedule's. A scheduled
   run must have a token cap, so `unlimited` is refused.
 - **Late and missed.** A slot is started if a tick sees it within its grace
@@ -512,7 +512,7 @@ direct fetches, which are free. `/tools web.search` changes either.
 
 `max_calls` caps a tool's calls per run, which is also how a service that
 bills in its own units, such as Firecrawl credits, is kept in bounds. Like
-limits, tool settings are fixed when a run starts and recorded in `run.md`.
+limits, tool settings are fixed when a run starts and recorded in `job.md`.
 
 Every secret lives in one owner-only folder, `secrets/`: single keys in
 `keys.env`, sign-ins for remote MCP servers in `oauth/`, and key files (such
@@ -541,7 +541,7 @@ in the operating system's own sandbox, which limits what any code can reach:
 A script can read and write the run's `workspace/` and `scratch/`, and the
 folders shared with the run as granted. It can read what Python needs to
 start, and nothing else: not the rest of the Ombro home (secrets, settings,
-roles, memory, other runs, this run's journal, `run.md` or report), not the
+roles, memory, other runs, this run's journal, `job.md` or report), not the
 rest of your files, and not the network. It runs on the Python Ombro runs
 on, isolated, with the standard library only. It cannot start other
 programs (on Linux it can start programs already inside its sandbox, which
@@ -589,7 +589,7 @@ declined: [~/Projects/site]
   its run uses (`folders: [brand, photos]`, or `folders: {photos: read}` to
   lower write to read). A spec cannot add a folder that is not shared; one
   that is no longer shared is left out and the report says so. Folders are
-  fixed when a run starts and recorded in `run.md`. Runs never stop to ask.
+  fixed when a run starts and recorded in `job.md`. Runs never stop to ask.
 - **Inside a grant** roles work as you would: `shared/<name>/...` through
   the workspace tools and in scripts. Changes there are internal and run
   without approval; the grant is the permission, and presets do not change it.
@@ -790,7 +790,7 @@ external tools, and writes the answer into the spec. A crew whose tools are
 only read-only and internal needs no answer. `permission: refuse` in
 `tools.md` beats everything, for every class, read-only included: a refused
 tool is not offered to any role. Permissions are fixed when a run starts and
-recorded in `run.md`; scheduled runs follow them like any other.
+recorded in `job.md`; scheduled runs follow them like any other.
 
 **The outbox.** A staged call does not happen. The harness writes it to the
 run's `outbox/` as one file (tool, arguments, the role and its reason, the
@@ -820,7 +820,7 @@ You decide on named actions only; there is no "approve all":
   answer, the action becomes `uncertain`: it may or may not have happened,
   and it is never retried. Settle it with `ombro outbox resolve <ref> sent`
   or `not-sent`.
-- Outcomes are recorded in the action's file, the run's journal, run.md and
+- Outcomes are recorded in the action's file, the run's journal, job.md and
   an "Outbox decisions" section added to the report.
 - Every outbox command takes `--json` (as do the other listing commands), and `approve` and `decline` take
   `--yes`, for an interface that has already shown and selected the actions.
@@ -865,7 +865,7 @@ which wins over the level. Even `unlimited` keeps every other cap:
 Limits and usage are in tokens; Ombro reports no costs. Settings from earlier
 versions (`budget_usd`, prices in `models.md`, `cost_per_call` in `tools.md`,
 `display_currency` in preferences) are accepted and ignored. A run's usage is
-kept under `usage:` in its `run.md`; older runs that call it `spend:` are still
+kept under `usage:` in its `job.md`; older runs that call it `spend:` are still
 read.
 
 Tokens, rounds, time and a stop request end the whole run. Narrower limits
@@ -882,7 +882,7 @@ end only what they bound, and the run goes on:
 A share of the token limit (`report_reserve`) is held back so the final
 report can always be written. The Lead's rewrite of notes.md also comes out
 of the reserve, and is skipped if it would leave too little for the report. Limits are fixed when a run starts and recorded
-in its `run.md`. Interviews run under their own gate and cap, so an interview
+in its `job.md`. Interviews run under their own gate and cap, so an interview
 never uses a run's allowance.
 
 If a run's process dies, the next `ombro` command that notices writes a report
@@ -906,7 +906,7 @@ matter, except the journal, which is JSON Lines:
   schedules/<name>.md
   interviews/<time>-<kind>.md
   removed/schedules/<name>.md          schedules removed with `ombro schedule remove`
-  runs/<run_id>/run.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/,
+  runs/<run_id>/job.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/,
                 code/ (scripts and their output), backup/ (clones of writable shared folders)
   crews/<crew>/
     crew.md
