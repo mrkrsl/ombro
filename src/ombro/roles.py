@@ -32,6 +32,7 @@ class Role:
     tools: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     all_skills: bool = False  # `skills: all`: the whole library
+    all_tools: bool = False  # `tools: all`: every tool a crew member can have, now and later
     crew: str = ""  # empty for the Lead
     title: str = ""  # the display name, e.g. Market Researcher
 
@@ -88,7 +89,8 @@ def load_role(folder: Path, limits: Limits) -> Role:
         soul=soul,
         path=folder,
         max_steps=steps,
-        tools=_str_list(meta.get("tools"), "tools", cfg),
+        tools=[] if meta.get("tools") == "all" else _str_list(meta.get("tools"), "tools", cfg),
+        all_tools=meta.get("tools") == "all",
         skills=[] if meta.get("skills") == "all" else _str_list(meta.get("skills"), "skills", cfg),
         all_skills=meta.get("skills") == "all",
         title=str(meta.get("title") or "").strip() or tidy_title(name),
@@ -150,3 +152,8 @@ def resolve_role(roles: dict[str, Role], name: str) -> tuple[Role | None, str]:
         return None, f"more than one crew has a role named {name!r}; name it as crew/role: " + \
             ", ".join(r.name for r in matches)
     return None, f"there is no role named {name!r}. Roles you can brief: {known}"
+
+
+def tools_text(role: Role) -> str:
+    """A role's tools in words, for listings: `all`, the names, or `none`."""
+    return "all" if role.all_tools else (", ".join(role.tools) or "none")

@@ -17,8 +17,10 @@ export type Line =
   | { key: string; kind: "progress"; text: string }
   | { key: string; kind: "error"; text: string }
   | { key: string; kind: "proposal"; files: FileView[]; warnings: string[] }
-  | { key: string; kind: "job"; text: string; jobId: string }
+  | { key: string; kind: "job"; text: string; jobId: string; live: boolean }
   | { key: string; kind: "ended"; event: JobEnded }
+  | { key: string; kind: "livereport"; jobId: string }
+  | { key: string; kind: "page"; screen: string; args: string; text: string }
   | { key: string; kind: "report"; report: Report };
 
 export type Mode = "Chat" | "Brief";
@@ -91,9 +93,19 @@ function eventLines(e: CoreEvent, key: string): Line[] {
     case "job_started":
       return [{ key, kind: "note", text: e.text, items: [], level: "done" }];
     case "job_progress":
-      return [{ key, kind: "job", text: e.text, jobId: e.job_id }];
+      return [{ key, kind: "job", text: e.text, jobId: e.job_id, live: !!e.live }];
     case "job_ended":
+      if (e.live) {
+        // A live job: how it ended, then its report, here in the chat.
+        const waiting = e.waiting ? ` ${e.waiting} ${e.waiting === 1 ? "action waits" : "actions wait"} for your approval.` : "";
+        return [
+          { key, kind: "note", text: e.text + waiting, items: [], level: e.status === "completed" ? "done" : "info" },
+          { key: `${key}-report`, kind: "livereport", jobId: e.job_id },
+        ];
+      }
       return [{ key, kind: "ended", event: e }];
+    case "open_page":
+      return [{ key, kind: "page", screen: e.screen, args: e.args, text: e.text }];
     default:
       return []; // usage and cleared change the state, not the lines
   }
@@ -171,4 +183,15 @@ export function greeting(name: string, now = new Date()): string {
   const h = now.getHours();
   const part = h < 12 ? "morning" : h < 18 ? "afternoon" : "evening";
   return `Good ${part}${name ? " " + name : ""}. What would you like to get done today?`;
+}
+
+/** How Ombro works, in the Lead's words: the first chat says it (set-up says it too). */
+export const HOW_IT_WORKS =
+  "Most of what I do happens while you're away: you brief me, the crew works in the background, and I report " +
+  "back. When you'd rather watch, we can do it live instead: the crew works here in the chat, and I'll check " +
+  "with you as we go. Tell me what you want done, and I'll ask which you'd like.";
+
+/** The opening line, with how Ombro works on the very first chat. */
+export function opening(name: string, first: boolean, now = new Date()): string {
+  return first ? `${greeting(name, now)}\n\n${HOW_IT_WORKS}` : greeting(name, now);
 }

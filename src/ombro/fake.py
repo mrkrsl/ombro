@@ -109,7 +109,14 @@ class ScriptedClient:
         elif not self._queue:
             raise ModelError("the fake model's script has run out")
         else:
-            entry = self._queue.pop(0)
+            # An entry with `needs` waits for the call it belongs to, so one script can serve a chat
+            # and the job it starts, each taking its own replies.
+            names = {(t.get("function") or {}).get("name") for t in tools or []}
+            system = str((messages[0] or {}).get("content") or "") if messages else ""
+            i = next((n for n, e in enumerate(self._queue) if _fits(e, names, system)), None)
+            if i is None:
+                raise ModelError("the fake model's script has no reply for this call")
+            entry = self._queue.pop(i)
         if callable(entry):
             entry = entry(messages, tools)
         if entry.get("sleep"):
@@ -147,6 +154,16 @@ class ScriptedClient:
         )
         return ModelReply(content=content, tool_calls=calls, usage=usage,
                           finish_reason=entry.get("finish_reason", "stop"))
+
+
+def _fits(entry, names: set, system: str = "") -> bool:
+    """`needs`: a tool the call offers, "no_tools", or "prompt:<words>" found in its system prompt."""
+    need = entry.get("needs") if isinstance(entry, dict) else None
+    if not need:
+        return True
+    if need.startswith("prompt:"):
+        return need[len("prompt:"):] in system
+    return (need == "no_tools" and not names) or need in names
 
 
 def _skill_call(tools) -> bool:

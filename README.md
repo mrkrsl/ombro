@@ -9,13 +9,15 @@ you start a job from it, walk away, and read a report later. The Lead plans
 the job and briefs the crew's roles. Every job ends in a report, whether it
 finished, hit a limit or failed.
 
-**Status: early.** This is the headless core, native tools, interviews,
-memory and chat: the home directory, roles and crews, a model connection,
-the set-up, role and task interviews, the Lead loop, the guardrail gate, the
-result contract, the journal, reports, web search and fetch, workspace files,
-secrets, the job index, standing notes, memory search, `ombro chat`,
-schedules, outside services through MCP with permissions and approvals, and
-Python scripts in the operating system's sandbox, with folders you share.
+**Status: early, not yet released.** Ombro is a Python core with two ways in:
+the terminal (`ombro`) and a desktop app for macOS (see The desktop app). The
+core has the home directory, roles and crews, model connections, the set-up,
+role and task interviews, the Lead loop, the guardrail gate, the result
+contract, the journal, reports, web search and fetch, workspace files,
+secrets, the job index, standing notes, memory search, chat, schedules,
+outside services through MCP and web APIs with permissions and approvals,
+skills, and Python scripts in the operating system's sandbox, with folders
+you share. The app runs on macOS; Linux is next, and Windows is further off.
 
 ## Install
 
@@ -39,11 +41,14 @@ ombro init                         # creates ~/.config/ombro, connects a model, 
 ```
 
 `init` first asks your name, used only to greet you (Enter skips it). Then it
-asks for an OpenAI-compatible endpoint (DeepSeek by default) and its API key,
+asks for a model provider and its API key: DeepSeek (the default), OpenAI,
+Anthropic, Google Gemini, Mistral, xAI, Groq and OpenRouter are listed with
+their addresses filled in, Ollama and LM Studio on your own computer need no
+key, and any other OpenAI-compatible endpoint can be typed in. It
 asks the endpoint which models the key can use, and offers them as a choice
 for your default (an endpoint that does not list its models is asked for a
-name). Every listed model goes into `models.md`, so roles can use any of
-them. It then makes one test call. The key is typed into a hidden prompt and
+name). Every listed model that chats goes into `models.md` (speech, image and
+embedding models are left out), so roles can use any of them. It then makes one test call. The key is typed into a hidden prompt and
 stored in `secrets/keys.env` with owner-only permissions. It is never sent to a
 model or written to a journal or report.
 
@@ -172,6 +177,44 @@ is waiting since you were last here. The interface is a layer over the
 commands and files: everything it does, the command line does too. A few
 things are still command-line only: `ombro approvals edit`, `ombro schedule add`,
 `ombro keys remove`.
+
+## The desktop app
+
+The app (in `gui/`) is a Tauri window over the same core: it starts
+`ombro serve`, a local API on 127.0.0.1 with a per-launch token, as a sidecar
+and talks only to it. Chats, briefs, jobs, reports, approvals, schedules and
+every setting are there, and a menu bar item shows what waits for you.
+Closing the window keeps it in the menu bar; scheduled jobs run whether the app
+is open or not.
+
+It uses the same home as the terminal (see Files), so the two can be used
+side by side: settings in `~/.config/ombro`, jobs and chats in `~/Ombro`. On first run, with no home yet, it
+holds the set-up as a conversation.
+
+Building it needs Node, Rust and uv. From `gui/`:
+
+```bash
+npm ci
+npm run sidecar                     # freezes ombro serve into src-tauri/binaries
+npx tauri build --bundles app       # the app, unsigned for now
+```
+
+The app is then at
+`gui/src-tauri/target/release/bundle/macos/Ombro.app`. Open it from Finder,
+or drag it to Applications. Run `npm run sidecar` again after any change to
+the Python core, or the app runs the old one.
+
+To try it without a model or your own home, make the demo profile, which is
+all invented and sends nothing anywhere:
+
+```bash
+uv run python gui/scripts/demo_home.py --fresh --open   # ~/ombro-demo, then opens the app on it
+```
+
+For work on the front end, `ombro serve --dev` (with `OMBRO_HOME` set to a
+test home) accepts Vite's dev server and prints a URL to open in a browser.
+`npm test` runs the app's tests; `npm run schema` and `npm run types` regenerate
+its TypeScript types from the core's view types.
 
 ## Interviews
 
@@ -371,11 +414,25 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   `shared/<name>/...`, and can write a file in one shared for writing: it
   shows you what it will write, and nothing changes until you say yes. It
   never deletes; a file that should go is set aside (below), also after your
-  yes. It cannot brief roles, start jobs, approve what waits for approval or use outward
-  tools; those calls are refused. Chat transcripts, journals, keys and
+  yes. It cannot brief roles, approve what waits for approval or use outward
+  tools itself; those calls are refused. Work goes to the crew, as a brief or
+  a live job (below). Chat transcripts, journals, keys and
   settings cannot be read.
-- **Brief** is the task interview. When the Lead hears a task it offers to
-  brief it, and never switches on its own. Accept, or type `/brief [@crew]
+- **Report back, or do it live.** A question gets an answer. Work gets one
+  question from the Lead: "Shall I take this away and report back, or shall
+  we do it live, here?", with the way it would choose. **Report back** is the
+  brief (below): an interview, then a job in the background, and the report
+  later. **Do it live** starts a *live job* at once, from a short spec the
+  Lead writes and shows: its steps show in the chat as they happen, its Lead
+  may stop and ask you (a background job never waits for you; its questions
+  go in the report), and its report opens in the chat when it ends. Then you
+  can save it as a brief, or schedule it. A live job is an ordinary job
+  (`live: true` in job.md): the same limits, journal, approvals and report;
+  Esc or `ombro stop` stops it, and if you leave the chat it carries on in
+  the background and stops waiting for answers (after 15 minutes at most).
+  `/live [@crew] <text>` starts one with your own words.
+- **Brief** is the task interview. The Lead never switches to it on its own.
+  Choose Report back, or type `/brief [@crew]
   [text]` at any point: the interview starts from what you said in the chat
   (your own messages, most recent first, up to 4,000 characters) and the
   Lead's one-line summary if you accepted its offer. It saves a spec, which
@@ -468,7 +525,9 @@ from the schedule's next slot.
 
 ## Tools
 
-A role gets only the tools its `config.md` lists:
+A role gets the tools its `config.md` lists, or every one with `tools: all`,
+which new roles start with (as with `skills: all`), so a tool or skill added
+later reaches every role at once:
 
 | Tool | Does |
 |---|---|
@@ -515,6 +574,32 @@ direct fetches, which are free. `/tools web.search` changes either.
 `max_calls` caps a tool's calls per job, which is also how a service that
 bills in its own units, such as Firecrawl credits, is kept in bounds. Like
 limits, tool settings are fixed when a job starts and recorded in `job.md`.
+
+### Web APIs
+
+Any web API can be a tool, by its name, address and key. Add one in the app
+(Settings › Tools › Add a tool) or under `apis:` in `tools.md`:
+
+```yaml
+apis:
+  podcasts:
+    url: https://api.podcastlist.example/v2
+    key: PODCASTS_API_KEY        # its name in keys.env; never the value
+    send_key: bearer             # bearer, header:<Name> or query:<param>
+    about: Our podcast list.     # what it's for: the Lead decides from this when it helps
+    how_to: GET /episodes?q=…    # optional: its paths, from its docs
+    class: external              # read-only, internal or external: what its changes are
+    max_calls: 30
+```
+
+Every crew member is offered every API. A role gets `api.<name>.get` for
+lookups and `api.<name>.request` for anything else; a request is a change of
+the API's class, so it follows your approval mode like an MCP tool and may
+wait in Approvals. A read-only API has one tool that takes any method as a
+lookup, since some APIs search with POST. A role names a path, never an
+address: calls go only to the API's own host and path, redirects are not
+followed, and Ombro adds the key, which no model sees. `ombro tools` lists
+the APIs.
 
 Every secret lives in one owner-only folder, `secrets/`: single keys in
 `keys.env`, sign-ins for remote MCP servers in `oauth/`, and key files (such
@@ -892,30 +977,42 @@ from the journal and marks the job `failed`.
 
 ## Files
 
-Everything variable lives in the home directory, as Markdown with YAML front
-matter, except the journal, which is JSON Lines:
+Everything variable lives in two folders, as Markdown with YAML front matter,
+except the journal, which is JSON Lines. Settings, secrets, crews, specs and
+schedules are in the hidden home, `~/.config/ombro`. What you open every day
+is in a visible folder, `~/Ombro`:
 
 ```
+~/Ombro/
+  Jobs/<job_id>/report.md, workspace/  each job's report and the files it made; also job.md, spec.md,
+                interview.md, journal.jsonl, scratch/, outbox/, code/ (scripts and their output),
+                backup/ (clones of writable shared folders)
+  Chats/<time>.md                      chat transcripts (never loaded or searched)
+
 ~/.config/ombro/
   limits.md  models.md  tools.md  folders.md
   secrets/keys.env  secrets/oauth/  secrets/<key file>   owner-only
   preferences/config.md  preferences/instructions.md
   skills/<name>/SKILL.md, references/  the skills library; skills/Archive/ keeps old versions
-  chats/<time>.md                      chat transcripts (never loaded or searched)
   scheduler/tick.md, tick.log, scheduler.log   the last tick and the scheduler's logs
   lead/config.md, soul.md              the one Lead, above every crew
   specs/<name>.md                      saved specs; each names its crews
   schedules/<name>.md
   interviews/<time>-<kind>.md
   removed/schedules/<name>.md          schedules removed with `ombro schedule remove`
-  jobs/<job_id>/job.md, spec.md, interview.md, journal.jsonl, report.md, workspace/, scratch/, outbox/,
-                code/ (scripts and their output), backup/ (clones of writable shared folders)
   crews/<crew>/
     crew.md
     roles/<role>/config.md, soul.md
     memory/index.md, notes.md
     removed/<role>/                    roles removed with `ombro role remove`
 ```
+
+`$OMBRO_FILES` names another visible folder. With `$OMBRO_HOME` pointing
+anywhere but `~/.config/ombro` (a test or demo home), everything stays in that
+one folder, with `jobs/` and `chats/` inside it. A home from before the
+visible folder has its `jobs/` and `chats/` moved there on start, once, and
+only where the new folder is empty. Prompts and indexes still name a job's
+files `jobs/<job_id>/…`. `Jobs/` and `Chats/`, and any folder holding them, can't be shared with jobs.
 
 Jobs were once called runs. A home from then keeps its jobs: on start,
 Ombro moves its `runs/` folder to `jobs/`, and each `run.md` to `job.md`.

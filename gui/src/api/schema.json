@@ -565,6 +565,9 @@
           "$ref": "#/$defs/Note"
         },
         {
+          "$ref": "#/$defs/OpenPage"
+        },
+        {
           "$ref": "#/$defs/PastTurn"
         },
         {
@@ -801,6 +804,9 @@
             },
             {
               "$ref": "#/$defs/JobEnded"
+            },
+            {
+              "$ref": "#/$defs/OpenPage"
             }
           ]
         },
@@ -1082,6 +1088,10 @@
           ],
           "default": null
         },
+        "live": {
+          "default": false,
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
@@ -1183,6 +1193,10 @@
         "job_id": {
           "type": "string"
         },
+        "live": {
+          "default": false,
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
@@ -1269,6 +1283,9 @@
             }
           ]
         },
+        "live": {
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
@@ -1331,7 +1348,8 @@
         "waiting",
         "seen_at",
         "path",
-        "chat"
+        "chat",
+        "live"
       ],
       "title": "JobRow",
       "type": "object"
@@ -1436,6 +1454,9 @@
           "additionalProperties": true,
           "type": "object"
         },
+        "live": {
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
@@ -1529,6 +1550,7 @@
         "seen_at",
         "path",
         "chat",
+        "live",
         "pid",
         "allowance",
         "usage",
@@ -1762,11 +1784,18 @@
               "type": "null"
             }
           ]
+        },
+        "presets": {
+          "items": {
+            "$ref": "#/$defs/ProviderPreset"
+          },
+          "type": "array"
         }
       },
       "required": [
         "connections",
-        "default"
+        "default",
+        "presets"
       ],
       "title": "ModelList",
       "type": "object"
@@ -1846,6 +1875,32 @@
         "text"
       ],
       "title": "Note",
+      "type": "object"
+    },
+    "OpenPage": {
+      "description": "Ombro suggests a page of the app, such as Scheduled with a brief picked. A terminal shows the text.",
+      "properties": {
+        "args": {
+          "type": "string"
+        },
+        "screen": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "open_page",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "screen",
+        "args",
+        "text"
+      ],
+      "title": "OpenPage",
       "type": "object"
     },
     "OpenQuestion": {
@@ -2028,6 +2083,37 @@
       "title": "ProposalShown",
       "type": "object"
     },
+    "ProviderPreset": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "endpoint",
+        "key",
+        "model"
+      ],
+      "title": "ProviderPreset",
+      "type": "object"
+    },
     "QuestionClosedMessage": {
       "properties": {
         "id": {
@@ -2149,6 +2235,9 @@
             }
           ]
         },
+        "live": {
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
@@ -2228,6 +2317,7 @@
         "seen_at",
         "path",
         "chat",
+        "live",
         "report_path",
         "report",
         "deliverables",
@@ -2966,6 +3056,9 @@
         },
         {
           "$ref": "#/$defs/Note"
+        },
+        {
+          "$ref": "#/$defs/OpenPage"
         },
         {
           "$ref": "#/$defs/PastTurn"

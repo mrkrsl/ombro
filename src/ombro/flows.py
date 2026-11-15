@@ -538,7 +538,7 @@ class Flows:
             except (CliError, ServerError) as e:
                 self.fail(str(e))
             return
-        env = {**os.environ, "OMBRO_HOME": str(self.home.root)}
+        env = {**os.environ, **self.home.process_env()}
         cmd = [*jobs.ombro_argv(), "tools"] + ([words[0]] if words else [])
         r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=180, stdin=subprocess.DEVNULL)
         self.say((r.stdout or r.stderr).rstrip() or "No output.")

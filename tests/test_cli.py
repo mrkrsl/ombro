@@ -192,12 +192,31 @@ def test_init_other_endpoint_without_key(tmp_path):
             return ModelReply(content="OK")
 
     said = []
-    ask = ScriptedPrompts(["", "2", "http://localhost:11434/v1", "", "invented-local-model", "n"])
+    from ombro.init_cmd import ENDPOINTS
+
+    other = str(len(ENDPOINTS))  # "Another OpenAI-compatible endpoint", last in the list
+    ask = ScriptedPrompts(["", other, "http://localhost:11434/v1", "", "invented-local-model", "n"])
     secret = ScriptedPrompts([""])
     run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
     spec = connected_model(home)
     assert spec.endpoint == "http://localhost:11434/v1" and spec.key is None
     assert not any("$" in s for s in said)
+
+
+def test_init_offers_a_local_provider_without_a_key(tmp_path):
+    from ombro.init_cmd import ENDPOINTS
+
+    home = Home(tmp_path / "fresh")
+
+    class Client:
+        def complete(self, *a, **k):
+            return ModelReply(content="OK")
+
+    ollama = str(next(i for i, e in enumerate(ENDPOINTS, 1) if e["endpoint"] == "http://localhost:11434/v1"))
+    ask = ScriptedPrompts(["", ollama, "invented-local-model", "n"])
+    run_init(home, ask=ask, ask_secret=ScriptedPrompts([]), say=lambda s: None, client_factory=lambda s, h: Client())
+    spec = connected_model(home)
+    assert spec.endpoint == "http://localhost:11434/v1" and spec.key is None
 
 
 def test_init_asks_no_search_key_and_says_where_tools_are_added(tmp_path):
@@ -304,5 +323,5 @@ def test_chat_from_the_command_line(home):
     assert r.returncode == 0, r.stderr
     assert "[Chat] You:" in r.stdout and "CHAT-MARKER" in r.stdout
     assert "Keep reports short." in (home.crew_dir("default") / "memory" / "notes.md").read_text()
-    (saved,) = (home.root / "chats").glob("*.md")
+    (saved,) = (home.chats_dir).glob("*.md")
     assert "What has run?" in saved.read_text()

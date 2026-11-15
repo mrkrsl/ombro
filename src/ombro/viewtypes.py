@@ -81,6 +81,7 @@ class JobRow(TypedDict):
     seen_at: str | None
     path: str
     chat: str | None  # the id of the chat that started it
+    live: bool  # a live job: started from a chat and followed there
 
 
 class JobStatus(JobRow):
@@ -278,9 +279,17 @@ class Connection(TypedDict):
     models: list[ModelEntry]
 
 
+class ProviderPreset(TypedDict):
+    label: str
+    endpoint: str
+    key: str  # the key's name in keys.env; "" when the provider needs none
+    model: str | None  # suggested when the provider doesn't list its models
+
+
 class ModelList(TypedDict):
     connections: list[Connection]
     default: str | None
+    presets: list[ProviderPreset]  # well-known providers, to fill the add form
 
 
 # -- the summary -------------------------------------------------------------------

@@ -190,7 +190,7 @@ def start_detached(home: Home, job_dir: Path) -> int:
             stdout=log,
             stderr=log,
             start_new_session=True,
-            env={**os.environ, "OMBRO_HOME": str(home.root)},
+            env={**os.environ, **home.process_env()},
         )
     finally:
         log.close()

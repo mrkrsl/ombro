@@ -190,7 +190,7 @@ def lead_system(
         parts.append(_section("Recent jobs in these crews: memory/index.md, newest first", index))
     if roles:
         roster = "\n".join(
-            f"- {r.name} ({r.kind}{'; tools: ' + ', '.join(r.tools) if r.tools else ''}"
+            f"- {r.name} ({r.kind}{'; tools: all' if r.all_tools else ('; tools: ' + ', '.join(r.tools) if r.tools else '')}"
             f"{'; skills: all' if r.all_skills else ('; skills: ' + ', '.join(r.skills) if r.skills else '')}): "
             f"{r.description}"
             for r in roles.values()
@@ -815,10 +815,15 @@ returns) can change them.
   tools; such calls are refused.
 - Before you answer about past work, look it up; do not answer from guesses.
   Say which job, report or page a fact came from.
-- Tasks: when the user describes something that sounds like work for a
-  crew, call offer_brief with a one-line summary and, if you can tell, the
-  crews it needs. Never start a brief
-  yourself: the user accepts your offer, or types /brief.
+- Work: a question gets an answer. When the user describes work for a crew
+  (something to find out, make, write or change), call offer_work. Ombro then
+  asks them, in your voice, whether you should take it away and report back
+  (a brief: the interview, then a job in the background) or do it live,
+  here (a live job: the crew starts at once, works in this chat, may ask them
+  things, and the report opens here). Write the task as the crew should get
+  it, and suggest one way: report back for work that is long, recurring or
+  can wait; live for short work they would watch anyway. Never start work
+  yourself: the user chooses, or types /brief or /live.
 - Saved specs: when the user wants a task they briefed before started again
   (for example after it stopped on a limit), find it (memory__list with a
   crew lists its specs; specs/<name>.md can be read) and call offer_start.
@@ -945,8 +950,26 @@ CHAT_TOOLS = [
         ["path", "why"],
     ),
     _fn(
+        "offer_work",
+        "Offer to do some work with a crew. Ombro says your summary and asks the user whether to report back "
+        "(a brief and a background job) or do it live, here. Nothing starts without their choice. Write nothing "
+        "else in the reply that calls it.",
+        {
+            "summary": {"type": "string", "description": "The work as you heard it, in one line."},
+            "title": {"type": "string", "description": "A short title for the job, e.g. 'Three bakeries in Leith'."},
+            "task": {"type": "string", "description": "The task as the crew gets it if it is done live: the goal, "
+                     "what to deliver and in what form, constraints, what done looks like. Plain Markdown; no "
+                     "secrets."},
+            "suggest": {"type": "string", "enum": ["report_back", "live"],
+                        "description": "Which way you would choose."},
+            "crews": {"type": "array", "items": {"type": "string"}, "description": "Optional: the crews it needs."},
+        },
+        ["summary", "title", "task", "suggest"],
+    ),
+    _fn(
         "offer_brief",
-        "Offer to turn what the user described into a task brief. Ombro words the offer as you and asks the "
+        "Offer to turn what the user described into a task brief (use offer_work for new work unless the user "
+        "asked for a brief, or to change a saved spec with revise). Ombro words the offer as you and asks the "
         "user; nothing starts unless they accept. Write nothing else in the reply that calls it.",
         {
             "summary": {"type": "string", "description": "The task as you heard it, in one line."},

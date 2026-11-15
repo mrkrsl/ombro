@@ -7,7 +7,8 @@ there. --open then starts the built app on it (macOS):
 
     open --env OMBRO_HOME=~/ombro-demo gui/src-tauri/target/release/bundle/macos/Ombro.app
 
-What is in it: four crews with roles, two skills, three model providers (only the canned one is
+What is in it: a live job to try (the first message in a new chat is offered as work; choose
+Do it live), four crews with roles, two skills, three model providers (only the canned one is
 used), built-in tools with providers, a web API,
 two MCP servers (one local, one remote), two keys (dummy values), a shared folder,
 saved specs, three chats, four finished jobs (one that made a file, one with two
@@ -39,6 +40,35 @@ CHAT_REPLIES = [
     "Here's a longer reply, to show Markdown:\n\n- **Bold** and *italic*\n- A list\n- [A link](https://example.com)\n\n"
     "And a short paragraph after it.",
 ]
+
+
+def live_demo() -> list[dict]:
+    """A live job to try: the first message in a new chat is offered as work (say Do it live). The
+    chat and the job read one script, so each reply waits for the call it belongs to (`needs`)."""
+    from ombro import fake
+
+    task = ("List three invented bakeries in Lowtown, with one line on each. Done when the list is in "
+            "the report.")
+    report = ("## What was done\nThe General Assistant found three invented sourdough bakeries in Lowtown:\n\n"
+              "- **Crumb & Co.**, Harbour Street: a small counter, best before ten.\n"
+              "- **The Rising**, by the market: rye and spelt as well.\n"
+              "- **Old Oven**, near the station: open on Sundays.\n\n"
+              "## What was not done and why\nNothing else was asked. All three are invented.\n\n"
+              "## Decisions for you\nNone.")
+    return [
+        {**fake.call("offer_work", {"summary": "Three bakeries in Lowtown", "title": "Bakeries in Lowtown",
+                                    "task": task, "suggest": "live"}), "needs": "offer_work"},
+        {**fake.say("Bakeries in Lowtown"), "needs": "prompt:Give this conversation a title"},
+        {**fake.call("ask_you", {"question": "Sourdough only, or any bread?",
+                                 "options": ["Sourdough", "Any bread"]}), "needs": "ask_you", "sleep": 1},
+        {**fake.brief("general-assistant", "List three invented bakeries in Lowtown, sourdough only, "
+                      "one line each."), "needs": "brief", "sleep": 1},
+        {**fake.result("Three invented sourdough bakeries: Crumb & Co., The Rising and Old Oven."),
+         "needs": "workspace__write", "sleep": 2},
+        {**fake.finish("Three invented sourdough bakeries listed."), "needs": "finish"},
+        {**fake.keep_notes(), "needs": "keep_notes"},
+        {**fake.say(report), "needs": "prompt:writing the parts of the final report"},
+    ]
 
 
 def role(home, crew: str, name: str, title: str, description: str, *, kind: str = "specialist",
@@ -230,7 +260,7 @@ def build(root: Path) -> None:
     schedules.write_schedule(home, "monthly-figures", "0 18 * * 4", "monthly-figures", False)
 
     replies = [fake.say(CHAT_REPLIES[i % len(CHAT_REPLIES)]) for i in range(300)]
-    (home.root / "script.json").write_text(json.dumps(replies))
+    (home.root / "script.json").write_text(json.dumps(live_demo() + replies))
     print(f"done: {root}")
 
 

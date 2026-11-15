@@ -47,10 +47,7 @@ def index_path(home: Home, crew: str) -> Path:
 
 
 def _rel(home: Home, path: Path) -> str:
-    try:
-        return Path(path).resolve().relative_to(home.root).as_posix()
-    except ValueError:
-        return str(path)
+    return home.rel(path)
 
 
 # ---------------------------------------------------------------------------
@@ -540,8 +537,10 @@ def resolve_readable(home: Home, path: Any) -> Path:
     if not isinstance(path, str) or not path.strip():
         raise ReadRefused("give a path such as jobs/<job_id>/report.md")
     p = path.strip().replace("\\", "/")
-    if p.startswith(str(home.root)):
-        p = p[len(str(home.root)) :]
+    for base, name in ((str(home.jobs_dir), "jobs"), (str(home.root), "")):
+        if p.startswith(base + "/"):
+            p = name + p[len(base):]
+            break
     parts = [x for x in p.strip("/").split("/") if x not in ("", ".")]
     if ".." in parts or "\x00" in p:
         raise ReadRefused("paths cannot contain `..`")
@@ -551,10 +550,10 @@ def resolve_readable(home: Home, path: Any) -> Path:
             "(for example jobs/<job_id>/report.md, specs/<name>.md or crews/<crew>/memory/notes.md); chat "
             "transcripts, journals, keys and settings cannot"
         )
-    target = home.root.joinpath(*parts)
+    target = home.at("/".join(parts))
     real = target.resolve()
-    if not any(real.is_relative_to((home.root / top).resolve()) for top in READABLE_TOP) or not _allowed(
-        list(real.relative_to(home.root).parts) if real.is_relative_to(home.root) else []
+    if not any(real.is_relative_to(home.at(top).resolve()) for top in READABLE_TOP) or not _allowed(
+        list(Path(home.rel(real)).parts) if not Path(home.rel(real)).is_absolute() else []
     ):
         raise ReadRefused(f"{path} leads outside what chat may read (through a symlink), so it is refused")
     return real

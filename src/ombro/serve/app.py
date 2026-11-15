@@ -294,7 +294,7 @@ def _session_routes(s: Serve) -> list[Route]:
         live = s.sessions.new(flow or "chat")
         if data.get("chat"):
             name = str(data["chat"])
-            path = home.root / "chats" / f"{name}.md"
+            path = home.chats_dir / f"{name}.md"
             if "/" in name or not path.is_file():
                 s.sessions.remove(live.id)
                 raise LookupError(f"no chat called {name!r}")

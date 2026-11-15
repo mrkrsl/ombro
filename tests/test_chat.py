@@ -111,7 +111,7 @@ def test_chat_answers_about_a_past_job_from_every_crew(chat, job, home):
 
 def test_chat_reads_only_reports_notes_indexes_specs_and_deliverables(chat, job, home):
     rid = past_job(job, "Found invented teapots.")
-    (home.root / "chats" / "20261101-090000.md").write_text("An old chat.")
+    (home.chats_dir / "20261101-090000.md").write_text("An old chat.")
     paths = [f"jobs/{rid}/journal.jsonl", "chats/20261101-090000.md", ".env", "models.md",
              f"jobs/{rid}/../../../../.env", "crews/default/roles/lead/soul.md",
              "crews/default/memory/notes.md", f"jobs/{rid}/spec.md"]
@@ -297,7 +297,7 @@ def test_old_turns_are_dropped_from_what_is_sent(chat, home):
 def test_transcripts_are_saved_but_never_loaded_into_later_chats_or_jobs(chat, job, home):
     chat([fake.say("Understood.")], ["My invented secret word is PLUMTREE-MARKER."])
     assert "PLUMTREE-MARKER" in chat.transcript
-    assert chat.chat.path.parent == home.root / "chats"
+    assert chat.chat.path.parent == home.chats_dir
     first = chat.chat.path
     chat([fake.call("memory__search", {"query": "PLUMTREE-MARKER"}), fake.say("I have no record of that.")],
          ["What is my secret word?"])

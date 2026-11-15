@@ -52,7 +52,7 @@ def settings_routes(s: Serve) -> list[Route]:
 
         endpoint = _need(data, "endpoint").strip().rstrip("/")
         key_value = str(data.get("key") or "").strip()
-        key_name = str(data.get("key_name") or "").strip() or (models.key_name_for(endpoint) if key_value else "")
+        key_name = (str(data.get("key_name") or "").strip() or models.key_name_for(endpoint)) if key_value else ""
         if key_value:
             if not keys.valid_name(key_name):
                 raise HttpError(400, "Key names use capitals, digits and underscores, starting with a letter.")

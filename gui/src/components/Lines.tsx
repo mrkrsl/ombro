@@ -1,6 +1,9 @@
 // The conversation's lines: the Lead's words, yours, Ombro's notes, progress and job cards.
 
+import { useEffect, useRef, useState } from "react";
+import type { Report } from "../api/types";
 import type { Line } from "../store/conversation";
+import type { Screen } from "../store/store";
 import { useStore } from "../store/store";
 import { openLink } from "../platform";
 import { Markdown } from "./Markdown";
@@ -41,14 +44,26 @@ function LineView({ line }: { line: Line }) {
     case "progress":
       return <div className="line progress">{line.text}</div>;
     case "job":
-      // A job's progress, unless "updates in main chat" is off (the inspector still shows it).
-      return feedOn ? (
-        <div className="line job">
-          <b>Background:</b> {line.text}
+      // A live job's steps always show; a background job's, unless "updates in main chat" is off
+      // (the inspector still shows them).
+      return line.live || feedOn ? (
+        <div className={`line job${line.live ? " live" : ""}`}>
+          <b>{line.live ? "Live:" : "Background:"}</b> {line.text}
         </div>
       ) : null;
     case "report":
       return <ReportCard report={line.report} />;
+    case "livereport":
+      return <LiveReport jobId={line.jobId} />;
+    case "page":
+      return (
+        <div className="line note done">
+          {line.text}{" "}
+          <button className="link-button" onClick={() => show(line.screen as Screen, line.args)}>
+            Open {line.screen[0].toUpperCase() + line.screen.slice(1)}
+          </button>
+        </div>
+      );
     case "error":
       return <div className="line error">{line.text}</div>;
     case "proposal":
@@ -113,4 +128,31 @@ function LineView({ line }: { line: Line }) {
       );
     }
   }
+}
+
+/** A live job's report, fetched when its end arrives, so it sits in the chat where the job ended. */
+function LiveReport({ jobId }: { jobId: string }) {
+  const api = useStore((s) => s.api);
+  const [report, setReport] = useState<Report | null>(null);
+  const [problem, setProblem] = useState("");
+  useEffect(() => {
+    if (!api) return;
+    api
+      .get<Report>(`/jobs/${encodeURIComponent(jobId)}/report`)
+      .then(setReport)
+      .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
+  }, [api, jobId]);
+  // It arrives after the chat has scrolled to its end: bring its top into view, to read from there.
+  const top = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (report) top.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [report]);
+  if (problem) return <div className="line error">The report could not be opened: {problem}</div>;
+  return report ? (
+    <div ref={top}>
+      <ReportCard report={report} />
+    </div>
+  ) : (
+    <div className="line progress">Opening the report…</div>
+  );
 }

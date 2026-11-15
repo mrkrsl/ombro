@@ -18,7 +18,7 @@ import type {
   Summary,
 } from "../api/types";
 import { notify } from "../platform";
-import { addLocal, addReport, apply, greeting, newConversation, type Conversation } from "./conversation";
+import { addLocal, addReport, apply, newConversation, opening, type Conversation } from "./conversation";
 
 export type FeedLine = { key: number; jobId: string; name: string; line: string; status: string };
 
@@ -236,6 +236,10 @@ export const useStore = create<State & Actions>((set, get) => {
       const next = apply(c, m);
       if (next === c) return;
       set((s) => ({ conversations: { ...s.conversations, [id]: next } }));
+      if (m.type === "event" && m.event.type === "open_page") {
+        // Ombro suggests a page (Schedule it, after a live job): go there, with the brief picked.
+        get().show(m.event.screen as Screen, m.event.args);
+      }
       if (m.type === "session" && (m.state === "idle" || m.state === "ended")) {
         void afterIdle(id);
         if (c.kind === "setup") {
@@ -357,7 +361,7 @@ export const useStore = create<State & Actions>((set, get) => {
         let id = current;
         if (!id || !conversations[id] || conversations[id].state === "ended") {
           // From the home screen: the greeting carries into the new chat.
-          const first = get().opener ?? greeting(summary?.name ?? "");
+          const first = get().opener ?? opening(summary?.name ?? "", get().chats.length === 0);
           id = await openSession({}, [{ key: "local-0", kind: "lead", text: first }]);
         }
         set({ screen: "chat" }); // typed on a page: the conversation comes back

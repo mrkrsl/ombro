@@ -22,7 +22,7 @@ from ombro import viewtypes as vt
 
 # What a core event's to_dict() can be. Each also carries its `type` (the class's `kind`).
 CoreEvent = (ui.LeadSaid | ui.Progress | ui.Note | ui.Failure | ui.ProposalShown | ui.Usage | ui.ModeChanged
-             | ui.PastTurn | ui.ChatCleared | ui.JobStarted | ui.JobProgress | ui.JobEnded)
+             | ui.PastTurn | ui.ChatCleared | ui.JobStarted | ui.JobProgress | ui.JobEnded | ui.OpenPage)
 FieldDict = ui.Field  # a field's to_dict()
 
 

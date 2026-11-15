@@ -2,7 +2,7 @@
 // Edit (when it runs, in place) and Delete (moved aside, never erased). New scheduled job: a saved
 // brief (a spec, saved when a job was briefed), when, and a title.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { useStore } from "../store/store";
 
@@ -66,11 +66,20 @@ function When({ onSave, onCancel, saveLabel }: { onSave: (cron: string) => void;
 }
 
 export function Scheduled() {
-  const { schedules, specs, call, load } = useStore();
+  const { schedules, specs, call, load, screenArgs } = useStore();
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [spec, setSpec] = useState("");
+
+  // Opened with a brief named (Schedule it, after a live job): the new-schedule form, that brief picked.
+  useEffect(() => {
+    if (screenArgs && specs.some((s) => s.name === screenArgs)) {
+      setAdding(true);
+      setSpec(screenArgs);
+      setName((n) => n || (specs.find((s) => s.name === screenArgs)?.title ?? screenArgs));
+    }
+  }, [screenArgs, specs]);
 
   async function change(fn: Parameters<typeof call>[0]) {
     await call(fn);

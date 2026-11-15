@@ -147,6 +147,7 @@ class JobProgress(Event):
     action: str  # the journal's action: briefed, returned, staged, finish, failed...
     note: str
     text: str  # the line as an interface shows it
+    live: bool = False  # a step of a live job, followed in the chat that started it
 
 
 @dataclass
@@ -170,6 +171,17 @@ class JobEnded(Event):
     limit_hit: str | None = None
     files: list[JobFile] = field(default_factory=list)
     waiting: int = 0
+    live: bool = False  # a live job: its report opens in the chat
+
+
+@dataclass
+class OpenPage(Event):
+    """Ombro suggests a page of the app, such as Scheduled with a brief picked. A terminal shows the text."""
+
+    kind: ClassVar[str] = "open_page"
+    screen: str  # scheduled, jobs, approvals...
+    args: str
+    text: str
 
 
 # ---------------------------------------------------------------------------

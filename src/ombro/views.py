@@ -65,7 +65,7 @@ def crews(home: Home) -> vt.Crews:
             try:
                 r = load_role(folder, limits)
                 roles.append({"name": r.name, "title": r.title, "kind": r.kind, "model": r.model,
-                              "tools": list(r.tools), "skills": list(r.skills), "description": r.description})
+                              "tools": ["all"] if r.all_tools else list(r.tools), "skills": list(r.skills), "description": r.description})
             except RoleError as e:
                 from ombro.home import tidy_title
 
@@ -102,6 +102,7 @@ def job_row(job_dir: Path) -> vt.JobRow:
         "path": str(job_dir),
         "name": jobs.job_name(job_dir.name),
         "chat": meta.get("chat"),
+        "live": bool(meta.get("live")),
     }
 
 
@@ -170,7 +171,7 @@ def deliverables(home: Home, job_dir: Path) -> list[vt.Deliverable]:
 def chat_list(home: Home) -> list[vt.ChatRow]:
     """Saved chats, most recently used first: title (never the file name), when, and where.
     A chat from before titles is shown by its date."""
-    folder = home.root / "chats"
+    folder = home.chats_dir
     out: list[vt.ChatRow] = []
     for p in folder.glob("*.md") if folder.is_dir() else []:
         try:
@@ -337,7 +338,8 @@ def model_list(home: Home) -> vt.ModelList:
     from ombro import models
 
     connections: list[vt.Connection] = models.connections(home)  # type: ignore[assignment]
-    return {"connections": connections, "default": load_lead_model(home)}
+    presets: list[vt.ProviderPreset] = [dict(p) for p in models.PRESETS]  # type: ignore[misc]
+    return {"connections": connections, "default": load_lead_model(home), "presets": presets}
 
 
 def approval_row(a: outbox.Action, home: Home | None = None) -> vt.ApprovalRow:
@@ -371,7 +373,7 @@ def role(home: Home, crew: str, name: str) -> vt.RoleDetail:
     limits = load_limits(home)
     r = load_lead(home, limits) if name == "lead" else load_role(home.roles_dir(crew) / name, limits)
     return {"name": r.name, "crew": crew if name != "lead" else "", "title": r.title, "kind": r.kind,
-            "model": r.model, "description": r.description, "tools": list(r.tools), "skills": list(r.skills),
+            "model": r.model, "description": r.description, "tools": ["all"] if r.all_tools else list(r.tools), "skills": list(r.skills),
             "all_skills": r.all_skills, "soul": r.soul, "path": str(r.path)}
 
 
@@ -379,7 +381,7 @@ def chat(home: Home, name: str) -> vt.ChatDetail:
     """One saved chat: its title, the jobs it started, and its turns (yours and the Lead's)."""
     from ombro.chat import parse_entries, turns
 
-    path = home.root / "chats" / f"{name}.md"
+    path = home.chats_dir / f"{name}.md"
     if "/" in name or not path.is_file():
         raise LookupError(f"no chat called {name!r}")
     _, body = mdfile.read(path)

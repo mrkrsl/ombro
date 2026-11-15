@@ -439,8 +439,9 @@
   bottom: calc(100% + 10px);
   left: 0;
   min-width: 380px;
-  max-height: 340px;
+  max-height: min(440px, calc(100vh - 220px));
   overflow-y: auto;
+  scroll-padding: 10px;
   background: var(--menu-bg);
   border: 1px solid var(--rule);
   border-radius: 14px;
@@ -464,6 +465,18 @@
 
 .slash .help {
   color: var(--muted);
+}
+
+/* macOS hides scroll bars until you scroll; this one stays, so you can see there is more. */
+.slash::-webkit-scrollbar {
+  width: 12px;
+}
+
+.slash::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border: 4px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
 }
 
 /* -- home ------------------------------------------------------------------------- */
@@ -781,6 +794,16 @@
   vertical-align: middle;
 }
 
+/* A live job: outlined, so it reads apart from "new". */
+.badge.live {
+  background: none;
+  border: 1px solid var(--accent);
+}
+
+.line.job.live b {
+  color: var(--accent);
+}
+
 .text-button {
   border: 0;
   background: none;
@@ -993,6 +1016,8 @@ input[type="checkbox"]:not([role="switch"]) {
 /* -- a report (design 19) ------------------------------------------------------------- */
 
 .report-card {
+  /* Solid, so the blue arc behind the page doesn't show through the report. */
+  background: var(--bg);
   border: 1px solid var(--rule);
   border-radius: 16px;
   overflow: hidden;

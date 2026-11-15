@@ -149,6 +149,10 @@ def check_place(path: str | Path, home: Home, *, must_exist: bool = True) -> Pat
         raise FolderError(f"{path} is inside Ombro's own home, which holds its settings and secrets")
     if _same_or_inside(ombro, real):
         raise FolderError(f"{path} contains Ombro's own home, which holds its settings and secrets")
+    for kept in (home.jobs_dir, home.chats_dir):
+        k = true_path(kept)
+        if _same_or_inside(real, k) or _same_or_inside(k, real):
+            raise FolderError(f"{path} is or holds Ombro's {kept.name} folder, which Ombro keeps itself")
     me = true_path(user_home())
     base = None
     if _key(real) != _key(me) and _same_or_inside(real, me):

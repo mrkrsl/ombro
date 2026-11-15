@@ -1,7 +1,7 @@
 // The conversation, built from messages as serve sends them (recorded from a real session).
 import { describe, expect, it } from "vitest";
 import type { QuestionMessage, ServerMessage } from "../api/types";
-import { addLocal, apply, greeting, newConversation, quickAnswers, usageText } from "./conversation";
+import { addLocal, apply, greeting, HOW_IT_WORKS, newConversation, opening, quickAnswers, usageText } from "./conversation";
 
 const S = "a1b2c3";
 const ev = (seq: number, event: object) => ({ type: "event", session: S, seq, event }) as ServerMessage;
@@ -71,5 +71,39 @@ describe("a conversation", () => {
   it("greets as the terminal does", () => {
     expect(greeting("Ada", new Date(2026, 10, 12, 9))).toBe("Good morning Ada. What would you like to get done today?");
     expect(greeting("", new Date(2026, 10, 12, 19))).toMatch(/^Good evening\. /);
+  });
+});
+
+describe("live jobs", () => {
+  const step = (seq: number, live: boolean) =>
+    ev(seq, { type: "job_progress", job_id: "bakeries-20261115-1200", name: "Bakeries", role: "lead",
+      action: "asked", note: "Sourdough?", text: "Bakeries · lead asked you: Sourdough?", live });
+
+  it("marks a live job's steps, and ends with its report in the chat", () => {
+    const c = run([
+      step(1, true),
+      ev(2, { type: "job_ended", job_id: "bakeries-20261115-1200", name: "Bakeries", status: "completed",
+        text: "Your job has finished.", brief: "", limit_hit: null, files: [], waiting: 1, live: true }),
+    ]);
+    expect(c.lines[0]).toMatchObject({ kind: "job", live: true });
+    expect(c.lines.slice(1).map((l) => l.kind)).toEqual(["note", "livereport"]);
+    expect(c.lines[1]).toMatchObject({ text: "Your job has finished. 1 action waits for your approval." });
+  });
+
+  it("keeps a background job's end as a card to open", () => {
+    const c = run([ev(1, { type: "job_ended", job_id: "x", name: "X", status: "completed", text: "Done.", brief: "",
+      limit_hit: null, files: [], waiting: 0 })]);
+    expect(c.lines.map((l) => l.kind)).toEqual(["ended"]);
+  });
+
+  it("shows a suggested page as a line to follow", () => {
+    const c = run([ev(1, { type: "open_page", screen: "scheduled", args: "bakeries", text: "Saved as the brief." })]);
+    expect(c.lines[0]).toMatchObject({ kind: "page", screen: "scheduled", args: "bakeries" });
+  });
+
+  it("says how Ombro works on the very first chat only", () => {
+    const at = new Date(2026, 10, 15, 9);
+    expect(opening("Ada", true, at)).toContain(HOW_IT_WORKS);
+    expect(opening("Ada", false, at)).toBe(greeting("Ada", at));
   });
 });

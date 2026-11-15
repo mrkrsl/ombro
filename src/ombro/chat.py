@@ -47,7 +47,7 @@ WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
 FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write",
                 "folders__set_aside": "folders.set_aside"}
 SKILL_TOOLS = {"skills__read": "skills.read"}
-OFFERS = ("offer_brief", "offer_remember", "offer_start", "offer_skill")
+OFFERS = ("offer_brief", "offer_work", "offer_remember", "offer_start", "offer_skill")
 
 HELP = """\
 Chat mode is a conversation with the Lead. It can look at every crew's reports,
@@ -55,6 +55,7 @@ notes, specs and deliverables, search the web, and work in your shared folders.
 It changes a file only after you say yes.
 
   /brief [@crew] [text]     brief a task (Brief mode); the chat so far is its starting point
+  /live [@crew] <text>      do some work live, here: the crew starts at once and reports in this chat
   /chat                     back to Chat mode from a brief (nothing is written)
   /new                      save this chat and start a fresh one; nothing carries over
   /chats                    your past chats, newest first; reopen one and carry on
@@ -227,6 +228,7 @@ class Chat:
         self.refused = []
         self.remembered = []
         self.specs = []
+        self.saved_briefs: list[str] = []  # live jobs kept as briefs (not offered to start again)
         self.ended = "you ended the chat"
         # When the chat was last used, and how many turns (yours and the Lead's) it had then:
         # saving it with no new turn keeps that time, so opening or closing a chat, or Ombro's
@@ -503,7 +505,9 @@ class Chat:
         self._usage_line()
         if self.titles and not self.title and self.exchanges and self.mode == "Chat":
             self._auto_title()
-        if request:
+        if request and request[0] == "live":
+            self._live(*request[1:])
+        elif request:
             revise = request[2] if len(request) > 2 else None
             self._brief(request[0], self.brief_opening("", request[1]), revise=revise)
         self._save()
@@ -540,6 +544,12 @@ class Chat:
             crew, rest = self._crew_arg(rest)
             if crew:
                 self._brief([crew] if rest_named(text) else [], self.brief_opening(rest, None))
+        elif word == "/live":
+            crew, rest = self._crew_arg(rest)
+            if crew and not rest.strip():
+                self.ui.say("Say what to do, for example: /live find three bakeries in Leith that deliver")
+            elif crew:
+                self._live([crew], _short(rest, 70), rest.strip())
         elif word == "/skills":
             lib = skills.library(self.home)
             self.ui.say("\n".join(f"- {s.name}: {s.description}" for s in lib.values())
@@ -582,7 +592,7 @@ class Chat:
             reply = self._model_call(self._messages())
             self.exchanges[-1].append(reply.as_message())
             said = (reply.content or "").strip()
-            offering = any(tc.name in ("offer_start", "offer_brief") for tc in reply.tool_calls or [])
+            offering = any(tc.name in ("offer_start", "offer_brief", "offer_work") for tc in reply.tool_calls or [])
             if said and offering:
                 # The offer says it in the Lead's voice; the same words twice read as a stutter.
                 self.transcript.note(f"The Lead's words with its offer, not shown: {_short(said, 300)}")
@@ -641,6 +651,8 @@ class Chat:
             return {"error": "the arguments were not a JSON object"}, None
         if name == "offer_brief":
             return self._offer_brief(args)
+        if name == "offer_work":
+            return self._offer_work(args)
         if name == "offer_start":
             return self._offer_start(args)
         if name == "offer_remember":
@@ -675,7 +687,7 @@ class Chat:
                 return memory.listing(self.home, str(args.get("crew") or "") or None,
                                       str(args.get("job_id") or "") or None), None
             tool = self.registry.get(internal)
-            ctx = ToolContext(self.home.root / "chats", "lead", timeout=60.0)
+            ctx = ToolContext(self.home.chats_dir, "lead", timeout=60.0)
             return tool.handler(args, ctx), None
         except (memory.ReadRefused, skills.SkillError) as e:
             return {"error": str(e)}, None
@@ -693,7 +705,7 @@ class Chat:
         given, left = for_chat(self.home)
         shared = {f["name"]: SharedFolder(f["name"], Path(f["path"]), f["access"]) for f in given}
         # No job folder: chat reaches only shared/<name>/..., never workspace/ or scratch/.
-        return ToolContext(self.home.root / "chats" / ".none", "lead", timeout=60.0, shared=shared), left
+        return ToolContext(self.home.chats_dir / ".none", "lead", timeout=60.0, shared=shared), left
 
     def _folder_tool(self, internal: str, args: dict) -> dict[str, Any]:
         from ombro import native
@@ -850,6 +862,77 @@ class Chat:
         self.transcript.note(f"The Lead offered a brief ({summary}); you declined.")
         return {"status": "the user declined; carry on the conversation and do not offer again for this"}, None
 
+    def _offer_work(self, args: dict) -> tuple[dict, tuple | None]:
+        """Report back, or do it live: the one question that says how Ombro works."""
+        summary = _short(args.get("summary") or "", 300).rstrip(".")
+        title = _short(args.get("title") or summary or "Live job", 70)
+        task, _ = keys.scrub(self.home, str(args.get("task") or "").strip())
+        raw = args.get("crews") or args.get("crew") or []
+        crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
+                 if str(c) in self.home.crews()]
+        suggest = "live" if str(args.get("suggest")) == "live" else "report"
+        which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
+        self.ui.say(f"This sounds like work{which}: {summary}.", level="lead")
+        mine = "I'd do it live." if suggest == "live" else "I'd report back."
+        answer = self.ui.ask(Field(
+            "how", f"Shall I take this away and report back, or shall we do it live, here? {mine}", "choice",
+            default=suggest, mode="Chat", other="not now",
+            options=[Option("report", "Report back"), Option("live", "Do it live")]))
+        if answer == "live" and task:
+            self.transcript.note(f"The Lead offered work ({summary}); you chose to do it live.")
+            return ({"status": "the user chose a live job; it starts now and its steps show in the chat, so do "
+                               "not reply"}, ("live", crews, title, task))
+        if answer in ("report", "live"):
+            self.transcript.note(f"The Lead offered work ({summary}); you chose to have it reported back.")
+            return ({"status": "the user chose a brief; the task interview starts now, so do not reply"},
+                    (crews, summary, None))
+        self.transcript.note(f"The Lead offered work ({summary}); you said not now.")
+        return {"status": "the user said not now; carry on the conversation and do not offer again for this"}, None
+
+    def _live(self, crews: list[str], title: str, task: str) -> None:
+        """Do the work live: start the job, follow it here, then offer to keep it as a brief."""
+        from ombro import livejob
+        from ombro.session import StartError
+        from ombro.ui import JobStarted, OpenPage
+
+        crews = crews or [self.crew]
+        self.ui.say(f"Here's what the crew will do: **{title}**\n\n{task.strip()}", level="lead", spaced=True)
+        try:
+            from ombro.init_cmd import connected_model
+
+            if connected_model(self.home) is None:
+                raise StartError("no model is connected; set Ombro up first")
+            job_dir = livejob.start(self.home, crews, title, task, chat=self.id)
+        except (StartError, SetupError, mdfile.FrontMatterError, OSError) as e:
+            self.ui.show(Failure(f"The live job could not start: {e}."))
+            return
+        job_id = job_dir.name
+        self.note_job(job_id)
+        name = jobs.job_name(job_id)
+        self.ui.show(JobStarted(job_id, name, f"Live: '{name}' has started. Its steps show here as they happen; "
+                                              "Esc stops it."))
+        status = livejob.follow(self.home, self.ui, job_dir)
+        self.transcript.note(f"Live job {job_id} ended ({status}).")
+        self.pending_note += (f"[Ombro note: the live job {job_id} ended ({status}); its report is "
+                              f"jobs/{job_id}/report.md and the user has it in the chat.]\n")
+        if status not in ("completed", "stopped_by_limit"):
+            return
+        what = self.ui.ask(Field(
+            "after_live", "Want to run this again later? I can keep it as a brief.", "choice", default="no",
+            mode="Chat", options=[Option("save", "Save as a brief"), Option("schedule", "Schedule it"),
+                                  Option("no", "Not now")]))
+        if what not in ("save", "schedule"):
+            return
+        brief = livejob.save_as_brief(self.home, job_dir)
+        self.saved_briefs.append(brief)
+        self.transcript.note(f"Saved the live job as brief {brief!r}.")
+        if what == "schedule":
+            self.ui.show(OpenPage("scheduled", brief, f"Saved as the brief '{brief}'. Choose when it runs on the "
+                                  f"Scheduled page (or: ombro schedule add {brief} --spec {brief} --cron \"…\")."))
+        else:
+            self.ui.say(f"Saved as the brief '{brief}'. Start it again whenever you like, or schedule it.",
+                        level="done")
+
     # -- remember ----------------------------------------------------------
 
     def _remember(self, text: str, crew: str, *, offered: bool) -> dict[str, Any]:
@@ -968,7 +1051,7 @@ class Chat:
             if answer == "y":
                 break
             if answer == "e":
-                draft = self.home.root / "chats" / f".skill-{name}.md"
+                draft = self.home.chats_dir / f".skill-{name}.md"
                 draft.parent.mkdir(parents=True, exist_ok=True)
                 draft.write_text(text, encoding="utf-8")
                 self.ui.edit([draft])
@@ -1056,7 +1139,7 @@ class Chat:
 
     def _transcript_path(self) -> Path:
         """chats/new-chat-<date-time>.md until the chat has a title; then the title's words."""
-        folder = self.home.root / "chats"
+        folder = self.home.chats_dir
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"new-chat-{self.stamp}.md"
         n = 2

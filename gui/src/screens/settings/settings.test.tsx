@@ -27,6 +27,11 @@ const models: ModelList = {
     { api: "openai", label: "Local", endpoint: "http://192.168.1.100:1234/v1", key: null,
       models: [{ name: "local-model", model: "local-model", default: false, used_by: [] }] },
   ],
+  presets: [
+    { label: "Invented", endpoint: "https://api.invented.invalid", key: "INVENTED_API_KEY", model: null },
+    { label: "Anthropic", endpoint: "https://api.anthropic.com/v1", key: "ANTHROPIC_API_KEY", model: "claude-opus-5-5" },
+    { label: "Ollama, on this computer", endpoint: "http://localhost:11434/v1", key: "", model: null },
+  ],
 };
 const crews: CrewsView = {
   lead: { name: "lead", title: "Lead", model: "default", path: "/x" },
@@ -127,6 +132,7 @@ describe("Settings › General", () => {
     replies["POST /models/providers"] = models;
     render(<Settings />);
     await userEvent.click(await screen.findByRole("button", { name: "Add provider" }));
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "other");
     await userEvent.type(screen.getByLabelText(/^Address/), "https://api.other.invalid");
     await userEvent.type(screen.getByLabelText(/^API key/), "sk-INVENTED");
     await userEvent.click(screen.getAllByRole("button", { name: "Add provider" })[0]);
@@ -134,6 +140,30 @@ describe("Settings › General", () => {
     replies["PUT /preferences"] = { ...prefs, outward: "manual" };
     await userEvent.selectOptions(screen.getByLabelText("Approval mode"), "manual");
     expect(sent("PUT", "/preferences")).toEqual({ outward: "manual" });
+  });
+});
+
+describe("Settings › General: known providers", () => {
+  it("offers the providers not yet connected, and fills in the address and key name", async () => {
+    replies["POST /models/providers"] = models;
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add provider" }));
+    const picker = screen.getByLabelText("Provider");
+    expect(within(picker).queryByText("Invented")).toBeNull(); // already connected
+    expect((screen.getByLabelText(/^Address/) as HTMLInputElement).value).toBe("https://api.anthropic.com/v1");
+    await userEvent.type(screen.getByLabelText(/^API key/), "sk-INVENTED");
+    await userEvent.click(screen.getAllByRole("button", { name: "Add provider" })[0]);
+    expect(sent("POST", "/models/providers")).toEqual({
+      endpoint: "https://api.anthropic.com/v1", key: "sk-INVENTED", key_name: "ANTHROPIC_API_KEY", model: "",
+    });
+  });
+
+  it("asks no key of a provider on this computer", async () => {
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add provider" }));
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "http://localhost:11434/v1");
+    expect(screen.queryByLabelText(/^API key/)).toBeNull();
+    expect(screen.getByText(/needs no key/)).toBeTruthy();
   });
 });
 

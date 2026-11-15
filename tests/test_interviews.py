@@ -11,7 +11,7 @@ from ombro import fake, keys, mdfile, jobs
 from ombro.fake import ScriptedClient
 from ombro.home import LEAD_SOUL
 from ombro.interviews import BriefPurpose, RolePurpose, SetupPurpose, record_insufficient_brief, start
-from ombro.roles import crew_roles, load_lead
+from ombro.roles import crew_roles, load_lead, load_role
 from ombro.settings import load_limits
 
 
@@ -198,11 +198,15 @@ def test_role_interview_is_shown_the_tools_that_exist(talk, home):
     assert "'checker'" in talk.client.calls[0]["messages"][1]["content"]
 
 
-def test_role_without_tools_comes_with_a_warning(talk, home):
-    out = talk(RolePurpose(home, "default", load_limits(home)), [fake.call("propose", {**ROLE, "tools": []})], ["a"])
+def test_a_new_role_gets_every_tool_and_skill_unless_limited(talk, home):
+    out = talk(RolePurpose(home, "default", load_limits(home)),
+               [fake.call("propose", {**ROLE, "tools": [], "skills": []})], ["a"])
     assert out.status == "confirmed"
-    assert "this role has no tools" in talk.output
-    assert "tools" not in mdfile.read(home.roles_dir("default") / "fact-checker" / "config.md")[0]
+    assert "this role has no tools" not in talk.output
+    meta = mdfile.read(home.roles_dir("default") / "fact-checker" / "config.md")[0]
+    assert meta["tools"] == "all" and meta["skills"] == "all"
+    role = load_role(home.roles_dir("default") / "fact-checker", load_limits(home))
+    assert role.all_tools and role.tools == [] and role.all_skills
 
 
 def test_role_interview_refuses_an_existing_name_and_the_lead(talk, home):

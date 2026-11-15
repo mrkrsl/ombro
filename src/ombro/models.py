@@ -142,6 +142,38 @@ KNOWN_PROVIDERS = {"deepseek": "DeepSeek", "anthropic": "Anthropic", "openai": "
                    "fireworks": "Fireworks", "perplexity": "Perplexity", "cohere": "Cohere"}
 
 
+# Providers people often use, all through their OpenAI-compatible API. Set-up offers them in the
+# terminal, and Settings › General fills the form from them. `key` is the name the key is kept
+# under in keys.env; "" means the provider needs none (it runs on this computer). `model` is the
+# one suggested as the default when the provider lists several.
+PRESETS: list[dict[str, Any]] = [
+    {"label": "DeepSeek", "endpoint": "https://api.deepseek.com", "key": "DEEPSEEK_API_KEY",
+     "model": "deepseek-chat"},
+    {"label": "OpenAI", "endpoint": "https://api.openai.com/v1", "key": "OPENAI_API_KEY", "model": None},
+    {"label": "Anthropic", "endpoint": "https://api.anthropic.com/v1", "key": "ANTHROPIC_API_KEY",
+     "model": "claude-opus-5-5"},
+    {"label": "Google Gemini", "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+     "key": "GEMINI_API_KEY", "model": None},
+    {"label": "Mistral", "endpoint": "https://api.mistral.ai/v1", "key": "MISTRAL_API_KEY", "model": None},
+    {"label": "xAI", "endpoint": "https://api.x.ai/v1", "key": "XAI_API_KEY", "model": None},
+    {"label": "Groq", "endpoint": "https://api.groq.com/openai/v1", "key": "GROQ_API_KEY", "model": None},
+    {"label": "OpenRouter", "endpoint": "https://openrouter.ai/api/v1", "key": "OPENROUTER_API_KEY",
+     "model": None},
+    {"label": "Ollama, on this computer", "endpoint": "http://localhost:11434/v1", "key": "", "model": None},
+    {"label": "LM Studio, on this computer", "endpoint": "http://localhost:1234/v1", "key": "", "model": None},
+]
+
+# Models a provider lists that can't hold a conversation: speech, pictures, embeddings and the like.
+NOT_CHAT = re.compile(r"embed|whisper|tts|dall-e|audio|realtime|transcribe|moderation|image|"
+                      r"davinci|babbage|sora|rerank|guard|search-preview", re.I)
+
+
+def chat_models(ids: list[str]) -> list[str]:
+    """The models in a provider's list that chat; all of them if none look like it."""
+    kept = [m for m in ids if not NOT_CHAT.search(m)]
+    return kept or list(ids)
+
+
 def provider_label(endpoint: str | None, api: str = "openai") -> str:
     """A provider's name for people, from its address: api.deepseek.com is DeepSeek; an address on
     this computer or the local network is Local; anything else is its host."""

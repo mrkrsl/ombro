@@ -2,7 +2,8 @@
 // each crew with its roles, and the greeting above the input. Typing starts a chat.
 
 import { Logo } from "../components/Logo";
-import { greeting } from "../store/conversation";
+import { Markdown } from "../components/Markdown";
+import { opening } from "../store/conversation";
 import { useStore } from "../store/store";
 
 function n(count: number, one: string, many = one + "s") {
@@ -54,9 +55,10 @@ export function Home() {
 export function HomeGreeting() {
   const name = useStore((s) => s.summary?.name ?? "");
   const opener = useStore((s) => s.opener);
+  const first = useStore((s) => s.chats.length === 0);
   return (
     <div className="column">
-      <div className="greeting line lead">{opener ?? greeting(name)}</div>
+      <Markdown className="greeting line lead" text={opener ?? opening(name, first)} />
     </div>
   );
 }

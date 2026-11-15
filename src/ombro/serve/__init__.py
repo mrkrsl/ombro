@@ -52,6 +52,12 @@ def run(port: int = 0, handshake: bool = False, dev: bool = False) -> int:
 
     from ombro.serve.app import build_app
 
+    from ombro.home import Home, tidy_layout
+
+    home = Home()
+    if home.exists():
+        for line in tidy_layout(home):
+            print(line, file=sys.stderr, flush=True)
     token = secrets.token_urlsafe(32)
     sock = bind(port)
     port = sock.getsockname()[1]

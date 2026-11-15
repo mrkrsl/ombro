@@ -13,19 +13,18 @@ from typing import Callable
 from ombro import keys, mdfile
 from ombro.client import ModelError, make_client
 from ombro.home import Home, ensure_home
+from ombro.models import PRESETS, chat_models
 from ombro.settings import ModelSpec, SetupError, load_models, load_tool_settings
 from ombro.ui import UI, ConsoleUI, Failure, Field, Form, Option, Progress
 
-ENDPOINTS = [
-    {
-        "label": "DeepSeek",
-        "endpoint": "https://api.deepseek.com",
-        "model": "deepseek-chat",
-        "key": "DEEPSEEK_API_KEY",
-    },
-    {"label": "Another OpenAI-compatible endpoint", "endpoint": None, "model": None, "key": None},
-]
+ENDPOINTS = [*PRESETS,
+             {"label": "Another OpenAI-compatible endpoint", "endpoint": None, "model": None, "key": None}]
 SEARCH_KEY = "FIRECRAWL_API_KEY"
+# How Ombro works, in the Lead's words: said at the end of set-up, and in the first chat.
+WELCOME_WORK = ("Okay. One thing worth knowing: most of what I do happens while you're away. You brief me, "
+                "the crew works in the background, and I report back. When you'd rather watch, we can do it "
+                "live instead: the crew works here in the chat, and I'll check with you as we go. Just tell me "
+                "what you want done, and I'll ask which you'd like.")
 TEST_PROMPT = [{"role": "user", "content": "Reply with the single word OK."}]
 
 
@@ -148,7 +147,7 @@ def model_form(preset: dict) -> Form:
     if not preset["endpoint"]:
         fields.append(Field("url", "Endpoint base URL (the part before /chat/completions)", required=True,
                             pattern=r"https?://\S+", invalid="The URL must start with http:// or https://."))
-    if not preset["key"]:
+    if preset["key"] is None:
         fields.append(Field("key_name", "Name for its key in secrets/keys.env, e.g. MY_PROVIDER_API_KEY "
                             "(Enter if it needs no key)", pattern=r"[A-Z][A-Z0-9_]*",
                             invalid="Key names use capitals, digits and underscores, starting with a letter."))
@@ -166,7 +165,7 @@ def offered_models(home: Home, endpoint: str, key_name: str | None, client_facto
     try:
         client = client_factory(spec, home)
         lister = getattr(client, "list_models", None)
-        return list(lister()) if lister else []
+        return chat_models(list(lister())) if lister else []
     except ModelError:
         return []
 
@@ -196,7 +195,7 @@ def connect_model(home: Home, ui: UI, client_factory=make_client) -> tuple[str, 
         preset = ENDPOINTS[int(ui.ask(endpoint_field())) - 1]
         answers = ui.form(model_form(preset)) if model_form(preset).fields else {}
         endpoint = preset["endpoint"] or str(answers.get("url") or "").strip()
-        key_name = preset["key"] or str(answers.get("key_name") or "").strip()
+        key_name = preset["key"] if preset["key"] is not None else str(answers.get("key_name") or "").strip()
         problems = [p for f in model_form(preset).fields if (p := f.check(answers.get(f.name)))]
         if problems:  # an interface that let a bad answer through
             ui.show(Failure(problems[0]))
@@ -340,7 +339,7 @@ def _set_up(home: Home, ui: UI, client_factory, next_steps: bool = True) -> None
                                      _role_title(home, crew, added.proposal.data["name"]))
                 limits = load_limits(home)
                 question = "Do you want to add another role to the crew now?"
-            ui.say("Okay. We can just chat, or you might want to brief your first task.", spaced=True, level="lead")
+            ui.say(WELCOME_WORK, spaced=True, level="lead")
             if ui.yes("brief", "Would you like to brief your first task now?"):
                 from ombro.interviews import BriefPurpose
 

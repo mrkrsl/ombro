@@ -88,7 +88,8 @@ def setup_needed(home: Home) -> str | None:
 
 PROGRESS = {"briefed": "briefed", "returned": "returned", "staged": "asked for approval",
             "outward_done": "did an outward action", "limit_reached": "hit a limit", "finish": "finished the work",
-            "report_written": "wrote the report", "failed": "failed"}
+            "report_written": "wrote the report", "failed": "failed", "asked": "asked you",
+            "answered": "answered", "unanswered": "had no answer, so carried on"}
 
 
 def progress_line(job_id: str, ev: dict) -> str | None:

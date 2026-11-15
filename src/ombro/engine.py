@@ -90,6 +90,7 @@ class Engine:
         self.job_id = meta["job_id"]
         self.crews = jobs.job_crews(meta)
         self.limits = Limits.from_dict(meta["limits"])  # fixed when the job was created
+        self.live = bool(meta.get("live"))  # a live job: the user is watching, and the Lead may ask them
         self.clock = clock
         self.journal = Journal(self.job_dir / "journal.jsonl", echo=echo)
         # Tool settings, like limits, were fixed when the job was created.
@@ -136,6 +137,7 @@ class Engine:
         self.lead = load_lead(self.home, self.limits)
         self.roles = load_roles(self.home, self.crews, self.limits)
         self.instructions = load_preferences(self.home).instructions
+        self._expand_all_tools()
         self._load_mcp()
         self._load_apis()
         self._prepare_code()
@@ -182,13 +184,34 @@ class Engine:
         if not self.spec_body:
             raise SetupError("the spec is empty")
 
+    def _expand_all_tools(self) -> None:
+        """`tools: all`: a role gets every built-in tool and every tool of every MCP server in tools.md.
+        (Web APIs go to every crew member anyway.) A server that can't be reached is left out, with a warning."""
+        if not any(r.all_tools for r in self.roles.values()):
+            return
+        names = [n for n in self.registry.names() if n != "workspace.set_aside"]
+        servers = self.tool_settings.servers
+        if servers:
+            self.pool = self.pool or outward.McpPool(self.home, self.tool_settings, log_dir=self.job_dir)
+            from ombro.mcp import McpError
+
+            for server in sorted(servers):
+                try:
+                    names += [f"mcp.{server}.{t.name}" for t in self.pool.client(server).list_tools()]
+                except McpError as e:
+                    self.journal.write("harness", "warning", f"MCP server {server} could not be used, so its "
+                                       f"tools are not offered: {e}")
+        for role in self.roles.values():
+            if role.all_tools:
+                role.tools.extend(n for n in names if n not in role.tools)
+
     def _load_mcp(self) -> None:
         """Start the MCP servers whose tools the roles name, and offer those tools."""
         names = sorted({t for r in self.roles.values() for t in r.tools
                         if t.startswith("mcp.") and self.registry.get(t) is None})
         if not names:
             return
-        self.pool = outward.McpPool(self.home, self.tool_settings, log_dir=self.job_dir)
+        self.pool = self.pool or outward.McpPool(self.home, self.tool_settings, log_dir=self.job_dir)
         from ombro.mcp import ServerConfig
 
         for server in sorted({p[0] for n in names if (p := outward.split_name(n))}):
@@ -462,6 +485,11 @@ class Engine:
         self.gate.begin_scope(self.lead.name, self.lead.max_steps)
         # skills__read is offered only when there is a skill to read, so an empty library costs nothing.
         lead_tools = prompts.LEAD_TOOLS + ([prompts.SKILLS_READ_TOOL] if skills_mod.library(self.home) else [])
+        if self.live:
+            from ombro import livejob
+
+            messages[0]["content"] += livejob.LIVE_NOTE
+            lead_tools = lead_tools + [livejob.ASK_TOOL]
         idle = 0
         while not self.finished:
             reply = self._model_call(self.lead, messages, lead_tools)
@@ -493,6 +521,24 @@ class Engine:
                     self._flag("lead", src, out)
                 messages.append(_tool_message(tc.id, out, src))
 
+    def _ask_you(self, args: dict) -> dict[str, Any]:
+        """A live job's Lead asks the user, who is watching in the chat, and waits for the answer."""
+        from ombro import livejob
+
+        question = " ".join(str(args.get("question") or "").split())
+        if not question:
+            return {"error": "give the question"}
+        raw = args.get("options") or []
+        options = [" ".join(str(o).split()) for o in (raw if isinstance(raw, list) else [])][:4]
+        self.journal.write("lead", "asked", _short(question, 300), question=question, options=options)
+        got = livejob.ask(self.job_dir, question, options,
+                          cancelled=lambda: self.gate.stop_requested or self.gate.timed_out(), clock=self.clock)
+        if got is None:
+            self.journal.write("harness", "unanswered", "no answer came; the Lead carries on without one")
+            return {"answer": None, "note": livejob.NO_ANSWER}
+        self.journal.write("you", "answered", _short(got, 300), answer=got)
+        return {"answer": got}
+
     def _lead_tool(self, tc) -> dict[str, Any]:
         searching = tc.name == "memory__search"
         reading = tc.name == "skills__read"
@@ -514,6 +560,8 @@ class Engine:
             return self._lead_read_skill(tc.arguments)
         if tc.name == "brief":
             return self._brief(tc.arguments)
+        if tc.name == "ask_you" and self.live:
+            return self._ask_you(tc.arguments)
         if tc.name == "finish":
             outcome = tc.arguments.get("outcome")
             if outcome not in ("done", "cannot_proceed"):

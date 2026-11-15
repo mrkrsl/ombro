@@ -2,7 +2,7 @@
 // delete: C5); the default model, the token usage limit and the approval mode; the theme.
 
 import { useEffect, useState } from "react";
-import type { Connection, ModelList, Preferences } from "../../api/types";
+import type { Connection, ModelList, Preferences, ProviderPreset } from "../../api/types";
 import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 
@@ -78,16 +78,30 @@ function About() {
   );
 }
 
-function ProviderForm({ current, onDone, onCancel }: {
+const OTHER = "other";
+
+function ProviderForm({ current, presets = [], onDone, onCancel }: {
   current: Connection | null;
+  presets?: ProviderPreset[];
   onDone: (m: ModelList) => void;
   onCancel: () => void;
 }) {
   const { run, problem, busy } = useAction();
-  const [endpoint, setEndpoint] = useState(current?.endpoint ?? "");
+  // Adding: pick a known provider and its address is filled in, or "Another provider" to type one.
+  const [choice, setChoice] = useState(current ? OTHER : (presets[0]?.endpoint ?? OTHER));
+  const preset = presets.find((p) => p.endpoint === choice) ?? null;
+  const [endpoint, setEndpoint] = useState(current?.endpoint ?? presets[0]?.endpoint ?? "");
   const [key, setKey] = useState("");
   const [model, setModel] = useState("");
   const [askModel, setAskModel] = useState(false);
+  const needsKey = current !== null || preset === null || preset.key !== "";
+  function pick(value: string) {
+    setChoice(value);
+    const p = presets.find((x) => x.endpoint === value);
+    setEndpoint(p ? p.endpoint : "");
+    setAskModel(false);
+    setModel(p?.model ?? "");
+  }
   async function save() {
     const m = current
       ? await run((api) =>
@@ -97,7 +111,14 @@ function ProviderForm({ current, onDone, onCancel }: {
             key: key || undefined,
           }),
         )
-      : await run((api) => api.post<ModelList>("/models/providers", { endpoint: endpoint.trim(), key, model }));
+      : await run((api) =>
+          api.post<ModelList>("/models/providers", {
+            endpoint: endpoint.trim(),
+            key: needsKey ? key : "",
+            key_name: preset?.key || undefined,
+            model,
+          }),
+        );
     if (m) onDone(m);
   }
   useEffect(() => {
@@ -106,15 +127,36 @@ function ProviderForm({ current, onDone, onCancel }: {
   return (
     <div className="inline-form">
       <h3>{current ? `Edit ${current.label}` : "Add a model provider"}</h3>
-      <Field label="Address" hint="Any provider that works like OpenAI's API: the part before /chat/completions.">
-        <input className="text-input" placeholder="https://api.deepseek.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-      </Field>
+      {!current && presets.length > 0 && (
+        <Field label="Provider">
+          <span className="form-row tight">
+            <select aria-label="Provider" value={choice} onChange={(e) => pick(e.target.value)}>
+              {presets.map((p) => (
+                <option key={p.endpoint} value={p.endpoint}>
+                  {p.label}
+                </option>
+              ))}
+              <option value={OTHER}>Another provider</option>
+            </select>
+          </span>
+        </Field>
+      )}
       <Field
-        label="API key"
-        hint={current?.key ? "Leave empty to keep the key you have. It's kept on this computer and only sent to this provider." : "Kept on this computer, and only ever sent to this provider. Leave empty if it needs none."}
+        label="Address"
+        hint={preset ? "Filled in for this provider; change it only if yours differs." : "Any provider that works like OpenAI's API: the part before /chat/completions."}
       >
-        <input className="text-input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
+        <input className="text-input" placeholder="https://api.example.com/v1" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
       </Field>
+      {needsKey ? (
+        <Field
+          label="API key"
+          hint={current?.key ? "Leave empty to keep the key you have. It's kept on this computer and only sent to this provider." : "Kept on this computer, and only ever sent to this provider. Leave empty if it needs none."}
+        >
+          <input className="text-input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
+        </Field>
+      ) : (
+        <p className="muted">It runs on this computer, so it needs no key. Start it before you add it.</p>
+      )}
       {!current && askModel && (
         <Field label="Model name" hint="This provider didn't list its models, so name one it offers.">
           <input className="text-input short" value={model} onChange={(e) => setModel(e.target.value)} />
@@ -188,7 +230,10 @@ function Providers({ models, onChange }: { models: ModelList; onChange: (m: Mode
         ))}
       </div>
       {adding ? (
-        <ProviderForm current={null} onCancel={() => setAdding(false)} onDone={(m) => { onChange(m); setAdding(false); }} />
+        <ProviderForm
+          current={null}
+          presets={(models.presets ?? []).filter((p) => !providers.some((c) => c.endpoint === p.endpoint))}
+          onCancel={() => setAdding(false)} onDone={(m) => { onChange(m); setAdding(false); }} />
       ) : (
         <div className="form-actions">
           <button className="secondary" onClick={() => { setAdding(true); setEditing(null); }}>

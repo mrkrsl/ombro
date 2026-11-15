@@ -16,7 +16,7 @@ from typing import Any
 from ombro import mdfile, prompts
 from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home, crew_title, soul_with, tidy_title
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
-from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role
+from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role, tools_text
 from ombro.settings import Limits, SetupError, format_duration, format_tokens, load_models, load_tool_settings
 
 
@@ -72,7 +72,7 @@ def roster(home: Home, crew: str, limits: Limits) -> str:
     if not roles:
         return "(none: this crew has no roles yet)"
     return "\n".join(
-        f"- {r.name} ({r.kind}; tools: {', '.join(r.tools) or 'none'}): {r.description}" for r in roles.values()
+        f"- {r.name} ({r.kind}; tools: {tools_text(r)}): {r.description}" for r in roles.values()
     )
 
 
@@ -96,7 +96,7 @@ def crews_roster(home: Home, limits: Limits) -> str:
         if not roles:
             out.append("  (no roles yet)")
         for r in roles.values():
-            out.append(f"  - {crew}/{r.name} ({r.kind}; tools: {', '.join(r.tools) or 'none'}): {r.description}")
+            out.append(f"  - {crew}/{r.name} ({r.kind}; tools: {tools_text(r)}): {r.description}")
     return "\n".join(out) or "(no crews)"
 
 
@@ -233,8 +233,10 @@ class RolePurpose(Purpose):
 
     def context(self) -> list[tuple[str, str]]:
         return [
-            ("Tools that exist (propose only these)", "\n".join(f"- {k}: {v}" for k, v in self.tools.items())),
-            ("Skills that exist (propose only these, or [\"all\"] for the whole library, now and later)",
+            ("Tools that exist (propose [\"all\"], every tool now and later, unless the user wants the role "
+             "limited; then only these)", "\n".join(f"- {k}: {v}" for k, v in self.tools.items())),
+            ("Skills that exist (propose [\"all\"], the whole library now and later, unless the user wants the "
+             "role limited; then only these)",
              "\n".join(f"- {k}: {v}" for k, v in self.skills.items()) or "(none yet)"),
             ("Models in models.md", ", ".join(self.models) + "\n(specialists use `default`, helpers `cheap`, "
              "unless there is a reason to choose otherwise)"),
@@ -251,9 +253,10 @@ class RolePurpose(Purpose):
                 "kind": {"type": "string", "enum": ["specialist", "helper"]},
                 "description": {"type": "string", "description": "What kind of work it does and what it returns. "
                                 "No details of any one task."},
-                "tools": {"type": "array", "items": {"type": "string"}, "description": "Only tools that exist."},
+                "tools": {"type": "array", "items": {"type": "string"},
+                          "description": "[\"all\"] (the usual choice), or only tools that exist."},
                 "skills": {"type": "array", "items": {"type": "string"},
-                           "description": "Only skills that exist, or [\"all\"] for the whole library."},
+                           "description": "[\"all\"] (the usual choice), or only skills that exist."},
                 "model": {"type": "string", "description": "A name from models.md; leave out for the default."},
                 "max_steps": {"type": "integer", "description": "Model calls per brief; leave out for the default."},
                 "soul": {"type": "string", "description": "The role's prompt, second person. General: no task details."},
@@ -279,11 +282,13 @@ class RolePurpose(Purpose):
         skills = args.get("skills") or []
         if not isinstance(tools, list) or not isinstance(skills, list):
             raise ProposalError("`tools` and `skills` must be lists of names")
-        if tools:
+        if not tools or [str(t).strip() for t in tools] == ["all"]:
+            meta["tools"] = "all"
+        else:
             meta["tools"] = [str(t).strip() for t in tools]
-        if [str(s).strip() for s in skills] == ["all"]:
+        if not skills or [str(s).strip() for s in skills] == ["all"]:
             meta["skills"] = "all"
-        elif skills:
+        else:
             meta["skills"] = [str(s).strip() for s in skills]
         if args.get("max_steps") is not None:
             meta["max_steps"] = args["max_steps"]
@@ -315,7 +320,8 @@ class RolePurpose(Purpose):
         if self.folder(name).exists():
             raise ProposalError(f"a role named {name!r} already exists; choose another name "
                                 f"(the user can change it with `ombro role edit {name}`)")
-        unknown_tools = [t for t in meta.get("tools") or [] if t not in self.tools]
+        listed_tools = meta.get("tools") or []
+        unknown_tools = [] if listed_tools == "all" else [t for t in listed_tools if t not in self.tools]
         if unknown_tools:
             raise ProposalError(f"no such tool: {', '.join(map(str, unknown_tools))}. Tools: {', '.join(self.tools)}")
         listed = meta.get("skills") or []
@@ -341,7 +347,7 @@ class RolePurpose(Purpose):
             FileDraft(f"crews/{self.crew}/roles/{name}/config.md", folder / "config.md", config.text),
             FileDraft(f"crews/{self.crew}/roles/{name}/soul.md", folder / "soul.md", soul.text),
         ]
-        return Proposal(files, warnings=role_warnings(role.tools), data={"name": name})
+        return Proposal(files, warnings=[] if role.all_tools else role_warnings(role.tools), data={"name": name})
 
     def write(self, proposal: Proposal) -> None:
         self.folder(proposal.data["name"]).mkdir(parents=True, exist_ok=False)
@@ -444,6 +450,8 @@ class BriefPurpose(Purpose):
                 except (RoleError, SetupError):
                     pass
             names = sorted({t for r in roles for t in r.tools if t.startswith("mcp.")})
+            if any(r.all_tools for r in roles):  # `tools: all`: every MCP server's tools
+                names = sorted(set(names) | {t for t in available_tools(self.home) if t.startswith("mcp.")})
             try:
                 settings = load_tool_settings(self.home)
             except (SetupError, mdfile.FrontMatterError):

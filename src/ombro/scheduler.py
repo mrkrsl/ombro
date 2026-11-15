@@ -90,7 +90,7 @@ class Installer:
             "Label": LABEL,
             "ProgramArguments": self.program(),
             "EnvironmentVariables": {
-                "OMBRO_HOME": str(self.home.root),
+                **self.home.process_env(),
                 "PATH": f"{Path(self.python).parent}:/usr/bin:/bin:/usr/sbin:/sbin",
             },
             "StartInterval": INTERVAL,
@@ -114,7 +114,8 @@ class Installer:
             return shlex.quote(text).replace("%", "\\%")
 
         cmd = " ".join(q(p) for p in self.program())
-        return (f"* * * * * OMBRO_HOME={q(str(self.home.root))} {cmd} "
+        env = " ".join(f"{k}={q(v)}" for k, v in self.home.process_env().items())
+        return (f"* * * * * {env} {cmd} "
                 f">/dev/null 2>>{q(str(self.error_log))} {CRON_MARK}")
 
     def plan(self) -> Plan:

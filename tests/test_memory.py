@@ -247,7 +247,7 @@ def test_search_results_stay_within_the_size_cap(job, home):
 
 def test_search_skips_cost_and_never_reads_chats(job, home):
     past_job(job, home, "Found invented teapots.")
-    (home.root / "chats" / "20261101-100000.md").write_text("CHAT-ONLY-MARKER about teapots")
+    (home.chats_dir / "20261101-100000.md").write_text("CHAT-ONLY-MARKER about teapots")
     out = memory.search(home, home.crews(), "CHAT-ONLY-MARKER")
     assert out["results"] == []
     assert all(r["section"] != "Usage" for r in memory.search(home, ["default"], "tokens model calls")["results"])

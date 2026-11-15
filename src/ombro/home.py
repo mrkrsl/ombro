@@ -1,4 +1,12 @@
-"""The home directory: the one place everything variable lives."""
+"""The home directory, where everything variable lives, in two parts.
+
+The hidden part (`~/.config/ombro`, or `$OMBRO_HOME`) holds settings, secrets, crews, specs and
+schedules. What people open every day, each job's folder (its report and the files it made) and
+the chats, is in a visible folder, `~/Ombro`, as `Jobs/` and `Chats/`.
+
+The visible folder is `$OMBRO_FILES` if set. Otherwise it is `~/Ombro` for the usual home, and the
+home itself for any other (`$OMBRO_HOME` pointing elsewhere: a test or demo home keeps everything
+in one place, as `jobs/` and `chats/`). Prompts and indexes name job files `jobs/<id>/…` either way."""
 
 from __future__ import annotations
 
@@ -10,16 +18,65 @@ from ombro import mdfile
 DEFAULT_CREW = "default"
 
 
+def default_root() -> Path:
+    return (Path.home() / ".config" / "ombro").resolve()
+
+
 def home_root() -> Path:
     env = os.environ.get("OMBRO_HOME")
     if env:
         return Path(env).expanduser().resolve()
-    return (Path.home() / ".config" / "ombro").resolve()
+    return default_root()
+
+
+def files_root(root: Path) -> Path:
+    """The visible folder for a home at `root`: see the module's note."""
+    env = os.environ.get("OMBRO_FILES")
+    if env:
+        return Path(env).expanduser().resolve()
+    if root == default_root():
+        return (Path.home() / "Ombro").resolve()
+    return root
 
 
 class Home:
-    def __init__(self, root: str | Path | None = None):
+    def __init__(self, root: str | Path | None = None, files: str | Path | None = None):
         self.root = Path(root).expanduser().resolve() if root else home_root()
+        self.files = Path(files).expanduser().resolve() if files else files_root(self.root)
+
+    @property
+    def separate(self) -> bool:
+        """Whether jobs and chats live in a visible folder of their own."""
+        return self.files != self.root
+
+    def process_env(self) -> dict[str, str]:
+        """What another Ombro process needs to find this home: OMBRO_HOME, and OMBRO_FILES when the
+        visible folder isn't the one it would work out for itself."""
+        out = {"OMBRO_HOME": str(self.root)}
+        if self.files != files_root(self.root):
+            out["OMBRO_FILES"] = str(self.files)
+        return out
+
+    @property
+    def chats_dir(self) -> Path:
+        return self.files / ("Chats" if self.separate else "chats")
+
+    def rel(self, path: str | Path) -> str:
+        """A path as prompts and indexes name it: jobs/<id>/…, crews/…, specs/…; else in full."""
+        p = Path(path).resolve()
+        jobs = self.jobs_dir.resolve()
+        if p == jobs or p.is_relative_to(jobs):
+            return Path("jobs", p.relative_to(jobs)).as_posix()
+        if p.is_relative_to(self.root):
+            return p.relative_to(self.root).as_posix()
+        return str(path)
+
+    def at(self, rel: str) -> Path:
+        """The real path for a name such as jobs/<id>/report.md (the inverse of rel)."""
+        parts = [x for x in rel.strip("/").split("/") if x not in ("", ".")]
+        if parts and parts[0] == "jobs":
+            return self.jobs_dir.joinpath(*parts[1:])
+        return self.root.joinpath(*parts)
 
     # Top-level files
     @property
@@ -103,7 +160,7 @@ class Home:
 
     @property
     def jobs_dir(self) -> Path:
-        return self.root / "jobs"
+        return self.files / ("Jobs" if self.separate else "jobs")
 
     @property
     def interviews_dir(self) -> Path:
@@ -332,7 +389,8 @@ for each call, e.g. 60s. For example:
       env: {SERVICE_ACCOUNT_PATH: "${SHEETS_KEY_FILE}"}
 
 A server's tools are named mcp.<server>.<tool>; `ombro tools <server>` lists
-them. A role uses only the ones its `tools:` list names. Per-tool settings
+them. A role uses the ones its `tools:` list names, or every one with
+`tools: all` (new roles start so). Per-tool settings
 for MCP tools, as well as max_calls:
 - class: read-only, internal or external, when the server's marking is
   wrong or missing. read-only changes nothing. internal changes things in
@@ -462,8 +520,8 @@ ASSISTANT_CONFIG = {
                    "compares, drafts and organises, working from the web and the workspace, with short Python "
                    "scripts for work on files. Writes its work to files in the workspace and returns their paths.",
     "model": "default",
-    "tools": ["web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list", "workspace.place",
-              "code.run"],
+    "tools": "all",
+    "skills": "all",
     "max_steps": 15,
 }
 
@@ -531,9 +589,11 @@ def ensure_home(home: Home) -> list[Path]:
         os.chmod(home.root, 0o700)
     except OSError:
         pass
-    migrate_jobs(home)
-    for sub in ("preferences", "skills", "chats", "crews", "lead", "specs", "schedules", "jobs", "interviews"):
+    tidy_layout(home)
+    for sub in ("preferences", "skills", "crews", "lead", "specs", "schedules", "interviews"):
         (home.root / sub).mkdir(exist_ok=True)
+    for folder in (home.jobs_dir, home.chats_dir):
+        folder.mkdir(parents=True, exist_ok=True)
     home.ensure_secrets()
     from ombro.keys import migrate
 
@@ -557,12 +617,49 @@ def ensure_home(home: Home) -> list[Path]:
     return created
 
 
+def tidy_layout(home: Home) -> list[str]:
+    """Bring an older home up to date: runs/ becomes jobs/, then jobs/ and chats/ move to the
+    visible folder. Returns a line for each thing done."""
+    out = []
+    for step in (migrate_jobs, migrate_to_files):
+        try:
+            moved = step(home)
+        except OSError as e:
+            moved = f"Could not finish tidying {home.root}: {e}."
+        if moved:
+            out.append(moved)
+    return out
+
+
+def migrate_to_files(home: Home) -> str | None:
+    """A home from before the visible folder: move its jobs/ and chats/ there, each only
+    when the new place is missing or empty. Nothing else moves."""
+    if not home.separate:
+        return None
+    import shutil
+
+    moved = []
+    for old, new in ((home.root / "jobs", home.jobs_dir), (home.root / "chats", home.chats_dir)):
+        if not old.is_dir() or old.is_symlink():
+            continue
+        if new.exists() and any(new.iterdir()):
+            continue  # both in use: leave them for the user to look at
+        new.parent.mkdir(parents=True, exist_ok=True)
+        if new.is_dir():
+            new.rmdir()
+        shutil.move(str(old), str(new))
+        moved.append(new.name)
+    if not moved:
+        return None
+    return f"Your {' and '.join(m.lower() for m in moved)} are now in {home.files}, where you can see them."
+
+
 def migrate_jobs(home: Home) -> str | None:
     """Jobs were once called runs. Move an old home's runs/ folder to jobs/, and in each
     job rename run.md to job.md (its run_id becoming job_id). Index lines that point at
     jobs/ follow. Returns a line saying what was done, or None if there was nothing to do."""
     old = home.root / "runs"
-    new = home.jobs_dir
+    new = home.root / "jobs"  # then migrate_to_files takes it on, if the home has a visible folder
     if not old.is_dir() or old.is_symlink():
         return None
     if new.exists() and any(new.iterdir()):

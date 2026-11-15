@@ -31,6 +31,7 @@ export function Jobs() {
             <div className="row" key={j.job_id}>
               <span className="row-name" title={j.job_id}>
                 {j.name}
+                {j.live && <span className="badge live" title="Started from a chat and followed there">live</span>}{" "}
                 {!j.seen_at && !j.active && j.status !== "running" && <span className="badge">new</span>}
               </span>
               <span className="row-detail" title={j.brief}>

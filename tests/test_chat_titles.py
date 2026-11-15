@@ -15,7 +15,7 @@ def test_a_chat_is_named_after_its_first_exchange(home):
     meta, body = mdfile.read(path)
     assert meta["title"] == "Invented Teapot Makers" and meta["titled_by"] == "model"
     assert body.startswith("# Invented Teapot Makers")
-    assert not list((home.root / "chats").glob("new-chat-*.md"))  # renamed, not copied
+    assert not list((home.chats_dir).glob("new-chat-*.md"))  # renamed, not copied
     assert [c["title"] for c in views.chat_list(home)] == ["Invented Teapot Makers"]
 
 
@@ -57,11 +57,11 @@ def test_a_past_chat_is_reopened_and_the_lead_gets_the_conversation_again(home):
     body = mdfile.read(old)[1]
     assert body.count("**You (Chat):** Who makes teapots?") == 1 and "Which is the oldest?" in body
     assert "Lead: There are three invented makers" in second.output  # shown again
-    assert len(list((home.root / "chats").glob("*.md"))) == 1  # no empty chat is left behind
+    assert len(list((home.chats_dir).glob("*.md"))) == 1  # no empty chat is left behind
 
 
 def test_old_untitled_chats_are_listed_by_their_date(home):
-    folder = home.root / "chats"
+    folder = home.chats_dir
     folder.mkdir(parents=True, exist_ok=True)
     mdfile.write(folder / "20261112-090000.md", {"kind": "chat", "started_at": "2026-11-12T09:00:00Z"},
                  "# Chat\n\n**You (Chat):** Hello\n\n**Lead:** Hi.\n")

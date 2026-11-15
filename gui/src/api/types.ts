@@ -13,6 +13,7 @@ export type CoreEvent =
   | LeadSaid
   | ModeChanged
   | Note
+  | OpenPage
   | PastTurn
   | Progress
   | ProposalShown
@@ -41,6 +42,7 @@ export interface OmbroApi {
     | LeadSaid
     | ModeChanged
     | Note
+    | OpenPage
     | PastTurn
     | Progress
     | ProposalShown
@@ -279,6 +281,7 @@ export interface JobRow {
   finished_at: string | null;
   job_id: string;
   limit_hit: string | null;
+  live: boolean;
   name: string;
   path: string;
   seen_at: string | null;
@@ -309,6 +312,7 @@ export interface JobStatus {
   limits: {
     [k: string]: unknown;
   };
+  live: boolean;
   name: string;
   outbox: {
     [k: string]: number;
@@ -363,6 +367,7 @@ export interface SignIn {
 export interface ModelList {
   connections: Connection[];
   default: string | null;
+  presets: ProviderPreset[];
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema
@@ -384,6 +389,16 @@ export interface ModelEntry {
   model: string;
   name: string;
   used_by: string[];
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ProviderPreset".
+ */
+export interface ProviderPreset {
+  endpoint: string;
+  key: string;
+  label: string;
+  model: string | null;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema
@@ -418,6 +433,7 @@ export interface Report {
   finished_at: string | null;
   job_id: string;
   limit_hit: string | null;
+  live: boolean;
   name: string;
   path: string;
   report: string | null;
@@ -503,7 +519,8 @@ export interface EventMessage {
     | ChatCleared
     | JobStarted
     | JobProgress
-    | JobEnded;
+    | JobEnded
+    | OpenPage;
   seq: number;
   session: string | null;
   type: "event";
@@ -642,6 +659,7 @@ export interface JobStarted {
 export interface JobProgress {
   action: string;
   job_id: string;
+  live?: boolean;
   name: string;
   note: string;
   role: string;
@@ -659,6 +677,7 @@ export interface JobEnded {
   files?: JobFile[];
   job_id: string;
   limit_hit?: string | null;
+  live?: boolean;
   name: string;
   status: string;
   text: string;
@@ -674,6 +693,18 @@ export interface JobFile {
   name: string;
   path: string;
   url: string;
+}
+/**
+ * Ombro suggests a page of the app, such as Scheduled with a brief picked. A terminal shows the text.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "OpenPage".
+ */
+export interface OpenPage {
+  args: string;
+  screen: string;
+  text: string;
+  type: "open_page";
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

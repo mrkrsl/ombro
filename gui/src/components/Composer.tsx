@@ -21,6 +21,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
   const [pick, setPick] = useState(0);
   const [menuClosed, setMenuClosed] = useState(false);
   const area = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  const list = useRef<HTMLUListElement | null>(null);
 
   const question = conversation?.question ?? null;
   const secret = question?.field.kind === "secret";
@@ -39,6 +40,12 @@ export function Composer({ conversation }: { conversation: Conversation | null }
   useEffect(() => {
     setPick(0);
   }, [text]);
+
+  // The list is taller than its box: keep the picked command in view as the arrows move.
+  useEffect(() => {
+    const el = list.current?.children[pick] as HTMLElement | undefined;
+    el?.scrollIntoView?.({ block: "nearest" });
+  }, [pick]);
 
   function grow(el: HTMLTextAreaElement) {
     el.style.height = "auto";
@@ -125,7 +132,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
         )}
         <div className="composer">
           {menu.length > 0 && (
-            <ul className="slash" role="listbox" aria-label="Commands">
+            <ul ref={list} className="slash" role="listbox" aria-label="Commands">
               {menu.map((c, i) => (
                 <li
                   key={c.name}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import json
 import shutil
 import socket
@@ -124,6 +126,8 @@ def write_role(home: Home, name: str, *, kind: str = "specialist", soul: str | N
 def home(tmp_path, monkeypatch) -> Home:
     root = tmp_path / "ombro-test-home"
     monkeypatch.setenv("OMBRO_HOME", str(root))
+    if os.environ.get("OMBRO_TEST_SPLIT"):  # run the suite with jobs and chats in a visible folder of their own
+        monkeypatch.setenv("OMBRO_FILES", str(tmp_path / "Ombro"))
     h = Home()
     ensure_home(h)
     mdfile.write(h.models, TEST_MODELS, "Test models.")

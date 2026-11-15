@@ -13,9 +13,8 @@ from ombro import cli, fake, mdfile, memory, prompts, jobs, schedules
 from ombro.home import ASSISTANT_NAME, Home, ensure_crew, ensure_home
 from ombro.interviews import BriefPurpose
 from test_interviews import talk  # noqa: F401  (a fixture)
-from ombro.native import native_registry
 from ombro.roles import RoleError, crew_roles, load_lead, load_roles, resolve_role
-from ombro.settings import SetupError, load_limits, load_tool_settings
+from ombro.settings import SetupError, load_limits
 
 
 @pytest.fixture
@@ -42,10 +41,7 @@ def test_a_fresh_home_has_one_lead_and_a_general_assistant(tmp_path):
     assert list(roles) == [ASSISTANT_NAME]
     ga = roles[ASSISTANT_NAME]
     assert ga.kind == "specialist" and ga.model == "default" and ga.max_steps == 15
-    assert "code.run" in ga.tools and "workspace.place" in ga.tools
-    # Every tool it lists exists.
-    registry = native_registry(h, load_tool_settings(h))
-    assert [t for t in ga.tools if registry.get(t) is None] == []
+    assert ga.all_tools and ga.all_skills  # every tool and skill, now and later
 
 
 def test_the_general_assistant_is_never_overwritten_or_brought_back(tmp_path):

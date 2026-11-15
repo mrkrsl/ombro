@@ -22,7 +22,7 @@ def test_home_honours_ombro_home(tmp_path, monkeypatch):
 def test_an_old_home_has_its_runs_moved_to_jobs(home, tmp_path):
     """Jobs were once called runs: their folder, job.md, its job_id and a renamed limit follow."""
     from ombro import jobs, memory
-    from ombro.home import migrate_jobs
+    from ombro.home import migrate_jobs, tidy_layout
     from ombro.settings import Limits, load_limits
 
     job_dir = jobs.create_job(home, ["default"], {}, "# Invented task\n", load_limits(home), source="test")
@@ -37,7 +37,7 @@ def test_an_old_home_has_its_runs_moved_to_jobs(home, tmp_path):
     index.write_text(f"# Index\n- 2026-11-13 · {job_dir.name} · completed · x · run" + f"s/{job_dir.name}/report.md\n")
     home.limits.write_text("---\nallowance: moderate\nrun_timeout: 5m\n---\n")
 
-    assert "moved 1" in migrate_jobs(home)
+    assert "moved 1" in tidy_layout(home)[0]  # then, with a visible folder, on to it
     assert not old.exists() and (home.jobs_dir / job_dir.name / "job.md").is_file()
     moved, body = jobs.read_job(home.jobs_dir / job_dir.name)
     assert moved["job_id"] == job_dir.name and "run_id" not in moved

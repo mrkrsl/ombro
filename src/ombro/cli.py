@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from ombro import __version__, journal, keys, mdfile, jobs
-from ombro.home import Home, migrate_jobs
+from ombro.home import Home, tidy_layout
 from ombro.settings import SetupError, format_duration, format_tokens, load_limits, load_preferences, load_tool_settings
 
 
@@ -41,12 +41,8 @@ def _home(require: bool = True) -> Home:
             moved = f"Could not move {home.legacy_env} into {home.env}: {e}. Keys are still read from it."
         if moved:
             print(moved, file=sys.stderr)
-        try:
-            moved = migrate_jobs(home)
-        except OSError as e:
-            moved = f"Could not move {home.root / 'jobs'} to {home.jobs_dir}: {e}."
-        if moved:
-            print(moved, file=sys.stderr)
+        for line in tidy_layout(home):
+            print(line, file=sys.stderr)
     return home
 
 
@@ -782,7 +778,7 @@ def cmd_role(args) -> int:
         crews = [_crew(home, args.crew)] if args.crew else home.crews()
         lead_model = "?"
         try:
-            from ombro.roles import load_lead
+            from ombro.roles import load_lead, tools_text
 
             lead_model = load_lead(home, load_limits(home)).model
         except SetupError:
@@ -799,7 +795,7 @@ def cmd_role(args) -> int:
                 if isinstance(role, str):
                     print(f"  {name:<20} {'(broken)':<11} {'':<9} {role}")
                     continue
-                print(f"  {name:<20} {role.kind:<11} {role.model:<9} {', '.join(role.tools) or 'none'}")
+                print(f"  {name:<20} {role.kind:<11} {role.model:<9} {tools_text(role)}")
                 if role.description:
                     print(f"  {'':<20} {role.description}")
         return 0

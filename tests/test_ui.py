@@ -228,7 +228,8 @@ def test_connecting_a_model_is_a_form_with_a_hidden_key(tmp_path):
             return ModelReply(content="OK")
 
     home = Home(tmp_path / "fresh")
-    ui = ScriptedUI(["", "2", "https://models.invalid/v1", "INVENTED_API_KEY", "sk-test-INVENTED-0123456789",
+    from ombro.init_cmd import ENDPOINTS  # the last is "another endpoint"
+    ui = ScriptedUI(["", str(len(ENDPOINTS)), "https://models.invalid/v1", "INVENTED_API_KEY", "sk-test-INVENTED-0123456789",
                      "invented-model", "", False])
     assert run_init(home, ui=ui, client_factory=lambda s, h: Client())
     kinds = [(f.name, f.kind) for f in ui.fields]
@@ -244,7 +245,7 @@ def test_connecting_a_model_is_a_form_with_a_hidden_key(tmp_path):
 def test_the_model_form_holds_its_own_checks():
     from ombro.init_cmd import ENDPOINTS, model_form, model_name_field
 
-    form = model_form(ENDPOINTS[1])
+    form = model_form(ENDPOINTS[-1])
     by_name = {f.name: f for f in form.fields}
     assert by_name["url"].check("not a url") and by_name["key_name"].check("lower") and not by_name["key_name"].check("")
     assert model_form(ENDPOINTS[0]).fields == []  # DeepSeek needs only its key; the model is chosen after

@@ -338,7 +338,7 @@ class OmbroApp(App):
         self.watcher = JobWatcher(home)
         self.client_factory = client_factory
         self.summary = views.summary(home)
-        self.first_opening = not any((home.root / "chats").glob("*.md")) and not self.summary["unseen"] \
+        self.first_opening = not any((home.chats_dir).glob("*.md")) and not self.summary["unseen"] \
             and not views.job_list(home)
         self.mode = "Chat"
         try:
@@ -598,7 +598,9 @@ class OmbroApp(App):
             self.add_line(Note(event.text, level="done"), "note")
             return
         if isinstance(event, JobProgress):
-            if self.background_feed():
+            if event.live:  # a live job's steps always show, in the chat that follows it
+                self.add_line(Progress(f"Live: {event.text}"), "progress")
+            elif self.background_feed():
                 self.add_line(Progress(event.text), "progress")
             return
         if isinstance(event, JobEnded):
@@ -897,12 +899,10 @@ def run_app(home: Home | None = None) -> int:
         print("ombro: This home was made by an earlier Ombro. Move it aside and run `ombro init`.")
         return 2
     if home.root.is_dir():
-        from ombro.home import migrate_jobs
+        from ombro.home import tidy_layout
 
-        try:
-            migrate_jobs(home)
-        except OSError as e:
-            print(f"ombro: could not move {home.root / 'jobs'} to {home.jobs_dir}: {e}")
+        for line in tidy_layout(home):
+            print(f"ombro: {line}")
     try:
         theme = load_preferences(home).theme if home.root.is_dir() else "auto"
     except Exception:  # noqa: BLE001
