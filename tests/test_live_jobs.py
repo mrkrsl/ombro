@@ -14,14 +14,15 @@ from ombro import fake, jobs, livejob, mdfile
 from ombro.engine import Engine
 from ombro.fake import ScriptedClient
 from ombro.settings import load_limits, load_tool_settings
+from test_api_tool import api  # noqa: F401 - a fixture
 from test_chat import ChatSession
 
 TASK = "List three invented bakeries in Lowtown, with one line on each. Done when the list is in the report."
 
 
-def offer(suggest: str = "live") -> dict:
+def offer() -> dict:
     return fake.call("offer_work", {"summary": "Three bakeries in Lowtown", "title": "Bakeries in Lowtown",
-                                    "task": TASK, "suggest": suggest})
+                                    "task": TASK})
 
 
 @pytest.fixture
@@ -52,9 +53,10 @@ def in_thread(monkeypatch, home):
 
 def test_the_lead_asks_report_back_or_live_and_report_back_starts_a_brief(home):
     chat = ChatSession(home)
-    chat([offer("report_back"), fake.say("Fine.")], ["Find me bakeries in Lowtown.", "report", "/quit"])
+    chat([offer(), fake.say("Fine.")], ["Find me bakeries in Lowtown.", "report", "/quit"])
     asked = chat.answers.asked
-    assert any("take this away and report back, or shall we do it live" in a for a in asked)
+    how = next(a for a in asked if "take this away and report back, or shall we do it live" in a)
+    assert "I'd" not in how  # the Lead doesn't push either way; report back is the default
     assert any(a.startswith("[Brief]") for a in asked)  # the brief interview began
     assert not list(home.jobs_dir.iterdir())  # nothing started yet
 
@@ -152,3 +154,38 @@ def test_one_fake_script_serves_a_chat_and_the_job_it_starts():
     assert say(chat_tools) == "For anyone."
     assert say(None, "Write the final report.") == "For the report."
     assert say(job_tools) == "For the job."
+
+
+# -- quick lookups in chat ------------------------------------------------------------
+
+
+def test_chat_looks_things_up_itself_but_changes_nothing(home, tmp_path):
+    from conftest import fake_sent, use_fake_mcp
+    from ombro.tools import wire_name
+
+    record = tmp_path / "sent.jsonl"
+    use_fake_mcp(home, record)
+    chat = ChatSession(home)
+    chat([fake.call(wire_name("mcp.fake.find_rows"), {"query": "invented"}),
+          fake.call(wire_name("mcp.fake.add_row"), {"row": "x"}),
+          fake.say("Found it.")], ["Is there a row about invented things?", "/quit"])
+    offered = {t["function"]["name"] for t in chat.client.calls[0]["tools"]}
+    assert wire_name("mcp.fake.find_rows") in offered  # read-only: a lookup
+    assert wire_name("mcp.fake.add_row") not in offered  # changes things: the crew's work
+    replies = chat.tool_replies()
+    assert "error" not in replies[0] and "offer_work" in replies[1]["error"]
+    assert [s["tool"] for s in fake_sent(record)] == ["find_rows"]
+    chat.chat.close()
+
+
+def test_chat_uses_a_web_apis_get(home, request):
+    from ombro.tools import wire_name
+
+    fake_api = request.getfixturevalue("api")
+    chat = ChatSession(home)
+    chat([fake.call(wire_name("api.podcasts.get"), {"path": "/episodes", "query": {"q": "reservoir"}}),
+          fake.say("One episode.")], ["Any episodes about the reservoir?", "/quit"])
+    offered = {t["function"]["name"] for t in chat.client.calls[0]["tools"]}
+    assert wire_name("api.podcasts.get") in offered and wire_name("api.podcasts.request") not in offered
+    assert [r.method for r in fake_api.seen] == ["GET"]
+    assert "pk-INVENTED" not in json.dumps(chat.tool_replies())  # the key is wiped from what comes back

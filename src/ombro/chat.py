@@ -204,6 +204,8 @@ class Chat:
 
             registry = native_registry(home, load_tool_settings(home))
         self.registry = registry
+        self._lookups: dict[str, Any] | None = None  # wire name: Tool, made on the first model call
+        self._pool = None  # the MCP servers the lookups reach, started then
         self.mode = "Chat"
         self.exchanges: list[list[dict]] = []  # each starts with a user message
         self.user_said: list[str] = []
@@ -370,8 +372,48 @@ class Chat:
                      "Keys are set with `ombro keys set NAME`.)")
         return text
 
+    def lookups(self) -> dict[str, Any]:
+        """Quick lookups the Lead may make itself in chat: each web API's GET (or the one tool of a
+        read-only API), and every read-only tool of the MCP servers in tools.md. Nothing that
+        changes anything; a tool set to `permission: refuse` is left out. Made once per chat."""
+        if self._lookups is not None:
+            return self._lookups
+        from ombro import outward
+        from ombro.apitool import api_tools
+
+        found: dict[str, Any] = {}
+        try:
+            settings = load_tool_settings(self.home)
+        except (SetupError, mdfile.FrontMatterError):
+            self._lookups = found
+            return found
+        for t in api_tools(self.home, settings.apis):
+            if t.effect == "read-only" and not outward.refused(t.name, settings):
+                found[t.wire_name] = t
+        if settings.servers:
+            from ombro.mcp import McpError
+
+            self._pool = outward.McpPool(self.home, settings)
+            names = []
+            for server in sorted(settings.servers):
+                try:
+                    listed = self._pool.client(server).list_tools()
+                except (McpError, OSError) as e:
+                    self.transcript.note(f"MCP server {server} could not be used for lookups: {e}")
+                    continue
+                for t in listed:
+                    name = f"mcp.{server}.{t.name}"
+                    if outward.tool_class(settings, name, t.annotations)[0] == "read-only" \
+                            and not outward.refused(name, settings):
+                        names.append(name)
+            tools, _ = self._pool.tools(names) if names else ([], [])
+            found.update({t.wire_name: t for t in tools if t.effect == "read-only"})
+        self._lookups = found
+        return found
+
     def _model_call(self, messages: list[dict]):
         tools = prompts.CHAT_TOOLS + [t.schema() for n in WEB_TOOLS.values() if (t := self.registry.get(n))]
+        tools += [t.schema() for t in self.lookups().values()]
         if not skills.library(self.home):  # nothing to read: an empty library costs no tool
             tools = [t for t in tools if t["function"]["name"] != "skills__read"]
         est = estimate_tokens(messages, tools)
@@ -515,6 +557,9 @@ class Chat:
 
     def close(self) -> None:
         self._save()
+        if self._pool is not None:
+            self._pool.close()
+            self._pool = None
         if self.path.exists():
             self.ui.say(f"Chat saved: {self.path}" + (f" ('{self.title}')" if self.title else ""))
 
@@ -611,8 +656,10 @@ class Chat:
                 if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside",
                                                              "skills__read") and not (
                         isinstance(result, dict) and ("error" in result or "declined" in result)):
+                    lookup = (self._lookups or {}).get(tc.name)
                     src = material.source(MEMORY_TOOLS.get(tc.name) or WEB_TOOLS.get(tc.name)
-                                          or FOLDER_TOOLS.get(tc.name) or tc.name, tc.arguments)
+                                          or FOLDER_TOOLS.get(tc.name) or (lookup.name if lookup else tc.name),
+                                          tc.arguments)
                     signs = material.flags(result)
                     if signs:
                         # Ombro's own words, not the Lead's: what to check, never a block (7.1).
@@ -633,13 +680,15 @@ class Chat:
 
     def _tool(self, tc) -> tuple[dict, tuple[list[str], str] | None]:
         name = tc.name
-        internal = MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name) or FOLDER_TOOLS.get(name) or SKILL_TOOLS.get(name)
+        lookup = (self._lookups or {}).get(name)
+        internal = (MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name) or FOLDER_TOOLS.get(name) or SKILL_TOOLS.get(name)
+                    or (lookup.name if lookup else None))
         if name not in OFFERS and (internal is None or (name in WEB_TOOLS and self.registry.get(internal) is None)):
             self.refused.append(name)
             self.transcript.note(f"Refused {name}: not available in chat.")
             return {"error": f"{name} is not available in chat. Chat cannot brief roles, start jobs, approve the "
-                             "waiting actions or use outward tools; files are written only in shared folders, with "
-                             "folders__write. To turn this into a task, call offer_brief."}, None
+                             "waiting actions or change anything in outside services; files are written only in "
+                             "shared folders, with folders__write. To give this to the crew, call offer_work."}, None
         key = tc.raw_arguments if tc.arguments is None else json.dumps(tc.arguments, sort_keys=True)
         try:
             self.gate.check_tool_call("lead", internal or name, key, brief=True, capped=internal is not None)
@@ -686,7 +735,7 @@ class Chat:
             if internal == "memory.list":
                 return memory.listing(self.home, str(args.get("crew") or "") or None,
                                       str(args.get("job_id") or "") or None), None
-            tool = self.registry.get(internal)
+            tool = lookup or self.registry.get(internal)
             ctx = ToolContext(self.home.chats_dir, "lead", timeout=60.0)
             return tool.handler(args, ctx), None
         except (memory.ReadRefused, skills.SkillError) as e:
@@ -870,13 +919,12 @@ class Chat:
         raw = args.get("crews") or args.get("crew") or []
         crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
                  if str(c) in self.home.crews()]
-        suggest = "live" if str(args.get("suggest")) == "live" else "report"
         which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
         self.ui.say(f"This sounds like work{which}: {summary}.", level="lead")
-        mine = "I'd do it live." if suggest == "live" else "I'd report back."
+        # Reporting back is Ombro's main way of working; live is the other choice, never pushed.
         answer = self.ui.ask(Field(
-            "how", f"Shall I take this away and report back, or shall we do it live, here? {mine}", "choice",
-            default=suggest, mode="Chat", other="not now",
+            "how", "Shall I take this away and report back, or shall we do it live, here?", "choice",
+            default="report", mode="Chat", other="not now",
             options=[Option("report", "Report back"), Option("live", "Do it live")]))
         if answer == "live" and task:
             self.transcript.note(f"The Lead offered work ({summary}); you chose to do it live.")

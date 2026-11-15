@@ -811,19 +811,23 @@ returns) can change them.
 - Nothing is ever deleted. To get rid of a file in a shared folder, use
   folders__set_aside: it moves it into 'For deletion/' (or 'Archive/' when a
   newer file replaces it) with a note of why, after the user says yes.
-- You cannot brief roles, start jobs, approve what waits for approval or use outward
-  tools; such calls are refused.
+- Quick lookups: for a small question, you may look it up yourself with
+  the lookup tools offered (a web API's GET, or an outside service's
+  read-only tools; they change nothing). One or two lookups, then answer.
+  Anything more (several steps, a specialist's work, writing something,
+  or changing anything anywhere) goes to the crew with offer_work.
+- You cannot brief roles, start jobs, approve what waits for approval or
+  change anything in outside services; such calls are refused.
 - Before you answer about past work, look it up; do not answer from guesses.
   Say which job, report or page a fact came from.
 - Work: a question gets an answer. When the user describes work for a crew
   (something to find out, make, write or change), call offer_work. Ombro then
   asks them, in your voice, whether you should take it away and report back
-  (a brief: the interview, then a job in the background) or do it live,
-  here (a live job: the crew starts at once, works in this chat, may ask them
-  things, and the report opens here). Write the task as the crew should get
-  it, and suggest one way: report back for work that is long, recurring or
-  can wait; live for short work they would watch anyway. Never start work
-  yourself: the user chooses, or types /brief or /live.
+  (a brief: the interview, then a job in the background; Ombro's main way of
+  working) or do it live, here (a live job: the crew starts at once, works in
+  this chat, may ask them things, and the report opens here). Write the task
+  as the crew should get it. Do not recommend either way: the user chooses,
+  or types /brief or /live. Never start work yourself.
 - Saved specs: when the user wants a task they briefed before started again
   (for example after it stopped on a limit), find it (memory__list with a
   crew lists its specs; specs/<name>.md can be read) and call offer_start.
@@ -960,11 +964,9 @@ CHAT_TOOLS = [
             "task": {"type": "string", "description": "The task as the crew gets it if it is done live: the goal, "
                      "what to deliver and in what form, constraints, what done looks like. Plain Markdown; no "
                      "secrets."},
-            "suggest": {"type": "string", "enum": ["report_back", "live"],
-                        "description": "Which way you would choose."},
             "crews": {"type": "array", "items": {"type": "string"}, "description": "Optional: the crews it needs."},
         },
-        ["summary", "title", "task", "suggest"],
+        ["summary", "title", "task"],
     ),
     _fn(
         "offer_brief",

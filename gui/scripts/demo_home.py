@@ -57,7 +57,7 @@ def live_demo() -> list[dict]:
               "## Decisions for you\nNone.")
     return [
         {**fake.call("offer_work", {"summary": "Three bakeries in Lowtown", "title": "Bakeries in Lowtown",
-                                    "task": task, "suggest": "live"}), "needs": "offer_work"},
+                                    "task": task}), "needs": "offer_work"},
         {**fake.say("Bakeries in Lowtown"), "needs": "prompt:Give this conversation a title"},
         {**fake.call("ask_you", {"question": "Sourdough only, or any bread?",
                                  "options": ["Sourdough", "Any bread"]}), "needs": "ask_you", "sleep": 1},

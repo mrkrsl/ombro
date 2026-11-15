@@ -414,14 +414,17 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   `shared/<name>/...`, and can write a file in one shared for writing: it
   shows you what it will write, and nothing changes until you say yes. It
   never deletes; a file that should go is set aside (below), also after your
-  yes. It cannot brief roles, approve what waits for approval or use outward
-  tools itself; those calls are refused. Work goes to the crew, as a brief or
-  a live job (below). Chat transcripts, journals, keys and
+  yes. For a small question it may look things up itself: each web API's
+  GET (or the one tool of a read-only API) and the read-only tools of the MCP
+  servers in tools.md, none of which change anything. It cannot brief roles,
+  approve what waits for approval or change anything in outside services;
+  those calls are refused. Work goes to the crew, as a brief or a live job
+  (below). Chat transcripts, journals, keys and
   settings cannot be read.
 - **Report back, or do it live.** A question gets an answer. Work gets one
   question from the Lead: "Shall I take this away and report back, or shall
-  we do it live, here?", with the way it would choose. **Report back** is the
-  brief (below): an interview, then a job in the background, and the report
+  we do it live, here?" The Lead doesn't recommend either, and report back
+  is the default. **Report back** is the brief (below): an interview, then a job in the background, and the report
   later. **Do it live** starts a *live job* at once, from a short spec the
   Lead writes and shows: its steps show in the chat as they happen, its Lead
   may stop and ask you (a background job never waits for you; its questions
