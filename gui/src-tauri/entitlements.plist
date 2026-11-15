@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime exceptions for Ombro and its sidecar (ombro-serve, a PyInstaller
+  one-file binary). The sidecar unpacks Python and its extension modules into a
+  temporary folder at start and loads them from there, so it needs library
+  validation off; the app shares this file because Tauri signs both with it.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

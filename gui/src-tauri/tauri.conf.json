@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Ombro",
   "version": "0.1.0",
-  "identifier": "dev.ombro.desktop",
+  "identifier": "app.ombro.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -43,6 +43,10 @@
       "binaries/ombro-serve"
     ],
     "category": "Productivity",
-    "shortDescription": "Brief a crew of AI roles and get bounded, reported work back."
+    "shortDescription": "Brief a crew of AI roles and get bounded, reported work back.",
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "hardenedRuntime": true
+    }
   }
 }

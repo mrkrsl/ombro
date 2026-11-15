@@ -10,10 +10,15 @@ The binary is the whole `ombro` command line without the terminal interface
 --handshake`, and serve runs it again for each job it starts.
 
 PyInstaller can't cross-compile: build on each platform for its own binary.
+
+On macOS, with APPLE_SIGNING_IDENTITY set (scripts/release_macos.sh sets it),
+PyInstaller signs every library it bundles with that Developer ID and the
+hardened runtime, so they still load once the app is notarised.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -62,6 +67,10 @@ def main() -> int:
         "--collect-submodules", "uvicorn",
         "--exclude-module", "ombro.tui", "--exclude-module", "textual",
     ]
+    identity = os.environ.get("APPLE_SIGNING_IDENTITY")
+    if sys.platform == "darwin" and identity:
+        entitlements = GUI / "src-tauri" / "entitlements.plist"
+        cmd += ["--codesign-identity", identity, "--osx-entitlements-file", str(entitlements)]
     started = time.monotonic()
     subprocess.run(cmd, check=True, cwd=REPO)
     built = BUILD / "dist" / ("ombro-serve.exe" if sys.platform == "win32" else "ombro-serve")

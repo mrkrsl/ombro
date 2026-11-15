@@ -285,7 +285,7 @@ def main(argv: list[str]) -> int:
             return 1
         # One Ombro at a time: quit one that is running (it may be on another home), then start
         # this one. `open -n` would start a second copy beside it, with a second Dock icon.
-        subprocess.run(["osascript", "-e", 'quit app id "dev.ombro.desktop"'], check=False)
+        subprocess.run(["osascript", "-e", 'quit app id "app.ombro.desktop"'], check=False)
         for _ in range(50):
             if subprocess.run(["pgrep", "-x", "ombro-gui"], capture_output=True).returncode != 0:
                 break
