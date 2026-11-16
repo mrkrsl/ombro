@@ -8,6 +8,7 @@ import type { CommandView } from "../api/types";
 import { listAnswers, quickAnswers, usageText, type Conversation } from "../store/conversation";
 import { useStore } from "../store/store";
 import { openFile, revealFile } from "../platform";
+import { modelLabel } from "../store/models";
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -58,7 +59,7 @@ export function matching(commands: CommandView[], text: string): CommandView[] {
 }
 
 export function Composer({ conversation }: { conversation: Conversation | null }) {
-  const { send, answer, interrupt, setMode, commands, summary, notice, doneEditing } = useStore();
+  const { send, answer, interrupt, setMode, commands, summary, models, notice, doneEditing } = useStore();
   const editing = conversation?.editing ?? null;
   const [text, setText] = useState("");
   const [pick, setPick] = useState(0);
@@ -268,7 +269,9 @@ export function Composer({ conversation }: { conversation: Conversation | null }
               Brief
             </button>
           </div>
-          <span className="model">{summary?.model ?? "No model"}</span>
+          <span className="model" title="The model the Lead uses in this chat. A job's crew may use others: see the inspector.">
+            {summary?.model ? `Lead: ${modelLabel(summary.model, models)}` : "No model"}
+          </span>
           <span className="hint">/ for commands</span>
           <span className="usage">{usageText(conversation?.usage ?? null) || "Usage: 0%"}</span>
         </div>
