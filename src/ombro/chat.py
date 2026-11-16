@@ -41,13 +41,61 @@ from ombro.tools import ToolContext, ToolError, ToolRegistry
 QUIT_WORDS = ("/quit", "/q", "/exit", "/end")
 TOOL_RESULT_CAP = 12_000
 BRIEF_CONTEXT_CHARS = 4_000
+# A long chat (past chat_history_chars) is trimmed rarely and in one step, so what is sent stays
+# the same from one call to the next and the provider's cache keeps working:
+TRIM_TO = 0.6  # trimmed down to this share of chat_history_chars
+HEAD_CHARS = 12_000  # the opening turns, which say what the chat is for: always kept
+RECENT_EXCHANGES = 2  # the latest exchanges keep their tool results whole
+STUB_OVER = 1_500  # an older tool result longer than this is cut to a note first
+LEFT_OUT = "[Ombro note: "  # how the note on left-out turns starts
+# What the Lead said and read in the chat, carried into a brief so the interview knows what the
+# chat found (a report, a file's name and contents): the most recent first, within these caps.
+BRIEF_FOUND_CHARS = 16_000
+BRIEF_FOUND_EACH = 3_000
+# What comes back from a brief: its transcript (questions, answers, the spec), the latest part kept.
+BRIEF_BACK_CHARS = 12_000
+# The chat's tools a brief may use too: reading only.
+BRIEF_LOOKUPS = ("memory__search", "memory__read", "memory__list", "folders__list", "folders__read",
+                 "skills__read", "web__search", "web__fetch")
+
+
+class BriefLookups:
+    """The chat's read-only lookups, lent to a brief held in it: the same tools, run by the chat,
+    so the Lead knows and can find the same things in Chat and Brief."""
+
+    def __init__(self, chat: "Chat"):
+        self.chat = chat
+        self._schemas: list[dict] | None = None
+
+    def schemas(self) -> list[dict]:
+        if self._schemas is None:
+            c = self.chat
+            tools = prompts.CHAT_TOOLS + [t.schema() for n in WEB_TOOLS.values() if (t := c.registry.get(n))]
+            if not skills.library(c.home):  # nothing to read: no tool for it, as in chat
+                tools = [t for t in tools if t["function"]["name"] != "skills__read"]
+            mine = [t for t in tools if t["function"]["name"] in BRIEF_LOOKUPS]
+            seen: set[str] = set()
+            self._schemas = []
+            for t in mine + [t.schema() for t in c.lookups().values()]:
+                if t["function"]["name"] not in seen:
+                    seen.add(t["function"]["name"])
+                    self._schemas.append(t)
+        return self._schemas
+
+    @property
+    def names(self) -> set[str]:
+        return {t["function"]["name"] for t in self.schemas()}
+
+    def run(self, tc) -> dict:
+        result, _ = self.chat._tool(tc)
+        return result if isinstance(result, dict) else {"result": result}
 
 MEMORY_TOOLS = {"memory__search": "memory.search", "memory__read": "memory.read", "memory__list": "memory.list"}
 WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
 FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write",
                 "folders__set_aside": "folders.set_aside"}
 SKILL_TOOLS = {"skills__read": "skills.read"}
-OFFERS = ("offer_brief", "offer_work", "offer_remember", "offer_start", "offer_skill")
+OFFERS = ("offer_brief", "offer_work", "offer_remember", "offer_start", "offer_skill", "offer_role")
 
 HELP = """\
 Chat mode is a conversation with the Lead. It can look at every crew's reports,
@@ -71,6 +119,10 @@ For several lines, start and end with \"\"\"."""
 def rest_named(text: str) -> bool:
     """Whether a /brief or /remember line names a crew with @crew."""
     return text.partition(" ")[2].strip().startswith("@")
+
+
+def _size(exchanges: list[list[dict]]) -> int:
+    return len(json.dumps(exchanges, ensure_ascii=False))
 
 
 def _short(text: str, n: int = 120) -> str:
@@ -430,7 +482,7 @@ class Chat:
         u = reply.usage
         in_tokens = u.input_tokens if u.input_tokens or not u.estimated else est
         out_tokens = min(u.output_tokens, max_out) if u.estimated else u.output_tokens
-        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated)
+        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated, cached=u.cached_input)
         return reply
 
     def _crews_text(self) -> str:
@@ -476,21 +528,55 @@ class Chat:
                                      self.today, self._folders_text(),
                                      skills.listing(list(skills.library(self.home).values()),
                                                     self.limits.skills_list_chars)[0])
-        # Past a set length, the oldest turns are dropped from what is sent.
-        while len(self.exchanges) > 1 and len(json.dumps(self.exchanges, ensure_ascii=False)) > \
-                self.limits.chat_history_chars:
-            self.exchanges.pop(0)
-            self.dropped += 1
-            if self.dropped == 1:
-                self.ui.say("(This chat is long, so from here on only its more recent turns are kept in view. "
-                         "The transcript keeps everything.)")
-                self.transcript.note("From here on, only the more recent turns were kept in view.")
+        if _size(self.exchanges) > self.limits.chat_history_chars:
+            self._trim()
         return [{"role": "system", "content": system}] + [m for ex in self.exchanges for m in ex]
+
+    def _trim(self) -> None:
+        """Bring a long chat down to TRIM_TO of chat_history_chars in one step: older tool results
+        become a short note first, then turns are left out from the middle. The opening turns
+        (HEAD_CHARS) and the latest exchange always stay. Until the chat fills up again, what is
+        sent only grows at the end, so the provider's cache keeps serving it."""
+        target = int(self.limits.chat_history_chars * TRIM_TO)
+        keep_head = min(HEAD_CHARS, self.limits.chat_history_chars // 5)
+        head, used = 0, 0
+        for ex in self.exchanges[:-1]:
+            used += _size([ex])
+            if used > keep_head and head:
+                break
+            head += 1
+        stubbed = 0
+        for ex in self.exchanges[head:-RECENT_EXCHANGES or None]:
+            for m in ex:
+                text = m.get("content")
+                if m.get("role") == "tool" and isinstance(text, str) and len(text) > STUB_OVER:
+                    m["content"] = (f"[Ombro note: this result ({len(text):,} characters) was cut to keep the "
+                                    f"chat in view; look it up again if you need it. It began: {text[:300]}…]")
+                    stubbed += 1
+        left_out = 0
+        while _size(self.exchanges) > target and len(self.exchanges) > head + 1:
+            self.exchanges.pop(head)
+            left_out += 1
+        if left_out:
+            self.dropped += left_out
+            first = self.exchanges[head][0]
+            text = str(first.get("content") or "")
+            if text.startswith(LEFT_OUT) and "turns were left out" in text.split("\n", 1)[0]:
+                text = text.split("\n", 1)[1] if "\n" in text else ""
+            first["content"] = (f"{LEFT_OUT}{self.dropped} earlier turns were left out here to keep this long "
+                                "chat in view; the opening and the recent turns are kept, and the transcript has "
+                                "everything.]\n" + text)
+        if not (left_out or stubbed):
+            return  # nothing more can go: the opening and the latest exchange are all there is
+        self.ui.say("(This chat is long, so I've trimmed what I keep in view: the start and the recent turns stay, "
+                    "older file contents are shortened, and the transcript keeps everything.)")
+        self.transcript.note(f"Trimmed what is kept in view: {stubbed} older results shortened, "
+                             f"{left_out} turns left out.")
 
     def _usage_line(self) -> None:
         s = self.gate.snapshot()
         tools = sum((s.get("tool_calls") or {}).values())
-        self.ui.show(Usage("chat", self.mode, s["total_tokens"], self.limits.max_tokens, tools))
+        self.ui.show(Usage("chat", self.mode, s["counted_tokens"], self.limits.max_tokens, tools))
 
     # -- the conversation --------------------------------------------------
 
@@ -549,6 +635,8 @@ class Chat:
             self._auto_title()
         if request and request[0] == "live":
             self._live(*request[1:])
+        elif request and request[0] == "role":
+            self._role(*request[1:])
         elif request:
             revise = request[2] if len(request) > 2 else None
             self._brief(request[0], self.brief_opening("", request[1]), revise=revise)
@@ -700,6 +788,8 @@ class Chat:
             return {"error": "the arguments were not a JSON object"}, None
         if name == "offer_brief":
             return self._offer_brief(args)
+        if name == "offer_role":
+            return self._offer_role(args)
         if name == "offer_work":
             return self._offer_work(args)
         if name == "offer_start":
@@ -910,6 +1000,39 @@ class Chat:
                     (crews, summary, revise))
         self.transcript.note(f"The Lead offered a brief ({summary}); you declined.")
         return {"status": "the user declined; carry on the conversation and do not offer again for this"}, None
+
+    def _offer_role(self, args: dict) -> tuple[dict, tuple | None]:
+        """A new crew member: the role interview, held here, starting from what was said in the chat."""
+        crew = str(args.get("crew") or self.crew)
+        if crew not in self.home.crews():
+            return {"error": f"no crew named {crew!r}; crews: {', '.join(self.home.crews())}"}, None
+        title = " ".join(str(args.get("title") or "").split()) or None
+        summary = _short(args.get("summary") or "", 300).rstrip(".")
+        who = f"a {title}" if title else "a new crew member"
+        self.ui.say(f"I can set up {who} for the {crew_title(self.home, crew)}: {summary}.", level="lead")
+        if self.ui.yes("start_role", "Shall we set it up now? You'll see it before anything is saved.", True,
+                       mode="Chat"):
+            self.transcript.note(f"The Lead offered a new crew member ({summary}); you accepted.")
+            return ({"status": "the user accepted; the role interview starts now, so do not reply"},
+                    ("role", crew, title, summary))
+        self.transcript.note(f"The Lead offered a new crew member ({summary}); you declined.")
+        return {"status": "the user declined; carry on the conversation and do not offer again for this"}, None
+
+    def _role(self, crew: str, title: str | None, summary: str) -> None:
+        from ombro.interviews import RolePurpose, role_added, start
+
+        self.transcript.note(f"Role interview for the {crew_title(self.home, crew)}.")
+        try:
+            outcome = start(
+                self.home, RolePurpose(self.home, crew, self.base_limits, title, task=self.brief_opening("", summary)),
+                crew, self.base_limits, ui=self.ui, client_factory=self._client_factory, today=self.today_date,
+                lookups=BriefLookups(self),
+            )
+        except (SetupError, ModelError) as e:
+            self.ui.show(Failure(f"The role interview could not start: {e}"))
+            return
+        role_added(self.home, self.ui, crew, outcome)
+        self.pending_note += self.interview_back(outcome, "the role interview (adding a crew member)")
 
     def _offer_work(self, args: dict) -> tuple[dict, tuple | None]:
         """Report back, or do it live: the one question that says how Ombro works."""
@@ -1142,9 +1265,41 @@ class Chat:
         if picked:
             parts.append("What the user said in the chat before this brief, oldest first:\n"
                          + "\n".join("- " + m.replace("\n", "\n  ") for m in picked))
+        found = self.chat_findings()
+        if found:
+            parts.append("What you (the Lead) said and read in the chat before this brief, oldest first. You "
+                         "already know this: use it, and don't ask the user for what is here (a file's name, "
+                         "what a report said):\n\n" + found)
         if summary:
             parts.append(f"The Lead's one-line summary in the chat, which the user accepted: {summary}")
         return "\n\n".join(parts)
+
+    def chat_findings(self) -> str:
+        """The Lead's replies and the results of what it read in this chat, newest kept first within
+        BRIEF_FOUND_CHARS, each result cut to BRIEF_FOUND_EACH, returned oldest first."""
+        items: list[str] = []
+        calls: dict[str, str] = {}
+        for exchange in self.exchanges:
+            for m in exchange:
+                if m.get("role") == "assistant":
+                    for c in m.get("tool_calls") or []:
+                        fn = c.get("function") or {}
+                        calls[c.get("id", "")] = f"{fn.get('name', '?')} {fn.get('arguments', '')}".strip()
+                    if (m.get("content") or "").strip():
+                        items.append("You said: " + m["content"].strip())
+                elif m.get("role") == "tool":
+                    text = str(m.get("content") or "").strip()
+                    if len(text) > BRIEF_FOUND_EACH:
+                        text = text[:BRIEF_FOUND_EACH] + " […cut]"
+                    items.append(f"You used {calls.get(m.get('tool_call_id', ''), 'a tool')}, which returned:\n{text}")
+        kept: list[str] = []
+        used = 0
+        for item in reversed(items):
+            if used + len(item) > BRIEF_FOUND_CHARS:
+                break
+            kept.insert(0, item)
+            used += len(item)
+        return "\n\n".join(kept)
 
     def _brief(self, crews: list[str], opening: str, revise: str | None = None) -> None:
         from ombro.interviews import BriefPurpose, start
@@ -1160,6 +1315,7 @@ class Chat:
                 self.crew,
                 self.base_limits,
                 ui=BriefModeUI(self.ui), client_factory=self._client_factory, today=self.today_date,
+                lookups=BriefLookups(self),
             )
         except (SetupError, ModelError) as e:
             self.ui.show(Failure(f"The brief could not start: {e}"))
@@ -1175,15 +1331,37 @@ class Chat:
             self.transcript.note(f"Brief mode ended: spec {name!r} saved (transcript {outcome.transcript}).")
             self.pending_note += (f"[Ombro note: in Brief mode the user confirmed a spec, saved as {name!r}. "
                                   "It has not been started.]\n")
+            self.pending_note += self.interview_back(outcome, "the brief")
         else:
             detail = outcome.status if outcome is not None else "could not start"
             self.transcript.note(f"Brief mode ended without a spec ({detail}).")
             self.pending_note += "[Ombro note: the user left Brief mode; no spec was saved.]\n"
+            if outcome is not None:
+                self.pending_note += self.interview_back(outcome, "the brief")
         # Stopped by you: the Lead has said so, back in Chat mode included, in one line.
         stopped = outcome is not None and outcome.status == "quit"
         self.ui.show(ModeChanged("Chat", "" if stopped else "Back in Chat mode."))
 
     # -- transcript --------------------------------------------------------
+
+    def interview_back(self, outcome, what: str) -> str:
+        """An interview just held (a brief, a role), for the chat: it was you (the Lead) asking, so you
+        know what was said, however it ended."""
+        path = getattr(outcome, "transcript", None)
+        try:
+            text = mdfile.read(Path(path))[1].strip() if path else ""
+        except (OSError, mdfile.FrontMatterError):
+            text = ""
+        if not text:
+            return ""
+        if len(text) > BRIEF_BACK_CHARS:
+            text = "[…the start is cut]\n" + text[-BRIEF_BACK_CHARS:]
+        ended = {"confirmed": "it was accepted and saved", "quit": "the user stopped it; nothing was written"}.get(
+            getattr(outcome, "status", ""), f"it ended ({getattr(outcome, 'status', 'unknown')}); nothing was written")
+        return (f"[Ombro note: {what} you just held with the user, in full ({ended}). You asked these questions "
+                "and heard these answers; carry on from here as one conversation. To hold it again, call "
+                "offer_role or offer_brief, and the user won't need to repeat themselves.]\n" + text
+                + f"\n[End of {what}.]\n")
 
     def _transcript_path(self) -> Path:
         """chats/new-chat-<date-time>.md until the chat has a title; then the title's words."""

@@ -624,7 +624,15 @@ class OmbroApp(App):
         f = pending.field
         self.pending = pending
         if f.kind in ("choice", "yesno") or (f.label and f.label not in ("You", "answer")):
-            self.add_line(Note(field_prompt(f)), "note")
+            # The question in the Lead's voice, as the app shows it; the choices and hints under it.
+            whole = field_prompt(f)
+            if f.label and whole.startswith(f.label):
+                self.add_line(LeadSaid(f.label), "lead")
+                rest = whole[len(f.label):].lstrip(":").strip("\n")
+                if rest.strip():
+                    self.add_line(Note(rest.strip() if not rest.startswith("  ") else rest), "note")
+            else:
+                self.add_line(Note(whole), "note")
         self.show_secret(f.kind == "secret")
 
     def show_secret(self, on: bool) -> None:
@@ -867,7 +875,7 @@ def render_event(event: Event, p: look.Palette) -> Text | None:
     if isinstance(event, ProposalShown):
         out = Text()
         for f in event.files:
-            out.append(f"{f.label} ({'replaces the current file' if f.replaces else 'new file'})\n",
+            out.append(f"{f.label} ({'updates the current file' if f.replaces else 'new file'})\n",
                        style=f"bold {p.strong}")
             out.append(f.text.rstrip() + "\n\n", style=p.text)
             if f.diff:

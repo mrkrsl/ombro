@@ -3,10 +3,52 @@
 // here, as in the terminal; a secret switches the input to hidden.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, CircleDashed } from "lucide-react";
+import { ArrowUp, CircleDashed, FileText, FolderOpen } from "lucide-react";
 import type { CommandView } from "../api/types";
-import { quickAnswers, usageText, type Conversation } from "../store/conversation";
+import { listAnswers, quickAnswers, usageText, type Conversation } from "../store/conversation";
 import { useStore } from "../store/store";
+import { openFile, revealFile } from "../platform";
+
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+/** Drafts to edit by hand: they open in the app your Mac uses for them; Done hands them back. */
+function Editing({ paths, onDone, onProblem }: { paths: string[]; onDone: () => void; onProblem: (p: string) => void }) {
+  const open = (p: string) =>
+    openFile(p).catch(() =>
+      onProblem(`No app would open ${fileName(p)}. Show it in Finder and open it with a text editor instead.`),
+    );
+  const opened = useRef("");
+  useEffect(() => {
+    const key = paths.join("|");
+    if (opened.current === key) return;
+    opened.current = key;
+    paths.forEach((p) => void open(p));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paths]);
+  return (
+    <div className="editing">
+      <p>
+        I've opened the draft in your text editor. Make your changes, save the file, then come back and choose Done.
+        To keep it as it was, choose Done without saving.
+      </p>
+      <div className="quick">
+        {paths.map((p) => [
+          <button key={`open-${p}`} className="secondary" onClick={() => void open(p)}>
+            <FileText size={14} aria-hidden="true" /> Open {fileName(p)}
+          </button>,
+          <button key={`show-${p}`} className="secondary" onClick={() => void revealFile(p).catch((e) => onProblem(String(e)))}>
+            <FolderOpen size={14} aria-hidden="true" /> Show in Finder
+          </button>,
+        ])}
+        <button className="primary" onClick={onDone}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /** The listed commands that start with what has been typed after the /. */
 export function matching(commands: CommandView[], text: string): CommandView[] {
@@ -16,7 +58,8 @@ export function matching(commands: CommandView[], text: string): CommandView[] {
 }
 
 export function Composer({ conversation }: { conversation: Conversation | null }) {
-  const { send, answer, interrupt, setMode, commands, summary, notice } = useStore();
+  const { send, answer, interrupt, setMode, commands, summary, notice, doneEditing } = useStore();
+  const editing = conversation?.editing ?? null;
   const [text, setText] = useState("");
   const [pick, setPick] = useState(0);
   const [menuClosed, setMenuClosed] = useState(false);
@@ -25,12 +68,14 @@ export function Composer({ conversation }: { conversation: Conversation | null }
 
   const question = conversation?.question ?? null;
   const secret = question?.field.kind === "secret";
-  const working = conversation?.state === "working" && !question;
-  const menu = useMemo(
-    () => (question || menuClosed ? [] : matching(commands, text)),
-    [commands, text, question, menuClosed],
-  );
+  const working = conversation?.state === "working" && !question && !editing;
+  // Esc stops the Lead's reply in an ordinary chat (and a live job it is following), never an
+  // interview: set-up, a new crew member or a brief end only when you say so (/quit, /chat).
+  const canStop = working && conversation?.kind === "chat" && (conversation?.mode ?? "Chat") === "Chat";
+  // The menu shows while a question is open too: a page or the theme can be opened mid-question.
+  const menu = useMemo(() => (menuClosed || secret ? [] : matching(commands, text)), [commands, text, menuClosed, secret]);
   const quick = quickAnswers(question);
+  const choices = listAnswers(question);
   const mode = conversation?.mode ?? "Chat";
 
   useEffect(() => {
@@ -40,6 +85,17 @@ export function Composer({ conversation }: { conversation: Conversation | null }
   useEffect(() => {
     setPick(0);
   }, [text]);
+
+  // Cmd / (App.tsx): open the / menu with every command.
+  useEffect(() => {
+    function open() {
+      setText("/");
+      setMenuClosed(false);
+      area.current?.focus();
+    }
+    window.addEventListener("ombro:commands", open);
+    return () => window.removeEventListener("ombro:commands", open);
+  }, []);
 
   // The list is taller than its box: keep the picked command in view as the arrows move.
   useEffect(() => {
@@ -53,7 +109,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
   }
 
   function submit(value = text) {
-    if (question) {
+    if (question && (secret || !value.trim().startsWith("/"))) {
       void answer(value);
     } else {
       if (!value.trim()) return;
@@ -88,7 +144,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
         return;
       }
     }
-    if (e.key === "Escape" && (working || question)) {
+    if (e.key === "Escape" && canStop) {
       e.preventDefault();
       void interrupt();
       return;
@@ -118,9 +174,27 @@ export function Composer({ conversation }: { conversation: Conversation | null }
           {working && (
             <>
               <CircleDashed size={18} aria-hidden="true" /> Thinking
+              {canStop && <span className="esc">Esc stops this reply; jobs in the background carry on</span>}
             </>
           )}
         </div>
+        {editing && (
+          <Editing paths={editing.paths} onDone={() => void doneEditing()} onProblem={(p) => useStore.setState({ notice: p })} />
+        )}
+        {choices.length > 0 && (
+          <ul className="choices" aria-label={question?.field.label || "Choices"}>
+            {choices.map((c) => (
+              <li key={c.value}>
+                <button
+                  className="choice"
+                  onClick={() => void answer(c.value, c.label)}
+                >
+                  <span className="key">{c.value}</span> {c.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {quick.length > 0 && (
           <div className="quick">
             {quick.map((q) => (

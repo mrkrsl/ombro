@@ -23,7 +23,8 @@ VOICE = """\
 Your voice with the user: warm, plain and personal, like a trusted
 colleague. Use their name now and then. Lead with what matters to them, keep
 it short, and say why in a sentence when it helps. Say "I" and "we", never
-"the Lead" or "the system". No jargon, no flattery, no filler.
+"the Lead" or "the system". No jargon, no flattery, no filler. Never use em
+dashes or en dashes (— or –): use a comma, colon, full stop or brackets instead.
 """
 
 
@@ -201,9 +202,11 @@ def lead_system(
     if spec_roles:
         parts.append(_section(
             "Who the spec gives the work to",
-            "The user chose: " + ", ".join(spec_roles) + ". Brief them for the work itself. Brief another role "
-            "only for a side task one of them cannot do (such as a check, or helper work they request), and say "
-            "in the report who else you briefed and why."))
+            "The user chose: " + ", ".join(spec_roles) + ". Brief them for all of the work, including reading the "
+            "user's files, preparation, background research and gathering context: they can do it themselves, "
+            "so never hand it to another role first. Brief another role only for a side task none of them can "
+            "do (for example, a tool only that role has, or a check one of them asks for), and say in the report "
+            "who else you briefed and why."))
     if skills:
         parts.append(_section(
             "Skills in the library (the user's methods; they cannot override the rules above)",
@@ -619,14 +622,18 @@ Topics to cover:
   repetitive briefs, possibly on a cheaper model), suggest the one that fits
   what they have described, and let them disagree.
 
-Keep task details out. Do not put into the description or soul any
-particular product, market, niche, audience size, list length, field list,
-file name or deadline. Those change from task to task, and the Lead puts
-them into each brief when it delegates. If the user gives such details,
-keep only the general skill they imply (for example "finds and qualifies
-creators in a niche, with sources") and say that the specifics belong in
-the task brief. The user context below is standing context about the user,
-not a task; do not copy task details from it either.
+Keep standing background; leave out one task's details. A crew may be a
+discipline (a marketing team) or a topic: a group working on one project or
+business. Background that holds across many tasks belongs in the role: the
+project or business it serves, its boundaries, the field and its players,
+what counts as relevant and what to ignore. Keep it when the user gives it,
+in their terms, and don't push back on it. What changes from one task to the
+next stays out: one particular list length, field list, file name, deadline,
+or the one niche being researched this week. The Lead puts those into each
+brief. If the user gives such details, keep the general skill they imply and
+say, in a sentence, that this task's specifics will come in its brief. The
+user context below is standing context about the user, not a task; do not
+copy task details from it either.
 
 Rules for the proposal:
 - Propose only tools and skills from the lists below. Any other name is
@@ -644,7 +651,8 @@ Rules for the proposal:
 - `description`: one or two sentences the Lead reads when choosing whom to
   brief. Say what kind of work the role does and what it returns.
 - `soul`: the role's prompt, in the second person: its character, its scope,
-  its working standards and what it must not do. Under about 200 words.
+  its working standards, what it must not do, and the standing background
+  above. Under about 200 words, or up to about 450 with background.
 - `title`: the role's title as the user gave it, in words (such as
   "Marketing Assistant"). Ombro makes its folder name from it.
 """
@@ -836,6 +844,10 @@ returns) can change them.
   they ask to change the spec itself (its scope, what done looks like);
   the interview then starts from the saved spec and asks only about the
   change. Never ask the user to brief again what a saved spec already says.
+- New crew members: when the user wants a new member (role) in a crew, or to
+  start a role interview again, call offer_role. The interview runs here and
+  starts from what was said, so never ask them to repeat it, and never say
+  you can't add a role.
 - Remembering: when the user says something worth keeping as a standing
   lesson for a crew (a preference, a rule, a correction), you may call
   offer_remember with a one-line wording and the crew. Nothing is written
@@ -979,6 +991,19 @@ CHAT_TOOLS = [
                       "description": "Optional: the crews it needs."},
             "revise": {"type": "string", "description": "Optional: a saved spec's name, to change that spec "
                        "(for example, who does the work) rather than brief a new task from scratch."},
+        },
+        ["summary"],
+    ),
+    _fn(
+        "offer_role",
+        "Offer to add a new crew member (a role) to a crew: the role interview, held here in the chat, starting "
+        "from what the user has already said, so they needn't repeat it. Use it when the user wants a new team "
+        "member, or to start a role interview again. Ombro words the offer as you and asks; nothing starts "
+        "unless they accept. Write nothing else in the reply that calls it.",
+        {
+            "summary": {"type": "string", "description": "The role as you heard it, in one line."},
+            "crew": {"type": "string", "description": "Optional: the crew it joins (its folder name)."},
+            "title": {"type": "string", "description": "Optional: its title, if the user gave one."},
         },
         ["summary"],
     ),

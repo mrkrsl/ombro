@@ -215,10 +215,10 @@ def test_journal_reads_past_a_torn_line(tmp_path):
 # -- allowance levels ----------------------------------------------------------------
 
 
-def test_default_allowance_is_moderate(home):
+def test_default_allowance_is_generous(home):
     lim = load_limits(home)
-    assert lim.allowance == "moderate"
-    assert (lim.max_tokens, lim.max_rounds, lim.job_timeout, lim.interview_max_tokens) == (800_000, 8, 1800, 100_000)
+    assert lim.allowance == "generous"
+    assert (lim.max_tokens, lim.max_rounds, lim.job_timeout, lim.interview_max_tokens) == (2_000_000, 16, 7200, 250_000)
 
 
 def test_allowance_sets_the_level_values_and_hand_values_win(home):
@@ -278,7 +278,7 @@ def test_fresh_files_mention_no_costs(tmp_path):
 
 def test_interview_limits_use_their_own_cap(home):
     lim = load_limits(home).for_interview()
-    assert lim.max_tokens == 100_000 and lim.max_rounds == 40 and lim.report_reserve == 0
+    assert lim.max_tokens == 250_000 and lim.max_rounds == 40 and lim.report_reserve == 0
 
 
 def test_an_old_env_moves_into_the_secrets_folder(tmp_path):

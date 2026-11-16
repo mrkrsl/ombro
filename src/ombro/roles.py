@@ -51,7 +51,7 @@ def _str_list(value, label: str, where: Path) -> list[str]:
     return [v.strip() for v in value]
 
 
-def load_role(folder: Path, limits: Limits) -> Role:
+def load_role(folder: Path, limits: Limits, lead: bool = False) -> Role:
     cfg = folder / "config.md"
     soul_path = folder / "soul.md"
     if not cfg.is_file():
@@ -79,6 +79,10 @@ def load_role(folder: Path, limits: Limits) -> Role:
     if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
         raise RoleError(f"{cfg}: max_steps must be a positive whole number")
     soul = mdfile.prompt_text(soul_body)
+    if lead:
+        from ombro.home import lead_soul
+
+        soul = lead_soul(soul)  # the built-in character, then what the file adds (which may be nothing)
     if not soul:
         raise RoleError(f"{soul_path}: soul.md is empty")
     return Role(
@@ -101,7 +105,7 @@ def load_lead(home: Home, limits: Limits) -> Role:
     """The one Lead, in lead/ at the top of the home."""
     if not home.lead_dir.is_dir():
         raise RoleError(f"{home.lead_dir} is missing: there is no Lead")
-    lead = load_role(home.lead_dir, limits)
+    lead = load_role(home.lead_dir, limits, lead=True)
     if lead.kind != "lead":
         raise RoleError(f"{home.lead_dir / 'config.md'}: the Lead must have kind: lead")
     return lead

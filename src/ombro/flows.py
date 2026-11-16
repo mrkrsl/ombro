@@ -134,13 +134,12 @@ class Flows:
             limits = load_limits(self.home)
             kw = {"client_factory": self.session.client_factory} if self.session.client_factory else {}
             outcome = start(self.home, RolePurpose(self.home, crew, limits, title), crew, limits, ui=self.ui, **kw)
-            if outcome.confirmed:
-                from ombro.init_cmd import _role_title
-                from ombro.models import offer_role_model
+            from ombro.interviews import role_added
 
-                added = outcome.proposal.data["name"]
-                self.say(f"Added {added} to the {crew_title(self.home, crew)}.", level="done")
-                offer_role_model(self.home, self.ui, f"{crew}/{added}", _role_title(self.home, crew, added))
+            role_added(self.home, self.ui, crew, outcome)
+            # The chat that follows knows what the interview said, however it ended.
+            chat = self.session.ensure_chat()
+            chat.pending_note += chat.interview_back(outcome, "a role interview (adding a crew member)")
             return
         if action == "edit" and len(words) > 1:
             name = words[1]
@@ -152,7 +151,8 @@ class Flows:
                     self.say(f"No role named {name!r}.")
                     return
                 folder = self.home.roles_dir(found[0]) / name.split("/")[-1]
-            self.ui.edit([folder / "config.md", folder / "soul.md"])
+            # The soul, as in Settings › Crews; its settings (model, tools) change there or with /model.
+            self.ui.edit([folder / "soul.md"])
             self.say("Saved. The role is read again at the next job.")
             return
         self.usage("/role, /role add [title], /role add [title] --crew <crew>, /role edit <name>")

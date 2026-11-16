@@ -255,7 +255,10 @@ def test_brief_job_progress_and_approval_end_to_end(serve, home, tmp_path):
     assert progress["status"] == "running" and progress["event"]["role"] == "poster"
     ended = ws.until(event("job_ended", sid), timeout=60)["event"]
     assert ended["job_id"] == job_id and ended["waiting"] == 1
-    ws.until(lambda m: m.get("type") == "counts" and m["waiting"] == 1)
+    # The counts may come just before or just after the job's end.
+    waiting = lambda m: m.get("type") == "counts" and m["waiting"] == 1  # noqa: E731
+    if not any(waiting(m) for m in ws.seen):
+        ws.until(waiting)
 
     # The job and the chat know each other (C2).
     row = next(j for j in serve.get("/jobs") if j["job_id"] == job_id)
@@ -333,7 +336,7 @@ def test_editing_files_by_hand_waits_for_the_window(serve):
     ws.send({"type": "subscribe", "sessions": {sid: 0}})
     serve.post(f"/sessions/{sid}/input", {"text": "/role edit researcher"})
     edit = ws.until(lambda m: m.get("type") == "edit_files" and m["session"] == sid)
-    assert [p.rsplit("/", 1)[-1] for p in edit["paths"]] == ["config.md", "soul.md"]
+    assert [p.rsplit("/", 1)[-1] for p in edit["paths"]] == ["soul.md"]  # the soul only, as in Settings
     assert serve.get(f"/sessions/{sid}")["state"] == "waiting"
     serve.post(f"/sessions/{sid}/answer", {"id": edit["id"], "value": "saved"})
     ws.until(lambda m: m.get("type") == "event" and "Saved." in (m["event"].get("text") or ""))

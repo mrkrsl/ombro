@@ -15,6 +15,7 @@ import { ReportPage } from "./screens/ReportPage";
 import { Scheduled } from "./screens/Scheduled";
 import { Settings } from "./screens/settings/Settings";
 import { isMac, onTrayOpen, setTray, startZoom } from "./platform";
+import { shortcutFor } from "./shortcuts";
 import { useStore } from "./store/store";
 
 export default function App() {
@@ -37,6 +38,27 @@ export default function App() {
   }, [counts]);
 
   useEffect(() => startZoom(), []);
+
+  // Keyboard shortcuts (shortcuts.ts): Cmd on macOS, Ctrl elsewhere.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const action = shortcutFor(e, isMac);
+      if (!action) return;
+      e.preventDefault();
+      const st = useStore.getState();
+      if (action === "new") st.goHome();
+      else if (action === "sidebar") st.toggleSidebar();
+      else if (action === "inspector") st.toggleInspector();
+      else if (action === "settings") st.showSettings("general");
+      else if (action === "commands") {
+        // The / menu, in the input: from a page, the chat or home screen comes back first.
+        if (st.screen !== "home" && st.screen !== "chat") st.current ? st.show("chat") : st.goHome();
+        setTimeout(() => window.dispatchEvent(new Event("ombro:commands")), 0);
+      } else st.show(action);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -106,7 +128,7 @@ export default function App() {
         {inChat && <Conversation conversation={conversation} />}
         {!inChat && screen !== "home" && (pages[screen] ?? <Placeholder screen={screen} args={s.screenArgs} />)}
         {screen === "home" && <HomeGreeting />}
-        {chatScreen && <Composer conversation={inChat ? conversation : null} />}
+        {chatScreen && <Composer conversation={inChat || (screen === "home" && s.welcome) ? conversation : null} />}
         {status === "lost" && <div className="notice column">Reconnecting to Ombro…</div>}
       </main>
       {showInspector && (

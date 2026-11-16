@@ -92,12 +92,24 @@ PROGRESS = {"briefed": "briefed", "returned": "returned", "staged": "asked for a
             "answered": "answered", "unanswered": "had no answer, so carried on"}
 
 
-def progress_line(job_id: str, ev: dict) -> str | None:
+# How much of a step's note the conversation shows; the app's side panel shows it whole (the
+# journal keeps notes to about 180 characters).
+CHAT_NOTE_CHARS = 80
+
+
+def progress_line(job_id: str, ev: dict, cut: int | None = CHAT_NOTE_CHARS) -> str | None:
     what = PROGRESS.get(str(ev.get("action")))
     if not what:
         return None
     note = " ".join(str(ev.get("note") or "").split())
-    return f"{jobs.job_name(job_id)} · {ev.get('role', '')} {what}" + (f": {note[:100]}" if note else "")
+    if cut is not None and len(note) > cut:
+        note = note[: cut - 1].rstrip() + "…"
+    return f"{jobs.job_name(job_id)} · {ev.get('role', '')} {what}" + (f": {note}" if note else "")
+
+
+def full_line(e: JobProgress) -> str:
+    """A step as the side panel shows it: the whole note."""
+    return progress_line(e.job_id, {"action": e.action, "role": e.role, "note": e.note}, cut=None) or e.text
 
 
 def job_progress(job_id: str, ev: dict) -> JobProgress | None:

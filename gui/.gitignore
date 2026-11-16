@@ -5,3 +5,4 @@ src-tauri/gen/
 # The frozen serve, made by `npm run sidecar`
 src-tauri/binaries/ombro-serve-*
 build/
+src-tauri/python/

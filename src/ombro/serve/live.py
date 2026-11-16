@@ -236,7 +236,7 @@ class LiveSession:
         if self.closed:
             raise LookupError("the session has ended")
         if self.worker is not None and self.worker.is_alive():
-            raise Busy("still working on the last thing")
+            raise Busy("I'm still working on the last thing. Press Esc to stop it, or wait for it to finish.")
         self.set_state("working")
 
         def work() -> None:

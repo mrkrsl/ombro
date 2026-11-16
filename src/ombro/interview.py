@@ -37,6 +37,17 @@ from ombro.ui import BLOCK, UI, ConsoleUI, Failure, Field, FileView, LeadSaid, N
 
 # The Lead may make this many model calls in a row without the user answering.
 MAX_CALLS_WITHOUT_ANSWER = 5
+# Lookups (reading a report or a shared file) between two questions: they don't count as calls
+# without an answer, up to this many.
+MAX_LOOKUPS_PER_QUESTION = 12
+LOOKUP_NOTE = """
+
+## Looking things up
+
+You can look things up yourself, read-only, as you can in chat: past reports and notes, the
+shared folders, skills and the web. Before asking the user anything you could find there (a
+file's name, what a report said, why a job stopped), look it up. Ask only what only the user
+knows."""
 QUIT_WORDS = ("/quit", "/q")
 END_WORD = "/end"
 
@@ -92,6 +103,10 @@ class Purpose:
 
     def context(self) -> list[tuple[str, str]]:
         return []
+
+    def hand_editable(self, f: "FileDraft") -> bool:
+        """Which of the proposal's files open when the user edits it by hand: all, unless a purpose says."""
+        return True
 
     def accept_label_for(self, proposal: "Proposal") -> str:
         return self.accept_label
@@ -212,9 +227,12 @@ class Interview:
         lead_soul: str = "",
         instructions: str = "",
         model: str = "default",
+        lookups: Any = None,
     ):
         self.home = home
         self.purpose = purpose
+        # The chat's read-only lookups, lent to a brief held in a chat: .names, .schemas(), .run(tc).
+        self.lookups = lookups
         self.crew = crew
         self.ui = ui or ConsoleUI(ask=ask, say=say, edit=edit, home=home)
         self.limits = limits.for_interview()
@@ -278,9 +296,9 @@ class Interview:
         u = reply.usage
         in_tokens = u.input_tokens if u.input_tokens or not u.estimated else est
         out_tokens = min(u.output_tokens, max_out) if u.estimated else u.output_tokens
-        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated)
+        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated, cached=u.cached_input)
         snap = self.gate.snapshot()
-        self.ui.show(Usage("interview", self.purpose.kind, snap.get("total_tokens", 0), self.limits.max_tokens,
+        self.ui.show(Usage("interview", self.purpose.kind, snap.get("counted_tokens", 0), self.limits.max_tokens,
                            sum((snap.get("tool_calls") or {}).values())))
         return reply
 
@@ -293,6 +311,8 @@ class Interview:
         p = self.purpose
         tools = [prompts.ask_tool([k for k, _ in p.topics]), p.tool()]
         tools += [prompts.INSUFFICIENT_TOOL] if p.can_report_gaps else []
+        if self.lookups is not None:
+            tools += self.lookups.schemas()
         system = prompts.interview_system(
             p.rules,
             self.lead_soul,
@@ -301,7 +321,7 @@ class Interview:
             self._limits_line(),
             self.today,
             can_report_gaps=p.can_report_gaps,
-        )
+        ) + (LOOKUP_NOTE if self.lookups is not None else "")
         opening, removed = keys.scrub(self.home, p.opening())
         messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": opening}]
         self.ui.say(p.intro or (
@@ -325,12 +345,13 @@ class Interview:
         outcome.usage = self.gate.snapshot()
         outcome.answers = list(self.answers)
         outcome.transcript = self._save_transcript(outcome)
-        self.ui.show(Usage("interview", self.purpose.kind, outcome.usage.get("total_tokens", 0),
+        self.ui.show(Usage("interview", self.purpose.kind, outcome.usage.get("counted_tokens", 0),
                            self.limits.max_tokens, sum((outcome.usage.get("tool_calls") or {}).values()), final=True))
         return outcome
 
     def _loop(self, messages: list[dict], tools: list[dict]) -> Outcome:
         calls_without_answer = 0
+        lookups = 0
         while True:
             if calls_without_answer >= MAX_CALLS_WITHOUT_ANSWER:
                 raise LimitReached(
@@ -363,7 +384,10 @@ class Interview:
                 if outcome is not None:
                     return outcome
                 if result.pop("_answered", False):
-                    calls_without_answer = 0
+                    calls_without_answer, lookups = 0, 0
+                if result.pop("_lookup", False) and lookups < MAX_LOOKUPS_PER_QUESTION:
+                    lookups += 1
+                    calls_without_answer -= 1  # looking something up is not stalling
                 messages.append(_tool_reply(tc.id, result))
 
     def _tool(self, tc) -> tuple[dict, Outcome | None]:
@@ -377,6 +401,9 @@ class Interview:
             return self._propose(tc.arguments)
         if tc.name == "insufficient" and self.purpose.can_report_gaps:
             return self._insufficient(tc.arguments)
+        if self.lookups is not None and tc.name in self.lookups.names:
+            self.transcript.note(f"Lead looked up {tc.name}: {json.dumps(tc.arguments, ensure_ascii=False)[:160]}")
+            return {**self.lookups.run(tc), "_lookup": True}, None
         return {"error": f"unknown tool {tc.name!r}"}, None
 
     def progress_line(self, args: dict) -> str:
@@ -494,9 +521,10 @@ class Interview:
                 p.write_text(f.text, encoding="utf-8")
                 paths.append(p)
             # One file at a time, so every file is opened, whatever the editor does with several.
-            for i, (f, path) in enumerate(zip(proposal.files, paths), 1):
-                if len(paths) > 1:
-                    self.ui.say(f"Opening {f.label} in your editor ({i} of {len(paths)}).")
+            opened = [(f, p) for f, p in zip(proposal.files, paths) if self.purpose.hand_editable(f)]
+            for i, (f, path) in enumerate(opened, 1):
+                if len(opened) > 1:
+                    self.ui.say(f"Opening {f.label} in your editor ({i} of {len(opened)}).")
                 self.ui.edit([path])
             texts = [p.read_text(encoding="utf-8") for p in paths]
         finally:

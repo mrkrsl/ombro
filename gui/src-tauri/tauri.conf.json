@@ -42,9 +42,15 @@
     "externalBin": [
       "binaries/ombro-serve"
     ],
+    "resources": {
+      "python/": "python/"
+    },
     "category": "Productivity",
     "shortDescription": "Brief a crew of AI roles and get bounded, reported work back.",
     "macOS": {
+      "files": {
+        "Resources/Assets.car": "icons/macos/Assets.car"
+      },
       "entitlements": "entitlements.plist",
       "hardenedRuntime": true
     }

@@ -417,7 +417,7 @@ def test_each_interview_is_told_to_keep_to_its_own_purpose(talk, home):
     assert "Do not gather the details of any one task" in system and "`ombro brief`" in system
     talk(RolePurpose(home, "default", load_limits(home)), [fake.say("What for?")], ["/quit"])
     system = talk.client.calls[0]["messages"][0]["content"]
-    assert "briefed for many different tasks" in system and "Keep task details out" in system
+    assert "briefed for many different tasks" in system and "Keep standing background" in system
     assert "standing preferences, not a task" in system or "User context" not in system
 
 
@@ -475,4 +475,21 @@ def test_running_set_up_again_replaces_only_its_own_section(talk, home):
     soul = soul_path.read_text()
     assert soul == ("You are an invented Lead with a character edited by hand.\n\n## Working with Ada\n\n"
                     "With Ada, you report at the end.\n")
-    assert soul_with("## Working with Ada\n\nOld.", "Ada", "New.").startswith(LEAD_SOUL.strip())
+    assert soul_with("## Working with Ada\n\nOld.", "Ada", "New.") == "## Working with Ada\n\nNew.\n"
+    # An older home kept the built-in character in the file: it is taken out, as it is built in now.
+    assert soul_with(LEAD_SOUL + "\n## Working with Ada\n\nOld.", "Ada", "New.") == "## Working with Ada\n\nNew.\n"
+
+
+def test_the_leads_character_is_built_in_and_cannot_be_edited_away(home):
+    from ombro.roles import load_lead
+    from ombro.settings import load_limits
+
+    soul_path = home.lead_dir / "soul.md"
+    soul_path.write_text("<!-- only a note -->\n")  # everything else edited away
+    lead = load_lead(home, load_limits(home))
+    assert lead.soul == LEAD_SOUL.strip()
+    soul_path.write_text("## Working with Ada\n\nWith Ada, you report early.\n")
+    soul = load_lead(home, load_limits(home)).soul
+    assert soul.startswith(LEAD_SOUL.strip()) and soul.endswith("With Ada, you report early.")
+    soul_path.write_text(LEAD_SOUL + "\n## Working with Ada\n\nShort.\n")  # an older home's file
+    assert load_lead(home, load_limits(home)).soul.count("You are the Ombro Lead") == 1

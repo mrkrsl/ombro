@@ -423,8 +423,12 @@ def summary(home: Home) -> vt.Summary:
         enabled = sum(1 for s in schedules.all_schedules(home) if s.enabled and not s.error)
     except (SetupError, OSError):
         enabled = 0
+    from ombro.session import setup_needed
+
+    # Before a model is connected, no model is in use and no crew can work yet.
+    ready = setup_needed(home) is None
     try:
-        model = load_lead_model(home)
+        model = load_lead_model(home) if ready else None
     except SetupError:
         model = None
     prefs = preferences(home)
@@ -437,7 +441,7 @@ def summary(home: Home) -> vt.Summary:
         "crews": team["crews"],
         "counts": {
             "crews": len(team["crews"]),
-            "crews_ready": sum(1 for c in team["crews"] if any("problem" not in r for r in c["roles"])),
+            "crews_ready": sum(1 for c in team["crews"] if any("problem" not in r for r in c["roles"])) if ready else 0,
             "active_jobs": sum(1 for r in job_rows if r["active"]),
             "scheduled_jobs": enabled,
             "waiting": sum(r["waiting"] for r in job_rows),

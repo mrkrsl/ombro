@@ -52,12 +52,12 @@ ALLOWANCES: dict[str, dict[str, Any]] = {
                      "chat_max_tokens": 100_000},
     "moderate": {"max_tokens": 800_000, "max_rounds": 8, "job_timeout": "30m", "interview_max_tokens": 100_000,
                  "chat_max_tokens": 200_000},
-    "generous": {"max_tokens": 2_000_000, "max_rounds": 16, "job_timeout": "1h", "interview_max_tokens": 250_000,
+    "generous": {"max_tokens": 2_000_000, "max_rounds": 16, "job_timeout": "2h", "interview_max_tokens": 250_000,
                  "chat_max_tokens": 1_000_000},
     "unlimited": {"max_tokens": None, "max_rounds": 50, "job_timeout": "4h", "interview_max_tokens": None,
                   "chat_max_tokens": None},
 }
-DEFAULT_ALLOWANCE = "moderate"
+DEFAULT_ALLOWANCE = "generous"  # decided 16 Nov 2026: moderate stopped every real research job
 LEVEL_KEYS = ("max_tokens", "max_rounds", "job_timeout", "interview_max_tokens", "chat_max_tokens")
 # Memory and chat settings, in characters where they bound text. Defaults for
 # jobs recorded before they existed, and for limits.md files that leave them out.
@@ -67,7 +67,7 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
     "memory_index_entry_chars": 200,
     "memory_search_max_chars": 4_000,
     "chat_max_tokens": 200_000,
-    "chat_history_chars": 30_000,
+    "chat_history_chars": 200_000,
     "fetch_max_query": 200,
     "chat_calls_per_message": 8,
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
@@ -84,11 +84,24 @@ CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB"
 SKILL_DEFAULTS: dict[str, Any] = {"skills_list_chars": 4_000, "skill_read_chars": 20_000,
                                   "skill_max_chars": 10_000, "skill_proposals_waiting": 10}
 CODE_DEFAULT_CALLS = 10  # code.job's max_calls when neither limits.md nor tools.md sets one
+# A bigger allowance gives more calls to the tools a research job leans on (decided 16 Nov 2026:
+# a generous job ran out of searches, fetches and code runs). Values set by hand still win.
+TOOL_SCALE = {"generous": 2, "unlimited": 3}  # web.search and web.fetch, times their provider's default
+FREE_PROVIDERS = {"duckduckgo", "direct"}  # only these are scaled: one that bills per call is not
+CODE_CALLS = {"generous": 30, "unlimited": 50}  # code.run
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
 RETIRED_LIMITS = ("budget_usd", "tool_cost_per_call")
+# Defaults that changed, which every home's limits.md was given when it was made: the old value,
+# left as it was, means the new default. (chat_history_chars: 30,000 until 16 Nov 2026.)
+CHANGED_DEFAULTS = {"chat_history_chars": (30_000, 200_000)}
 # Limits that were renamed: read under their old names too (jobs were once called runs).
 RENAMED_LIMITS = {"run_timeout": "job_timeout"}
+
+
+def _changed(key: str, value: Any) -> Any:
+    old, new = CHANGED_DEFAULTS[key]
+    return new if value == old else value
 
 
 def _renamed(d: dict) -> dict:
@@ -144,7 +157,7 @@ class Limits:
     memory_index_entry_chars: int = 200
     memory_search_max_chars: int = 4_000
     chat_max_tokens: int | None = 200_000
-    chat_history_chars: int = 30_000
+    chat_history_chars: int = 200_000
     fetch_max_query: int = 200  # characters after ? in an address web.fetch will fetch (7.1)
     chat_calls_per_message: int = 8
     chat_tool_max_calls: dict[str, int] = field(default_factory=dict)
@@ -227,7 +240,8 @@ class Limits:
             memory_index_entry_chars=pos_num("memory_index_entry_chars", d["memory_index_entry_chars"], integer=True),
             memory_search_max_chars=pos_num("memory_search_max_chars", d["memory_search_max_chars"], integer=True),
             chat_max_tokens=token_cap("chat_max_tokens", d["chat_max_tokens"]),
-            chat_history_chars=pos_num("chat_history_chars", d["chat_history_chars"], integer=True),
+            chat_history_chars=pos_num("chat_history_chars", _changed("chat_history_chars", d["chat_history_chars"]),
+                                       integer=True),
             fetch_max_query=pos_num("fetch_max_query", d["fetch_max_query"], integer=True),
             chat_calls_per_message=pos_num("chat_calls_per_message", d["chat_calls_per_message"], integer=True),
             chat_tool_max_calls=chat_calls,
@@ -311,8 +325,13 @@ def load_limits(
     merged = _layer(copy.deepcopy(LIMITS_META), meta)
     tools = tools if tools is not None else load_tool_settings(home)
     per_tool: dict[str, dict] = {"tool_max_calls": {}}
+    level = str(merged.get("allowance") or DEFAULT_ALLOWANCE).strip().lower()
     for name in PROVIDER_TOOLS:  # a free provider gets more calls than one that bills for each
-        per_tool["tool_max_calls"][name] = PROVIDER_CALLS.get((name, tools.provider_for(name)), 30)
+        provider = tools.provider_for(name)
+        per_tool["tool_max_calls"][name] = PROVIDER_CALLS.get((name, provider), 30) \
+            * (TOOL_SCALE.get(level, 1) if provider in FREE_PROVIDERS else 1)
+    if level in CODE_CALLS and "code.run" not in (meta.get("tool_max_calls") or {}):
+        per_tool["tool_max_calls"]["code.run"] = CODE_CALLS[level]
     from ombro.apitool import DEFAULT_CALLS, tool_names
 
     for api, cfg in tools.apis.items():  # each of a web API's tools gets its call limit

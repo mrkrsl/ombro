@@ -72,7 +72,7 @@ function LineView({ line }: { line: Line }) {
           {line.files.map((f) => (
             <div key={f.path}>
               <h4>
-                {f.label} ({f.replaces ? "replaces the current file" : "new file"})
+                {f.label} ({f.replaces ? "updates the current file" : "new file"})
               </h4>
               <pre>{f.text.trimEnd()}</pre>
               {f.diff && f.diff.length > 0 && <pre className="diff">{f.diff.join("\n")}</pre>}

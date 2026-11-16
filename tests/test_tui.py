@@ -318,7 +318,8 @@ def test_a_fresh_home_is_set_up_inside_the_interface(home):
                 if not app.busy:
                     break
             texts = _texts(app)
-            assert texts[0].startswith("• Welcome. I'm the Ombro Lead.")  # set-up speaks in the Lead's voice
+            assert texts[0].startswith("• Welcome. I'm the Ombro Lead.")  # the first question is the welcome
+            assert texts[2].startswith("• Thanks Ada. First I'll create")  # set-up speaks in the Lead's voice
             assert not any("INVENTED-0123456789" in t for t in texts)
             assert any("What would you like to get done today?" in t for t in texts)
 
@@ -388,7 +389,7 @@ def test_adding_a_role_is_the_same_interview(home):
             await command(pilot, app, "/role add Invented Writer")
             await answer(pilot, app, "a")
             await settle(pilot, app)
-            assert any("Added invented-writer" in t for t in _texts(app))
+            assert any("is ready to take on jobs" in t for t in _texts(app))
 
     drive(go())
     assert crew_roles(home, "default", load_limits(home))["invented-writer"].title == "Invented Writer"

@@ -287,7 +287,7 @@ def test_only_workspace_files_are_listed_as_deliverables(job, home):
 def test_memory_and_chat_limits_have_defaults_and_follow_the_allowance(home):
     lim = load_limits(home)
     assert (lim.memory_notes_max_chars, lim.memory_index_entries, lim.memory_index_entry_chars) == (10_000, 20, 200)
-    assert lim.chat_max_tokens == 200_000 and lim.max_calls_for("memory.search") == 8
+    assert lim.chat_max_tokens == 1_000_000 and lim.max_calls_for("memory.search") == 8
     mdfile.write(home.limits, {"allowance": "conservative"})
     assert load_limits(home).chat_max_tokens == 100_000
     chat = load_limits(home).for_chat()

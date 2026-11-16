@@ -432,14 +432,17 @@ class Engine:
         usage = reply.usage
         in_tokens = usage.input_tokens if usage.input_tokens or not usage.estimated else est
         out_tokens = min(usage.output_tokens, max_out) if usage.estimated else usage.output_tokens
-        self.gate.record_model_call(spec.name, in_tokens, out_tokens, estimated=usage.estimated)
+        self.gate.record_model_call(spec.name, in_tokens, out_tokens, estimated=usage.estimated,
+                                    cached=usage.cached_input)
         self.journal.write(
             role.name,
             "model_call",
-            f"{spec.name}: {in_tokens:,} in, {out_tokens:,} out",
+            f"{spec.name}: {in_tokens:,} in" + (f" ({usage.cached_input:,} cached)" if usage.cached_input else "")
+            + f", {out_tokens:,} out",
             model=spec.name,
             input_tokens=in_tokens,
             output_tokens=out_tokens,
+            **({"cached_input_tokens": usage.cached_input} if usage.cached_input else {}),
             **({"finish_reason": reply.finish_reason} if reply.finish_reason else {}),
         )
         client = self._client(spec)
@@ -513,6 +516,8 @@ class Engine:
                     messages.append(_tool_message(tc.id, {"error": "ignored: the job is finishing"}))
                     continue
                 out = self._lead_tool(tc)
+                if tc.name == "brief" and isinstance(out, dict):
+                    out = {**out, "job_so_far": self._so_far()}
                 src = None
                 if tc.name in ("brief", "memory__search") and not (isinstance(out, dict) and set(out) == {"error"}):
                     who = (tc.arguments or {}).get("role") if isinstance(tc.arguments, dict) else None
@@ -520,6 +525,19 @@ class Engine:
                         "memory.search", tc.arguments)
                     self._flag("lead", src, out)
                 messages.append(_tool_message(tc.id, out, src))
+
+    def _so_far(self) -> str:
+        """Time and rounds left, for the Lead after each brief, so it plans its last steps to fit."""
+        from ombro.settings import format_duration
+
+        left = max(0.0, self.limits.job_timeout - self.gate.elapsed())
+        rounds = max(0, self.limits.max_rounds - self.gate.usage.rounds)
+        line = (f"{format_duration(left)} of the job's {format_duration(self.limits.job_timeout)} left, "
+                f"and {rounds} of {self.limits.max_rounds} briefs.")
+        if left < min(900, self.limits.job_timeout * 0.2) or rounds <= 1:
+            line += (" Little is left: finish with what you have. Brief only what the report needs, keep each "
+                     "brief small, and call finish in good time; skip extra checks.")
+        return line
 
     def _ask_you(self, args: dict) -> dict[str, Any]:
         """A live job's Lead asks the user, who is watching in the chat, and waits for the answer."""
@@ -896,7 +914,7 @@ class Engine:
         for _ in range(self.NOTES_ATTEMPTS + 1):
             worst = estimate_tokens(messages, prompts.NOTES_TOOLS) + max_out
             if self.limits.max_tokens is not None and \
-                    self.gate.usage.total_tokens + worst + report_worst > self.limits.max_tokens:
+                    self.gate.usage.counted_tokens + worst + report_worst > self.limits.max_tokens:
                 note = "not enough of the token limit was left to rewrite the notes and still write the report"
                 return record("refused" if refused else "skipped", note)
             try:
@@ -973,7 +991,7 @@ class Engine:
         for _ in range(self.SKILL_CALLS):
             worst = estimate_tokens(messages, prompts.SKILL_TOOLS) + max_out
             if self.limits.max_tokens is not None and \
-                    self.gate.usage.total_tokens + worst + report_worst > self.limits.max_tokens:
+                    self.gate.usage.counted_tokens + worst + report_worst > self.limits.max_tokens:
                 return record("skipped", "not enough of the token limit was left to consider a skill and still "
                               "write the report")
             try:

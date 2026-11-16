@@ -6,6 +6,20 @@ import { inTauri } from "./api/serve";
  * Linux: an ordinary title bar, with its buttons on the right (design 17). */
 export const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
 
+/** Open a file with the app the system uses for its kind (for a .md file, say TextEdit). */
+export async function openFile(path: string): Promise<void> {
+  if (!inTauri) throw new Error("Files open in the desktop app only.");
+  const opener = await import("@tauri-apps/plugin-opener");
+  await opener.openPath(path);
+}
+
+/** Show a file in Finder (or the file manager), picked. */
+export async function revealFile(path: string): Promise<void> {
+  if (!inTauri) throw new Error("Files are shown in the desktop app only.");
+  const opener = await import("@tauri-apps/plugin-opener");
+  await opener.revealItemInDir(path);
+}
+
 /** Open a link in the system browser, or a file:// link with the system's opener. */
 export async function openLink(href: string): Promise<void> {
   if (!inTauri) {
@@ -67,6 +81,8 @@ function savedZoom(): number {
 }
 
 async function applyZoom(level: number): Promise<void> {
+  // The window buttons don't zoom with the page: CSS that sits beside them reads --zoom.
+  document.documentElement.style.setProperty("--zoom", String(level));
   try {
     localStorage.setItem(ZOOM_KEY, String(level));
   } catch {

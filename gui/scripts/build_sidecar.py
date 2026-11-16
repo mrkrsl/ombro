@@ -79,7 +79,53 @@ def main() -> int:
     shutil.copy2(built, dest)
     size = dest.stat().st_size / 1e6
     print(f"{dest.relative_to(GUI)}: {size:.1f} MB, built in {time.monotonic() - started:.0f}s")
+    bundle_python()
     return 0
+
+
+# -- the sandbox's Python ---------------------------------------------------------------
+#
+# code.run starts a real Python inside the sandbox (ombro.sandbox), with -I -S: the standard
+# library only. A frozen app has no Python of its own, and a Mac may have none at all, so the app
+# carries one: the standalone build this one runs on (uv's python-build-standalone), trimmed.
+
+PYTHON_OUT = GUI / "src-tauri" / "python"
+# Not needed to run a script with the standard library: the Tk GUI kit, tests, headers, docs.
+PRUNE = ["include", "share", "BUILD", "lib/pkgconfig", "lib/itcl*", "lib/tcl*", "lib/tk*", "lib/thread*",
+         "lib/libtcl*", "lib/libtk*", "lib/python3.*/test", "lib/python3.*/idlelib", "lib/python3.*/tkinter",
+         "lib/python3.*/turtledemo", "lib/python3.*/ensurepip", "lib/python3.*/site-packages",
+         "lib/python3.*/config-*", "lib/python3.*/lib-dynload/_tkinter*", "lib/python3.*/lib-dynload/*test*",
+         "bin/idle*", "bin/pip*", "bin/pydoc*", "bin/*-config"]
+
+
+def bundle_python() -> None:
+    src = Path(sys.base_prefix).resolve()
+    if not (src / "bin").is_dir():
+        raise SystemExit(f"{src} doesn't look like a standalone Python (no bin/); build with a uv-managed Python")
+    shutil.rmtree(PYTHON_OUT, ignore_errors=True)
+    shutil.copytree(src, PYTHON_OUT, symlinks=True)
+    for pattern in PRUNE:
+        for p in PYTHON_OUT.glob(pattern):
+            shutil.rmtree(p) if p.is_dir() and not p.is_symlink() else p.unlink()
+    for p in list(PYTHON_OUT.rglob("__pycache__")):
+        shutil.rmtree(p, ignore_errors=True)
+    identity = os.environ.get("APPLE_SIGNING_IDENTITY")
+    if sys.platform == "darwin" and identity:
+        # Every binary in it is signed with the Developer ID and the hardened runtime, or
+        # notarisation refuses the app. Libraries first, then the programs that load them.
+        machos = [p for p in PYTHON_OUT.rglob("*") if p.is_file() and not p.is_symlink() and _is_macho(p)]
+        machos.sort(key=lambda p: p.parent.name == "bin")
+        for p in machos:
+            subprocess.run(["codesign", "--force", "--timestamp", "--options", "runtime", "--sign", identity, str(p)],
+                           check=True, capture_output=True)
+    size = sum(p.stat().st_size for p in PYTHON_OUT.rglob("*") if p.is_file() and not p.is_symlink()) / 1e6
+    print(f"{PYTHON_OUT.relative_to(GUI)}: Python {sys.version.split()[0]}, {size:.1f} MB")
+
+
+def _is_macho(p: Path) -> bool:
+    with p.open("rb") as f:
+        magic = f.read(4)
+    return magic in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
 
 
 if __name__ == "__main__":

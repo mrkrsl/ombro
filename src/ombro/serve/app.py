@@ -28,7 +28,7 @@ from ombro import __version__, jobs, outbox, views
 from ombro.home import Home
 from ombro.serve import DEV_ORIGIN, HOST
 from ombro.serve.live import Busy, Client, Hub, Sessions
-from ombro.session import JobWatcher, StartError, setup_needed, start_saved_spec
+from ombro.session import JobWatcher, StartError, full_line, setup_needed, start_saved_spec
 from ombro.settings import SetupError
 from ombro.ui import JobEnded, JobProgress, Note
 
@@ -166,8 +166,9 @@ class Serve:
         events, changed = polled
         for e in events:
             status = "running" if isinstance(e, JobProgress) else getattr(e, "status", "")
+            line = full_line(e) if isinstance(e, JobProgress) else e.text  # the side panel shows it whole
             self.hub.publish({"type": "job", "job_id": e.job_id, "name": e.name, "status": status,
-                              "line": e.text, "event": e.to_dict()})
+                              "line": line, "event": e.to_dict()})
             owner = self.owners.get(e.job_id)
             if owner and owner in self.sessions.by_id and not self.sessions.by_id[owner].closed:
                 self.sessions.by_id[owner].emit({"type": "event", "event": e.to_dict()})

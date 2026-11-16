@@ -179,6 +179,73 @@ def test_the_lead_offers_a_brief_and_the_chat_becomes_its_starting_point(chat, h
     assert "spec, saved as 'find-teapots'" in chat.client.calls[-1]["messages"][-1]["content"]
 
 
+def test_the_brief_knows_what_the_lead_read_in_the_chat(chat, home):
+    def brief_opening(messages, tools):
+        opening = messages[1]["content"]
+        assert "What you (the Lead) said and read in the chat" in opening
+        assert "You used memory__list" in opening  # what it looked at, and what came back
+        assert "You said: The invented run stopped at its token limit." in opening
+        return fake.call("propose", SPEC_ARGS)
+
+    chat([
+        fake.call("memory__list", {"crew": "default"}),
+        fake.say("The invented run stopped at its token limit."),
+        fake.call("offer_brief", {"summary": "Run it again from where it stopped"}),
+        brief_opening,
+        fake.say("Saved."),
+    ], ["Why did the run stop?", "Can we pick it up again?", "y", "a", "Thanks."])
+    assert (home.specs_dir / "find-teapots.md").is_file()
+
+
+def test_a_brief_looks_things_up_and_the_chat_knows_what_it_said(chat, home):
+    def looks_it_up(messages, tools):
+        names = [t["function"]["name"] for t in tools]
+        assert "memory__read" in names and "folders__read" in names  # the chat's read-only lookups
+        assert "folders__write" not in names and "offer_work" not in names  # nothing that changes things
+        assert "Looking things up" in messages[0]["content"]
+        return fake.call("memory__list", {"crew": "default"})
+
+    def after_the_lookup(messages, tools):
+        assert messages[-1]["role"] == "tool" and "error" not in messages[-1]["content"][:40]
+        return fake.call("ask", {"questions": ["Which invented teapots?"], "covered": []})
+
+    def back_in_chat(messages, tools):
+        last = messages[-1]["content"]
+        assert "the brief you just held with the user, in full" in last
+        assert "Which invented teapots?" in last and "The blue ones." in last  # what was asked and answered
+        return fake.say("Good, it's saved.")
+
+    chat([
+        fake.call("offer_brief", {"summary": "Find teapot makers"}),
+        looks_it_up,
+        after_the_lookup,
+        fake.call("propose", SPEC_ARGS),
+        back_in_chat,
+    ], ["I want teapot makers found.", "y", "The blue ones.", "a", "Thanks."])
+    assert (home.specs_dir / "find-teapots.md").is_file()
+
+
+def test_the_chat_starts_a_role_interview_from_what_was_said(chat, home):
+    def interview(messages, tools):
+        assert "I want an invented listening post for teapot news." in messages[1]["content"]  # said in the chat
+        assert "memory__read" in [t["function"]["name"] for t in tools]  # the chat's lookups, here too
+        return fake.call("propose", {"title": "Teapot Watcher", "kind": "specialist",
+                                     "description": "Watches invented teapot news.", "tools": ["all"],
+                                     "soul": "You watch invented teapot news and report what matters."})
+
+    def back_in_chat(messages, tools):
+        assert "the role interview (adding a crew member) you just held" in messages[-1]["content"]
+        return fake.say("Good.")
+
+    chat([
+        fake.call("offer_role", {"summary": "A listening post for teapot news"}),
+        interview,
+        back_in_chat,
+    ], ["I want an invented listening post for teapot news.", "y", "a", "Thanks."])
+    assert (home.roles_dir("default") / "teapot-watcher" / "soul.md").is_file()
+    assert "Your new Teapot Watcher is ready to take on jobs" in chat.output
+
+
 def test_the_lead_never_switches_on_its_own(chat, home):
     chat([fake.call("offer_brief", {"summary": "Find teapots"}), fake.say("All right, we can keep talking.")],
          ["I might want some teapot makers found.", "n"])
@@ -260,7 +327,7 @@ def test_chat_usage_has_its_own_cap(chat, job, home):
     assert mdfile.read(chat.chat.path)[0]["ended"].startswith("stopped by the chat limit max_tokens")
     # A job keeps its own allowance.
     job([fake.finish(), LEAD_REPORT])
-    assert job.meta["limits"]["max_tokens"] == 800_000
+    assert job.meta["limits"]["max_tokens"] == 2_000_000
 
 
 def test_chat_tool_calls_are_capped(chat, job, home):
@@ -280,15 +347,53 @@ def test_the_lead_gets_a_set_number_of_calls_per_message(chat, home):
     assert "used all 2 model calls allowed for one message" in chat.output
 
 
-def test_old_turns_are_dropped_from_what_is_sent(chat, home):
-    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_history_chars": 1500}, mdfile.read(home.limits)[1])
-    msgs = [f"FIRST-MARKER {'x' * 600}", f"second {'y' * 600}", f"third {'z' * 600}"]
-    chat([fake.say("Noted.")] * 3, msgs)
-    assert "FIRST-MARKER" in json.dumps(chat.client.calls[0]["messages"])
-    assert "FIRST-MARKER" not in json.dumps(chat.client.calls[-1]["messages"])
+def test_a_long_chat_keeps_its_opening_and_trims_the_middle_in_one_step(chat, home):
+    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_history_chars": 3000}, mdfile.read(home.limits)[1])
+    msgs = [f"FIRST-MARKER {'x' * 400}"] + [f"MIDDLE-{i} {'y' * 400}" for i in range(6)] + ["LAST-MARKER"] + \
+        [f"AFTER-{i}" for i in range(3)]
+    chat([fake.say("Noted.")] * len(msgs), msgs)
+    sent = [json.dumps(c["messages"]) for c in chat.client.calls]
+    assert "FIRST-MARKER" in sent[-1] and "AFTER-2" in sent[-1]  # the opening and the latest stay
+    assert "MIDDLE-0" not in sent[-1] and "earlier turns were left out" in sent[-1]
     assert chat.client.calls[-1]["messages"][0]["role"] == "system"
-    assert "FIRST-MARKER" in chat.transcript  # the transcript keeps everything
-    assert "only its more recent turns are kept in view" in chat.output
+    assert "MIDDLE-0" in chat.transcript  # the transcript keeps everything
+    assert chat.output.count("This chat is long") == 1  # trimmed once, not on every turn
+    # After the trim, each call only adds to the end of what was sent before: the cache keeps working.
+    trimmed = next(i for i, s in enumerate(sent) if "earlier turns were left out" in s)
+    for before, after in zip(chat.client.calls[trimmed:], chat.client.calls[trimmed + 1:]):
+        assert after["messages"][:len(before["messages"])] == before["messages"]
+
+
+def test_old_file_contents_are_shortened_before_turns_are_left_out(chat, home):
+    from dataclasses import replace
+
+    chat([fake.say("Hello.")], ["Hi."])
+    c = chat.chat
+    c.limits = replace(c.limits, chat_history_chars=18_000)
+
+    def exchange(i: int, result: str) -> list[dict]:
+        call = {"id": f"c{i}", "type": "function", "function": {"name": "folders__read", "arguments": "{}"}}
+        return [{"role": "user", "content": f"TURN-{i}"},
+                {"role": "assistant", "content": None, "tool_calls": [call]},
+                {"role": "tool", "tool_call_id": f"c{i}", "content": result},
+                {"role": "assistant", "content": f"Read {i}."}]
+
+    c.exchanges = [exchange(i, f"FILE-{i} " + "z" * 2000) for i in range(8)]
+    sent = json.dumps(c._messages())
+    assert "TURN-0" in sent and "FILE-0 " + "z" * 2000 in sent  # the opening stays, whole
+    assert "FILE-7 " + "z" * 2000 in sent and "FILE-6 " + "z" * 2000 in sent  # so do the latest
+    assert "was cut to keep the chat in view" in sent  # older results were cut to a note first…
+    assert all(f"TURN-{i}" in sent for i in range(8))  # …which was enough: no turn was left out
+    assert len(json.dumps(c.exchanges)) <= 18_000 * 0.6  # down to 60% of the window, in one step
+
+
+def test_an_old_default_window_in_limits_md_means_the_new_one(home):
+    from ombro.settings import load_limits
+
+    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_history_chars": 30000}, mdfile.read(home.limits)[1])
+    assert load_limits(home).chat_history_chars == 200_000
+    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_history_chars": 50000}, mdfile.read(home.limits)[1])
+    assert load_limits(home).chat_history_chars == 50_000  # set by hand: kept
 
 
 # -- saved, not remembered ----------------------------------------------------------

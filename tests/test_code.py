@@ -298,3 +298,22 @@ def test_scripts_stop_once_the_job_folders_pass_code_max_total(job_dir):
     with pytest.raises(coderun.ToolInputError, match="code_max_total"):
         run_script(ctx, "print('one more')")
     assert not (job_dir / "code" / "002.py").exists()
+
+
+def test_the_frozen_app_uses_the_python_it_carries(tmp_path, monkeypatch):
+    import sys
+
+    from ombro import sandbox
+
+    assert sandbox.bundled_python() is None  # not frozen: Ombro's own Python
+    app = tmp_path / "Ombro.app" / "Contents"
+    (app / "MacOS").mkdir(parents=True)
+    (app / "MacOS" / "ombro-serve").write_text("")
+    python = app / "Resources" / "python" / "bin"
+    python.mkdir(parents=True)
+    (python / "python3.14").write_text("")
+    (python / "python3").symlink_to("python3.14")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(app / "MacOS" / "ombro-serve"))
+    exe, prefix = sandbox.interpreter()
+    assert exe == (python / "python3.14").resolve() and prefix == (app / "Resources" / "python").resolve()

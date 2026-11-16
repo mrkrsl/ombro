@@ -59,12 +59,14 @@ def _write_default_model(home: Home, entry: dict) -> None:
     mdfile.write(home.models, meta, body)
 
 
-WELCOME = ("Welcome. I'm the Ombro Lead. I'm here for you: you'll brief me about the work you want to get done, "
-           "we'll set up your crew and its team members, and then I'll delegate the work to them, look after it "
-           "and report back to you.")
-GETTING_STARTED = ("Let's get Ombro set up. First I'll create your home folder, then I'll ask you a few basic "
-                   "questions. After that we'll have a short interview so I understand you well. It should take no "
-                   "longer than five minutes.")
+# A fresh install: the Lead's first words are this one question, under the home screen.
+WELCOME = ("Welcome. I'm the Ombro Lead. You'll brief me about the work you want to get done. "
+           "Let's get set up. What should I call you?")
+GETTING_STARTED = ("First I'll create your home and working folders, then I'll ask you a few basic questions. "
+                   "After that we'll have a short interview so I understand you well. It should take no longer "
+                   "than five minutes. Later we'll set up your team.")
+CONNECT = ("Let's connect an AI model. API keys are stored in secrets/keys.env, readable only by you, and are "
+           "never sent to a model.")
 
 
 def run_init(
@@ -80,27 +82,36 @@ def run_init(
 ) -> bool:
     ui = ui or ConsoleUI(ask=ask, ask_secret=ask_secret, say=say, edit=edit, home=home)
     fresh = not home.root.is_dir() or connected_model(home) is None
+    existed, files_existed = home.root.is_dir(), home.files.is_dir()
+    # The home is made before the first question, so the home screen behind it shows the team.
+    ensure_home(home)
     if fresh:
-        ui.say(WELCOME, level="lead")
-        ui.say(GETTING_STARTED, level="lead")
-    created = ensure_home(home)
-    ui.say(f"Ombro home {'created' if created else 'found'}: {home.root}")
-    name = ask_name(home, ui)
+        name = ask_name(home, ui, WELCOME)
+        ui.say((f"Thanks {name}. " if name else "Thanks. ") + GETTING_STARTED, level="lead")
+        # What Ombro did behind the scenes: a plain note, not the Lead speaking.
+        made = f"Ombro home {'found' if existed else 'created'}: {home.root}"
+        if home.separate:
+            made += f"\nOmbro working folder {'found' if files_existed else 'created'}: {home.files}"
+        ui.say(made, spaced=True)
+        if home.separate:
+            ui.say("By default, your everyday work with Ombro will land in your working folder.", level="lead")
+    else:
+        ui.say(f"Ombro home found: {home.root}", level="lead")
+        name = ask_name(home, ui)
 
     spec = connected_model(home)
     if spec is not None:
         ok, detail = test_connection(home, spec, client_factory)
         if ok:
-            ui.say(f"A model is already connected: {spec.model} ({detail}).")
+            ui.say(f"A model is already connected: {spec.model} ({detail}).", level="lead")
             if not ui.yes("reconnect", "Connect a different model?"):
                 _offer_search_key(home, ui)
                 _set_up(home, ui, client_factory, next_steps)
                 return True
         else:
-            ui.say(f"The configured model did not answer: {detail}")
+            ui.say(f"The configured model did not answer: {detail}", level="lead")
 
-    ui.say((f"Thanks, {name}. " if name else "") + "Let's connect an AI model. API keys are stored in "
-           "secrets/keys.env, readable only by you, and are never sent to a model.", spaced=True, level="lead")
+    ui.say(CONNECT, spaced=True, level="lead")
     while True:
         endpoint, model, key_name = connect_model(home, ui, client_factory)
         spec = load_models(home)["default"]
@@ -109,23 +120,25 @@ def run_init(
         if ok:
             ui.say(f"Perfect. We're connected: {detail}.", level="done")
             break
-        ui.show(Failure(f"The test call failed: {detail}\nLet's try again (Ctrl-C to give up).\n"))
+        ui.show(Failure(f"The test call failed: {detail}"))
+        ui.say("Let's try again.", level="lead")
 
     _offer_search_key(home, ui)
     _set_up(home, ui, client_factory, next_steps)
     return True
 
 
-def name_field(current: str = "") -> Field:
-    return Field("name", "What's your name? It's only used to greet you. (Enter to skip)", default=current or None)
+def name_field(current: str = "", label: str = "") -> Field:
+    return Field("name", label or "What should I call you? It's only used to greet you. (Enter to skip)",
+                 default=current or None)
 
 
-def ask_name(home: Home, ui: UI) -> str:
+def ask_name(home: Home, ui: UI, label: str = "") -> str:
     """The first question of set-up, before any model: what to call you. It can be skipped."""
     from ombro.settings import load_preferences, set_preference
 
     current = load_preferences(home).name
-    name = " ".join(str(ui.ask(name_field(current)) or "").split())[:60]
+    name = " ".join(str(ui.ask(name_field(current, label)) or "").split())[:60]
     if name != current:
         set_preference(home, "name", name)
     return name
@@ -206,16 +219,16 @@ def connect_model(home: Home, ui: UI, client_factory=make_client) -> tuple[str, 
             who = preset["label"] if preset["key"] else key_name
             value = str(ui.ask(Field("key", f"What's your API key for {who}? I'll store it securely on this "
                                      f"computer as soon as you give it to me. It's only ever sent to {who} to make "
-                                     f"calls, never to a model{hint}", "secret")) or "").strip()
+                                     f"calls, never to a model.{hint}", "secret")) or "").strip()
             if value:
                 keys.set_key(home, key_name, value)
             elif not existing:
-                ui.say("A key is needed for this endpoint.")
+                ui.say("A key is needed for this endpoint.", level="lead")
                 continue
         offered = offered_models(home, endpoint, key_name, client_factory)
         model = choose_model(ui, offered, preset["model"])
         if not model:
-            ui.say("A model name is needed.")
+            ui.say("A model name is needed.", level="lead")
             continue
         names = model_list.add_models(home, endpoint, key_name or None, offered or [model])
         name = model_list.entry_name(model)
@@ -292,7 +305,7 @@ def _crew_step(home: Home, ui: UI, crew: str) -> str:
                                required=True, invalid="A name is needed.").split())
         name = folder_name(new)
         if not NAME.match(name or "") or home.crew_dir(name).exists():
-            ui.say(f"There's already a crew called that, so we'll keep using the {title}.")
+            ui.say(f"There's already a crew called that, so we'll keep using the {title}.", level="lead")
             return crew
         ensure_crew(home, name, f"The {new}.", new)
         ui.say(f"Created the {crew_title(home, name)}.", level="done")

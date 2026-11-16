@@ -536,7 +536,7 @@ def render(event: Event) -> list[str]:
     if isinstance(event, ProposalShown):
         out = []
         for f in event.files:
-            out.append(f"\n── {f.label} ({'replaces the current file' if f.replaces else 'new file'}) " + "─" * 8)
+            out.append(f"\n── {f.label} ({'updates the current file' if f.replaces else 'new file'}) " + "─" * 8)
             out.append(f.text.rstrip())
             if f.diff:
                 out.append("\n   Changes from the current file:")

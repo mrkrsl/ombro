@@ -280,7 +280,7 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
         <span className="form-row tight">
           <select
             aria-label="Token usage limit"
-            value={limits.data?.allowance ?? "moderate"}
+            value={limits.data?.allowance ?? "generous"}
             onChange={async (e) => {
               const l = await run((api) => api.put<{ allowance: string }>("/limits", { allowance: e.target.value }));
               if (l) { limits.set(l); mark("limit"); }

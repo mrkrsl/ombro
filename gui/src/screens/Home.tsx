@@ -15,8 +15,9 @@ function n(count: number, one: string, many = one + "s") {
 }
 
 export function Home() {
-  const { summary, counts, opener } = useStore();
-  if (!summary || opener) return <div className="page" />; // after New from a used chat: an empty page
+  const { summary, counts } = useStore();
+  if (!summary) return <div className="page" />;
+  // Every new chat starts here, after /new too: the line above the input says the last chat was saved.
   const c = summary.counts;
   return (
     <div className="page">
@@ -56,9 +57,12 @@ export function HomeGreeting() {
   const name = useStore((s) => s.summary?.name ?? "");
   const opener = useStore((s) => s.opener);
   const first = useStore((s) => s.chats.length === 0);
+  // A fresh install: set-up's first question is the greeting (it arrives a moment after start).
+  const welcome = useStore((s) => (s.welcome ? s.conversations[s.current ?? ""]?.question?.field.label ?? "" : null));
+  if (welcome === "") return null;
   return (
     <div className="column">
-      <Markdown className="greeting line lead" text={opener ?? opening(name, first)} />
+      <Markdown className="greeting line lead" text={welcome ?? opener ?? opening(name, first)} />
     </div>
   );
 }

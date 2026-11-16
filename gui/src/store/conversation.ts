@@ -3,6 +3,7 @@
 
 import type {
   CoreEvent,
+  EditFilesMessage,
   FileView,
   JobEnded,
   QuestionMessage,
@@ -33,13 +34,14 @@ export type Conversation = {
   seq: number; // the last sequence number applied
   state: SessionState;
   question: QuestionMessage | null;
+  editing: EditFilesMessage | null; // drafts to edit by hand, waiting until you say they're saved
   mode: Mode;
   usage: { total: number; max: number | null } | null;
   local: number; // lines added here, not by serve
 };
 
 export function newConversation(id: string, kind = "chat", lines: Line[] = []): Conversation {
-  return { id, kind, lines, seq: 0, state: "idle", question: null, mode: "Chat", usage: null, local: lines.length };
+  return { id, kind, lines, seq: 0, state: "idle", question: null, editing: null, mode: "Chat", usage: null, local: lines.length };
 }
 
 /** A line the window adds itself: what you typed, or the greeting carried over from the home screen. */
@@ -131,8 +133,14 @@ export function apply(c: Conversation, m: ServerMessage): Conversation {
       const lines = showsPrompt(m) && text ? [...c.lines, { key, kind: "lead" as const, text }] : c.lines;
       return { ...next, question: m, lines };
     }
+    case "edit_files":
+      return { ...next, editing: m };
     case "question_closed":
-      return { ...next, question: c.question && c.question.id === m.id ? null : c.question };
+      return {
+        ...next,
+        question: c.question && c.question.id === m.id ? null : c.question,
+        editing: c.editing && c.editing.id === m.id ? null : c.editing,
+      };
     case "session":
       return { ...next, state: m.state, kind: m.kind || c.kind };
     default:
@@ -165,6 +173,14 @@ export function quickAnswers(q: QuestionMessage | null): { label: string; value:
     return (f.options ?? []).map((o) => ({ label: o.label, value: o.key }));
   }
   return [];
+}
+
+/** A choice with too many options for buttons (the providers, an endpoint's models): shown as a
+ * list to pick from, above the input. The number can be typed too. */
+export function listAnswers(q: QuestionMessage | null): { label: string; value: string }[] {
+  if (!q || q.field.kind !== "choice") return [];
+  const options = q.field.options ?? [];
+  return options.length > 6 ? options.map((o) => ({ label: o.label, value: o.key })) : [];
 }
 
 function capitalise(s: string): string {

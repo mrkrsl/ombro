@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from ombro import mdfile, prompts
-from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, Home, crew_title, soul_with, tidy_title
+from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, LEAD_SOUL_FILE, Home, crew_title, soul_with, tidy_title, \
+    without_character
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
 from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role, tools_text
 from ombro.settings import Limits, SetupError, format_duration, format_tokens, load_models, load_tool_settings
@@ -128,16 +129,16 @@ class SetupPurpose(Purpose):
         instructions = ""
         if self.home.instructions.is_file():
             instructions = mdfile.prompt_text(mdfile.read(self.home.instructions)[1])
-        soul = self.soul_path.read_text(encoding="utf-8").strip() if self.soul_path.is_file() else ""
-        if soul == LEAD_SOUL.strip():
-            soul = f"{soul}\n(This is the default soul that ships with Ombro.)"
+        soul = self.soul_path.read_text(encoding="utf-8") if self.soul_path.is_file() else ""
+        soul = mdfile.prompt_text(without_character(soul))
         from ombro.settings import load_preferences
 
         name = load_preferences(self.home).name
         return [
             ("The user's name", name or "(they chose not to give one: do not ask for it)"),
             ("Current preferences/instructions.md", instructions or "(empty: nothing is known about the user yet)"),
-            ("Current Lead soul.md", soul),
+            ("Your built-in character (fixed: it is not in soul.md and cannot change)", LEAD_SOUL.strip()),
+            ("Current Lead soul.md (what is added to it)", soul or "(nothing added yet)"),
         ]
 
     def tool(self) -> dict:
@@ -180,7 +181,7 @@ class SetupPurpose(Purpose):
                 FileDraft("preferences/instructions.md", self.home.instructions,
                           mdfile.dump({}, INSTRUCTIONS_BODY + "\n" + body + "\n")),
                 FileDraft("lead/soul.md", self.soul_path, soul_with(
-                    self.soul_path.read_text(encoding="utf-8") if self.soul_path.is_file() else LEAD_SOUL,
+                    self.soul_path.read_text(encoding="utf-8") if self.soul_path.is_file() else LEAD_SOUL_FILE,
                     name, _text(args, "soul"))),
             ]
         )
@@ -217,19 +218,23 @@ class RolePurpose(Purpose):
     topics = [("purpose", "what the role is"), ("must_not", "what it must not do"), ("access", "what it needs"),
               ("kind", "specialist or helper")]
 
-    def __init__(self, home: Home, crew: str, limits: Limits, name: str | None = None):
+    def __init__(self, home: Home, crew: str, limits: Limits, name: str | None = None, task: str = ""):
         self.home = home
         self.crew = crew
         self.limits = limits
         self.name = name
+        self.task = task.strip()  # what was said in the chat before this interview
         self.tools = available_tools(home)
         self.skills = available_skills(home)
         self.models = list(load_models(home))
 
     def opening(self) -> str:
-        if self.name:
-            return f"The user wants to add a role titled {self.name!r}. Begin the interview."
-        return "The user wants to add a role. Begin the interview."
+        start = (f"The user wants to add a role titled {self.name!r} to the {crew_title(self.home, self.crew)}."
+                 if self.name else f"The user wants to add a role to the {crew_title(self.home, self.crew)}.")
+        if self.task:
+            return (f"{start}\n\n{self.task}\n\nBegin the interview. Count as covered what is already "
+                    "answered above, and ask only about the rest.")
+        return f"{start} Begin the interview."
 
     def context(self) -> list[tuple[str, str]]:
         return [
@@ -266,6 +271,11 @@ class RolePurpose(Purpose):
 
     def folder(self, name: str) -> Path:
         return self.home.roles_dir(self.crew) / name
+
+    def hand_editable(self, f: FileDraft) -> bool:
+        # Only the soul is edited by hand, here and in Settings; the settings in config.md (title, kind,
+        # tools, model) stay as proposed, and change by asking or in Settings › Crews.
+        return f.path.name == "soul.md"
 
     def build(self, args: dict) -> Proposal:
         title = " ".join(_text(args, "title").split())
@@ -850,3 +860,20 @@ def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outc
 def _interview_usage(outcome) -> dict:
     s = outcome.usage or {}
     return {k: s.get(k, 0) for k in ("total_tokens", "input_tokens", "output_tokens", "model_calls")}
+
+
+def role_added(home: Home, ui, crew: str, outcome) -> None:
+    """After a role interview: on yes, say it's added, offer its model, and close with a line that
+    says it's ready; on anything else, say how to start again. The terminal, the app and a chat
+    end the same way."""
+    if not outcome.confirmed:
+        ui.say("You can start again whenever you like: /role add, or just ask me.", level="lead")
+        return
+    from ombro.init_cmd import _role_title
+    from ombro.models import offer_role_model
+
+    name = outcome.proposal.data["name"]
+    title = _role_title(home, crew, name)
+    offer_role_model(home, ui, f"{crew}/{name}", title)
+    ui.say(f"Thanks, all saved. Your new {title} is ready to take on jobs in the {crew_title(home, crew)}.",
+           spaced=True, level="lead")

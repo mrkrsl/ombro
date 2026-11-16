@@ -1,11 +1,19 @@
 // The sidebar: the wordmark, New, the chats, then Jobs, Approvals, Scheduled and Settings.
 
-import { BriefcaseBusiness, CalendarClock, Check, PanelLeft, Plus, Settings } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, Check, CircleDashed, PanelLeft, Plus, Settings } from "lucide-react";
 import { useStore } from "../store/store";
 import { Logo } from "./Logo";
 
 export function Sidebar() {
-  const { chats, counts, summary, screen, chatOn, goHome, openChat, show, toggleSidebar } = useStore();
+  const { chats, counts, summary, screen, chatOn, current, goHome, openChat, show, toggleSidebar, resumeSetup, running } =
+    useStore();
+  // Set-up in progress, to come back to from a page (not while its welcome waits on the home screen).
+  const setup = useStore((s) =>
+    s.welcome
+      ? undefined
+      : Object.values(s.conversations).find((c) => c.kind === "setup" && (c.state === "working" || c.state === "waiting")),
+  );
+  const onSetup = !!setup && current === setup.id && (screen === "chat" || screen === "home");
   const c = counts ?? (summary
     ? { active: summary.counts.active_jobs, waiting: summary.counts.waiting, scheduled: summary.counts.scheduled_jobs }
     : null);
@@ -23,6 +31,13 @@ export function Sidebar() {
         <Plus size={22} /> New
       </button>
       <ul className="chats" aria-label="Chats">
+        {setup && (
+          <li>
+            <button className="chat-link" aria-current={onSetup ? "page" : undefined} onClick={resumeSetup}>
+              Setting up Ombro
+            </button>
+          </li>
+        )}
         {chats.map((chat) => (
           <li key={chat.name}>
             <button
@@ -31,6 +46,9 @@ export function Sidebar() {
               aria-current={screen === "chat" && chatOn === chat.name ? "page" : undefined}
               onClick={() => void openChat(chat.name)}
             >
+              {chat.jobs.some((id) => running.includes(id)) && (
+                <CircleDashed className="working" size={15} aria-label="A job from this chat is running" />
+              )}
               {chat.title}
             </button>
           </li>

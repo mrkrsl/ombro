@@ -194,7 +194,7 @@ class Home:
 # Default contents of a fresh install. Written only when a file is missing.
 
 LIMITS_META = {
-    "allowance": "moderate",
+    "allowance": "generous",
     "max_output_tokens": 32000,
     "report_reserve": 0.10,
     "loop_threshold": 3,
@@ -207,7 +207,7 @@ LIMITS_META = {
     "memory_index_entries": 20,
     "memory_index_entry_chars": 200,
     "memory_search_max_chars": 4_000,
-    "chat_history_chars": 30_000,
+    "chat_history_chars": 200_000,
     "chat_calls_per_message": 8,
     "fetch_max_query": 200,
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
@@ -233,8 +233,16 @@ allowance: how far a job or interview may go before it is stopped. One of
   level          job tokens   rounds   job time   each interview   each chat
   conservative     300,000       4       15m          50,000         100,000
   moderate         800,000       8       30m         100,000         200,000
-  generous       2,000,000      16       1h          250,000       1,000,000
+  generous       2,000,000      16       2h          250,000       1,000,000
   unlimited        no cap       50       4h           no cap          no cap
+
+Tokens a provider serves from its cache (the conversation so far, sent again
+with each call; DeepSeek and OpenAI report them) count as a tenth of a token,
+roughly as they are billed.
+
+Generous and unlimited also give a job more web searches and page fetches
+(twice and three times the provider's usual number) and more code runs (30
+and 50), unless set by hand below or in tools.md.
 
 Even `unlimited` keeps every other cap below: rounds, each role's steps,
 loop detection and tool calls. `ombro limits` shows what is in force, and
@@ -272,8 +280,10 @@ Memory, in characters so they can be checked in a text editor:
 
 Chat:
 
-- chat_history_chars: once a conversation is longer than this, the oldest
-  turns are no longer sent to the model (the transcript keeps them).
+- chat_history_chars: once a conversation is longer than this, it is trimmed
+  in one step to about 60%: older files and reports read in it are cut to a
+  note first, then middle turns are left out. The opening turns and the
+  recent ones always stay (the transcript keeps everything).
 - chat_calls_per_message: model calls the Lead may make for one message.
 - chat_tool_max_calls: calls per tool in one chat session.
 - fetch_max_query: the most characters web.fetch allows after ? in an
@@ -480,6 +490,8 @@ LEAD_CONFIG = {
     "model": "default",
 }
 
+# The Lead's character is Ombro's own: it is built in, always first in the Lead's soul, and no file
+# can remove it. lead/soul.md holds only what is added to it: how the Lead works with this user.
 LEAD_SOUL = """\
 You are the Ombro Lead: the user's right hand. You're warm, calm and on their
 side. You take their work seriously, ask only what you need to know, and make
@@ -496,19 +508,38 @@ With the crew, you're clear and exacting: precise briefs, high standards, and
 credit where it's due.
 """
 
-# The set-up interview writes only this section of soul.md; the character above it is kept.
+# What a new lead/soul.md holds: a note, and room for what set-up and the user add.
+LEAD_SOUL_FILE = """\
+<!-- The Lead's character (warm, calm and on your side) is built into Ombro, and
+nothing here can remove it. This file adds to it: set-up writes how the Lead works
+with you below, and you can add more of your own. -->
+"""
+
+# The set-up interview writes only this section of soul.md; anything above it is kept.
 WORKING_WITH = "## Working with"
+
+
+def without_character(text: str) -> str:
+    """soul.md's text without the built-in character, which older homes kept in the file."""
+    return text.replace(LEAD_SOUL.strip(), "").strip()
+
+
+def lead_soul(own: str) -> str:
+    """The Lead's whole soul: the built-in character first, then what soul.md adds."""
+    own = without_character(own)
+    return LEAD_SOUL.strip() + (f"\n\n{own}" if own else "")
 
 
 def soul_with(current: str, name: str, section: str) -> str:
     """soul.md with the set-up interview's section put in, or replaced: everything
-    above it (the Lead's character, and any edits to it) is kept as it is."""
-    character = current.split(f"\n{WORKING_WITH}", 1)[0] if f"\n{WORKING_WITH}" in current else current
+    above it (the note, and anything added by hand) is kept as it is. The built-in
+    character is not written to the file."""
+    above = current.split(f"\n{WORKING_WITH}", 1)[0] if f"\n{WORKING_WITH}" in current else current
     if current.startswith(WORKING_WITH):
-        character = ""
-    character = character.strip() or LEAD_SOUL.strip()
+        above = ""
+    above = without_character(above)
     heading = f"{WORKING_WITH} {name}" if name else f"{WORKING_WITH} you"
-    return f"{character}\n\n{heading}\n\n{section.strip()}\n"
+    return (f"{above}\n\n" if above else "") + f"{heading}\n\n{section.strip()}\n"
 
 ASSISTANT_NAME = "general-assistant"
 
@@ -605,7 +636,7 @@ def ensure_home(home: Home) -> list[Path]:
     _write_if_missing(home.preferences_config, mdfile.dump(PREFERENCES_META, PREFERENCES_BODY), created)
     _write_if_missing(home.instructions, mdfile.dump({}, INSTRUCTIONS_BODY), created)
     _write_if_missing(home.lead_dir / "config.md", mdfile.dump(LEAD_CONFIG), created)
-    _write_if_missing(home.lead_dir / "soul.md", LEAD_SOUL, created)
+    _write_if_missing(home.lead_dir / "soul.md", LEAD_SOUL_FILE, created)
     new_crew = not home.crew_dir(DEFAULT_CREW).exists()
     created += ensure_crew(home, DEFAULT_CREW, "The default crew.")
     if new_crew:

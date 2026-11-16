@@ -1,7 +1,8 @@
-// Jobs (the Scheduled work layout, design 07): each job by its readable name, its brief, and its
-// status or when it finished. Running: Stop. Finished: View report and Files.
+// Jobs (design 07): each job as a two-line item, as in Settings: its readable name, and under it
+// its status or when it finished (the brief shows on hover). Running: Stop. Finished: View report and Files.
 
 import { ConfirmButton } from "../components/ConfirmButton";
+import { Item } from "./settings/common";
 import { openLink } from "../platform";
 import { useStore } from "../store/store";
 
@@ -28,30 +29,32 @@ export function Jobs() {
         {jobs.length === 0 && <p className="muted">No jobs yet. Brief a task in a chat, and its job shows here.</p>}
         <div className="rows">
           {jobs.map((j) => (
-            <div className="row" key={j.job_id}>
-              <span className="row-name" title={j.job_id}>
-                {j.name}
-                {j.live && <span className="badge live" title="Started from a chat and followed there">live</span>}{" "}
-                {!j.seen_at && !j.active && j.status !== "running" && <span className="badge">new</span>}
-              </span>
-              <span className="row-detail" title={j.brief}>
-                {j.brief}
-              </span>
-              <span className="row-when">{statusText(j.status, j.active, j.finished_at)}</span>
-              <span className="row-actions">
-                {j.active ? (
-                  <ConfirmButton label="Stop" ask="Stop it? It writes its report first." onConfirm={() => stopJob(j.job_id)} />
-                ) : (
+            <div className="row-block" key={j.job_id}>
+              <Item
+                name={
                   <>
-                    <button className="text-button" onClick={() => void readReport(j.job_id, false)}>
-                      View report
-                    </button>
-                    <button className="text-button" onClick={() => void openLink(`file://${j.path}/workspace`)}>
-                      Files
-                    </button>
+                    {j.name}
+                    {j.live && <span className="badge live" title="Started from a chat and followed there">live</span>}{" "}
+                    {!j.seen_at && !j.active && j.status !== "running" && <span className="badge">new</span>}
                   </>
-                )}
-              </span>
+                }
+                title={j.brief}
+                details={[statusText(j.status, j.active, j.finished_at)]}
+                actions={
+                  j.active ? (
+                    <ConfirmButton label="Stop" ask="Stop it? It writes its report first." onConfirm={() => stopJob(j.job_id)} />
+                  ) : (
+                    <>
+                      <button className="text-button" onClick={() => void readReport(j.job_id, false)}>
+                        View report
+                      </button>
+                      <button className="text-button" onClick={() => void openLink(`file://${j.path}/workspace`)}>
+                        Files
+                      </button>
+                    </>
+                  )
+                }
+              />
             </div>
           ))}
         </div>

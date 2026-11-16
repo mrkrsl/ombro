@@ -48,10 +48,16 @@ class ToolRefused(Exception):
         self.detail = detail
 
 
+# Input a provider serves from its cache (the conversation so far, sent again with each call)
+# counts as this share of a token against the limits, roughly as it is billed.
+CACHED_WEIGHT = 0.1
+
+
 @dataclass
 class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_input_tokens: int = 0  # of input_tokens
     model_calls: int = 0
     tool_calls: dict[str, int] = field(default_factory=dict)
     tool_refused: dict[str, int] = field(default_factory=dict)
@@ -62,6 +68,12 @@ class Usage:
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
+
+    @property
+    def counted_tokens(self) -> int:
+        """What counts against the token limits: cached input at CACHED_WEIGHT, everything else in full."""
+        cached = min(self.cached_input_tokens, self.input_tokens)
+        return self.total_tokens - cached + int(cached * CACHED_WEIGHT)
 
 
 class Gate:
@@ -153,22 +165,25 @@ class Gate:
         if token_cap is not None:
             # Near the cap, the reply may be shorter, never the total longer: the output allowance
             # shrinks to what is left, down to a floor below which a reply is not worth asking for.
-            left = token_cap - self.usage.total_tokens - est_input
+            left = token_cap - self.usage.counted_tokens - est_input
             max_out = max(min(max_out, left), min(MIN_OUTPUT, max_out))
         worst_tokens = est_input + max_out
-        if token_cap is not None and self.usage.total_tokens + worst_tokens > token_cap:
+        if token_cap is not None and self.usage.counted_tokens + worst_tokens > token_cap:
             raise LimitReached(
                 "max_tokens",
                 f"the next call could use up to {worst_tokens:,} tokens; "
-                f"{self.usage.total_tokens:,} of {token_cap:,} tokens {where} are already used",
+                f"{self.usage.counted_tokens:,} of {token_cap:,} tokens {where} are already used"
+                + (" (cached input counted at a tenth)" if self.usage.cached_input_tokens else ""),
             )
         if self.phase == "work":
             self.scope_steps += 1
         return max_out, max(timeout, 0.001)
 
-    def record_model_call(self, model: str, input_tokens: int, output_tokens: int, estimated: bool = False) -> None:
+    def record_model_call(self, model: str, input_tokens: int, output_tokens: int, estimated: bool = False,
+                          cached: int = 0) -> None:
         self.usage.model_calls += 1
         self.usage.input_tokens += input_tokens
+        self.usage.cached_input_tokens += min(cached, input_tokens)
         self.usage.output_tokens += output_tokens
         if estimated:
             self.usage.estimated_calls += 1
@@ -225,4 +240,5 @@ class Gate:
         self.usage.elapsed_seconds = round(self.elapsed(), 3)
         d = asdict(self.usage)
         d["total_tokens"] = self.usage.total_tokens
+        d["counted_tokens"] = self.usage.counted_tokens
         return d

@@ -48,6 +48,11 @@ def test_the_summary_counts_what_is_going_on(home):
     from ombro.settings import set_preference
 
     set_preference(home, "name", "Ada")
+    before = views.summary(home)  # no key for the model yet: set-up isn't finished
+    assert before["counts"]["crews_ready"] == 0 and before["model"] is None
+    from ombro import keys
+
+    keys.set_key(home, "TEST_MODEL_KEY", "sk-test-INVENTED")
     s = views.summary(home)
     assert s["name"] == "Ada" and s["lead"]["title"] == "Lead"
     assert [c["title"] for c in s["crews"]] == ["Default Crew"]
@@ -88,6 +93,9 @@ def test_commands_print_json(job, home, capsys):
 
 
 def test_summary_and_preferences_as_text(home, capsys):
+    from ombro import keys
+
+    keys.set_key(home, "TEST_MODEL_KEY", "sk-test-INVENTED")  # set up, so the crew is ready
     assert cli.main(["summary"]) == 0
     out = capsys.readouterr().out
     assert "Lead\n└ Default Crew  (default)\n   └ Researcher" in out and "1 crew ready to work" in out

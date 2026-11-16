@@ -135,7 +135,13 @@ def test_looping_lead_is_stopped(job):
 # -- run-level limits ---------------------------------------------------------------
 
 
-def test_over_token_limit_stops_and_reserve_pays_for_report(job):
+@pytest.fixture
+def short_character(monkeypatch):
+    """A short built-in Lead character, so these token budgets don't depend on the length of Ombro's own."""
+    monkeypatch.setattr("ombro.home.LEAD_SOUL", "You are the Lead.\n")
+
+
+def test_over_token_limit_stops_and_reserve_pays_for_report(job, short_character):
     limits = {"max_tokens": 20000, "report_reserve": 0.25, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
     status = job(
         [
@@ -156,7 +162,7 @@ def test_over_token_limit_stops_and_reserve_pays_for_report(job):
     assert work_tokens <= 15000
 
 
-def test_without_a_reserve_the_report_falls_back_to_the_journal(job):
+def test_without_a_reserve_the_report_falls_back_to_the_journal(job, short_character):
     limits = {"max_tokens": 20000, "report_reserve": 0.0, "max_output_tokens": 1000, "report_max_output_tokens": 1000}
     status = job(
         [
@@ -463,3 +469,28 @@ def test_bad_limits_are_refused(home, bad):
 
     with pytest.raises(SetupError):
         load_limits(home, bad)
+
+
+def test_cached_input_counts_at_a_tenth_against_the_token_limit():
+    from ombro.gate import Usage
+
+    u = Usage(input_tokens=100_000, output_tokens=2_000, cached_input_tokens=90_000)
+    assert u.total_tokens == 102_000  # the record keeps every token
+    assert u.counted_tokens == 10_000 + 9_000 + 2_000  # the limit counts cached input at a tenth
+
+
+def test_the_client_reads_cached_input_from_deepseek_and_openai():
+    import httpx
+
+    from ombro.client import OpenAICompatibleClient
+
+    def reply(usage: dict) -> httpx.Response:
+        body = {"choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}], "usage": usage}
+        return httpx.Response(200, json=body, request=httpx.Request("POST", "https://invented.example/v1"))
+
+    parse = OpenAICompatibleClient._parse
+    deepseek = parse(None, reply({"prompt_tokens": 1000, "completion_tokens": 10, "prompt_cache_hit_tokens": 900}), None)
+    openai = parse(None, reply({"prompt_tokens": 1000, "completion_tokens": 10,
+                                "prompt_tokens_details": {"cached_tokens": 800}}), None)
+    plain = parse(None, reply({"prompt_tokens": 1000, "completion_tokens": 10}), None)
+    assert (deepseek.usage.cached_input, openai.usage.cached_input, plain.usage.cached_input) == (900, 800, 0)

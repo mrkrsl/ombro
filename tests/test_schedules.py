@@ -353,7 +353,7 @@ def test_schedule_limits_layer_over_the_spec_and_limits_md(home):
     add_schedule(home, spec="big", limits={"max_tokens": 50_000, "budget_usd": 0.5})
     [job_dir] = tick(home, ts(2026, 11, 12, 7, 30, 5)).started
     lim = jobs.read_job(job_dir)[0]["limits"]
-    assert lim["max_tokens"] == 50_000 and lim["max_rounds"] == 3 and lim["job_timeout"] == 3600
+    assert lim["max_tokens"] == 50_000 and lim["max_rounds"] == 3 and lim["job_timeout"] == 7200
     assert "budget_usd" not in lim
 
 
@@ -499,7 +499,7 @@ def test_schedule_list_show_enable_disable_remove(home, monkeypatch, capsys):
 
     assert cli.main(["schedule", "show", "morning"]) == 0
     out = capsys.readouterr().out
-    assert "Next due:" in out and "allowance moderate" in out and "No jobs yet." in out
+    assert "Next due:" in out and "allowance generous" in out and "No jobs yet." in out
 
     monkeypatch.setattr("builtins.input", Answers("y"))
     assert cli.main(["schedule", "remove", "morning"]) == 0

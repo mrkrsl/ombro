@@ -174,7 +174,8 @@ def test_fresh_tools_md_defaults(home):
     assert s.provider_for("web.fetch") == "direct"
     assert s.key_name("firecrawl") == "FIRECRAWL_API_KEY"
     lim = load_limits(home)
-    assert lim.max_calls_for("web.search") == 60 and lim.max_calls_for("web.fetch") == 100  # free providers
+    assert lim.max_calls_for("web.search") == 120 and lim.max_calls_for("web.fetch") == 200  # free, doubled on generous
+    assert lim.max_calls_for("code.run") == 30
 
 
 def test_tools_md_caps_feed_the_limits_and_old_costs_are_ignored(home):

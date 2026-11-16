@@ -41,6 +41,12 @@ describe("a conversation", () => {
     expect(closed.question).toBeNull();
   });
 
+  it("waits for files edited by hand until the question closes", () => {
+    const c = run([{ type: "edit_files", session: S, seq: 1, id: "e1", paths: ["/tmp/invented.md"] } as ServerMessage]);
+    expect(c.editing?.paths).toEqual(["/tmp/invented.md"]);
+    expect(apply(c, { type: "question_closed", session: S, seq: 2, id: "e1" }).editing).toBeNull();
+  });
+
   it("asks a choice with no label of its own by its buttons alone", () => {
     const choice: QuestionMessage = { ...yesNo, field: { ...yesNo.field, kind: "choice", label: "",
       options: [{ key: "a", label: "accept", aliases: [] }, { key: "q", label: "quit", aliases: [] }] } };

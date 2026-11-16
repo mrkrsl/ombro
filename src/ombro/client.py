@@ -33,6 +33,7 @@ class Usage:
     input_tokens: int
     output_tokens: int
     estimated: bool = False
+    cached_input: int = 0  # of input_tokens, how many the provider served from its cache
 
 
 @dataclass
@@ -251,7 +252,12 @@ class OpenAICompatibleClient:
         usage = data.get("usage") or {}
         content = msg.get("content")
         if usage.get("prompt_tokens") is not None:
-            u = Usage(int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0))
+            # DeepSeek says prompt_cache_hit_tokens; OpenAI (and those like it) prompt_tokens_details.cached_tokens.
+            details = usage.get("prompt_tokens_details") or {}
+            cached = usage.get("prompt_cache_hit_tokens") or (details.get("cached_tokens") if isinstance(details, dict)
+                                                              else 0) or 0
+            u = Usage(int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0),
+                      cached_input=int(cached))
         else:
             out_chars = len(content or "") + sum(len(c.raw_arguments) for c in calls)
             u = Usage(0, out_chars // 3 + 1, estimated=True)

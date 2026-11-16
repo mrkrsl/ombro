@@ -26,6 +26,7 @@
   --menu-bg: #ffffff;
   --menu-pick: #d6eef5;
   --fade: #d4ebf2; /* the blue of the arc behind the foot of the window */
+  --feed-text: var(--ombro-600); /* background work in the side panel: a shade softer than text */
   --input-border: #286e80; /* the design's input stroke */
   --report-head: #f3f3f3;
   --pill: var(--ombro-400);
@@ -53,7 +54,8 @@
   --hover: #163842;
   --menu-bg: #12323a;
   --menu-pick: #1c4652;
-  --fade: #0b2026;
+  --fade: var(--ombro-700); /* the arc at the foot: as dark as the blues go */
+  --feed-text: var(--ombro-200);
   --input-border: #2f6b7a;
   --report-head: #163842;
   --pill: var(--ombro-200);

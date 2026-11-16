@@ -365,8 +365,7 @@ export function Tools() {
     <>
       <h1 className="page-title">Connected tools</h1>
       <p className="lede">
-        The tools your crews can use. Web APIs are offered to every crew member; other tools to the members whose
-        settings name them.
+        The MCP servers and APIs your crews can use on their jobs. These are currently offered to every crew member.
       </p>
       <Problem text={tools.problem} />
       {t && (

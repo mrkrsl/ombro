@@ -168,7 +168,7 @@ def test_init_connects_after_a_failed_test_call(tmp_path):
     ask = ScriptedPrompts(["Ada Invented", "1", "", "1", "deepseek-chat", "n"])
     secret = ScriptedPrompts(["sk-test-INVENTED-wrong", "sk-test-INVENTED-right", ""])
     assert run_init(home, ask=ask, ask_secret=secret, say=said.append, client_factory=lambda s, h: Client())
-    assert ask.asked[0].startswith("What's your name? It's only used to greet you.")  # asked first, before any model
+    assert ask.asked[0].startswith("Welcome. I'm the Ombro Lead.")  # asked first, before any model
     from ombro.settings import load_preferences
 
     assert load_preferences(home).name == "Ada Invented"
