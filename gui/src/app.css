@@ -272,19 +272,6 @@
   line-height: 1.45;
 }
 
-.ended {
-  border-left-color: var(--accent);
-}
-
-.ended .outcome {
-  font-weight: 600;
-}
-
-.ended .brief {
-  color: var(--muted);
-  margin: 2px 0 8px;
-}
-
 .link-button {
   border: 0;
   padding: 0;

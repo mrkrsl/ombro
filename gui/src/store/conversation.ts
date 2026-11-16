@@ -5,7 +5,6 @@ import type {
   CoreEvent,
   EditFilesMessage,
   FileView,
-  JobEnded,
   QuestionMessage,
   Report,
   ServerMessage,
@@ -19,8 +18,7 @@ export type Line =
   | { key: string; kind: "error"; text: string }
   | { key: string; kind: "proposal"; files: FileView[]; warnings: string[] }
   | { key: string; kind: "job"; text: string; jobId: string; live: boolean }
-  | { key: string; kind: "ended"; event: JobEnded }
-  | { key: string; kind: "livereport"; jobId: string }
+  | { key: string; kind: "livereport"; jobId: string; live: boolean }
   | { key: string; kind: "page"; screen: string; args: string; text: string }
   | { key: string; kind: "report"; report: Report };
 
@@ -96,16 +94,14 @@ function eventLines(e: CoreEvent, key: string): Line[] {
       return [{ key, kind: "note", text: e.text, items: [], level: "done" }];
     case "job_progress":
       return [{ key, kind: "job", text: e.text, jobId: e.job_id, live: !!e.live }];
-    case "job_ended":
-      if (e.live) {
-        // A live job: how it ended, then its report, here in the chat.
-        const waiting = e.waiting ? ` ${e.waiting} ${e.waiting === 1 ? "action waits" : "actions wait"} for your approval.` : "";
-        return [
-          { key, kind: "note", text: e.text + waiting, items: [], level: e.status === "completed" ? "done" : "info" },
-          { key: `${key}-report`, kind: "livereport", jobId: e.job_id },
-        ];
-      }
-      return [{ key, kind: "ended", event: e }];
+    case "job_ended": {
+      // Every job ends the same way: how it went, then its report, here in the chat.
+      const waiting = e.waiting ? ` ${e.waiting} ${e.waiting === 1 ? "action waits" : "actions wait"} for your approval.` : "";
+      return [
+        { key, kind: "note", text: e.text + waiting, items: [], level: e.status === "completed" ? "done" : "info" },
+        { key: `${key}-report`, kind: "livereport", jobId: e.job_id, live: !!e.live },
+      ];
+    }
     case "open_page":
       return [{ key, kind: "page", screen: e.screen, args: e.args, text: e.text }];
     default:

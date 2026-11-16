@@ -5,7 +5,6 @@ import type { Report } from "../api/types";
 import type { Line } from "../store/conversation";
 import type { Screen } from "../store/store";
 import { useStore } from "../store/store";
-import { openLink } from "../platform";
 import { Markdown, MarkdownFile } from "./Markdown";
 import { ReportCard } from "./ReportCard";
 
@@ -21,7 +20,6 @@ export function Lines({ lines }: { lines: Line[] }) {
 
 function LineView({ line }: { line: Line }) {
   const show = useStore((s) => s.show);
-  const readReport = useStore((s) => s.readReport);
   const feedOn = useStore((s) => s.prefs?.background_feed !== false);
   switch (line.kind) {
     case "lead":
@@ -54,7 +52,7 @@ function LineView({ line }: { line: Line }) {
     case "report":
       return <ReportCard report={line.report} />;
     case "livereport":
-      return <LiveReport jobId={line.jobId} />;
+      return <LiveReport jobId={line.jobId} scroll={line.live} />;
     case "page":
       return (
         <div className="line note done">
@@ -85,53 +83,11 @@ function LineView({ line }: { line: Line }) {
           ))}
         </div>
       );
-    case "ended": {
-      const e = line.event;
-      const files = e.files ?? [];
-      return (
-        <div className="line card ended">
-          <div className="outcome">{e.text}</div>
-          {e.brief && <div className="brief">{e.brief}</div>}
-          {files.length > 0 && (
-            <div>
-              Here's what it made:
-              <ul>
-                {files.map((f) => (
-                  <li key={f.path}>
-                    <a
-                      href={f.url}
-                      onClick={(ev) => {
-                        ev.preventDefault();
-                        void openLink(f.url);
-                      }}
-                    >
-                      {f.name}
-                    </a>
-                    {!f.exists && " (no longer there)"}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {(e.waiting ?? 0) > 0 && (
-            <p>
-              {e.waiting} {e.waiting === 1 ? "action is" : "actions are"} waiting for approval.{" "}
-              <button className="link-button" onClick={() => show("approvals")}>
-                Approvals
-              </button>
-            </p>
-          )}
-          <button className="link-button" onClick={() => void readReport(e.job_id, true)}>
-            Read the report
-          </button>
-        </div>
-      );
-    }
   }
 }
 
-/** A live job's report, fetched when its end arrives, so it sits in the chat where the job ended. */
-function LiveReport({ jobId }: { jobId: string }) {
+/** A job's report, fetched when its end arrives, so it sits in the chat where the job ended. */
+function LiveReport({ jobId, scroll }: { jobId: string; scroll: boolean }) {
   const api = useStore((s) => s.api);
   const [report, setReport] = useState<Report | null>(null);
   const [problem, setProblem] = useState("");
@@ -139,14 +95,18 @@ function LiveReport({ jobId }: { jobId: string }) {
     if (!api) return;
     api
       .get<Report>(`/jobs/${encodeURIComponent(jobId)}/report`)
-      .then(setReport)
+      .then((r) => {
+        setReport(r);
+        void api.post(`/jobs/${encodeURIComponent(jobId)}/seen`).catch(() => undefined); // it's been shown
+      })
       .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
   }, [api, jobId]);
-  // It arrives after the chat has scrolled to its end: bring its top into view, to read from there.
+  // A live job's arrives after the chat has scrolled to its end: bring its top into view, to read
+  // from there. A background job's waits where it is, so as not to pull you from what you're doing.
   const top = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (report) top.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
-  }, [report]);
+    if (report && scroll) top.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [report, scroll]);
   if (problem) return <div className="line error">The report could not be opened: {problem}</div>;
   return report ? (
     <div ref={top}>

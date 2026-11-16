@@ -68,10 +68,11 @@ describe("a conversation", () => {
     expect(c.lines).toEqual([]);
   });
 
-  it("keeps a job's end as a card", () => {
+  it("ends a job with how it went, then its report", () => {
     const c = run([ev(1, { type: "job_ended", job_id: "invented-20261114-1200", name: "Invented", status: "completed",
       text: "Your job has finished.", brief: "An invented brief.", limit_hit: null, files: [], waiting: 1 })]);
-    expect(c.lines[0]).toMatchObject({ kind: "ended" });
+    expect(c.lines.map((l) => l.kind)).toEqual(["note", "livereport"]);
+    expect(c.lines[1]).toMatchObject({ live: false });
   });
 
   it("greets as the terminal does", () => {
@@ -93,13 +94,14 @@ describe("live jobs", () => {
     ]);
     expect(c.lines[0]).toMatchObject({ kind: "job", live: true });
     expect(c.lines.slice(1).map((l) => l.kind)).toEqual(["note", "livereport"]);
+    expect(c.lines[2]).toMatchObject({ live: true });
     expect(c.lines[1]).toMatchObject({ text: "Your job has finished. 1 action waits for your approval." });
   });
 
-  it("keeps a background job's end as a card to open", () => {
+  it("shows a background job's report in the chat too", () => {
     const c = run([ev(1, { type: "job_ended", job_id: "x", name: "X", status: "completed", text: "Done.", brief: "",
       limit_hit: null, files: [], waiting: 0 })]);
-    expect(c.lines.map((l) => l.kind)).toEqual(["ended"]);
+    expect(c.lines.map((l) => l.kind)).toEqual(["note", "livereport"]);
   });
 
   it("shows a suggested page as a line to follow", () => {

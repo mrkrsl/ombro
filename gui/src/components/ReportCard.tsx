@@ -1,11 +1,12 @@
 // A job's report (design 19): where it is, a copy button, the part you read as Markdown, what the
-// job made, and Ombro's record of how it went, shown on request.
+// job made, what waits for approval, and Ombro's record of how it went, shown on request.
 
 import { useState } from "react";
 import { Copy, FolderOpen } from "lucide-react";
 import type { Report } from "../api/types";
 import { splitReport } from "../store/conversation";
 import { openLink } from "../platform";
+import { useStore } from "../store/store";
 import { Markdown } from "./Markdown";
 
 function fileUrl(path: string): string {
@@ -15,6 +16,7 @@ function fileUrl(path: string): string {
 export function ReportCard({ report }: { report: Report }) {
   const [record, setRecord] = useState(false);
   const [copied, setCopied] = useState(false);
+  const show = useStore((s) => s.show);
   if (!report.report) {
     return (
       <div className="report-card">
@@ -81,6 +83,14 @@ export function ReportCard({ report }: { report: Report }) {
               ))}
             </ul>
           </>
+        )}
+        {report.waiting > 0 && (
+          <p>
+            {report.waiting} {report.waiting === 1 ? "action is" : "actions are"} waiting for approval.{" "}
+            <button className="link-button" onClick={() => show("approvals")}>
+              Approvals
+            </button>
+          </p>
         )}
         {rec && (
           <p>
