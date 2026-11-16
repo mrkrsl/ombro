@@ -456,6 +456,7 @@ export interface Deliverable {
   name: string;
   path: string;
   role: string;
+  text?: string;
   url: string;
 }
 /**

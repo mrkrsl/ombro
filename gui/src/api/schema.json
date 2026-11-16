@@ -718,6 +718,9 @@
         "role": {
           "type": "string"
         },
+        "text": {
+          "type": "string"
+        },
         "url": {
           "type": "string"
         }

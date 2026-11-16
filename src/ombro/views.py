@@ -134,9 +134,25 @@ def _tool_names(tools: dict[str, Any]) -> list[str]:
     return names + ([str(s) for s in servers] if isinstance(servers, dict) else [])
 
 
+MARKDOWN_SHOWN = 512 * 1024  # a Markdown file bigger than this opens outside the app only
+
+
+def _with_text(d: vt.Deliverable) -> vt.Deliverable:
+    """A Markdown file carries its text, so the app can show it in the chat."""
+    p = Path(d["path"])
+    if d["exists"] and p.suffix.lower() in (".md", ".markdown"):
+        try:
+            if p.stat().st_size <= MARKDOWN_SHOWN:
+                d["text"] = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            pass
+    return d
+
+
 def deliverables(home: Home, job_dir: Path) -> list[vt.Deliverable]:
     """The job's files, from the roles' results and the workspace: name, the
-    role that made it, its full path, a file:// link, and whether it is still there."""
+    role that made it, its full path, a file:// link, whether it is still there,
+    and a Markdown file's text."""
     from ombro import report
 
     meta, _ = jobs.read_job(job_dir)
@@ -165,7 +181,7 @@ def deliverables(home: Home, job_dir: Path) -> list[vt.Deliverable]:
         p = Path(path)
         out.append({"name": p.name, "role": "", "path": str(p), "url": p.as_uri(), "exists": p.is_file(),
                     "kind": "other"})
-    return out
+    return [_with_text(d) if d["kind"] != "other" else d for d in out]
 
 
 def chat_list(home: Home) -> list[vt.ChatRow]:

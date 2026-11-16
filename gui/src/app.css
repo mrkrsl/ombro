@@ -1123,6 +1123,12 @@ input[type="checkbox"]:not([role="switch"]) {
   margin: 18px 0 6px;
 }
 
+.report-body .shown-file {
+  margin: 8px 0 12px;
+  padding: 4px 0 4px 16px;
+  border-left: 3px solid var(--dim);
+}
+
 .report-body .record {
   color: var(--muted);
   font-size: 14px;

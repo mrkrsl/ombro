@@ -42,6 +42,15 @@ def test_a_report_view_has_its_deliverables_as_links(job, home):
     assert d["name"] == "The note" and d["role"] == "writer" and d["exists"]
     assert d["url"].startswith("file://") and d["path"].endswith("workspace/note.md")
     assert r["report"] and r["status"] == "completed"
+    assert d["text"] == "Invented.\n"  # a Markdown file carries its text, to read in the app
+
+
+def test_a_large_or_non_markdown_file_carries_no_text(job, home):
+    job_dir = _a_job_with_a_deliverable(job, home)
+    note = job_dir / "workspace" / "note.md"
+    note.write_text("x" * (views.MARKDOWN_SHOWN + 1), encoding="utf-8")
+    (d,) = [x for x in views.report(home, job_dir)["deliverables"] if x["kind"] == "deliverable"]
+    assert "text" not in d
 
 
 def test_the_summary_counts_what_is_going_on(home):

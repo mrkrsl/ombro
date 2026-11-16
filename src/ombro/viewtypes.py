@@ -103,6 +103,7 @@ class Deliverable(TypedDict):
     url: str  # file://
     exists: bool
     kind: str  # deliverable, created, changed, other
+    text: NotRequired[str]  # a Markdown file's contents, to read in the app (up to MARKDOWN_SHOWN bytes)
 
 
 class Report(JobRow):
