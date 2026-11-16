@@ -139,7 +139,9 @@ def _tool_msg(call_id: str, payload: Any, src: str | None = None) -> dict:
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 
 
-ENTRY = re.compile(r"^\*\*(You \((Chat|Brief)\)|Lead):\*\* ?")
+# An entry in a saved chat: your words (in Chat, or answering a brief or role interview held in it),
+# the Lead's (in the chat, or asking in an interview), or Ombro's (a job's outcome, set down for both).
+ENTRY = re.compile(r"^\*\*(You \((Chat|Brief|Role)\)|Lead(?: \((Brief|Role)\))?|Ombro):\*\* ?")
 
 
 def parse_entries(body: str) -> list[str]:
@@ -155,7 +157,7 @@ def parse_entries(body: str) -> list[str]:
 
 
 def turns(entries: list[str]):
-    """(user or lead, text) for each turn in Chat mode; Brief questions and notes are left out."""
+    """(user or lead, text) for each turn in Chat mode; interviews and notes are left out."""
     for e in entries:
         m = ENTRY.match(e)
         if not m:
@@ -164,8 +166,43 @@ def turns(entries: list[str]):
         if m.group(1).startswith("You"):
             if m.group(2) == "Chat":
                 yield "user", text
-        else:
+        elif m.group(1) == "Lead":
             yield "lead", text
+
+
+def all_turns(entries: list[str]):
+    """(user, lead or ombro, text) for everything said in a chat, in order: its turns, the
+    interviews held in it, and Ombro's notices of what came back (a job's outcome)."""
+    for e in entries:
+        m = ENTRY.match(e)
+        if not m:
+            continue
+        text = e[m.end():].strip()
+        who = "user" if m.group(1).startswith("You") else "ombro" if m.group(1) == "Ombro" else "lead"
+        yield who, text
+
+
+def interview_entries(path: Path | None, mode: str) -> list[str]:
+    """An interview's saved transcript, as entries of the chat it was held in."""
+    try:
+        body = mdfile.read(Path(path))[1] if path else ""
+    except (OSError, mdfile.FrontMatterError):
+        return []
+    out: list[str] = []
+    for chunk in body.split("\n\n"):
+        if chunk.startswith("# Interview"):
+            continue
+        if chunk.startswith("**Lead:**"):
+            out.append(f"**Lead ({mode}):**" + chunk[len("**Lead:**"):])
+        elif chunk.startswith("**You:**"):
+            out.append(f"**You ({mode}):**" + chunk[len("**You:**"):])
+        elif chunk.startswith("**Lead proposed:**") or chunk.startswith("**You edited it to:**"):
+            out.append(f"**Lead ({mode}):** {chunk.split(':**', 1)[0][2:]}:" + chunk.split(":**", 1)[1])
+        elif chunk.startswith("_") and chunk.rstrip().endswith("_") and "\n" not in chunk:
+            out.append(chunk)
+        elif out:
+            out[-1] += "\n\n" + chunk
+    return [e.rstrip() for e in out]
 
 
 def _add_usage(before: dict[str, Any], now: dict[str, Any]) -> dict[str, Any]:
@@ -189,6 +226,9 @@ class Transcript:
 
     def lead(self, text: str) -> None:
         self.entries.append(f"**Lead:** {text.strip()}")
+
+    def ombro(self, text: str) -> None:
+        self.entries.append(f"**Ombro:** {text.strip()}")
 
     def note(self, text: str) -> None:
         self.entries.append(f"_{text.strip()}_")
@@ -387,18 +427,43 @@ class Chat:
         self.specs = list(meta.get("specs_saved") or [])
         self.id = str(meta.get("id") or self.id)
         self.jobs = [str(j) for j in meta.get("jobs") or []]
-        for kind, text in turns(entries):
-            if kind == "user":
-                self.exchanges.append([{"role": "user", "content": text}])
+        # Everything said in it comes back, for the Lead too: its turns, the interviews held in it
+        # (your answers and its questions), and Ombro's notices of what came back.
+        notes = ""
+        for kind, text in all_turns(entries):
+            if kind == "ombro":
+                notes += f"[Ombro note: {text}]\n"
+            elif kind == "user":
+                self.exchanges.append([{"role": "user", "content": notes + text}])
                 self.user_said.append(text)
+                notes = ""
             elif self.exchanges:
                 self.exchanges[-1].append({"role": "assistant", "content": text})
         self.transcript.note(f"Reopened {utc_now()}.")
-        self.pending_note = ("[Ombro note: the user reopened this chat to carry on. Tool results from before are "
-                             "not kept; look things up again if you need them.]\n")
+        self.pending_note = notes + ("[Ombro note: the user reopened this chat to carry on. Tool results from "
+                                     "before are not kept; look things up again if you need them.]\n")
         self.ui.show(ChatCleared())
-        for who, text in turns(entries):
-            self.ui.show(PastTurn("you" if who == "user" else "lead", text))
+        for who, text in all_turns(entries):
+            if who == "ombro":
+                self.ui.show(Note(text, level="done"))
+            else:
+                self.ui.show(PastTurn("you" if who == "user" else "lead", text))
+        self._save()
+
+    def _lead_says(self, text: str, **kw: Any) -> None:
+        """Something the Lead says in the chat outside its replies (an offer, a question about a file):
+        shown, and kept in the chat, so a reopened chat has it."""
+        kw.pop("level", None)
+        self.ui.say(text, level="lead", **kw)
+        self.transcript.lead(text)
+
+    def job_ended(self, job_id: str, text: str, status: str) -> None:
+        """A job started from this chat has ended: set down in the chat, for you and the Lead."""
+        if job_id not in self.jobs:
+            return
+        line = f"{text} ('{jobs.job_name(job_id)}', job {job_id}; its report is jobs/{job_id}/report.md.)"
+        self.transcript.ombro(line)
+        self.pending_note += f"[Ombro note: {line}]\n"
         self._save()
 
     def note_job(self, job_id: str) -> None:
@@ -870,7 +935,7 @@ class Chat:
             target = native.resolve_path(ctx, path, write=True)
             shelf = native.SET_ASIDE.get(str(args.get("as") or "for-deletion"), "For deletion")
             why = " ".join(str(args.get("why") or "").split())
-            self.ui.say(f"I'd like to move {native._display(ctx, target.resolve())} into {shelf}/: {why}",
+            self._lead_says(f"I'd like to move {native._display(ctx, target.resolve())} into {shelf}/: {why}",
                         level="lead")
             if not self.ui.yes("folder_set_aside", "Go ahead?", False):
                 return {"declined": "The user said no, so nothing was moved."}
@@ -888,7 +953,7 @@ class Chat:
         what = ("add to the end of" if mode == "append" else "replace") if target.exists() else "create"
         lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
         kept = " and keep the current version in Archive/" if what == "replace" else ""
-        self.ui.say(f"I'd like to {what} {shown}{kept} ({lines:,} lines, {len(content):,} characters).",
+        self._lead_says(f"I'd like to {what} {shown}{kept} ({lines:,} lines, {len(content):,} characters).",
                     level="lead", items=[_short(content, 400)] if content else [])
         if not self.ui.yes("folder_write", "Go ahead?", False):
             self.transcript.note(f"The user said no to writing {shown}.")
@@ -945,7 +1010,7 @@ class Chat:
         note = " ".join(str(args.get("note") or "").split())
         if note and not note.endswith((".", "!", "?")):
             note += "."
-        self.ui.say(f"I found it. It's the spec '{name}'. " + (f"{note} " if note else "")
+        self._lead_says(f"I found it. It's the spec '{name}'. " + (f"{note} " if note else "")
                     + f"I can restart it {how}.", level="lead")
         self.transcript.note(f"The Lead offered to start saved spec {name!r} again ({how}).")
         answer = self.ui.ask(Field(
@@ -989,10 +1054,10 @@ class Chat:
         which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
         summary = summary.rstrip(".")
         if revise:
-            self.ui.say(f"I can open your saved spec '{revise}' and change it: {summary}.", level="lead")
+            self._lead_says(f"I can open your saved spec '{revise}' and change it: {summary}.", level="lead")
             question = "Shall we change it now? You'll see the changes before anything is saved."
         else:
-            self.ui.say(f"This sounds like a task. I can brief it{which}: {summary}.", level="lead")
+            self._lead_says(f"This sounds like a task. I can brief it{which}: {summary}.", level="lead")
             question = "Shall we start the brief?"
         if self.ui.yes("start_brief", question, True, mode="Chat"):
             self.transcript.note(f"The Lead offered a brief ({summary}); you accepted.")
@@ -1009,7 +1074,7 @@ class Chat:
         title = " ".join(str(args.get("title") or "").split()) or None
         summary = _short(args.get("summary") or "", 300).rstrip(".")
         who = f"a {title}" if title else "a new crew member"
-        self.ui.say(f"I can set up {who} for the {crew_title(self.home, crew)}: {summary}.", level="lead")
+        self._lead_says(f"I can set up {who} for the {crew_title(self.home, crew)}: {summary}.", level="lead")
         if self.ui.yes("start_role", "Shall we set it up now? You'll see it before anything is saved.", True,
                        mode="Chat"):
             self.transcript.note(f"The Lead offered a new crew member ({summary}); you accepted.")
@@ -1031,6 +1096,7 @@ class Chat:
         except (SetupError, ModelError) as e:
             self.ui.show(Failure(f"The role interview could not start: {e}"))
             return
+        self.transcript.entries += interview_entries(getattr(outcome, "transcript", None), "Role")
         role_added(self.home, self.ui, crew, outcome)
         self.pending_note += self.interview_back(outcome, "the role interview (adding a crew member)")
 
@@ -1043,7 +1109,7 @@ class Chat:
         crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
                  if str(c) in self.home.crews()]
         which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
-        self.ui.say(f"This sounds like work{which}: {summary}.", level="lead")
+        self._lead_says(f"This sounds like work{which}: {summary}.", level="lead")
         # Reporting back is Ombro's main way of working; live is the other choice, never pushed.
         answer = self.ui.ask(Field(
             "how", "Shall I take this away and report back, or shall we do it live, here?", "choice",
@@ -1067,7 +1133,7 @@ class Chat:
         from ombro.ui import JobStarted, OpenPage
 
         crews = crews or [self.crew]
-        self.ui.say(f"Here's what the crew will do: **{title}**\n\n{task.strip()}", level="lead", spaced=True)
+        self._lead_says(f"Here's what the crew will do: **{title}**\n\n{task.strip()}", level="lead", spaced=True)
         try:
             from ombro.init_cmd import connected_model
 
@@ -1083,7 +1149,7 @@ class Chat:
         self.ui.show(JobStarted(job_id, name, f"Live: '{name}' has started. Its steps show here as they happen; "
                                               "Esc stops it."))
         status = livejob.follow(self.home, self.ui, job_dir)
-        self.transcript.note(f"Live job {job_id} ended ({status}).")
+        self.transcript.ombro(f"The live job '{name}' ended ({status}). Its report is jobs/{job_id}/report.md.")
         self.pending_note += (f"[Ombro note: the live job {job_id} ended ({status}); its report is "
                               f"jobs/{job_id}/report.md and the user has it in the chat.]\n")
         if status not in ("completed", "stopped_by_limit"):
@@ -1321,6 +1387,8 @@ class Chat:
             self.ui.show(Failure(f"The brief could not start: {e}"))
             outcome = None
         self.mode = "Chat"
+        if outcome is not None:  # the interview is part of this chat: kept in it, in order
+            self.transcript.entries += interview_entries(getattr(outcome, "transcript", None), "Brief")
         if outcome is not None and outcome.confirmed:
             name = outcome.proposal.data["name"]
             self.specs.append(name)

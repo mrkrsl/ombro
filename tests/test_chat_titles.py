@@ -98,3 +98,37 @@ def test_opening_a_past_chat_without_saying_anything_keeps_its_place_in_the_list
     second([], ["/chats", "1", "/quit"])  # opened and closed, nothing said
     assert second.chat.path == older
     assert mdfile.read(older)[0]["updated_at"] == "2026-01-01T00:00:00Z"
+
+
+def test_a_reopened_chat_has_everything_said_in_it_the_brief_included(home):
+    from ombro.session import record_job_end_in_chat
+    from ombro.ui import JobEnded
+
+    first = ChatSession(home)
+    first([fake.call("offer_brief", {"summary": "Find teapot makers"}),
+           fake.call("ask", {"questions": ["Which invented town?"], "covered": []}),
+           fake.call("propose", SPEC_ARGS), fake.say("Saved.")],
+          ["/rename Teapot Makers", "Find me teapot makers", "y", "Lowtown, please.", "a", "Thanks"])
+    old = first.chat.path
+    first.chat.jobs.append("invented-job-1")  # a job it started, which ends while the chat is closed
+    first.chat._save()
+    assert record_job_end_in_chat(home, JobEnded("invented-job-1", "Invented job", "stopped_by_limit",
+                                                 "Your job stopped at its job_timeout limit before finishing."))
+    body = mdfile.read(old)[1]
+    assert "**Lead:** This sounds like a task. I can brief it: Find teapot makers." in body  # the offer
+    assert "**Lead (Brief):**" in body and "Which invented town?" in body  # the brief's question…
+    assert "**You (Brief):** Lowtown, please." in body  # …and the answer
+    assert "**Ombro:** Your job stopped at its job_timeout limit" in body  # what came back
+
+    second = ChatSession(home)
+    second([fake.say("It stopped on time.")], ["/chats", "1", "What happened?"])
+    sent = json_dump(second.client.calls[-1]["messages"])
+    assert "Which invented town?" in sent and "Lowtown, please." in sent  # the Lead has the brief again
+    assert "job_timeout limit" in sent and "I can brief it" in sent  # and the outcome, and its offer
+    assert "Lowtown, please." in second.output and "job_timeout limit" in second.output  # shown again too
+
+
+def json_dump(messages) -> str:
+    import json
+
+    return json.dumps(messages)

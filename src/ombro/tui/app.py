@@ -604,9 +604,13 @@ class OmbroApp(App):
                 self.add_line(Progress(event.text), "progress")
             return
         if isinstance(event, JobEnded):
+            from ombro.session import record_job_end_in_chat
             from ombro.tui.commands import render_notice
 
             self.add_text(render_notice(event, self), "notice")
+            # Its outcome becomes part of the chat that started it: this one, or that chat's file.
+            if not self.session.job_ended(event):
+                record_job_end_in_chat(self.home, event)
             return
         if isinstance(event, ModeChanged):
             self.mode = event.mode

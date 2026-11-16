@@ -133,12 +133,17 @@ class Flows:
                 return
             limits = load_limits(self.home)
             kw = {"client_factory": self.session.client_factory} if self.session.client_factory else {}
-            outcome = start(self.home, RolePurpose(self.home, crew, limits, title), crew, limits, ui=self.ui, **kw)
+            from ombro.chat import BriefLookups, interview_entries
             from ombro.interviews import role_added
 
-            role_added(self.home, self.ui, crew, outcome)
-            # The chat that follows knows what the interview said, however it ended.
+            # Typed in a chat: the interview starts from what the chat knows, with its lookups.
             chat = self.session.ensure_chat()
+            task = chat.brief_opening("", None) if chat.exchanges else ""
+            outcome = start(self.home, RolePurpose(self.home, crew, limits, title, task=task), crew, limits,
+                            ui=self.ui, lookups=BriefLookups(chat), **kw)
+            # The interview is part of the chat, and the chat that follows knows what it said.
+            chat.transcript.entries += interview_entries(getattr(outcome, "transcript", None), "Role")
+            role_added(self.home, self.ui, crew, outcome)
             chat.pending_note += chat.interview_back(outcome, "a role interview (adding a crew member)")
             return
         if action == "edit" and len(words) > 1:

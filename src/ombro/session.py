@@ -242,6 +242,13 @@ class Session:
             self.chat = Chat(self.home, ui=self.ui, titles=self.titles, **kw)
         return self.chat
 
+    def job_ended(self, e: JobEnded) -> bool:
+        """A job started from this session's chat has ended: set down in the chat. True if it was."""
+        if self.chat is None or e.job_id not in self.chat.jobs:
+            return False
+        self.chat.job_ended(e.job_id, e.text, e.status)
+        return True
+
     def chat_turn(self, text: str) -> bool:
         """One message or chat command. Starts what the user said yes to. False when the chat has ended."""
         chat = self.ensure_chat()
@@ -300,3 +307,24 @@ class Session:
                 self.chat._save()
             except OSError:
                 pass
+
+
+def record_job_end_in_chat(home: Home, e: JobEnded) -> bool:
+    """A job ended while the chat that started it isn't open: its outcome is added to that chat's file,
+    so the chat has it when it is opened again. True if a chat was found."""
+    if not home.chats_dir.is_dir():
+        return False
+    for path in sorted(home.chats_dir.glob("*.md"), reverse=True):
+        try:
+            meta, body = mdfile.read(path)
+        except (OSError, mdfile.FrontMatterError):
+            continue
+        if e.job_id not in [str(j) for j in meta.get("jobs") or []]:
+            continue
+        line = (f"**Ombro:** {e.text} ('{jobs.job_name(e.job_id)}', job {e.job_id}; its report is "
+                f"jobs/{e.job_id}/report.md.)")
+        if line in body:
+            return True
+        mdfile.write(path, meta, body.rstrip("\n") + "\n\n" + line + "\n")
+        return True
+    return False

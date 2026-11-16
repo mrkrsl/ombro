@@ -28,7 +28,7 @@ from ombro import __version__, jobs, outbox, views
 from ombro.home import Home
 from ombro.serve import DEV_ORIGIN, HOST
 from ombro.serve.live import Busy, Client, Hub, Sessions
-from ombro.session import JobWatcher, StartError, full_line, setup_needed, start_saved_spec
+from ombro.session import JobWatcher, StartError, full_line, record_job_end_in_chat, setup_needed, start_saved_spec
 from ombro.settings import SetupError
 from ombro.ui import JobEnded, JobProgress, Note
 
@@ -172,6 +172,11 @@ class Serve:
             owner = self.owners.get(e.job_id)
             if owner and owner in self.sessions.by_id and not self.sessions.by_id[owner].closed:
                 self.sessions.by_id[owner].emit({"type": "event", "event": e.to_dict()})
+            if isinstance(e, JobEnded):
+                # Its outcome becomes part of the chat that started it: the open one, or its file.
+                open_chats = [live for live in self.sessions.by_id.values() if not live.closed]
+                if not any(live.session.job_ended(e) for live in open_chats):
+                    record_job_end_in_chat(self.home, e)
             if isinstance(e, JobEnded):
                 self.owners.pop(e.job_id, None)
         if changed or self.last_counts is None:
