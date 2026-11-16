@@ -16,6 +16,7 @@
   --muted: var(--ombro-400);
   --dim: var(--ombro-300);
   --accent: var(--ombro-500);
+  --link: var(--ombro-500); /* every link, read or not */
   --greeting: var(--ombro-500);
   --you-bg: #d6eef5;
   --you-text: var(--ombro-500);
@@ -46,6 +47,7 @@
   --muted: var(--ombro-300);
   --dim: #4f7f8b;
   --accent: var(--ombro-200);
+  --link: var(--ombro-300);
   --greeting: var(--ombro-100);
   --you-bg: #1c4652;
   --you-text: var(--ombro-100);

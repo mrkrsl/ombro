@@ -289,14 +289,17 @@
   border: 0;
   padding: 0;
   background: none;
-  color: var(--accent);
+  color: var(--link);
   text-decoration: underline;
   cursor: pointer;
   font-weight: 600;
 }
 
-.markdown a {
-  color: var(--accent);
+/* Every link in the app: the brand's blue, underlined, the same once visited. */
+a,
+a:visited {
+  color: var(--link);
+  text-decoration: underline;
 }
 
 .markdown code {
@@ -1110,10 +1113,6 @@ input[type="checkbox"]:not([role="switch"]) {
   background: var(--report-head);
   color: var(--accent);
   font-size: 14px;
-}
-
-.report-head a {
-  color: var(--accent);
 }
 
 .report-tools {
