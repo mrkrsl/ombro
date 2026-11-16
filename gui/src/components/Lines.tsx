@@ -6,7 +6,7 @@ import type { Line } from "../store/conversation";
 import type { Screen } from "../store/store";
 import { useStore } from "../store/store";
 import { openLink } from "../platform";
-import { Markdown } from "./Markdown";
+import { Markdown, MarkdownFile } from "./Markdown";
 import { ReportCard } from "./ReportCard";
 
 export function Lines({ lines }: { lines: Line[] }) {
@@ -74,7 +74,7 @@ function LineView({ line }: { line: Line }) {
               <h4>
                 {f.label} ({f.replaces ? "updates the current file" : "new file"})
               </h4>
-              <pre>{f.text.trimEnd()}</pre>
+              <MarkdownFile text={f.text.trimEnd()} />
               {f.diff && f.diff.length > 0 && <pre className="diff">{f.diff.join("\n")}</pre>}
             </div>
           ))}

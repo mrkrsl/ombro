@@ -253,6 +253,18 @@
   color: var(--accent);
 }
 
+.card .markdown-file {
+  margin: 0 0 12px;
+}
+
+.markdown-file .settings {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .card pre {
   margin: 0 0 12px;
   white-space: pre-wrap;
