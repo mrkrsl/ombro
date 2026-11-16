@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { Crews as CrewsView, CrewRow, ModelList, RoleDetail, RoleRow } from "../../api/types";
 import { useStore } from "../../store/store";
 import { Field, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
+import { modelLabel } from "../../store/models";
 
 const KINDS: Record<string, string> = { specialist: "Specialist", helper: "Helper", lead: "Lead" };
 
@@ -94,17 +95,6 @@ function SoulEditor({ who, crewTitle, onBack }: { who: Editing; crewTitle: strin
       <Problem text={problem} />
     </>
   );
-}
-
-function modelLabel(model: string | undefined, models: ModelList | null): string {
-  if (!model) return "";
-  const all = models?.connections.flatMap((c) => c.models) ?? [];
-  const named = all.find((m) => m.name === model);
-  if (named) return named.model;
-  const def = all.find((m) => m.default);
-  if (model === "default") return def ? def.model : "The default";
-  if (model === "cheap") return def ? `${def.model} (helpers)` : "The helpers' model";
-  return model;
 }
 
 function Member({ crew, role, models, onEdit, removal, onRemoved }: {

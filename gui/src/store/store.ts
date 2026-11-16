@@ -10,6 +10,7 @@ import type {
   CountsMessage,
   InputReply,
   JobRow,
+  ModelList,
   Preferences,
   Report,
   ScheduleRow,
@@ -43,6 +44,7 @@ type State = {
   problem: string;
   api: Client | null;
   summary: Summary | null;
+  models: ModelList | null; // the model connections, to name models as the Crews page does
   chats: ChatRow[];
   commands: CommandView[];
   counts: CountsMessage | null;
@@ -101,6 +103,7 @@ type Actions = {
 let socket: WebSocket | null = null;
 let started = false;
 let feedKey = 0;
+let jobsFetched = 0;
 const FEED_KEEP = 300;
 
 function systemTheme(): Theme {
@@ -154,6 +157,7 @@ export const useStore = create<State & Actions>((set, get) => {
     problem: "",
     api: null,
     summary: null,
+    models: null,
     chats: [],
     commands: [],
     counts: null,
@@ -206,14 +210,15 @@ export const useStore = create<State & Actions>((set, get) => {
     async refresh() {
       const api = get().api;
       if (!api) return;
-      const [summary, chats, commands, prefs, jobs] = await Promise.all([
+      const [summary, chats, commands, prefs, jobs, models] = await Promise.all([
         api.get<Summary>("/summary").catch(() => null),
         api.get<ChatRow[]>("/chats").catch(() => []),
         api.get<CommandView[]>("/commands").catch(() => []),
         api.get<Preferences>("/preferences").catch(() => null),
         api.get<JobRow[]>("/jobs").catch(() => null),
+        api.get<ModelList>("/models").catch(() => null),
       ]);
-      set({ summary, chats, commands, prefs });
+      set({ summary, chats, commands, prefs, models });
       if (Array.isArray(jobs)) set({ running: jobs.filter((j) => j.active).map((j) => j.job_id) });
       if (prefs) {
         const choice: ThemeChoice = prefs.theme === "light" || prefs.theme === "dark" ? prefs.theme : "auto";
@@ -239,6 +244,12 @@ export const useStore = create<State & Actions>((set, get) => {
               ? s.running.includes(m.job_id) ? s.running : [...s.running, m.job_id]
               : s.running.filter((id) => id !== m.job_id),
         }));
+        // The inspector's job usage keeps up with the job's steps, a few seconds behind at most.
+        const api = get().api;
+        if (api && (get().screen === "chat" || get().inspector) && Date.now() - jobsFetched > 4000) {
+          jobsFetched = Date.now();
+          void api.get<JobRow[]>("/jobs").then((jobs) => set({ jobs: jobs.slice().reverse() }), () => undefined);
+        }
         if (m.event.type === "job_ended") {
           const e = m.event;
           if (get().prefs?.notifications !== false) {
