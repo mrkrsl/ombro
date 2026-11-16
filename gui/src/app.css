@@ -1082,7 +1082,7 @@ input[type="checkbox"]:not([role="switch"]) {
 
 .report-card {
   /* Solid, so the blue arc behind the page doesn't show through the report. */
-  background: var(--bg);
+  background: var(--report-bg);
   border: 1px solid var(--rule);
   border-radius: 16px;
   overflow: hidden;
