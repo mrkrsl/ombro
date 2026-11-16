@@ -1,5 +1,6 @@
-//! The menu bar item (design 18): a plain menu with Ombro, what waits for approval, and how
-//! things stand. The icon changes when something needs you. The web view sends the counts
+//! The menu bar item (design 18): a plain menu with Ombro, jobs finished since you last looked,
+//! what waits for approval, and how things stand. The icon changes when something needs you: an
+//! approval, or a finished job you haven't seen (the Jobs page's "new"). The web view sends the counts
 //! (`set_tray`); a click on a line opens the window at that page (the `open-screen` event).
 
 use std::sync::Mutex;
@@ -18,7 +19,15 @@ pub struct Counts {
     pub active: u32,
     pub scheduled: u32,
     pub waiting: u32,
+    #[serde(default)]
+    pub unseen: u32, // finished jobs not yet seen
     pub crews_ready: u32,
+}
+
+impl Counts {
+    fn alert(&self) -> bool {
+        self.waiting > 0 || self.unseen > 0
+    }
 }
 
 pub struct Tray {
@@ -36,7 +45,7 @@ fn menu(app: &AppHandle, c: &Counts) -> tauri::Result<Menu<Wry>> {
     } else {
         plural(c.waiting, "approval requested", "approvals requested")
     };
-    Menu::with_items(
+    let menu = Menu::with_items(
         app,
         &[
             &MenuItem::with_id(app, "open:home", "Ombro", true, None::<&str>)?,
@@ -49,7 +58,13 @@ fn menu(app: &AppHandle, c: &Counts) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", "Quit Ombro", true, None::<&str>)?,
         ],
-    )
+    )?;
+    // Finished jobs come first under Ombro, above the approvals, while there are any.
+    if c.unseen > 0 {
+        let done = MenuItem::with_id(app, "open:jobs", plural(c.unseen, "job completed", "jobs completed"), true, None::<&str>)?;
+        menu.insert(&done, 2)?;
+    }
+    Ok(menu)
 }
 
 /// Bring the window back and ask it to show a page.
@@ -82,22 +97,26 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The web view's counts, whenever they change: the menu's lines, and the icon when something waits.
+/// The web view's counts, whenever they change: the menu's lines, and the icon when something
+/// waits or a job has finished unseen.
 #[tauri::command]
 pub fn set_tray(app: AppHandle, tray: tauri::State<'_, Tray>, counts: Counts) -> Result<(), String> {
     let mut last = tray.last.lock().unwrap();
     if last.as_ref() == Some(&counts) {
         return Ok(());
     }
-    let image = Image::from_bytes(if counts.waiting > 0 { ALERT } else { IDLE }).map_err(|e| e.to_string())?;
+    let image = Image::from_bytes(if counts.alert() { ALERT } else { IDLE }).map_err(|e| e.to_string())?;
     tray.icon.set_icon(Some(image)).map_err(|e| e.to_string())?;
     let _ = tray.icon.set_icon_as_template(true);
     tray.icon.set_menu(Some(menu(&app, &counts).map_err(|e| e.to_string())?)).map_err(|e| e.to_string())?;
-    let tip = if counts.waiting > 0 {
-        plural(counts.waiting, "approval waiting", "approvals waiting")
-    } else {
-        "Ombro".to_string()
-    };
+    let mut tips = Vec::new();
+    if counts.unseen > 0 {
+        tips.push(plural(counts.unseen, "job completed", "jobs completed"));
+    }
+    if counts.waiting > 0 {
+        tips.push(plural(counts.waiting, "approval waiting", "approvals waiting"));
+    }
+    let tip = if tips.is_empty() { "Ombro".to_string() } else { tips.join(", ") };
     let _ = tray.icon.set_tooltip(Some(tip));
     *last = Some(counts);
     Ok(())

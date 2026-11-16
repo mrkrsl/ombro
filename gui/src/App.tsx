@@ -34,7 +34,8 @@ export default function App() {
   // The menu bar item shows the same counts as the sidebar.
   const counts = s.counts;
   useEffect(() => {
-    if (counts) void setTray({ active: counts.active, scheduled: counts.scheduled, waiting: counts.waiting, crews_ready: counts.crews_ready });
+    if (counts)
+      void setTray({ active: counts.active, scheduled: counts.scheduled, waiting: counts.waiting, unseen: counts.unseen, crews_ready: counts.crews_ready });
   }, [counts]);
 
   useEffect(() => startZoom(), []);

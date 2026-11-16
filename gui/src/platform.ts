@@ -51,7 +51,7 @@ export async function notify(title: string, body: string): Promise<void> {
 }
 
 /** Keep the menu bar item's lines and icon in step with the counts (app only). */
-export async function setTray(counts: { active: number; scheduled: number; waiting: number; crews_ready: number }) {
+export async function setTray(counts: { active: number; scheduled: number; waiting: number; unseen: number; crews_ready: number }) {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("set_tray", { counts }).catch(() => undefined);
@@ -115,4 +115,20 @@ export function startZoom(): () => void {
   }
   window.addEventListener("keydown", onKey);
   return () => window.removeEventListener("keydown", onKey);
+}
+
+/** Run `fn` once the window is in front of someone: now if it is showing, else when it next shows.
+ * So a job counts as seen only when it could have been, and the menu bar's alert isn't cleared
+ * by a window that is closed to the menu bar. */
+export function whenVisible(fn: () => void): void {
+  if (typeof document === "undefined" || document.visibilityState === "visible") {
+    fn();
+    return;
+  }
+  const once = () => {
+    if (document.visibilityState !== "visible") return;
+    document.removeEventListener("visibilitychange", once);
+    fn();
+  };
+  document.addEventListener("visibilitychange", once);
 }

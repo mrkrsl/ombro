@@ -5,6 +5,7 @@ import type { Report } from "../api/types";
 import type { Line } from "../store/conversation";
 import type { Screen } from "../store/store";
 import { useStore } from "../store/store";
+import { whenVisible } from "../platform";
 import { Markdown, MarkdownFile } from "./Markdown";
 import { ReportCard } from "./ReportCard";
 
@@ -97,7 +98,8 @@ function LiveReport({ jobId, scroll }: { jobId: string; scroll: boolean }) {
       .get<Report>(`/jobs/${encodeURIComponent(jobId)}/report`)
       .then((r) => {
         setReport(r);
-        void api.post(`/jobs/${encodeURIComponent(jobId)}/seen`).catch(() => undefined); // it's been shown
+        // It's been shown, once the window is: until then the menu bar keeps its alert.
+        whenVisible(() => void api.post(`/jobs/${encodeURIComponent(jobId)}/seen`).catch(() => undefined));
       })
       .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
   }, [api, jobId]);

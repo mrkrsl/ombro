@@ -18,7 +18,7 @@ import type {
   SpecRow,
   Summary,
 } from "../api/types";
-import { isMac, notify } from "../platform";
+import { isMac, notify, whenVisible } from "../platform";
 import { SHORTCUTS, shortcutText } from "../shortcuts";
 import { addLocal, addReport, apply, newConversation, opening, type Conversation } from "./conversation";
 
@@ -317,7 +317,16 @@ export const useStore = create<State & Actions>((set, get) => {
       const api = get().api;
       if (!api) return;
       try {
-        if (screen === "jobs") set({ jobs: (await api.get<JobRow[]>("/jobs")).slice().reverse() });
+        if (screen === "jobs") {
+          const rows = await api.get<JobRow[]>("/jobs");
+          set({ jobs: rows.slice().reverse() });
+          // Looking at the Jobs page sees its finished jobs: their "new" stays for this visit, and
+          // the menu bar's "job completed" and alert clear.
+          if (rows.some((j) => !j.seen_at && !j.active && j.status !== "running"))
+            whenVisible(() => {
+              if (get().screen === "jobs") void api.post("/jobs/seen").catch(() => undefined);
+            });
+        }
         if (screen === "approvals") set({ approvals: await api.get<ApprovalRow[]>("/approvals") });
         if (screen === "scheduled") {
           const [schedules, specs] = await Promise.all([api.get<ScheduleRow[]>("/schedules"), api.get<SpecRow[]>("/specs")]);

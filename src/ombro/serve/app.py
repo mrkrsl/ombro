@@ -429,6 +429,10 @@ def _action_routes(s: Serve) -> list[Route]:
     def seen(r: Request) -> Any:
         return {"seen": jobs.mark_seen(jobs.find_job(home, r.path_params["job_id"]))}
 
+    def seen_all(r: Request) -> Any:
+        """The Jobs page has been looked at: every finished job counts as seen."""
+        return {"seen": sum(jobs.mark_seen(d) for d in jobs.unseen_jobs(home))}
+
     def add_crew(r: Request, data: dict[str, Any]) -> Any:
         from ombro.home import ensure_crew
         from ombro.roles import NAME
@@ -541,6 +545,7 @@ def _action_routes(s: Serve) -> list[Route]:
         Route("/schedules", _handler(add_schedule, status=201, with_body=True, after=after), methods=["POST"]),
         Route("/schedules/{name}", _handler(edit_schedule, with_body=True), methods=["PUT"]),
         Route("/schedules/{name}", _handler(delete_schedule, after=after), methods=["DELETE"]),
+        Route("/jobs/seen", _handler(seen_all, after=after), methods=["POST"]),
         Route("/jobs/{job_id}/seen", _handler(seen, after=after), methods=["POST"]),
         Route("/schedules/{name}/enable", _handler(schedule(True), after=after), methods=["POST"]),
         Route("/schedules/{name}/disable", _handler(schedule(False), after=after), methods=["POST"]),

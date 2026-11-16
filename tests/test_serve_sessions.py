@@ -266,6 +266,13 @@ def test_brief_job_progress_and_approval_end_to_end(serve, home, tmp_path):
     assert row["chat"] == serve.get(f"/sessions/{sid}")["chat_id"]
     assert job_id in serve.get(f"/chats/{chat}")["jobs"]
     assert serve.get(f"/jobs/{job_id}/report")["report"]
+    # Finished and not yet seen, for the menu bar; looking at the Jobs page sees it.
+    assert serve.get("/summary")["counts"]["unseen_jobs"] == 1
+    assert serve.post("/jobs/seen", {})["seen"] == 1
+    assert serve.get("/summary")["counts"]["unseen_jobs"] == 0
+    unseen_cleared = lambda m: m.get("type") == "counts" and m["unseen"] == 0  # noqa: E731
+    if not any(unseen_cleared(m) for m in ws.seen[-3:]):
+        ws.until(unseen_cleared)
 
     # The approval: listed, opened, approved; only then is anything sent.
     [waiting] = serve.get("/approvals")
