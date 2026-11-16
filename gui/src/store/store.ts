@@ -451,6 +451,7 @@ export const useStore = create<State & Actions>((set, get) => {
       if (!api || !current) return;
       const q = conversations[current]?.question;
       if (!q) return;
+      set({ notice: "" }); // a note from the last turn, e.g. "Answer the question first…", has done its job
       const label = shown ?? (q.field.kind === "secret" ? "•".repeat(String(value).length) : String(value || "(Enter)"));
       if (get().welcome) {
         // The welcome is answered: the home screen gives way to set-up's conversation, which
