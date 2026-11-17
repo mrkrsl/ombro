@@ -213,7 +213,7 @@ LIMITS_META = {
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
                             "web.fetch": 15, "folders.list": 30, "folders.read": 40, "folders.write": 10,
                             "default": 10},
-    "schedule_grace": "10m",
+    "schedule_grace": "15m",
     "schedule_max_running": 2,
     "schedule_max_starts": 3,
     "code_timeout": "60s",
@@ -291,7 +291,7 @@ Chat:
 
 Schedules (crews/<crew>/schedules/):
 
-- schedule_grace: how late `ombro tick` may still start a slot, e.g. 10m.
+- schedule_grace: how late `ombro tick` may still start a slot, e.g. 15m.
   A slot not started by then is skipped and noted in the crew's index.md.
   A schedule file can set its own `grace`.
 - schedule_max_running: scheduled jobs that may be in progress at once.

@@ -167,14 +167,14 @@ def test_a_late_tick_within_grace_still_starts(home):
 def test_a_slot_past_grace_is_missed_and_noted_not_started(home):
     add_schedule(home)
     tick(home, ts(2026, 11, 12, 7, 20))
-    r = tick(home, ts(2026, 11, 12, 7, 45))
+    r = tick(home, ts(2026, 11, 12, 7, 50))
     assert not r.started
     [line] = index_lines(home)
     assert "schedule:morning@2026-11-12T07:30 · missed · 07:30:" in line
-    assert "the machine was off or asleep (no tick from 12 Nov 07:20 to 12 Nov 07:45)" in line
+    assert "the machine was off or asleep (no tick from 12 Nov 07:20 to 12 Nov 07:50)" in line
     assert len(line) <= 200
     assert line.endswith("schedules/morning.md")
-    assert not tick(home, ts(2026, 11, 12, 7, 46)).noted  # noted once
+    assert not tick(home, ts(2026, 11, 12, 7, 51)).noted  # noted once
 
 
 def test_a_long_sleep_is_one_entry_per_schedule(home):
@@ -251,8 +251,8 @@ def test_overlap_waits_within_grace_then_is_skipped_with_the_reason(home):
     add_schedule(home)
     day1 = tick(home, ts(2026, 11, 11, 7, 30, 5)).started[0]  # left running
     assert tick(home, ts(2026, 11, 12, 7, 30, 5)).waiting == ["morning@2026-11-12T07:30"]
-    assert tick(home, ts(2026, 11, 12, 7, 35)).waiting
-    r = tick(home, ts(2026, 11, 12, 7, 41))
+    assert tick(home, ts(2026, 11, 12, 7, 44)).waiting
+    r = tick(home, ts(2026, 11, 12, 7, 46))
     assert not r.started and not r.waiting
     [line] = index_lines(home)
     assert f"skipped · 07:30: not started within the grace period: the previous job {day1.name}" in line
@@ -423,6 +423,58 @@ def test_launch_agent_file_and_commands(home, no_system_scheduler):
     assert system.commands[-2] == ["launchctl", "bootout", "gui/501/local.ombro.tick"]
     assert inst.uninstall() and not inst.plist_path.exists() and not system.loaded
     assert not inst.uninstall()
+
+
+def test_the_desktop_app_runs_its_own_binary(home, no_system_scheduler):
+    inst = scheduler.Installer(home, agents_dir=no_system_scheduler.agents_dir, run=no_system_scheduler.run,
+                               python="/Applications/Ombro.app/Contents/MacOS/ombro-serve", uid=501, frozen=True,
+                               platform="darwin")
+    data = plistlib.loads(inst.plist().encode())
+    assert data["ProgramArguments"] == ["/Applications/Ombro.app/Contents/MacOS/ombro-serve", "tick"]
+
+
+def test_check_says_what_is_wrong_and_ensure_puts_it_right(home, no_system_scheduler, tmp_path):
+    system = no_system_scheduler
+    inst = scheduler.make_installer(home)
+    state = scheduler.check(home, inst)
+    assert state == {"ok": False, "can_install": True,
+                     "message": "The scheduler service is not installed, so scheduled jobs don't run."}
+    python = tmp_path / "bin" / "python3"
+    python.parent.mkdir()
+    python.write_text("")
+    inst.python = str(python)
+    assert scheduler.ensure(home, inst) and scheduler.check(home, inst)["ok"]
+    assert not scheduler.ensure(home, inst)  # working: left alone
+    system.loaded = False  # macOS dropped it
+    assert scheduler.check(home, inst)["message"] == "The scheduler service is installed but isn't working."
+    assert scheduler.ensure(home, inst) and scheduler.check(home, inst)["ok"]
+    python.unlink()  # what it runs has gone, e.g. the app moved
+    assert not scheduler.check(home, inst)["ok"] and scheduler.ensure(home, inst) is True
+
+
+def test_ensure_leaves_another_homes_service_alone(home, no_system_scheduler, tmp_path):
+    from ombro.home import Home
+
+    other = Home(tmp_path / "other-home")
+    scheduler.make_installer(other).install()
+    inst = scheduler.make_installer(home)
+    assert not scheduler.ensure(home, inst)
+    state = scheduler.check(home, inst)
+    assert not state["ok"] and state["can_install"] and str(other.root) in state["message"]
+
+
+def test_the_app_installs_it_itself_only_for_the_usual_home_from_applications(home, monkeypatch):
+    from ombro import home as home_mod
+
+    monkeypatch.setattr(home_mod, "default_root", lambda: home.root)
+    exe = "/Applications/Ombro.app/Contents/MacOS/ombro-serve"
+    assert not scheduler.may_install_itself(home, exe)  # not the packaged app
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert scheduler.may_install_itself(home, exe)
+    assert not scheduler.may_install_itself(home, "/Users/invented/ombro/gui/target/release/ombro-serve")
+    assert not scheduler.may_install_itself(home, "/private/var/folders/x/AppTranslocation/y/Ombro.app/ombro-serve")
+    monkeypatch.setattr(home_mod, "default_root", lambda: home.root / "elsewhere")
+    assert not scheduler.may_install_itself(home, exe)  # a demo or test home
 
 
 def test_crontab_line_is_added_once_and_removed(home, no_system_scheduler):

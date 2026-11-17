@@ -1,6 +1,7 @@
 // Scheduled work (design 07): each schedule's name, its spec, and when it runs, in words. On or off,
 // Edit (when it runs, in place) and Delete (moved aside, never erased). New scheduled job: a saved
-// brief (a spec, saved when a job was briefed), when, and a title.
+// brief (a spec, saved when a job was briefed), when, and a title. Under the title, a line when the
+// scheduler service that runs them is missing or broken, with Install now.
 
 import { useEffect, useState } from "react";
 import { ConfirmButton } from "../components/ConfirmButton";
@@ -66,7 +67,7 @@ function When({ onSave, onCancel, saveLabel }: { onSave: (cron: string) => void;
 }
 
 export function Scheduled() {
-  const { schedules, specs, call, load, screenArgs } = useStore();
+  const { schedules, specs, scheduler, call, load, screenArgs } = useStore();
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -90,6 +91,19 @@ export function Scheduled() {
     <div className="page">
       <div className="column wide-page">
         <h1 className="page-title">Scheduled work</h1>
+        {scheduler && !scheduler.ok && (
+          <div className="scheduler-notice">
+            <span>
+              {scheduler.message}
+              {scheduler.can_install && " Install it now?"}
+            </span>
+            {scheduler.can_install && (
+              <button className="primary small" onClick={() => void change((api) => api.post("/scheduler/install"))}>
+                Install now
+              </button>
+            )}
+          </div>
+        )}
         {schedules.length === 0 && <p className="muted">Nothing is scheduled.</p>}
         <div className="rows">
           {schedules.map((s) => (

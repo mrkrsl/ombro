@@ -7,12 +7,14 @@ slots while logged out, off or asleep are noted as missed.
 Linux and other systems with cron: one line in your crontab, marked
 `# ombro-tick`, so it can be found and removed again.
 
-The entry calls the Python that ran `ombro schedule install`, as
-`python -m ombro tick`, with OMBRO_HOME set to this home. Tick writes its own
+The entry calls the Python that installed it, as `python -m ombro tick`, or
+the desktop app's own binary, as `<binary> tick`, with OMBRO_HOME set to this
+home. The app installs it itself (`ensure`), for the usual home, when it runs
+from an Applications folder; the Scheduled page offers it otherwise. Tick writes its own
 log to scheduler/tick.log; anything the scheduler catches on stderr (a crash)
 goes to scheduler/scheduler.log.
 
-Nothing here runs unless the user confirms. Tests build an Installer with a
+On the command line, nothing here runs unless the user confirms. Tests build an Installer with a
 temporary folder and a fake command runner.
 """
 
@@ -64,6 +66,7 @@ class Installer:
         run: Runner = subprocess.run,
         python: str = sys.executable,
         uid: int | None = None,
+        frozen: bool | None = None,
     ):
         self.home = home
         self.kind = "launchd" if platform == "darwin" else "cron"
@@ -71,6 +74,8 @@ class Installer:
         self.run = run
         self.python = str(Path(python).absolute())
         self.uid = os.getuid() if uid is None else uid
+        # The desktop app's binary is the whole command line; it has no -m.
+        self.frozen = getattr(sys, "frozen", False) if frozen is None else frozen
 
     # -- what would be written ---------------------------------------------
 
@@ -83,7 +88,7 @@ class Installer:
         return self.home.scheduler_dir / "scheduler.log"
 
     def program(self) -> list[str]:
-        return [self.python, "-m", "ombro", "tick"]
+        return [self.python, "tick"] if self.frozen else [self.python, "-m", "ombro", "tick"]
 
     def plist(self) -> str:
         data = {
@@ -198,6 +203,58 @@ class Installer:
         r = self.run(["crontab", "-"], input=text, capture_output=True, text=True)
         if r.returncode != 0:
             raise OSError(f"crontab failed: {(r.stderr or r.stdout).strip()}")
+
+
+def check(home: Home, inst: Installer | None = None) -> dict[str, Any]:
+    """Whether scheduled jobs in this home can run: `ok`, and when not, a line saying why for the
+    Scheduled page, and whether Install now would put it right."""
+    inst = inst or make_installer(home)
+    try:
+        cur = inst.installed()
+        inst.plan()
+    except OSError as e:
+        return {"ok": False, "message": f"The scheduler service can't be installed here: {e}.", "can_install": False}
+    if cur is None:
+        return {"ok": False, "message": "The scheduler service is not installed, so scheduled jobs don't run.",
+                "can_install": True}
+    if cur.home and Path(cur.home).resolve() != home.root:
+        return {"ok": False, "message": f"The scheduler service runs scheduled jobs for another Ombro home, "
+                f"{cur.home}, not this one.", "can_install": True}
+    if broken(cur):
+        return {"ok": False, "message": "The scheduler service is installed but isn't working.", "can_install": True}
+    return {"ok": True, "message": "", "can_install": False}
+
+
+def broken(cur: Installed) -> bool:
+    """Installed, but it can't run: macOS hasn't loaded it, or what it runs has gone (the app moved)."""
+    return cur.loaded is False or (cur.python is not None and not Path(cur.python).exists())
+
+
+def may_install_itself(home: Home, executable: str = sys.executable) -> bool:
+    """The app installs the service without asking only for the usual home (not a demo or test home,
+    which would take it from the real one) and only from an Applications folder, so it never points
+    at a build folder or a copy macOS has moved aside to run."""
+    from ombro.home import default_root
+
+    if not getattr(sys, "frozen", False) or home.root != default_root() or not home.exists():
+        return False
+    exe = str(Path(executable).absolute())
+    return "/AppTranslocation/" not in exe and (exe.startswith("/Applications/")
+                                                 or exe.startswith(str(Path.home() / "Applications") + "/"))
+
+
+def ensure(home: Home, inst: Installer | None = None) -> bool:
+    """Install the service if it is missing or broken for this home; True if it did. One that runs
+    another home's jobs is left alone (that home's owner installed it); the page says so."""
+    inst = inst or make_installer(home)
+    try:
+        cur = inst.installed()
+        if cur is not None and not ((not cur.home or Path(cur.home).resolve() == home.root) and broken(cur)):
+            return False
+        inst.install()
+        return True
+    except OSError:
+        return False
 
 
 def make_installer(home: Home) -> Installer:

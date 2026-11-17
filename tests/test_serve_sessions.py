@@ -290,7 +290,7 @@ def test_brief_job_progress_and_approval_end_to_end(serve, home, tmp_path):
 
 def test_views_answer_and_keys_never_show(serve, home):
     keys.set_key(home, "INVENTED_KEY", "sk-INVENTED-never-shown-0000")
-    for path in ("/summary", "/chats", "/jobs", "/approvals", "/schedules", "/specs", "/crews", "/preferences",
+    for path in ("/summary", "/chats", "/jobs", "/approvals", "/schedules", "/scheduler", "/specs", "/crews", "/preferences",
                  "/models", "/limits", "/keys", "/folders", "/tools", "/skills", "/sessions",
                  "/roles/default/researcher", "/roles/default/lead"):
         r = serve.http.get(path)
@@ -385,6 +385,22 @@ def test_schedules_over_http(serve, home):
     gone = serve.http.delete("/schedules/news-briefing").json()
     assert gone["schedules"] == [] and "/removed/schedules/" in gone["moved_to"]
     assert serve.http.delete("/schedules/news-briefing").status_code == 404
+
+
+def test_the_scheduler_service_over_http(serve, home, no_system_scheduler, monkeypatch):
+    from ombro import scheduler
+
+    state = serve.get("/scheduler")
+    assert not state["ok"] and state["can_install"] and "not installed" in state["message"]
+    assert serve.http.post("/scheduler/install").status_code == 200
+    assert no_system_scheduler.loaded
+    assert scheduler.make_installer(home).installed().home == str(home.root)
+    # The packaged app puts it back itself when a schedule is added.
+    scheduler.make_installer(home).uninstall()
+    monkeypatch.setattr(scheduler, "may_install_itself", lambda h: True)
+    mdfile.write(home.specs_dir / "invented-news.md", {"name": "invented-news"}, "# Invented news\n\nCheck it.\n")
+    serve.post("/schedules", {"name": "news-briefing", "spec": "invented-news", "cron": "0 6 * * 1-5"}, status=201)
+    assert scheduler.make_installer(home).installed() is not None
 
 
 def test_the_feed_and_notifications_preferences(serve, home):

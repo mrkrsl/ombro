@@ -77,6 +77,9 @@
         "schedule": {
           "$ref": "#/$defs/ScheduleRow"
         },
+        "scheduler": {
+          "$ref": "#/$defs/SchedulerState"
+        },
         "server_message": {
           "anyOf": [
             {
@@ -140,6 +143,7 @@
         "approval_detail",
         "keys",
         "schedule",
+        "scheduler",
         "spec",
         "folders",
         "preferences",
@@ -2530,6 +2534,27 @@
         "path"
       ],
       "title": "ScheduleRow",
+      "type": "object"
+    },
+    "SchedulerState": {
+      "description": "Whether scheduled jobs can run: the scheduler service (scheduler.check).",
+      "properties": {
+        "can_install": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "message",
+        "can_install"
+      ],
+      "title": "SchedulerState",
       "type": "object"
     },
     "ServerMessage": {

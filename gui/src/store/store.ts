@@ -14,6 +14,7 @@ import type {
   Preferences,
   Report,
   ScheduleRow,
+  SchedulerState,
   SessionView,
   SpecRow,
   Summary,
@@ -66,6 +67,7 @@ type State = {
   jobs: JobRow[];
   approvals: ApprovalRow[];
   schedules: ScheduleRow[];
+  scheduler: SchedulerState | null; // whether the scheduler service is there to run them
   specs: SpecRow[];
   report: Report | null; // on the report page
   opener: string | null; // after New from a chat you'd used: the Lead's line that it was saved, in place of the home screen
@@ -179,6 +181,7 @@ export const useStore = create<State & Actions>((set, get) => {
     jobs: [],
     approvals: [],
     schedules: [],
+    scheduler: null,
     specs: [],
     report: null,
     opener: null,
@@ -329,8 +332,12 @@ export const useStore = create<State & Actions>((set, get) => {
         }
         if (screen === "approvals") set({ approvals: await api.get<ApprovalRow[]>("/approvals") });
         if (screen === "scheduled") {
-          const [schedules, specs] = await Promise.all([api.get<ScheduleRow[]>("/schedules"), api.get<SpecRow[]>("/specs")]);
-          set({ schedules, specs });
+          const [schedules, specs, scheduler] = await Promise.all([
+            api.get<ScheduleRow[]>("/schedules"),
+            api.get<SpecRow[]>("/specs"),
+            api.get<SchedulerState>("/scheduler"),
+          ]);
+          set({ schedules, specs, scheduler });
         }
         if (screen === "chat" || get().inspector) {
           // The inspector shows the chat's job and the approvals waiting for it.

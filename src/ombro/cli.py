@@ -1218,7 +1218,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--allowance", choices=["conservative", "moderate", "generous"], help="for add: the jobs' allowance")
     s.add_argument("--max-tokens", type=int, help="for add: the jobs' token cap")
     s.add_argument("--job-timeout", help="for add: the jobs' time limit, e.g. 15m")
-    s.add_argument("--grace", help="for add: how late a slot may still start, e.g. 10m")
+    s.add_argument("--grace", help="for add: how late a slot may still start, e.g. 15m")
     s.add_argument("--disabled", action="store_true", help="for add: save it switched off")
     s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_schedule)
