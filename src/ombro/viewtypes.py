@@ -189,6 +189,13 @@ class ScheduleRow(TypedDict):
     path: str
 
 
+class SchedulerState(TypedDict):
+    """Whether scheduled jobs can run: the scheduler service (scheduler.check)."""
+    ok: bool
+    message: str  # why not, for the Scheduled page; empty when ok
+    can_install: bool  # Install now would put it right
+
+
 class SpecRow(TypedDict):
     name: str
     path: str

@@ -76,7 +76,7 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
 }
 # Scheduler settings: how late a tick may start a slot, and how many scheduled
 # jobs may start in one tick or be in progress at once.
-SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "10m", "schedule_max_running": 2, "schedule_max_starts": 3}
+SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "15m", "schedule_max_running": 2, "schedule_max_starts": 3}
 # Code execution: limits on each script code.run runs.
 CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 8_000,
                                  "code_max_total": "2GB"}
@@ -161,7 +161,7 @@ class Limits:
     fetch_max_query: int = 200  # characters after ? in an address web.fetch will fetch (7.1)
     chat_calls_per_message: int = 8
     chat_tool_max_calls: dict[str, int] = field(default_factory=dict)
-    schedule_grace: float = 600.0
+    schedule_grace: float = 900.0
     schedule_max_running: int = 2
     schedule_max_starts: int = 3
     code_timeout: float = 60.0

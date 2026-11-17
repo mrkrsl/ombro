@@ -74,6 +74,7 @@ export interface Api {
   report: Report;
   role: RoleDetail;
   schedule: ScheduleRow;
+  scheduler: SchedulerState;
   server_message:
     | EventMessage
     | QuestionMessage
@@ -502,6 +503,17 @@ export interface LastJob {
   job_id: string;
   status: string | null;
   waiting: number;
+}
+/**
+ * Whether scheduled jobs can run: the scheduler service (scheduler.check).
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "SchedulerState".
+ */
+export interface SchedulerState {
+  can_install: boolean;
+  message: string;
+  ok: boolean;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

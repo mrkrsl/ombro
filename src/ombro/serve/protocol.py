@@ -162,6 +162,7 @@ class Api(TypedDict):
     approval_detail: vt.ApprovalDetail
     keys: vt.KeyList
     schedule: vt.ScheduleRow
+    scheduler: vt.SchedulerState
     spec: vt.SpecRow
     folders: vt.FolderList
     preferences: vt.Preferences

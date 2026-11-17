@@ -141,6 +141,7 @@ class Serve:
         self.poll_seconds = poll_seconds
         self.last_counts: dict[str, Any] | None = None
         self._poller: asyncio.Task | None = None
+        self._scheduler: asyncio.Task | None = None  # installing the scheduler service at start
         self.signing: dict[str, dict[str, Any]] = {}  # tool server: its sign-in from the app, while it lasts
 
     # -- jobs -------------------------------------------------------------------
@@ -209,9 +210,18 @@ class Serve:
                 pass
             await asyncio.sleep(self.poll_seconds)
 
+    def ensure_scheduler(self) -> None:
+        """Scheduling is part of the app: the packaged app installs the scheduler service itself, or
+        puts it right, when it starts and when a schedule is added or turned on."""
+        from ombro import scheduler
+
+        if scheduler.may_install_itself(self.home):
+            scheduler.ensure(self.home)
+
     async def startup(self) -> None:
         self.hub.bind(asyncio.get_running_loop())
         self._poller = asyncio.create_task(self.run_poller())
+        self._scheduler = asyncio.create_task(asyncio.to_thread(self.ensure_scheduler))
 
     async def shutdown(self) -> None:
         if self._poller:
@@ -226,6 +236,11 @@ def _views(s: Serve) -> list[Route]:
 
     def job_dir(r: Request) -> Path:
         return jobs.find_job(home, r.path_params["job_id"])
+
+    def scheduler_check() -> Any:
+        from ombro import scheduler
+
+        return scheduler.check(home)
 
     def skills_view(r: Request) -> Any:
         from ombro.skills_cmd import library_view
@@ -245,6 +260,7 @@ def _views(s: Serve) -> list[Route]:
         "/approvals/{ref}": lambda r: (find_approval(home, r.path_params["ref"]),
                                        views.approval(home, r.path_params["ref"]))[1],
         "/schedules": lambda r: views.schedule_list(home),
+        "/scheduler": lambda r: scheduler_check(),
         "/specs": lambda r: views.spec_list(home),
         "/crews": lambda r: views.crews(home),
         "/roles/{crew}/{role}": lambda r: views.role(home, r.path_params["crew"], r.path_params["role"]),
@@ -394,6 +410,8 @@ def _action_routes(s: Serve) -> list[Route]:
 
             sch = find_schedule(home, r.path_params["name"])
             schedules.set_enabled(sch.path, enabled)
+            if enabled:
+                s.ensure_scheduler()
             return {"name": sch.name, "enabled": enabled}
         return run
 
@@ -411,7 +429,18 @@ def _action_routes(s: Serve) -> list[Route]:
         cronmod.parse(cron_text)
         schedules.write_schedule(home, name, " ".join(cron_text.split()), spec.removesuffix(".md"),
                                  bool(data.get("enabled", True)))
+        s.ensure_scheduler()
         return views.schedule_list(home)
+
+    def install_scheduler(r: Request) -> Any:
+        """Install now, on the Scheduled page: the service for this home, replacing any other."""
+        from ombro import scheduler
+
+        try:
+            scheduler.make_installer(home).install()
+        except OSError as e:
+            raise HttpError(400, str(e)) from None
+        return scheduler.check(home)
 
     def edit_schedule(r: Request, data: dict[str, Any]) -> Any:
         from ombro import schedules
@@ -544,6 +573,7 @@ def _action_routes(s: Serve) -> list[Route]:
         Route("/approvals/{ref}/resolve", _handler(resolve, with_body=True, after=after), methods=["POST"]),
         Route("/schedules", _handler(add_schedule, status=201, with_body=True, after=after), methods=["POST"]),
         Route("/schedules/{name}", _handler(edit_schedule, with_body=True), methods=["PUT"]),
+        Route("/scheduler/install", _handler(install_scheduler), methods=["POST"]),
         Route("/schedules/{name}", _handler(delete_schedule, after=after), methods=["DELETE"]),
         Route("/jobs/seen", _handler(seen_all, after=after), methods=["POST"]),
         Route("/jobs/{job_id}/seen", _handler(seen, after=after), methods=["POST"]),
