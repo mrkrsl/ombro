@@ -5,18 +5,25 @@
 
 import { useState } from "react";
 import { Laptop, Server } from "lucide-react";
+import { useStore } from "../store/store";
 import { pairByAddress, pairOverSsh, useThisComputer } from "../where";
 
 type How = "ssh" | "address";
 
 export function ServerForm({ onConnected, onCancel }: { onConnected: () => void; onCancel?: () => void }) {
-  const [how, setHow] = useState<How>("ssh");
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("");
-  const [address, setAddress] = useState("");
+  // Start from the server used last, if there was one: reconnecting is usually to the same one.
+  const last = useStore((s) => s.where);
+  const [how, setHowNow] = useState<How>(last?.mode === "direct" ? "address" : "ssh");
+  const [host, setHost] = useState(last?.mode === "ssh" ? last.host ?? "" : "");
+  const [port, setPort] = useState(last?.mode === "ssh" && last.port && last.port !== 8765 ? String(last.port) : "");
+  const [address, setAddress] = useState(last?.mode === "direct" ? last.address ?? "" : "");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
+  const setHow = (h: How) => {
+    setHowNow(h);
+    setProblem("");
+  };
 
   async function connect() {
     setBusy(true);

@@ -137,7 +137,7 @@ export default function App() {
         {!inChat && screen !== "home" && (pages[screen] ?? <Placeholder screen={screen} args={s.screenArgs} />)}
         {screen === "home" && <HomeGreeting />}
         {chatScreen && <Composer conversation={inChat || (screen === "home" && s.welcome) ? conversation : null} />}
-        {status === "lost" && <div className="notice column">Reconnecting to Ombro…</div>}
+        {status === "lost" && <div className="notice column">{s.remote ? "Reconnecting to the server…" : "Reconnecting to Ombro…"}</div>}
       </main>
       {showInspector && (
         <div className="inspector-wrap">

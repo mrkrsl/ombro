@@ -11,6 +11,7 @@ const where = vi.hoisted(() => ({
 }));
 vi.mock("../where", async (real) => ({ ...(await real<typeof import("../where")>()), ...where }));
 
+import { useStore } from "../store/store";
 import { Connect } from "./Connect";
 
 beforeEach(() => Object.values(where).forEach((f) => f.mockClear()));
@@ -60,6 +61,16 @@ describe("Connect", () => {
     await userEvent.click(screen.getByRole("button", { name: "Use Ombro on this computer instead" }));
     expect(where.useThisComputer).toHaveBeenCalled();
     expect(onReady).toHaveBeenCalled();
+  });
+});
+
+describe("reconnecting", () => {
+  it("starts from the server used last", () => {
+    useStore.setState({ where: { mode: "direct", host: null, port: null, address: "127.0.0.1:8799", local_home: false, started: true } });
+    render(<Connect problem="The server doesn't know this computer any more." onReady={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "By address", pressed: true })).toBeInTheDocument();
+    expect(screen.getByLabelText("Address")).toHaveValue("127.0.0.1:8799");
+    useStore.setState({ where: null });
   });
 });
 

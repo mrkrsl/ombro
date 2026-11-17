@@ -214,10 +214,11 @@ fn ssh_options() -> Vec<&'static str> {
 }
 
 /// What went wrong with ssh, in plain words.
-fn ssh_problem(host: &str, code: Option<i32>, stderr: &str) -> String {
+fn ssh_problem(dest: &str, code: Option<i32>, stderr: &str) -> String {
+    let host = dest.rsplit('@').next().unwrap_or(dest);
     let e = stderr.to_lowercase();
     if e.contains("permission denied") {
-        format!("{host} wouldn't let this computer in without a password. Ombro signs in with your SSH key: set one up for {host} (ssh-copy-id {host}), then try again.")
+        format!("{host} wouldn't let this computer in without a password. Ombro signs in with your SSH key: set one up for it (ssh-copy-id {dest}), then try again.")
     } else if e.contains("could not resolve") || e.contains("name or service not known") {
         format!("No server called {host} could be found. Check the name.")
     } else if e.contains("host key verification failed") || e.contains("remote host identification has changed") {
@@ -384,5 +385,7 @@ mod tests {
         assert!(ssh_problem("box", Some(255), "Permission denied (publickey).").contains("ssh-copy-id box"));
         assert!(ssh_problem("box", Some(127), "bash: ombro: command not found").contains("pipx install ombro"));
         assert!(ssh_problem("nope", Some(255), "ssh: Could not resolve hostname nope").contains("No server called nope"));
+        assert!(ssh_problem("ada@nope", Some(255), "ssh: Could not resolve hostname nope").contains("No server called nope could"));
+        assert!(ssh_problem("ada@box", Some(255), "Permission denied").contains("ssh-copy-id ada@box"));
     }
 }
