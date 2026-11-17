@@ -150,9 +150,32 @@ fn use_this_computer(app: tauri::AppHandle) -> Result<(), String> {
 async fn pair_over_ssh(app: tauri::AppHandle, host: String, port: Option<u16>) -> Result<(), String> {
     let host = connection::check_host(&host)?;
     let conn = Connection::Ssh { host: host.clone(), port: port.unwrap_or(connection::DEFAULT_PORT) };
-    let token = connection::pair_ssh(&host).await?;
+    let token = connection::pair_ssh(&host, port.unwrap_or(connection::DEFAULT_PORT)).await?;
     connection::keep_token(&conn, &token)?;
     connection::save(&app, &conn)
+}
+
+/// Pairing over SSH with a code (Ombro in Docker on the server): a short-lived tunnel to the
+/// server's port, so the web view can post the code to 127.0.0.1:<port>/pair. Returns the port.
+#[tauri::command]
+async fn reach_over_ssh(app: tauri::AppHandle, host: String, port: Option<u16>) -> Result<u16, String> {
+    let host = connection::check_host(&host)?;
+    connection::pairing_tunnel(&app, &host, port.unwrap_or(connection::DEFAULT_PORT)).await
+}
+
+/// Keep a server reached over SSH, and the token pairing with a code gave, as the connection.
+#[tauri::command]
+fn keep_ssh(app: tauri::AppHandle, host: String, port: Option<u16>, token: String) -> Result<(), String> {
+    connection::end_pairing_tunnel(&app);
+    let conn = Connection::Ssh { host: connection::check_host(&host)?, port: port.unwrap_or(connection::DEFAULT_PORT) };
+    connection::keep_token(&conn, &token)?;
+    connection::save(&app, &conn)
+}
+
+/// Pairing over SSH with a code didn't go through: close its tunnel.
+#[tauri::command]
+fn end_ssh_pairing(app: tauri::AppHandle) {
+    connection::end_pairing_tunnel(&app);
 }
 
 /// A forwarder to an address, for pairing with a code: the web view posts the code to
@@ -220,6 +243,9 @@ pub fn run() {
             device_name,
             use_this_computer,
             pair_over_ssh,
+            reach_over_ssh,
+            keep_ssh,
+            end_ssh_pairing,
             reach_address,
             keep_address,
             start_connection,

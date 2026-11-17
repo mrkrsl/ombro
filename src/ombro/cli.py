@@ -1100,6 +1100,28 @@ def cmd_serve(args) -> int:
         return 0
 
 
+def _serves_this_home(port: int, token: str) -> str | None:
+    """Over SSH, the app pairs with the Ombro installed on the server, then tunnels to `port`. If
+    what answers there is another Ombro (one in Docker, say), this install's key won't open it: say
+    so, and how to pair with that one instead. None when this home's server answers there."""
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/hello", headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            return None
+    except urllib.error.HTTPError as e:
+        if e.code != 403:
+            return f"The Ombro on port {port} of this server answered oddly ({e.code})."
+        return (f"The Ombro on port {port} of this server isn't the one installed here (it may be in Docker), "
+                "so it can't pair over SSH by itself. In the app, give that Ombro's pairing code as well "
+                "(for Docker: docker compose logs ombro).")
+    except OSError:
+        return (f"Nothing answers on port {port} of this server. Check that Ombro is running there "
+                "(ombro serve status), and the port.")
+
+
 def cmd_pair(args) -> int:
     """Pairing devices with this machine's Ombro server (pairing.py)."""
     from datetime import datetime
@@ -1111,6 +1133,11 @@ def cmd_pair(args) -> int:
         if args.device is not None:
             # For the app over SSH: a new device's token, as JSON, and nothing else on stdout.
             device, token = devices.add(args.device)
+            if args.port is not None:
+                problem = _serves_this_home(args.port, token)
+                if problem:
+                    devices.forget(device.id)
+                    raise CliError(problem)
             return _print_json({"token": token, "device": device.to_dict()})
         if args.list:
             rows = devices.list()
@@ -1121,8 +1148,8 @@ def cmd_pair(args) -> int:
                 print(f"{d.id}  {d.name}  (paired{how.get(d.how, '')} "
                       f"{datetime.fromtimestamp(d.paired):%d %b %Y %H:%M})")
             if len({d.name for d in rows}) < len(rows):
-                print("\nSome names appear twice: a computer that paired both over SSH and with a code is "
-                      "listed once for each. `ombro pair --forget <id>` forgets just one.")
+                print("\nSome names appear more than once: a computer that paired again (over SSH and with a "
+                      "code, say) is listed each time. `ombro pair --forget <id>` forgets just one.")
             return 0
         if args.forget:
             gone = devices.forget(args.forget)
@@ -1393,6 +1420,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--forget", metavar="NAME", help="stop one device connecting (its name or id)")
     g.add_argument("--forget-all", action="store_true", help="stop every device connecting")
     g.add_argument("--device", metavar="NAME", help=argparse.SUPPRESS)  # the app, over SSH
+    s.add_argument("--port", type=int, help=argparse.SUPPRESS)  # with --device: the port the app will tunnel to
     s.set_defaults(func=cmd_pair)
 
     s = sub.add_parser("serve", help="the server the desktop app connects to; `ombro serve install` starts it on its own")

@@ -34,14 +34,34 @@ export function describe(w: Where | null): string {
 export const useThisComputer = () => call<void>("use_this_computer");
 export const startConnection = () => call<void>("start_connection");
 
-/** Pair over SSH: the app signs in with your SSH key and asks the server for a key of its own. */
-export async function pairOverSsh(host: string, port?: number): Promise<void> {
-  await call<void>("pair_over_ssh", { host, port: port ?? null });
+/** Pair over SSH: the app signs in with your SSH key and asks the server for a key of its own.
+ *  With a code (Ombro in Docker on the server, which the server's own `ombro pair` can't reach),
+ *  it pairs with that code instead, through a short-lived SSH tunnel. */
+export async function pairOverSsh(host: string, port?: number, code?: string): Promise<void> {
+  if (!code) {
+    await call<void>("pair_over_ssh", { host, port: port ?? null });
+    return;
+  }
+  const local = await call<number>("reach_over_ssh", { host, port: port ?? null });
+  let token: string;
+  try {
+    token = await pairWithCode(local, code, `${host} (over SSH)`);
+  } catch (e) {
+    await call<void>("end_ssh_pairing").catch(() => undefined);
+    throw e;
+  }
+  await call<void>("keep_ssh", { host, port: port ?? null, token });
 }
 
 /** Pair by address with the code the server showed. Returns nothing, or throws with why not. */
 export async function pairByAddress(address: string, code: string): Promise<void> {
   const [port, kept] = await call<[number, string]>("reach_address", { address });
+  const token = await pairWithCode(port, code, kept);
+  await call<void>("keep_address", { address: kept, token });
+}
+
+/** Post a pairing code to a server reached at 127.0.0.1:<port>; its token, or why not. */
+async function pairWithCode(port: number, code: string, kept: string): Promise<string> {
   const name = await call<string>("device_name");
   let r: Response;
   try {
@@ -56,7 +76,7 @@ export async function pairByAddress(address: string, code: string): Promise<void
   const data = await r.json().catch(() => ({}));
   if (!r.ok || !data.token) throw new Error(data.error || `The server said no (${r.status}).`);
   if (data.protocol !== PROTOCOL) throw new Error(tooOld(data.version));
-  await call<void>("keep_address", { address: kept, token: data.token });
+  return data.token;
 }
 
 export function tooOld(version: string | undefined): string {

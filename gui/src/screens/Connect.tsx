@@ -1,7 +1,8 @@
 // Where Ombro runs: the first question on a fresh install, the way back when a server can't be
 // reached, and the form behind Settings › General › Where Ombro runs. On this computer, Ombro is as
-// it always was. On a server, the app connects over SSH (no code: your SSH key signs in) or by
-// address (Tailscale, or Docker on this computer), with the pairing code the server showed.
+// it always was. On a server, the app connects over SSH (no code: your SSH key signs in; with a code
+// for Ombro in Docker there) or by address (Tailscale, or Docker on this computer), with the
+// pairing code the server showed.
 
 import { useState } from "react";
 import { Laptop, Server } from "lucide-react";
@@ -29,7 +30,7 @@ export function ServerForm({ onConnected, onCancel }: { onConnected: () => void;
     setBusy(true);
     setProblem("");
     try {
-      if (how === "ssh") await pairOverSsh(host, port.trim() ? Number(port) : undefined);
+      if (how === "ssh") await pairOverSsh(host, port.trim() ? Number(port) : undefined, code.trim() || undefined);
       else await pairByAddress(address, code);
       onConnected();
     } catch (e) {
@@ -70,16 +71,36 @@ export function ServerForm({ onConnected, onCancel }: { onConnected: () => void;
               running there (ombro serve install).
             </span>
           </label>
-          <details className="more">
-            <summary>Ombro's port on the server</summary>
-            <input
-              className="text-input short"
-              aria-label="Port"
-              inputMode="numeric"
-              placeholder="8765"
-              value={port}
-              onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
-            />
+          <details className="more" open={port !== "" || code !== "" || undefined}>
+            <summary>Another port, or Ombro in Docker there</summary>
+            <label className="field">
+              <span className="field-label">Port</span>
+              <input
+                className="text-input short"
+                aria-label="Port"
+                inputMode="numeric"
+                placeholder="8765"
+                value={port}
+                onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Pairing code (Ombro in Docker)</span>
+              <input
+                className="text-input short"
+                aria-label="SSH pairing code"
+                placeholder="34FA"
+                value={code}
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                onChange={(e) => setCode(e.target.value)}
+              />
+              <span className="field-hint">
+                Only for Ombro in Docker on the server: its code is in docker compose logs ombro. Ombro installed
+                directly there pairs by itself.
+              </span>
+            </label>
           </details>
         </>
       ) : (

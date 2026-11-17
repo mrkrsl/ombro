@@ -18,6 +18,7 @@ temporary folders and a fake command runner.
 from __future__ import annotations
 
 import os
+import re
 import plistlib
 import shlex
 import shutil
@@ -206,6 +207,34 @@ def sandbox_step(*, ask: Callable[[str], bool] | None, run: Runner = subprocess.
     say("Done: code a job writes can run here, in the sandbox." if reason is None
         else f"The profile is loaded, but code still can't run: {reason}")
     return reason is None
+
+
+def serve_ticks(home: Home) -> str | None:
+    """Whether an Ombro server starts this home's scheduled jobs itself (`ombro serve --tick`), so
+    no system scheduler entry is needed: the service `ombro serve install` wrote for this home, or
+    Ombro's Docker image, whose server always runs with --tick. Returns which, or None."""
+    if Path("/.dockerenv").exists():
+        return "the Ombro server in this container"
+    try:
+        inst = make_installer(home)
+        path = inst.path
+        if not path.is_file():
+            return None
+        if inst.kind == "launchd":
+            data = plistlib.loads(path.read_bytes())
+            argv, served = data.get("ProgramArguments") or [], (data.get("EnvironmentVariables") or {}).get("OMBRO_HOME")
+        else:
+            text = path.read_text(errors="replace")
+            argv = text.split()
+            found = re.search(r'^Environment="OMBRO_HOME=(.*)"$', text, re.M)
+            served = found.group(1).replace('\\"', '"').replace("\\\\", "\\") if found else None
+        if served is None or not any("--tick" in a for a in argv):
+            return None
+        if Path(served).expanduser().resolve() != Path(home.root).resolve():
+            return None
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return None
+    return f"the Ombro server's service ({path})"
 
 
 def make_installer(home: Home) -> ServiceInstaller:

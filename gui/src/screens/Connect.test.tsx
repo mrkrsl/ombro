@@ -34,8 +34,19 @@ describe("Connect", () => {
     expect(connect).toBeDisabled();
     await userEvent.type(screen.getByLabelText("Server"), "ada@box.invalid");
     await userEvent.click(connect);
-    expect(where.pairOverSsh).toHaveBeenCalledWith("ada@box.invalid", undefined);
+    expect(where.pairOverSsh).toHaveBeenCalledWith("ada@box.invalid", undefined, undefined);
     expect(onReady).toHaveBeenCalled();
+  });
+
+  it("pairs over SSH with Docker's port and code when given", async () => {
+    render(<Connect onReady={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /On a server/ }));
+    await userEvent.type(screen.getByLabelText("Server"), "ada@box.invalid");
+    await userEvent.click(screen.getByText("Another port, or Ombro in Docker there"));
+    await userEvent.type(screen.getByLabelText("Port"), "8766");
+    await userEvent.type(screen.getByLabelText("SSH pairing code"), " bsvw ");
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    expect(where.pairOverSsh).toHaveBeenCalledWith("ada@box.invalid", 8766, "bsvw");
   });
 
   it("pairs by address with the code, and says why it couldn't", async () => {

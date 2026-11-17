@@ -262,11 +262,11 @@ def test_ombro_pair_commands(tmp_path):
     listed = run_cli(["pair", "--list"], root).stdout
     assert "Laptop" in listed and "Desk Mac" in listed and over_ssh["token"] not in listed
     assert "Laptop  (paired with a code" in listed and "Desk Mac  (paired over SSH" in listed
-    assert "appear twice" not in listed
+    assert "appear more than once" not in listed
     # One computer paired both ways is listed twice, and the list says why.
     again = json.loads(run_cli(["pair", "--device", "Laptop"], root).stdout)
     listed = run_cli(["pair", "--list"], root).stdout
-    assert "appear twice" in listed
+    assert "appear more than once" in listed
     assert run_cli(["pair", "--forget", again["device"]["id"]], root).returncode == 0
     assert run_cli(["pair", "--forget", "Laptop"], root).returncode == 0
     assert run_cli(["pair", "--forget", "Nobody"], root).returncode != 0
@@ -425,3 +425,70 @@ def test_a_service_on_another_address_also_listens_on_127_0_0_1(monkeypatch):
     for host in ("127.0.0.1", "0.0.0.0"):
         assert len(serve_mod.listen(8765, host)) == 1
     assert bound == [("127.0.0.1", 8765), ("0.0.0.0", 8765)]
+
+
+def test_a_serve_service_that_ticks_counts_as_the_scheduler(home, tmp_path, monkeypatch, capsys):
+    """`ombro schedule` must not say no schedule fires, or offer a cron entry, when the server's
+    own service starts scheduled jobs (serve --tick)."""
+    from ombro import cli, schedule_cmd, service
+
+    from ombro.home import ensure_home
+
+    monkeypatch.setenv("OMBRO_HOME", str(home.root))
+    ensure_home(home)
+    monkeypatch.setattr(service.Path, "exists", lambda self: False if str(self) == "/.dockerenv" else os.path.exists(self))
+    inst, _ = installer(home, tmp_path)
+    monkeypatch.setattr(service, "make_installer", lambda h: inst)
+    assert service.serve_ticks(home) is None
+    assert any("not installed" in line for line in schedule_cmd.scheduler_status(home, enabled=1))
+
+    inst.install(inst.plan(8765, "127.0.0.1", []))
+    assert "service" in (service.serve_ticks(home) or "")
+    lines = schedule_cmd.scheduler_status(home, enabled=1)
+    assert any("starts scheduled jobs itself" in line for line in lines)
+    assert not any("not installed" in line for line in lines)
+    assert cli.main(["schedule", "install"]) == 0
+    assert "No scheduler entry is needed" in capsys.readouterr().out
+
+    # A service for another home doesn't count.
+    assert service.serve_ticks(Home(tmp_path / "other")) is None
+
+
+def test_pairing_over_ssh_checks_the_port_the_app_will_use(tmp_path):
+    """The app passes the port it will tunnel to. If the Ombro there isn't this one (it's in
+    Docker, say), pairing says so and keeps no device; if nothing answers, it says that."""
+    import http.server
+    import threading
+
+    def server(status):
+        class Hello(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(status)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), Hello)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        return httpd
+
+    root = tmp_path / "home"
+    other = server(403)  # another Ombro: it doesn't know this install's key
+    r = run_cli(["pair", "--device", "Laptop", "--port", str(other.server_port)], root)
+    assert r.returncode != 0 and "isn't the one installed here" in r.stderr and "pairing code" in r.stderr
+    assert Devices(Home(root)).list() == []
+    other.shutdown()
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        free = s.getsockname()[1]
+    r = run_cli(["pair", "--device", "Laptop", "--port", str(free)], root)
+    assert r.returncode != 0 and "Nothing answers" in r.stderr
+    assert Devices(Home(root)).list() == []
+
+    ours = server(200)
+    r = run_cli(["pair", "--device", "Laptop", "--port", str(ours.server_port)], root)
+    assert r.returncode == 0 and json.loads(r.stdout)["token"]
+    assert [d.name for d in Devices(Home(root)).list()] == ["Laptop"]
+    ours.shutdown()

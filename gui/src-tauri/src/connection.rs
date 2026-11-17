@@ -61,6 +61,7 @@ pub struct State {
 #[derive(Default)]
 pub struct Remote {
     pub ssh: Mutex<Option<u32>>, // the ssh process id, to kill on exit
+    pub pairing: Mutex<Option<Child>>, // a short-lived tunnel, while pairing over SSH with a code
 }
 
 /// For trying the app by hand: $OMBRO_APP_DIR keeps connection.json somewhere else, so a test
@@ -234,10 +235,13 @@ fn ssh_problem(dest: &str, code: Option<i32>, stderr: &str) -> String {
 }
 
 /// Pair over SSH: run `ombro pair --device <name>` on the server and keep the token it prints.
-pub async fn pair_ssh(host: &str) -> Result<String, String> {
+pub async fn pair_ssh(host: &str, port: u16) -> Result<String, String> {
     let name = device_name();
+    // On another port, the server checks that the Ombro answering there is the one it pairs for
+    // (not one in Docker, say), and says so if not.
+    let on_port = if port == DEFAULT_PORT { String::new() } else { format!(" --port {port}") };
     // Non-interactive SSH sessions often lack ~/.local/bin, where pipx and uv put ombro.
-    let remote = format!("PATH=\"$HOME/.local/bin:$PATH\" ombro pair --device '{name}'");
+    let remote = format!("PATH=\"$HOME/.local/bin:$PATH\" ombro pair --device '{name}'{on_port}");
     let mut cmd = Command::new(ssh_program());
     cmd.args(ssh_options()).arg(host).arg(remote).stdin(Stdio::null());
     let out = tokio::time::timeout(Duration::from_secs(40), cmd.output())
@@ -345,6 +349,31 @@ pub async fn start_tunnel(app: tauri::AppHandle, host: String, remote: u16) -> R
     Ok(local)
 }
 
+/// For pairing over SSH with a code (Ombro in Docker on the server, which the server's own
+/// `ombro pair` can't reach): a tunnel to the server's port, kept only until pairing ends.
+pub async fn pairing_tunnel(app: &tauri::AppHandle, host: &str, remote: u16) -> Result<u16, String> {
+    end_pairing_tunnel(app);
+    let local = free_port()?;
+    let mut child = spawn_tunnel(host, local, remote)?;
+    if !wait_for_port(local, Duration::from_secs(20)).await {
+        let _ = child.start_kill();
+        let out = child.wait_with_output().await.map_err(|e| e.to_string())?;
+        return Err(ssh_problem(host, out.status.code(), &String::from_utf8_lossy(&out.stderr)));
+    }
+    if let Some(r) = app.try_state::<Remote>() {
+        *r.pairing.lock().unwrap() = Some(child);
+    }
+    Ok(local)
+}
+
+pub fn end_pairing_tunnel(app: &tauri::AppHandle) {
+    if let Some(r) = app.try_state::<Remote>() {
+        if let Some(mut child) = r.pairing.lock().unwrap().take() {
+            let _ = child.start_kill();
+        }
+    }
+}
+
 /// A forwarder from a local port to `address`, for as long as the app runs.
 pub async fn start_forwarder(address: String) -> Result<u16, String> {
     let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await.map_err(|e| e.to_string())?;
@@ -367,6 +396,7 @@ pub async fn start_forwarder(address: String) -> Result<u16, String> {
 }
 
 pub fn stop(app: &tauri::AppHandle) {
+    end_pairing_tunnel(app);
     if let Some(r) = app.try_state::<Remote>() {
         if let Some(pid) = r.ssh.lock().unwrap().take() {
             let _ = std::process::Command::new("kill").arg(pid.to_string()).status();

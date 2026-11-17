@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ombro import cron as cronmod
-from ombro import mdfile, memory, jobs, scheduler, schedules
+from ombro import mdfile, memory, jobs, scheduler, schedules, service
 from ombro.home import Home
 from ombro.settings import SetupError, format_duration, format_tokens, load_limits
 
@@ -66,11 +66,18 @@ def scheduler_status(home: Home, *, enabled: int) -> list[str]:
     now = time.time()
     lines = []
     inst = scheduler.make_installer(home)
+    # A server that starts scheduled jobs itself (serve --tick: its service, or in Docker) needs no
+    # entry, and there may be no crontab to check at all (a container has none).
+    ticker = service.serve_ticks(home)
     try:
         cur = inst.installed()
     except OSError as e:
-        cur, lines = None, [f"Scheduler: could not be checked ({e})."]
-    if cur is None:
+        cur = None
+        if not ticker:
+            lines = [f"Scheduler: could not be checked ({e})."]
+    if ticker and cur is None:
+        lines.append(f"Scheduler: {ticker} starts scheduled jobs itself (serve --tick); no entry is needed.")
+    elif cur is None:
         lines.append("Scheduler: not installed, so no schedule fires. Install it with `ombro schedule install`.")
     else:
         lines.append(f"Scheduler: {cur.kind} entry installed, running {cur.detail}")
@@ -81,7 +88,7 @@ def scheduler_status(home: Home, *, enabled: int) -> list[str]:
                          "run `ombro schedule install` again.")
     last = schedules.last_tick(home)
     lines.append(f"Last tick: {_when(last)} ({_ago(last, now)})" if last else "Last tick: never")
-    if enabled and cur is not None and (last is None or now - last > STALE_TICK_SECONDS):
+    if enabled and (cur is not None or ticker) and (last is None or now - last > STALE_TICK_SECONDS):
         lines.append(f"  Warning: schedules are enabled but no tick has run in the last "
                      f"{STALE_TICK_SECONDS // 60} minutes. See {schedules.log_path(home)} and "
                      f"{home.scheduler_dir / 'scheduler.log'}.")
@@ -89,6 +96,8 @@ def scheduler_status(home: Home, *, enabled: int) -> list[str]:
 
 
 def _offer_install(home: Home) -> None:
+    if service.serve_ticks(home):
+        return
     inst = scheduler.make_installer(home)
     if inst.installed() is not None:
         return
@@ -299,6 +308,10 @@ def cmd_schedule(args) -> int:
             return cli._print_json(views.schedule_list(home, crew))
         return cmd_list(home, crew)
     if action == "install":
+        ticker = service.serve_ticks(home)
+        if ticker:
+            print(f"No scheduler entry is needed: {ticker} starts scheduled jobs itself (serve --tick).")
+            return 0
         return _install(home, scheduler.make_installer(home))
     if action == "uninstall":
         inst = scheduler.make_installer(home)
