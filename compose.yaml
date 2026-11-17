@@ -9,6 +9,8 @@ services:
     image: ombro:local
     restart: unless-stopped
     # This machine only. To reach it from another computer, use SSH or Tailscale, not a public port.
+    # For Tailscale, publish on this machine's Tailscale address instead (`tailscale ip -4`):
+    #   - "100.x.y.z:8765:8765"
     ports:
       - "127.0.0.1:8765:8765"
     volumes:
