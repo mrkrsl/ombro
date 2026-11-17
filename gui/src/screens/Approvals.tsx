@@ -9,13 +9,15 @@ import { approvalTitle, argumentLines, toolAction } from "../store/approvals";
 import { MarkdownFile } from "../components/Markdown";
 import { useStore } from "../store/store";
 
+// Each approval goes by its long reference (job ID and number): the short one (`1015-1`) is the
+// same for two jobs started in the same minute, and the server won't guess between them.
 export function Approvals() {
   const { approvals, decide, call } = useStore();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<Record<string, ApprovalDetail | "loading">>({});
   const [problems, setProblems] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const refs = approvals.map((a) => a.ref);
+  const refs = approvals.map((a) => a.long_ref);
   const chosen = refs.filter((r) => picked.has(r));
 
   function toggle(ref: string) {
@@ -34,7 +36,8 @@ export function Approvals() {
     }
     setOpen((o) => ({ ...o, [ref]: "loading" }));
     const d = await call((api) => api.get<ApprovalDetail>(`/approvals/${encodeURIComponent(ref)}`));
-    if (d) setOpen((o) => ({ ...o, [ref]: d }));
+    // It couldn't be opened (call shows why): closed again, not left on "Opening…".
+    setOpen(({ [ref]: _, ...rest }) => (d ? { ...rest, [ref]: d } : rest));
   }
 
   async function act(approve: boolean, which: string[] = chosen) {
@@ -62,19 +65,19 @@ export function Approvals() {
         )}
         <div className="rows">
           {approvals.map((a) => {
-            const d = open[a.ref];
+            const d = open[a.long_ref];
             const title = approvalTitle(a.tool, a.arguments);
             return (
-              <div key={a.ref} className="row-block">
+              <div key={a.long_ref} className="row-block">
                 <div className="approval">
-                  <input type="checkbox" aria-label={`Choose ${title}`} checked={picked.has(a.ref)} onChange={() => toggle(a.ref)} />
-                  <button className="approval-head" onClick={() => void expand(a.ref)} aria-expanded={!!d}>
+                  <input type="checkbox" aria-label={`Choose ${title}`} checked={picked.has(a.long_ref)} onChange={() => toggle(a.long_ref)} />
+                  <button className="approval-head" onClick={() => void expand(a.long_ref)} aria-expanded={!!d}>
                     <span className="approval-title">{title}</span>
                     <span className="approval-meta">
                       {[a.crews.join(", "), a.job_name].filter(Boolean).join(" · ")}
                     </span>
                   </button>
-                  <button className="disclose" aria-label={d ? "Hide the detail" : "Show the detail"} onClick={() => void expand(a.ref)}>
+                  <button className="disclose" aria-label={d ? "Hide the detail" : "Show the detail"} onClick={() => void expand(a.long_ref)}>
                     {d ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                   </button>
                 </div>
@@ -86,10 +89,10 @@ export function Approvals() {
                       <>
                         <Detail d={d} />
                         <div className="actions compact">
-                          <button className="primary small" disabled={busy} onClick={() => void act(true, [a.ref])}>
+                          <button className="primary small" disabled={busy} onClick={() => void act(true, [a.long_ref])}>
                             Approve
                           </button>
-                          <button className="secondary small" disabled={busy} onClick={() => void act(false, [a.ref])}>
+                          <button className="secondary small" disabled={busy} onClick={() => void act(false, [a.long_ref])}>
                             Decline
                           </button>
                         </div>

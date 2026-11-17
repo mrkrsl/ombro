@@ -41,12 +41,12 @@ describe("the pages", () => {
 });
 
 describe("approvals", () => {
-  const row: ApprovalRow = { ref: "ab12-1", crews: ["Default Crew"], long_ref: "x", job_id: "invented-20261114-1200",
+  const row: ApprovalRow = { ref: "ab12-1", crews: ["Default Crew"], long_ref: "invented-20261114-1200-1", job_id: "invented-20261114-1200",
     job_name: "Invented", status: "pending", tool: "mcp.fake.post_message", summary: "text: invented",
     role: "poster", reason: "The spec asks.", class: "external", edited: false,
     arguments: { channel: "news", text: "invented" } };
 
-  beforeEach(() => useStore.setState({ approvals: [row, { ...row, ref: "ab12-2", summary: "text: another",
+  beforeEach(() => useStore.setState({ approvals: [row, { ...row, ref: "ab12-2", long_ref: "invented-20261114-1200-2", summary: "text: another",
     arguments: { channel: "news", text: "another" } }] }));
 
   it("says what an approval will do, in words", () => {
@@ -65,7 +65,7 @@ describe("approvals", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "Choose Post message in Fake: “another”" }));
     expect(approve).toHaveTextContent("Approve (1)");
     await userEvent.click(approve);
-    expect(seen).toEqual([["ab12-2"]]);
+    expect(seen).toEqual([["invented-20261114-1200-2"]]);
   });
 
   it("shows an opened skill as formatted Markdown, with its own Approve and Decline", async () => {
@@ -73,7 +73,8 @@ describe("approvals", () => {
     const detail = { ...row, ref: "ab12-2", tool: "skills.propose", arguments: { name: "invented" },
       skill: { name: "invented", text: "---\nname: invented\n---\n# Invented skill\n\nDo **this** first." } };
     useStore.setState({
-      approvals: [row, { ...row, ref: "ab12-2", tool: "skills.propose", arguments: { name: "invented" } }],
+      approvals: [row, { ...row, ref: "ab12-2", long_ref: "invented-20261114-1200-2", tool: "skills.propose",
+        arguments: { name: "invented" } }],
       call: (async () => detail) as never,
       decide: async (approve: boolean, refs: string[]) => { seen.push([approve, refs]); return []; },
     });
@@ -85,6 +86,32 @@ describe("approvals", () => {
     const opened = within(document.querySelector(".approval-open") as HTMLElement);
     expect(opened.getByRole("button", { name: "Approve" })).toBeEnabled();
     await userEvent.click(opened.getByRole("button", { name: "Decline" }));
-    expect(seen).toEqual([[false, ["ab12-2"]]]);
+    expect(seen).toEqual([[false, ["invented-20261114-1200-2"]]]);
+  });
+
+  it("tells apart two jobs' approvals with the same short reference", async () => {
+    // Two jobs started in the same minute: both actions are `1015-1`.
+    const asked: string[] = [];
+    const seen: string[][] = [];
+    useStore.setState({
+      approvals: [{ ...row, ref: "1015-1", long_ref: "gophers-20261117-1015-1" },
+        { ...row, ref: "1015-1", long_ref: "reservoir-20261117-1015-1", arguments: { channel: "news", text: "another" } }],
+      call: (async (fn: (api: { get: (path: string) => Promise<unknown> }) => Promise<unknown>) =>
+        fn({ get: async (path: string) => { asked.push(path); return { ...row, skill: null }; } })) as never,
+      decide: async (_approve: boolean, refs: string[]) => { seen.push(refs); return []; },
+    });
+    render(<Approvals />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Show the detail" })[1]);
+    expect(asked).toEqual(["/approvals/reservoir-20261117-1015-1"]);
+    await userEvent.click(within(document.querySelector(".approval-open") as HTMLElement).getByRole("button", { name: "Approve" }));
+    expect(seen).toEqual([["reservoir-20261117-1015-1"]]);
+  });
+
+  it("closes an approval that can't be opened, rather than leaving it opening", async () => {
+    useStore.setState({ call: (async () => undefined) as never });
+    render(<Approvals />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Show the detail" })[0]);
+    expect(screen.queryByText("Opening…")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Show the detail" })).toHaveLength(2);
   });
 });
