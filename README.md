@@ -216,6 +216,73 @@ test home) accepts Vite's dev server and prints a URL to open in a browser.
 `npm test` runs the app's tests; `npm run schema` and `npm run types` regenerate
 its TypeScript types from the core's view types.
 
+## Running Ombro on a server
+
+Ombro can run on a server (Linux or macOS), with the desktop app connecting to
+it from your computer. Jobs then run on the server and can't reach your
+computer's files. Your settings, keys, crews, jobs and chats all live on the
+server; the app keeps only which server it uses, and that server's key in your
+system keychain.
+
+### Install on the server
+
+Python 3.11 or later, then (until Ombro is on PyPI) a wheel built from this
+repository with `uv build`:
+
+```bash
+pipx install ./ombro-0.1.0-py3-none-any.whl      # or: uv tool install ./ombro-0.1.0-py3-none-any.whl
+ombro serve install                              # keeps the server running, now and after a restart
+```
+
+`ombro serve install` shows what it will set up and asks first: a systemd user
+service on Linux (with lingering, so it keeps running when you log out) or a
+launch agent on macOS. Either way the server also starts scheduled jobs, so no
+cron entry is needed. `ombro serve status` checks it; `ombro serve remove`
+takes it away. `ombro serve` on its own runs it in the foreground.
+
+The server listens on 127.0.0.1:8765 unless told otherwise. Don't put it on the
+open internet: reach it over SSH or Tailscale. Every request needs a paired
+device's key, which only the app is given.
+
+### Connect the app
+
+On first run the app asks where Ombro should run; later, Settings › General ›
+Where Ombro runs. Choose a server, then:
+
+- **Over SSH**: type `you@server` (or a name from `~/.ssh/config`). The app
+  signs in with your SSH key, pairs by itself, and keeps an SSH tunnel to the
+  server open. Nothing to copy.
+- **By address**: for Tailscale, start the server on the machine's Tailscale
+  address (`ombro serve install --host 100.x.y.z`) and type that address in the
+  app, with the pairing code the server shows. A code is four characters, works
+  once, and is thrown away after ten wrong tries. The first one is printed each
+  time the server starts until a device pairs (`journalctl --user -u ombro` on
+  Linux); `ombro pair` makes a new one, for a day.
+
+`ombro pair --list` shows the paired devices; `ombro pair --forget NAME` (or
+`--forget-all`) stops one connecting.
+
+Files a job made come to your computer only when you ask: **Save to this
+computer** copies them into `~/Downloads/Ombro/<job>/`. Shared folders are
+folders on the server. Signing in to an online tool (Notion, say) works as
+before: the browser comes back to the app, which passes the answer to the
+server. On the server itself, use the terminal over SSH (`ssh you@server`, then
+`ombro`); `ombro connect <tool>` there prints the sign-in address and asks for
+the address your browser ends up on.
+
+### In Docker
+
+```bash
+docker compose up -d
+docker compose logs ombro        # the pairing code
+```
+
+`compose.yaml` publishes the server on 127.0.0.1:8765 of the machine running
+Docker, with two volumes: settings, and jobs and chats. In the app, connect by
+address to `127.0.0.1:8765` with the code. To share a folder with jobs, mount it
+under `/home/ombro/shared` (an example is in `compose.yaml`), then share
+`/home/ombro/shared/<name>` in Settings › Folders.
+
 ## Interviews
 
 The Lead interviews you in three places: set-up (`ombro init`), adding a role

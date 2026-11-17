@@ -1,0 +1,10 @@
+.git
+.claude
+.venv
+gui
+tests
+examples
+**/__pycache__
+**/*.pyc
+dist
+build
