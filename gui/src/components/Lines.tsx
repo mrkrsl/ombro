@@ -1,7 +1,7 @@
 // The conversation's lines: the Lead's words, yours, Ombro's notes, progress and job cards.
 
 import { useEffect, useRef, useState } from "react";
-import type { Report } from "../api/types";
+import type { JobOffer, Report } from "../api/types";
 import type { Line } from "../store/conversation";
 import type { Screen } from "../store/store";
 import { useStore } from "../store/store";
@@ -63,6 +63,8 @@ function LineView({ line }: { line: Line }) {
           </button>
         </div>
       );
+    case "again":
+      return <AgainOffer text={line.text} offers={line.offers} />;
     case "error":
       return <div className="line error">{line.text}</div>;
     case "proposal":
@@ -85,6 +87,32 @@ function LineView({ line }: { line: Line }) {
         </div>
       );
   }
+}
+
+/** The Lead's offer to restart or resume a job that didn't finish: a button sends the command, once. */
+function AgainOffer({ text, offers }: { text: string; offers: JobOffer[] }) {
+  const send = useStore((s) => s.send);
+  const [chosen, setChosen] = useState("");
+  return (
+    <div className="again">
+      <Markdown className="line lead" text={text} />
+      <p className="again-buttons">
+        {offers.map((o, i) => (
+          <button
+            key={o.command}
+            className={i === 0 ? "primary" : "secondary"}
+            disabled={!!chosen}
+            onClick={() => {
+              setChosen(o.command);
+              void send(o.command);
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </p>
+    </div>
+  );
 }
 
 /** A job's report, fetched when its end arrives, so it sits in the chat where the job ended. */
@@ -112,7 +140,7 @@ function LiveReport({ jobId, scroll }: { jobId: string; scroll: boolean }) {
   if (problem) return <div className="line error">The report could not be opened: {problem}</div>;
   return report ? (
     <div ref={top}>
-      <ReportCard report={report} />
+      <ReportCard report={report} brief />
     </div>
   ) : (
     <div className="line progress">Opening the report…</div>

@@ -6,6 +6,7 @@ normal job, a stopped job and a job whose process died.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -170,6 +171,8 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
         "status": status,
         "brief": meta.get("brief", ""),
         "source": meta.get("source", ""),
+        "schedule": meta.get("schedule") or "",
+        "again_of": meta.get("again_of") or "",
         "started_at": meta.get("started_at") or meta.get("created_at"),
         "finished_at": utc_now(),
         "spec": spec_body.strip(),
@@ -263,6 +266,10 @@ def _resolve_deliverable(job_dir: Path, d: dict, shared: dict[str, Path] | None 
 
 def narrative_input(facts: dict[str, Any]) -> str:
     lines = [f"Spec:\n{_short(facts['spec'], 6000)}", "", f"Job status: {facts['status']}"]
+    if facts.get("schedule"):
+        lines.append(f"This job ran on the schedule '{facts['schedule']}': it makes the same thing each time.")
+    if facts.get("again_of"):
+        lines.append(f"This job carried on from the earlier job {facts['again_of']}, which did not finish.")
     if facts["limit"]:
         lines.append(f"Stopped by limit `{facts['limit']['limit']}`: {facts['limit']['detail']}")
     for f in facts["failures"]:
@@ -355,21 +362,19 @@ def mechanical_narrative(facts: dict[str, Any]) -> str:
         summary = f"The job stopped on its `{facts['limit']['limit']}` limit before it finished."
     else:
         summary = f"The job ended {facts['status'].replace('_', ' ')}."
-    return "\n".join(
-        [
-            "## Summary",
-            summary,
-            "",
-            "## What was done",
-            "\n".join(done) or "No role completed a brief.",
-            "",
-            "## What was not done and why",
-            "\n".join(not_done) or "Nothing recorded.",
-            "",
-            "## Decisions for you",
-            "\n".join(decisions) or "None recorded.",
-        ]
-    )
+    out = [
+        "## Summary",
+        summary,
+        "",
+        "## What was done",
+        "\n".join(done) or "No role completed a brief.",
+        "",
+        "## What was not done and why",
+        "\n".join(not_done) or "Nothing recorded.",
+    ]
+    if decisions:  # only a real question or request: never an empty section
+        out += ["", "## Decisions for you", "\n".join(decisions)]
+    return "\n".join(out)
 
 
 def _clean_narrative(text: str) -> str:
@@ -384,6 +389,35 @@ def _clean_narrative(text: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Rendering
+
+NOTHING = re.compile(r"^(none|none recorded|nothing|no decisions?|n/?a)\b[^\n]{0,80}$", re.IGNORECASE)
+
+
+def decision_lines(f: dict[str, Any], lead_text: str) -> str:
+    """What waits on the user: the Lead's real decisions (a "None." is dropped), then, from the
+    record, actions waiting for approval and skills waiting for review. "" when nothing does."""
+    text = lead_text.strip()
+    if NOTHING.match(text.strip("-* ").rstrip(".")):
+        text = ""
+    lines: list[str] = []
+    waiting, _ = _still_waiting(f, (f.get("outward") or {}).get("staged") or [])
+    if waiting:
+        n = len(waiting)
+        lines.append(f"- {n} {'action waits' if n == 1 else 'actions wait'} for your approval: see Approvals "
+                     "(`ombro approvals`).")
+    lines += [f"- A skill waits for your review: {_skill_words(ev)}. See it with "
+              f"`ombro approvals show {ev.get('ref')}`, then approve or decline it." for ev in _skills_waiting(f)]
+    return "\n\n".join(x for x in (text, "\n".join(lines)) if x)
+
+
+def summary_of(report_text: str) -> str:
+    """A report's Summary section: what the chat shows when the job ends."""
+    m = re.search(r"^## Summary\s*\n(.*?)(?=^## |^---\s*$|^# |\Z)", report_text or "", re.MULTILINE | re.DOTALL)
+    if not m:
+        return ""
+    # Ombro's note that it wrote the report itself stays in the report, not in the chat's summary.
+    return "\n".join(ln for ln in m.group(1).strip().splitlines()
+                     if not ln.startswith("_This report was written by the harness")).strip()
 
 
 STATUS_WORDS = {"completed": "Completed", "stopped_by_limit": "Stopped early", "failed": "Failed",
@@ -429,6 +463,8 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     parts, extra = _sections(narrative or mechanical_narrative(f))
     if not parts.get("Summary") and f.get("finish"):
         parts["Summary"] = _short(" ".join(str(f["finish"]["summary"] or "").split()), 900)
+    if not parts.get("Summary"):  # the Lead wrote none: Ombro's own sentence on how it ended
+        parts["Summary"] = _sections(mechanical_narrative(f))[0].get("Summary", "")
     out += ["## Summary", "", parts.get("Summary") or "No summary was written.", ""]
     if not narrative:
         out += [f"_This report was written by the harness from the journal{': ' + note if note else ''}._", ""]
@@ -448,15 +484,11 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
             out.append(f"- and {len(other) - 20} more")
     out += ["", f"Workspace: {f['workspace']}", ""]
 
-    waiting_skills = _skills_waiting(f)
-    for heading in ("Decisions for you", "What was done", "What was not done and why"):
-        text = parts.get(heading) or "None recorded."
-        if heading == "Decisions for you" and waiting_skills:
-            lines = [f"- A skill waits for your review: {_skill_words(ev)}. See it with "
-                     f"`ombro approvals show {ev.get('ref')}`, then approve or decline it." for ev in waiting_skills]
-            text = "\n".join(lines) if text.strip().rstrip(".").lower() in ("none recorded", "none") else \
-                text.rstrip() + "\n\n" + "\n".join(lines)
-        out += [f"## {heading}", "", text, ""]
+    decisions = decision_lines(f, parts.get("Decisions for you") or "")
+    if decisions:  # only when something waits on the user
+        out += ["## Decisions for you", "", decisions, ""]
+    for heading in ("What was done", "What was not done and why"):
+        out += [f"## {heading}", "", parts.get(heading) or "None recorded.", ""]
     if extra:
         out += ["## The Lead's other notes", "", extra, ""]
 

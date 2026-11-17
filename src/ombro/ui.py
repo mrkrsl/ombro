@@ -159,6 +159,14 @@ class JobFile:
 
 
 @dataclass
+class JobOffer:
+    """A way to carry on with a job that didn't finish: a button's words and the chat command it sends."""
+
+    label: str
+    command: str  # /restart <job> [more] or /resume <job> [more]
+
+
+@dataclass
 class JobEnded(Event):
     """A job has ended: how, what it made, what waits for approval. Written by Ombro, not the model."""
 
@@ -172,6 +180,10 @@ class JobEnded(Event):
     files: list[JobFile] = field(default_factory=list)
     waiting: int = 0
     live: bool = False  # a live job: its report opens in the chat
+    summary: str = ""  # the Lead's short paragraph from the report (its Summary)
+    again: str = ""  # restart or resume, for a job that didn't finish; "" otherwise
+    again_text: str = ""  # the Lead's offer to restart or resume it
+    offers: list[JobOffer] = field(default_factory=list)
 
 
 @dataclass
@@ -549,7 +561,8 @@ def render(event: Event) -> list[str]:
     if isinstance(event, (JobStarted, JobProgress)):
         return [event.text]
     if isinstance(event, JobEnded):
-        return [f"\n{event.text}", event.brief] + [f"  {f.name}: {f.path}" for f in event.files] + \
+        return [f"\n{event.text}", event.summary or event.brief] + [f"  {f.name}: {f.path}" for f in event.files] + \
             ([f"{event.waiting} waiting for approval: ombro approvals"] if event.waiting else []) + \
-            [f"Read the report: ombro report {event.job_id}"]
+            [f"Read the report: ombro report {event.job_id}"] + \
+            ([event.again_text] + [f"  {o.label}: {o.command}" for o in event.offers] if event.offers else [])
     return [str(event.to_dict())]

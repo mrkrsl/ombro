@@ -12,9 +12,13 @@ def assert_reported(job, status: str, limit: str | None = None, by_lead: bool = 
     report = job.report
     assert job.meta["status"] == status
     assert f"**Status:** {status}" in report
-    for section in ("## What was asked", "## What was done", "## What was not done and why",
-                    "## Decisions for you", "## Deliverables", "## Outward actions", "## Changes to notes.md", "## Usage"):
+    for section in ("## Summary", "## What was asked", "## What was done", "## What was not done and why",
+                    "## Deliverables", "## Outward actions", "## Changes to notes.md", "## Usage"):
         assert section in report, section
+    # "Decisions for you" only when something waits on the user, never a "None." for the sake of it.
+    if "## Decisions for you" in report:
+        decisions = report.split("## Decisions for you", 1)[1].split("\n## ", 1)[0].strip()
+        assert decisions and decisions.rstrip(".").lower() not in ("none", "none recorded"), decisions
     if limit:
         assert job.meta["limit_hit"] == limit
         assert f"**Stopped by:** `{limit}`" in report

@@ -131,7 +131,7 @@ def test_theme_detection():
 def test_slash_filtering():
     from ombro.tui.app import filter_slash
 
-    assert [c for c, _ in filter_slash("/re")] == ["/rename", "/report", "/remember"]
+    assert [c for c, _ in filter_slash("/re")] == ["/rename", "/restart", "/resume", "/report", "/remember"]
     assert [c for c, _ in filter_slash("/")][0] == "/chat"
     assert filter_slash("/zzz") == []
 

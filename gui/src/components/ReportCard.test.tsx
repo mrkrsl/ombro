@@ -28,6 +28,28 @@ describe("ReportCard", () => {
     expect(screen.getByText(/2 actions are waiting for approval/)).toBeInTheDocument();
   });
 
+  it("in the chat, shows the Lead's summary and what the job made, and the rest when asked", () => {
+    const long = {
+      ...report,
+      report: "# Rivers\n\n**Completed.**\n\n## Summary\n\nToday's report is ready.\n\n## What was done\n\nINVENTED-DETAIL.\n\n---\n\n# Ombro's record\n\nRECORD.",
+    } as unknown as Report;
+    render(<ReportCard report={long} brief />);
+    expect(screen.getByText("Today's report is ready.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "The note" })).toBeInTheDocument();
+    expect(screen.queryByText("INVENTED-DETAIL.")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Ombro's record/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Read the full report" }));
+    expect(screen.getByText("INVENTED-DETAIL.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show Ombro's record" })).toBeInTheDocument();
+  });
+
+  it("on its own page, shows the whole report", () => {
+    const long = { ...report, report: "# R\n\n## Summary\n\nShort.\n\n## What was done\n\nINVENTED-DETAIL." } as unknown as Report;
+    render(<ReportCard report={long} />);
+    expect(screen.getByText("INVENTED-DETAIL.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Read the full report" })).toBeNull();
+  });
+
   describe("with a server elsewhere", () => {
     afterEach(() => useStore.setState({ remote: false }));
 

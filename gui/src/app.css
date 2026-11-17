@@ -1696,3 +1696,11 @@ input[type="checkbox"]:not([role="switch"]) {
 .paste-answer .field {
   margin-top: 10px;
 }
+
+/* The Lead's offer to restart or resume a job that didn't finish, and its buttons. */
+.again-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 12px;
+}

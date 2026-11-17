@@ -38,6 +38,8 @@ COMMANDS = [
     Command("/brief", "brief a task: the Lead interviews you, and it's reported back", "chat"),
     Command("/live", "do it live, here: the crew starts now and works in this chat", "chat"),
     Command("/start", "start a saved spec again", "session"),
+    Command("/restart", "restart a job that ran out of tokens, building on what it did", "chat"),
+    Command("/resume", "resume a job that stopped or failed, from where it got to", "chat"),
     Command("/jobs", "jobs and their status", "screen", "jobs"),
     Command("/report", "a job's report and its deliverables", "screen", "report"),
     Command("/stop", "stop a job; it writes its report first", "session"),

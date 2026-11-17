@@ -1,7 +1,7 @@
 """Outward tools: MCP tools, their class, and the permission each call gets.
 
-Every tool that reaches a service outside the job comes from an MCP server.
-Each has a class, drawn by who an action reaches. The boundary is the
+Every tool that reaches a service outside the job comes from an MCP server or
+a web API (ombro.apitool, whose class is set in tools.md). Each has a class, drawn by who an action reaches. The boundary is the
 organisation, not visibility:
 - read-only: changes nothing;
 - internal: changes things in the organisation's own tools (documents,
@@ -62,8 +62,11 @@ def _tool_list(value: Any, where: str, key: str) -> list[str]:
     out = []
     for v in value:
         name = str(v).strip()
-        if not name.startswith("mcp.") or len(name.split(".", 2)) != 3:
-            raise SetupError(f"{where}: outward.{key} names tools as mcp.<server>.<tool>, not {name!r}")
+        if name.startswith("api.") and len(name.split(".")) == 2:
+            name += ".request"  # an API by its name: its one tool that changes things
+        if not name.startswith(("mcp.", "api.")) or len(name.split(".", 2)) != 3 or not all(name.split(".", 2)):
+            raise SetupError(f"{where}: outward.{key} names tools as mcp.<server>.<tool> or api.<name>.request, "
+                             f"not {name!r}")
         out.append(name)
     return out
 
@@ -231,6 +234,13 @@ def make_tool(server: str, remote: str, description: str, schema: dict[str, Any]
 
     return Tool(name=f"mcp.{server}.{remote}", description=text[:1000], parameters=params, handler=handler,
                 outward=True, effect=effect, input_schema=schema, reason_key=reason_key)
+
+
+def external_apis(settings: ToolSettings) -> list[str]:
+    """The web APIs whose changes are external (every crew member is offered each API), as the tool a
+    brief's answer applies to: api.<name>.request. One refused in tools.md is never offered, so isn't asked about."""
+    return sorted(f"api.{name}.request" for name, cfg in settings.apis.items()
+                  if (cfg.get("class") or "external") == "external" and not refused(f"api.{name}.request", settings))
 
 
 def external_tools(home: Home, settings: ToolSettings, names: list[str]) -> list[str]:

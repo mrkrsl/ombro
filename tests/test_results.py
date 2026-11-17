@@ -60,10 +60,11 @@ def test_the_report_puts_the_reader_first_and_ombros_record_after(job, home):
     job([fake.brief("researcher", "Do it."), submit("Found three."), fake.finish(), fake.keep_notes(),
          fake.say(narrative)])
     report = job.report
-    order = [report.index(h) for h in ("## Summary", "## Deliverables", "## Decisions for you", "## What was done",
+    order = [report.index(h) for h in ("## Summary", "## Deliverables", "## What was done",
                                        "# Ombro's record", "## The job", "## Briefs (harness record)",
                                        "## Changes to notes.md", "## Usage")]
     assert order == sorted(order)
+    assert "## Decisions for you" not in report  # "None." is no decision: the section is left out
     assert report.startswith("# ") and "**Completed.**" in report.split("## Summary")[0]
     assert "Three invented makers found" in report.split("## Deliverables")[0]
     assert "> " not in report.split("# Ombro's record")[0]  # the spec is not quoted at the top
@@ -151,3 +152,26 @@ def test_near_the_cap_the_reply_allowance_shrinks_rather_than_refusing(home):
     gate.record_model_call("m", 12_000, 1_500)
     with pytest.raises(LimitReached):  # under 2,000 left: not worth a call
         gate.check_model_call("m", 1_000, None)
+
+
+def test_decisions_for_you_appear_only_for_a_real_decision(job, home):
+    write_role(home, "researcher")
+    narrative = ("## Summary\nThe list is ready; one maker may have closed.\n\n## What was done\nThe researcher "
+                 "searched.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\n- Keep the "
+                 "closed maker in the list, or drop it?")
+    job([fake.brief("researcher", "Do it."), submit("Found three."), fake.finish(), fake.keep_notes(),
+         fake.say(narrative)])
+    report = job.report
+    assert report.index("## Deliverables") < report.index("## Decisions for you") < report.index("## What was done")
+    assert "Keep the closed maker" in report.split("## Decisions for you")[1].split("## ")[0]
+
+
+def test_the_summary_is_what_the_chat_shows(job, home):
+    from ombro.report import summary_of
+
+    write_role(home, "researcher")
+    job([fake.brief("researcher", "Do it."), submit("Found three."), fake.finish(), fake.keep_notes(),
+         fake.say("## Summary\nToday's report is ready.\n\n## What was done\nIt.\n\n"
+                  "## What was not done and why\nNothing.")])
+    assert summary_of(job.report) == "Today's report is ready."
+    assert summary_of("# A report with no summary\n\n## What was done\nIt.") == ""

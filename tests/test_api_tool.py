@@ -130,6 +130,56 @@ def test_every_crew_member_gets_it_lookups_run_and_changes_wait(home, api, job):
     assert json.loads(api.seen[-1].content) == {"title": "Invented list"}
 
 
+# -- in the brief ---------------------------------------------------------------------------
+
+BRIEF = {"name": "podcast-playlist", "title": "Save a reservoir playlist", "done_looks_like": "One playlist.",
+         "users": "Me.", "binding_constraint": "Invented episodes only.", "waste": "Duplicates.",
+         "non_goals": "No new episodes."}
+
+
+def test_the_brief_asks_what_an_external_api_may_do_without_you(home, api):
+    from ombro.interview import ProposalError
+    from ombro.interviews import BriefPurpose
+
+    purpose = BriefPurpose(home, "default", load_limits(home), "Save a playlist of reservoir episodes.")
+    asked = next(v for k, v in purpose.context() if k.startswith("External tools in the crew"))
+    assert "- api.podcasts.request (the podcasts API: its calls that change things; lookups always run)" in asked
+    assert "api.<name>.request" in json.dumps(purpose.tool())
+    with pytest.raises(ProposalError, match="outward_preset"):
+        purpose.build(BRIEF)
+    # An API named on its own means its one tool that changes things.
+    proposal = purpose.check(purpose.build({**BRIEF, "outward_preset": "balanced", "outward_allow": ["api.podcasts"]}))
+    meta, _ = mdfile.parse(proposal.files[0].text)
+    assert meta["outward"] == {"preset": "balanced", "allow": ["api.podcasts"]}
+    from ombro import outward
+
+    setting = outward.resolve(home, meta)
+    assert setting["allow"] == ["api.podcasts.request"]
+    assert outward.decide(setting, "api.podcasts.request", "external", load_tool_settings(home)) == "allow"
+
+
+def test_an_api_that_only_reads_or_changes_your_own_things_is_not_asked_about(home, api):
+    from ombro.interviews import BriefPurpose
+
+    for cls in ("read-only", "internal"):
+        meta, body = mdfile.read(home.tools)
+        meta["apis"]["podcasts"]["class"] = cls
+        mdfile.write(home.tools, meta, body)
+        purpose = BriefPurpose(home, "default", load_limits(home), "Look up episodes.")
+        assert not any(k.startswith("External tools") for k, _ in purpose.context()), cls
+
+
+def test_the_briefs_answer_lets_an_api_change_run_in_the_job(home, api, job):
+    """Allowed in the brief, the API's change runs at once rather than waiting in Approvals."""
+    save = fake.call("api__podcasts__request", {"method": "POST", "path": "/playlists",
+                                                "body": {"title": "Invented list"},
+                                                "reason": "The brief asks for a playlist."})
+    script = [fake.brief("researcher", "Save a playlist."), save, fake.result("Saved it."), fake.finish(),
+              fake.keep_notes(), LEAD_REPORT]
+    assert job(script, spec_meta={"outward": {"preset": "balanced", "allow": ["api.podcasts.request"]}}) == "completed"
+    assert [r.method for r in api.seen] == ["POST"] and outbox.actions(job.job_dir) == []
+
+
 # -- over serve ---------------------------------------------------------------------------
 
 

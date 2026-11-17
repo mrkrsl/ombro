@@ -1,7 +1,7 @@
 // The conversation, built from messages as serve sends them (recorded from a real session).
 import { describe, expect, it } from "vitest";
 import type { QuestionMessage, ServerMessage } from "../api/types";
-import { addLocal, apply, greeting, HOW_IT_WORKS, newConversation, opening, quickAnswers, usageText } from "./conversation";
+import { addLocal, apply, greeting, HOW_IT_WORKS, newConversation, opening, quickAnswers, reportSummary, usageText } from "./conversation";
 
 const S = "a1b2c3";
 const ev = (seq: number, event: object) => ({ type: "event", session: S, seq, event }) as ServerMessage;
@@ -96,6 +96,22 @@ describe("live jobs", () => {
     expect(c.lines.slice(1).map((l) => l.kind)).toEqual(["note", "livereport"]);
     expect(c.lines[2]).toMatchObject({ live: true });
     expect(c.lines[1]).toMatchObject({ text: "Your job has finished. 1 action waits for your approval." });
+  });
+
+  it("offers to restart or resume a job that didn't finish, after its report", () => {
+    const c = run([ev(1, { type: "job_ended", job_id: "x", name: "X", status: "stopped_by_limit", text: "Stopped.",
+      brief: "", limit_hit: "max_tokens", files: [], waiting: 0, again: "restart",
+      again_text: "It hit its token limit (2M) before it finished.",
+      offers: [{ label: "Restart with 4M tokens", command: "/restart x more" }, { label: "Restart as it was", command: "/restart x" }] })]);
+    expect(c.lines.map((l) => l.kind)).toEqual(["note", "livereport", "again"]);
+    expect(c.lines[2]).toMatchObject({ text: "It hit its token limit (2M) before it finished." });
+  });
+
+  it("finds a report's summary", () => {
+    const head = "# Briefing\n\n**Completed.** 2026-11-17\n\n## Summary\n\nToday's report is ready.\n\n## Deliverables\n\n- It";
+    expect(reportSummary(head)).toBe("Today's report is ready.");
+    expect(reportSummary("# Old\n\n## Summary\n\nAll of it.")).toBe("All of it.");
+    expect(reportSummary("# None here")).toBe("");
   });
 
   it("shows a background job's report in the chat too", () => {

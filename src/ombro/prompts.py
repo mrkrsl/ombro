@@ -166,27 +166,38 @@ that need judgement. These are Ombro's fixed rules.
 - Tools are disabled. Write the report from the record below and nothing else.
   State only what the record shows; do not invent results.
 - The harness adds the spec, the list of briefs, deliverables, outward
-  actions done and waiting for approval, changes to notes.md, usage and limits itself, so
-  do not repeat those lists or figures. If actions wait for approval, say under
-  "Decisions for you" that they wait for the user's approval.
-- Write Markdown with exactly these four headings, in this order:
+  actions done and waiting for approval, skills proposed, changes to
+  notes.md, usage and limits itself, so do not repeat those lists or
+  figures. Never mention approvals or skill proposals yourself: the harness
+  tells the user what waits for them.
+- Write Markdown with these headings, in this order:
   ## Summary
-  (an executive summary for the user: the outcome in the first sentence,
-  then what they most need to know, in at most 150 words. Follow how the
-  user context says they like to be reported to. No process detail here.)
+  (what the user reads in the chat when the job ends, with the deliverables
+  linked under it: one short paragraph of at most three sentences, one each
+  for what was delivered, what was asked for but not done, and anything
+  that really needs the user. Keep each sentence short, under 25 words:
+  the detail belongs in the sections below. Leave out the ones that don't
+  apply; never write that nothing was left out or that nothing is needed.
+  Name the deliverables; don't retell what is in them. For a job that makes
+  the same thing each time, such as a scheduled report or briefing, one
+  sentence is enough, for example "Today's report is ready.", unless
+  something went wrong. No greeting, no process detail, no reasons (they go
+  below). Follow how the user context says they like to be reported to.)
   ## What was done
-  (which role did what, briefly)
+  (which role did what, in a few sentences)
   ## What was not done and why
   (briefly, including what was in progress if the job was stopped, and why
   it stopped. Process detail, such as moving work to another role, goes
-  here in a sentence, only if it matters to the user.)
+  here in a sentence, only if it matters to the user. "Nothing." if all
+  of it was done.)
   ## Decisions for you
-  (decisions or answers the user needs to give; "None." if there are none)
+  (only when there is a real decision or answer the user must give: one
+  that something waits on, or that changes the result. Leave this heading
+  out altogether otherwise; never write one for the sake of it.)
 - The deliverables are listed by the harness, with links. Refer to them by
   name; the user reads them, not you, for the substance.
 - Write as yourself, to the user, in the first person ("I briefed the Market
-  Researcher, who found…"). Open "What was done" with one sentence on how it
-  went overall. Keep it short, with no sign-off.
+  Researcher, who found…"). Keep it short, with no sign-off.
 """
 
 
@@ -786,15 +797,15 @@ the result should go (a file in workspace/), sources to use or avoid, and scope.
   then chooses.
 - `name`: a short lower-case name for the spec file, using letters, digits,
   - and _. The user starts the spec by this name, so make it say what the task is.
-- If the context lists external tools (mcp.* tools that reach people
-  outside the organisation, or the public, or spend money), and the task
-  may use them, ask the user
+- If the context lists external tools (mcp.* tools, or api.* web APIs,
+  that reach people outside the organisation, or the public, or spend
+  money), and the task may use them, ask the user
   plainly what may happen without them: for example "draft it, but don't
   send it without me", or "post it, no need to ask". Turn the answer into
   `outward_preset` (manual: only reading runs, and even internal changes
   in their own tools wait for them; balanced: reading and internal changes
-  run, anything external waits; auto: everything runs) and, if they single out tools,
-  `outward_allow` or `outward_stage`. Say back what it means before you
+  run, anything external waits; auto: everything runs) and, if they single out tools
+  or APIs, `outward_allow` or `outward_stage` (an API as api.<name>.request). Say back what it means before you
   propose. Never choose auto unless the user has said so in their own words.
 """
 
@@ -925,8 +936,12 @@ returns) can change them.
   this chat, may ask them things, and the report opens here). Write the task
   as the crew should get it. Do not recommend either way: the user chooses,
   or types /brief or /live. Never start work yourself.
-- Saved specs: when the user wants a task they briefed before started again
-  (for example after it stopped on a limit), find it (memory__list with a
+- A job that didn't finish (it stopped on a limit, was stopped, or failed):
+  when the user wants it carried on, call offer_start with `job` (its id).
+  It restarts or resumes on the same brief and builds on what was done, so
+  nothing is redone. Use a saved spec only to run a task again from the start.
+- Saved specs: when the user wants a task they briefed before started again,
+  find it (memory__list with a
   crew lists its specs; specs/<name>.md can be read) and call offer_start.
   If they only say who should do it this time, give `roles` to offer_start:
   that is not a change to the spec. Call offer_brief with revise only when
@@ -1098,11 +1113,16 @@ CHAT_TOOLS = [
     ),
     _fn(
         "offer_start",
-        "Offer to start a saved spec again (for example a task that stopped on a limit). Ombro says, in your "
-        "voice, \"I found it. It's the spec '<name>'. <note> I can restart it <how>.\" and asks the user to say "
-        "yes, no or \"change it\". Nothing starts without their yes. Roles given here apply to this job only; "
-        "the saved spec is unchanged. Write nothing else in the reply that calls it: Ombro's words are yours.",
+        "Offer to start a saved spec again, or to carry on a job that didn't finish. For a spec, Ombro says, in "
+        "your voice, \"I found it. It's the spec '<name>'. <note> I can restart it <how>.\" and asks the user to "
+        "say yes, no or \"change it\". For a job that stopped, ran out or failed, give `job` instead: Ombro "
+        "offers to restart it (after its token limit, with a bigger one if they like) or resume it (anything "
+        "else), on the same brief, building on what it did rather than redoing it. Nothing starts without "
+        "their yes. Roles given here apply to this job only; the saved spec is unchanged. Write nothing else in "
+        "the reply that calls it: Ombro's words are yours.",
         {"spec": {"type": "string", "description": "The saved spec's name, as specs/<name>.md has it."},
+         "job": {"type": "string", "description": "Instead of spec: the id of a job that didn't finish, to "
+                 "restart or resume it."},
          "roles": {"type": "array", "items": {"type": "string"},
                    "description": "Optional: who does the work this time, if the user said (crew/role or a "
                    "role's name)."},
@@ -1110,7 +1130,7 @@ CHAT_TOOLS = [
                  "'I can restart it', e.g. 'as it was' or 'with the marketing researcher leading the whole job'."},
          "note": {"type": "string", "description": "Optional: one short sentence on what happened last time, "
                   "e.g. 'It stopped on the token limit before anything was written.'"}},
-        ["spec"],
+        [],
     ),
     _fn(
         "offer_remember",

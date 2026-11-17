@@ -1218,6 +1218,14 @@
     "JobEnded": {
       "description": "A job has ended: how, what it made, what waits for approval. Written by Ombro, not the model.",
       "properties": {
+        "again": {
+          "default": "",
+          "type": "string"
+        },
+        "again_text": {
+          "default": "",
+          "type": "string"
+        },
         "brief": {
           "default": "",
           "type": "string"
@@ -1249,7 +1257,17 @@
         "name": {
           "type": "string"
         },
+        "offers": {
+          "items": {
+            "$ref": "#/$defs/JobOffer"
+          },
+          "type": "array"
+        },
         "status": {
+          "type": "string"
+        },
+        "summary": {
+          "default": "",
           "type": "string"
         },
         "text": {
@@ -1336,6 +1354,23 @@
         "event"
       ],
       "title": "JobMessage",
+      "type": "object"
+    },
+    "JobOffer": {
+      "description": "A way to carry on with a job that didn't finish: a button's words and the chat command it sends.",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "command"
+      ],
+      "title": "JobOffer",
       "type": "object"
     },
     "JobProgress": {
