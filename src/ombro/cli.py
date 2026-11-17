@@ -1092,7 +1092,7 @@ def cmd_pair(args) -> int:
     except PairingError as e:
         raise CliError(str(e)) from None
     print(f"Pairing code: {code}\n")
-    print("Type it into the Ombro app (Connect to a server). It works once, until "
+    print("Type it into the Ombro app, connecting by address. It works once, until "
           f"{datetime.fromtimestamp(expires):%a %d %b %H:%M}. A new code replaces this one.")
     return 0
 

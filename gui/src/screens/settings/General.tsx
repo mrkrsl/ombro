@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import type { Connection, ModelList, Preferences, ProviderPreset } from "../../api/types";
 import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
+import { ServerForm } from "../Connect";
+import { describe, useThisComputer } from "../../where";
 
 export const LIMITS: [string, string][] = [
   ["conservative", "Light: up to 300k tokens a job"],
@@ -330,12 +332,74 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
   );
 }
 
+/** Where Ombro runs: this computer or a server. A switch restarts the app on the other one; each
+ * has its own settings, crews and jobs, and nothing is copied between them. App only. */
+function WhereItRuns() {
+  const where = useStore((s) => s.where);
+  const connectNow = useStore((s) => s.connectNow);
+  const [form, setForm] = useState(false);
+  const [asking, setAsking] = useState(false);
+  if (!where) return null;
+  const local = where.mode === "local";
+  return (
+    <section className="settings-section">
+      <h2>Where Ombro runs</h2>
+      <p>
+        Ombro runs on <b>{describe(where)}</b>.
+        {!local && " Jobs run there, and can't reach this computer's files."}
+      </p>
+      {form ? (
+        <ServerForm onConnected={() => void connectNow()} onCancel={() => setForm(false)} />
+      ) : asking ? (
+        <div className="inline-form">
+          <p>
+            Ombro on this computer has its own settings, crews and jobs; nothing is copied from the server.{" "}
+            {where.local_home ? "What you set up here before is still here." : "You'll set it up afresh."} Ombro restarts to
+            switch.
+          </p>
+          <div className="form-actions">
+            <button
+              className="primary"
+              onClick={async () => {
+                await useThisComputer();
+                await connectNow();
+              }}
+            >
+              Use this computer
+            </button>
+            <button className="secondary" onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="form-actions">
+          <button className="secondary" onClick={() => setForm(true)}>
+            {local ? "Connect to a server" : "Connect to a different server"}
+          </button>
+          {!local && (
+            <button className="secondary" onClick={() => setAsking(true)}>
+              Use this computer instead
+            </button>
+          )}
+        </div>
+      )}
+      {local && !form && (
+        <p className="muted">
+          A server has its own settings, crews and jobs; nothing is copied from this computer. Ombro restarts to switch.
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function General() {
   const models = useView<ModelList>("/models");
   return (
     <>
       <h1 className="page-title">General settings</h1>
       <About />
+      <WhereItRuns />
       {models.data ? (
         <>
           <Providers models={models.data} onChange={models.set} />

@@ -130,8 +130,8 @@ def service_lines(host: str, port: int, code: str | None) -> list[str]:
         lines.append(f"Warning: {host} may be reachable from the internet. Ombro is meant to be reached "
                      "over SSH or Tailscale; anyone who can reach this address can try pairing codes.")
     if code:
-        lines += ["", "No device is paired yet. To connect the Ombro app, choose \"Connect to a server\"",
-                  f"and type this pairing code: {code}",
+        lines += ["", "No device is paired yet. In the Ombro app, choose to run Ombro on a server,",
+                  f"connect by address, and type this pairing code: {code}",
                   "It works once and doesn't run out. Over SSH the app pairs by itself, with no code.", ""]
     return lines
 

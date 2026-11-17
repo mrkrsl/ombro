@@ -1551,3 +1551,73 @@ input[type="checkbox"]:not([role="switch"]) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* -- where Ombro runs: the first question, and reconnecting to a server ------------- */
+
+.connect {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 48px 24px;
+  background: var(--bg);
+}
+
+.connect-inner {
+  width: min(560px, 100%);
+}
+
+.where-choices {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.where-choice {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--panel-glass);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.where-choice:hover,
+.where-choice:focus-visible {
+  border-color: var(--link);
+}
+
+.where-choice svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.where-choice b {
+  display: block;
+  color: var(--strong);
+  margin-bottom: 2px;
+}
+
+.where-choice span span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.connect-form .modes {
+  margin-bottom: 18px;
+}
+
+.connect-form details.more {
+  margin: -6px 0 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.connect-form details.more input {
+  margin-top: 8px;
+}

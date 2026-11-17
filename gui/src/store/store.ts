@@ -21,6 +21,7 @@ import type {
 } from "../api/types";
 import { isMac, notify, openFile, openLink, revealFile, whenVisible } from "../platform";
 import { readCopy, saveCopy, saveFolder } from "../copies";
+import { PROTOCOL, startConnection, tooOld, whereNow, type Where } from "../where";
 import { SHORTCUTS, shortcutText } from "../shortcuts";
 import { addLocal, addReport, apply, newConversation, opening, type Conversation } from "./conversation";
 
@@ -42,7 +43,8 @@ export function screenFor(name: string): { screen: Screen; page?: SettingsPage }
 }
 
 type State = {
-  status: "starting" | "connected" | "lost" | "failed";
+  status: "starting" | "choose" | "connected" | "lost" | "failed";
+  where: Where | null; // where Ombro runs (app only)
   problem: string;
   api: Client | null;
   summary: Summary | null;
@@ -80,6 +82,8 @@ type State = {
 
 type Actions = {
   start: () => Promise<void>;
+  attach: () => Promise<void>;
+  connectNow: () => Promise<void>;
   refresh: () => Promise<void>;
   receive: (m: ServerMessage) => void;
   goHome: () => void;
@@ -162,6 +166,7 @@ export const useStore = create<State & Actions>((set, get) => {
 
   return {
     status: "starting",
+    where: null,
     problem: "",
     api: null,
     summary: null,
@@ -200,8 +205,50 @@ export const useStore = create<State & Actions>((set, get) => {
       if (started) return; // React runs effects twice in development
       started = true;
       try {
+        const where = await whereNow();
+        set({ where });
+        if (where && !where.started) {
+          set({ status: "choose" }); // a fresh install: where should Ombro run?
+          return;
+        }
+      } catch (e) {
+        set({ status: "failed", problem: String(e instanceof Error ? e.message : e) });
+        return;
+      }
+      await get().attach();
+    },
+
+    async connectNow() {
+      // After choosing (or pairing): start it now, or restart the app to switch to it.
+      set({ status: "starting", problem: "" });
+      try {
+        await startConnection();
+        set({ where: await whereNow() });
+        await get().attach();
+      } catch (e) {
+        set({ status: "failed", problem: String(e instanceof Error ? e.message : e) });
+      }
+    },
+
+    async attach() {
+      try {
         const hs = await handshake();
         const api = client(hs);
+        if (hs.remote) {
+          // A server: check it's one this app can work with, and that it still knows this computer.
+          let hello: { version?: string; protocol?: number };
+          try {
+            hello = await api.get<{ version?: string; protocol?: number }>("/hello");
+          } catch (e) {
+            const status = (e as { status?: number }).status;
+            throw new Error(
+              status === 403
+                ? "The server doesn't know this computer any more (it may have been forgotten there). Connect again to pair it."
+                : "The server didn't answer. Check that Ombro is running there.",
+            );
+          }
+          if (hello.protocol !== PROTOCOL) throw new Error(tooOld(hello.version));
+        }
         set({ api, remote: Boolean(hs.remote) });
         connect(hs);
         await get().refresh();

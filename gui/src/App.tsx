@@ -9,6 +9,7 @@ import { Conversation } from "./screens/Conversation";
 import { Home, HomeGreeting } from "./screens/Home";
 import { Inspector } from "./components/Inspector";
 import { Approvals } from "./screens/Approvals";
+import { Connect } from "./screens/Connect";
 import { Jobs } from "./screens/Jobs";
 import { Placeholder } from "./screens/Placeholder";
 import { ReportPage } from "./screens/ReportPage";
@@ -75,8 +76,14 @@ export default function App() {
     return () => mq.removeEventListener?.("change", follow);
   }, [themeChoice]);
 
+  if (status === "choose") {
+    return <Connect onReady={() => void s.connectNow()} />;
+  }
   if (status === "starting" && !s.summary) {
-    return <div className="startup">Starting Ombro…</div>;
+    return <div className="startup">{s.where && s.where.mode !== "local" ? "Connecting to the server…" : "Starting Ombro…"}</div>;
+  }
+  if (status === "failed" && s.where && (s.where.mode === "ssh" || s.where.mode === "direct")) {
+    return <Connect problem={problem} onReady={() => void s.connectNow()} />;
   }
   if (status === "failed") {
     return (
