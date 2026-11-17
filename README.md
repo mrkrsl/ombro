@@ -235,7 +235,7 @@ ombro serve install                              # keeps the server running, now
 ```
 
 `ombro sandbox` says whether code a job writes can run on that machine. On
-Ubuntu 24.04 and later, a security setting Ubuntu turns on stops bubblewrap
+some Ubuntu versions (24.04, for one; 25.10 doesn't need it), a security setting stops bubblewrap
 (Ombro's sandbox for job code) working until it's allowed once, with a small
 AppArmor profile. `ombro serve install` offers to do it (sudo asks for your
 password); by hand it's:
@@ -252,7 +252,8 @@ cron entry is needed. `ombro serve status` checks it; `ombro serve remove`
 takes it away. `ombro serve` on its own runs it in the foreground.
 
 The server listens on 127.0.0.1:8765 unless told otherwise. Don't put it on the
-open internet: reach it over SSH or Tailscale. Every request needs a paired
+open internet, or on a plain home-network address: reach it over SSH or
+Tailscale, which encrypt the traffic. Every request needs a paired
 device's key, which only the app is given.
 
 ### Connect the app
@@ -270,8 +271,8 @@ Where Ombro runs. Choose a server, then:
   time the server starts until a device pairs (`journalctl --user -u ombro` on
   Linux); `ombro pair` makes a new one, for a day.
 
-`ombro pair --list` shows the paired devices; `ombro pair --forget NAME` (or
-`--forget-all`) stops one connecting.
+`ombro pair --list` shows the paired devices and how each paired;
+`ombro pair --forget NAME` (or an id, or `--forget-all`) stops one connecting.
 
 Files a job made come to your computer only when you ask: **Save to this
 computer** copies them into `~/Downloads/Ombro/<job>/`. Shared folders are
@@ -294,7 +295,10 @@ docker compose logs ombro        # the pairing code
 
 `compose.yaml` publishes the server on 127.0.0.1:8765 of the machine running
 Docker, with two volumes: settings, and jobs and chats. In the app, connect by
-address to `127.0.0.1:8765` with the code. To share a folder with jobs, mount it
+address to `127.0.0.1:8765` with the code. To reach it over Tailscale from
+another computer, publish it on the machine's Tailscale address instead (see
+`compose.yaml`). With Colima, that needs `colima start --network-host-addresses`,
+since Docker runs in Colima's VM, which doesn't otherwise have the address. To share a folder with jobs, mount it
 under `/home/ombro/shared` (an example is in `compose.yaml`), then share
 `/home/ombro/shared/<name>` in Settings › Folders.
 
@@ -305,7 +309,7 @@ relaxes three of them (`security_opt`) for this one container. Ombro still runs
 as an ordinary user inside it. Remove those lines and everything else works,
 but jobs report that code can't run.
 
-If the machine running Docker is Ubuntu 24.04 or later, run one more command
+If the machine running Docker restricts bubblewrap (Ubuntu 24.04 does), run one more command
 there, once, so jobs can run code: `docker compose exec ombro ombro sandbox`
 says whether it's needed and gives it. Without it, everything else works. A
 container can't do this for itself: it's a setting on the machine Docker runs
@@ -1016,7 +1020,7 @@ You decide on named actions only; there is no "approve all":
 - Every `ombro approvals` command takes `--json` (as do the other listing commands), and `approve` and `decline` take
   `--yes`, for an interface that has already shown and selected the actions.
 
-`ombro-fake-mcp` is a fake MCP server, with one tool of each class, that
+`ombro fake-mcp` is a fake MCP server, with one tool of each class, that
 writes what it would have done to a file. The tests use it, and so can a dry
 run (see `examples/`).
 

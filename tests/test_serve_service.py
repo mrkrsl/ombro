@@ -261,6 +261,13 @@ def test_ombro_pair_commands(tmp_path):
     assert Devices(Home(root)).valid(over_ssh["token"])
     listed = run_cli(["pair", "--list"], root).stdout
     assert "Laptop" in listed and "Desk Mac" in listed and over_ssh["token"] not in listed
+    assert "Laptop  (paired with a code" in listed and "Desk Mac  (paired over SSH" in listed
+    assert "appear twice" not in listed
+    # One computer paired both ways is listed twice, and the list says why.
+    again = json.loads(run_cli(["pair", "--device", "Laptop"], root).stdout)
+    listed = run_cli(["pair", "--list"], root).stdout
+    assert "appear twice" in listed
+    assert run_cli(["pair", "--forget", again["device"]["id"]], root).returncode == 0
     assert run_cli(["pair", "--forget", "Laptop"], root).returncode == 0
     assert run_cli(["pair", "--forget", "Nobody"], root).returncode != 0
     assert run_cli(["pair", "--forget-all"], root, input_text="n\n").returncode == 1

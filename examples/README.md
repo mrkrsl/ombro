@@ -47,7 +47,8 @@ your Ombro home, and reaches nothing:
 
     servers:
       fake:
-        command: ombro-fake-mcp
+        command: ombro
+        args: [fake-mcp]
 
 Copy `roles/writer` and `roles/publisher` into the crew, then:
 

@@ -366,7 +366,8 @@ export const useStore = create<State & Actions>((set, get) => {
     },
 
     show(screen, args = "") {
-      set({ screen, screenArgs: args });
+      // A notice belongs to the page it came from (such as "That job made no files." on Jobs).
+      set(screen === get().screen ? { screenArgs: args } : { screen, screenArgs: args, notice: "" });
       if (screen === "report" && args) void get().readReport(args, false);
       else void get().load(screen);
     },

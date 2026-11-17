@@ -89,6 +89,8 @@ function ProviderForm({ current, presets = [], onDone, onCancel }: {
   onCancel: () => void;
 }) {
   const { run, problem, busy } = useAction();
+  const remote = useStore((s) => s.remote);
+  const here = remote ? "the server" : "this computer";
   // Adding: pick a known provider and its address is filled in, or "Another provider" to type one.
   const [choice, setChoice] = useState(current ? OTHER : (presets[0]?.endpoint ?? OTHER));
   const preset = presets.find((p) => p.endpoint === choice) ?? null;
@@ -135,7 +137,7 @@ function ProviderForm({ current, presets = [], onDone, onCancel }: {
             <select aria-label="Provider" value={choice} onChange={(e) => pick(e.target.value)}>
               {presets.map((p) => (
                 <option key={p.endpoint} value={p.endpoint}>
-                  {p.label}
+                  {remote ? p.label.replace(", on this computer", ", on the server") : p.label}
                 </option>
               ))}
               <option value={OTHER}>Another provider</option>
@@ -152,12 +154,12 @@ function ProviderForm({ current, presets = [], onDone, onCancel }: {
       {needsKey ? (
         <Field
           label="API key"
-          hint={current?.key ? "Leave empty to keep the key you have. It's kept on this computer and only sent to this provider." : "Kept on this computer, and only ever sent to this provider. Leave empty if it needs none."}
+          hint={current?.key ? `Leave empty to keep the key you have. It's kept on ${here} and only sent to this provider.` : `Kept on ${here}, and only ever sent to this provider. Leave empty if it needs none.`}
         >
           <input className="text-input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
         </Field>
       ) : (
-        <p className="muted">It runs on this computer, so it needs no key. Start it before you add it.</p>
+        <p className="muted">{remote ? "It runs on the server, next to Ombro, so it needs no key. Start it there before you add it." : "It runs on this computer, so it needs no key. Start it before you add it."}</p>
       )}
       {!current && askModel && (
         <Field label="Model name" hint="This provider didn't list its models, so name one it offers.">

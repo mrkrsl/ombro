@@ -175,8 +175,8 @@ class ServiceInstaller:
 
 def sandbox_step(*, ask: Callable[[str], bool] | None, run: Runner = subprocess.run,
                  say: Callable[[str], None] = print) -> bool | None:
-    """On Linux, after installing: can code a job writes run here? Ubuntu 24.04 and later need an
-    AppArmor profile for bubblewrap, once; offer to load it (sudo asks for a password). With no
+    """On Linux, after installing: can code a job writes run here? Some Ubuntu versions (24.04)
+    need an AppArmor profile for bubblewrap, once; offer to load it (sudo asks for a password). With no
     `ask` (--yes), only say how. Returns whether the sandbox works, or None off Linux."""
     from ombro import sandbox
 
@@ -188,7 +188,7 @@ def sandbox_step(*, ask: Callable[[str], bool] | None, run: Runner = subprocess.
     if not sandbox.userns_restricted():
         say(f"\nCode a job writes can't run here yet: {reason}. Everything else works.")
         return False
-    say("\nThis machine is Ubuntu 24.04 or later, which limits the Linux namespaces Ombro's sandbox for "
+    say("\nThis machine (Ubuntu 24.04, say) limits the Linux namespaces Ombro's sandbox for "
         "job code (bubblewrap) needs. A small AppArmor profile allows them for bubblewrap only:\n")
     say(f"  {sandbox.APPARMOR_FIX}\n")
     say("Without it, everything works except jobs that run code they write.")

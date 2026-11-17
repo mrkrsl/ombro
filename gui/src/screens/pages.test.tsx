@@ -30,6 +30,14 @@ describe("the pages", () => {
     expect(statusText("running", true, null)).toBe("Running");
     expect(statusText("stopped_by_limit", false, null)).toBe("Stopped by limit");
   });
+
+  it("keeps a page's notice on that page only", () => {
+    useStore.setState({ api: null, screen: "jobs", notice: "That job made no files." });
+    useStore.getState().show("jobs");
+    expect(useStore.getState().notice).toBe("That job made no files.");
+    useStore.getState().show("approvals");
+    expect(useStore.getState().notice).toBe("");
+  });
 });
 
 describe("approvals", () => {

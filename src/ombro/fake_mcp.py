@@ -1,6 +1,6 @@
 """A fake MCP server, for tests and dry runs. It reaches nothing outside.
 
-Run as `ombro-fake-mcp` (or `python -m ombro.fake_mcp`). It speaks MCP over stdin and stdout and
+Run as `ombro fake-mcp` (or `python -m ombro.fake_mcp`). It speaks MCP over stdin and stdout and
 offers invented tools, one of each class:
 
 - find_rows    read    (marked read-only)

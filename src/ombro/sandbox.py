@@ -37,11 +37,11 @@ MEMORY_POLL_SECONDS = 0.25
 OPEN_FILES = 256
 
 
-# Ubuntu 24.04 and later let a program make Linux user namespaces, but take away its rights inside
-# them, unless an AppArmor profile allows it. bubblewrap then fails (for example "loopback: Failed
+# Some Ubuntu versions (24.04, for one) let a program make Linux user namespaces, but take away its
+# rights inside them, unless an AppArmor profile allows it. (25.10 ships a profile for bwrap itself.) bubblewrap then fails (for example "loopback: Failed
 # RTM_NEWADDR"). This profile, loaded once on the machine (the host, when Ombro is in Docker), lets
 # /usr/bin/bwrap use them properly; nothing else changes.
-APPARMOR_PROFILE = """# Lets bubblewrap, the sandbox Ombro runs job code in, use Linux user namespaces (Ubuntu 24.04+).
+APPARMOR_PROFILE = """# Lets bubblewrap, the sandbox Ombro runs job code in, use Linux user namespaces (on Ubuntu 24.04, for one).
 abi <abi/4.0>,
 include <tunables/global>
 
@@ -58,7 +58,7 @@ APPARMOR_FIX_DOCKER = (f"docker compose exec -T ombro ombro sandbox --apparmor |
 
 
 def userns_restricted() -> bool:
-    """Whether this Linux machine restricts user namespaces through AppArmor (Ubuntu 24.04+)."""
+    """Whether this Linux machine restricts user namespaces through AppArmor (Ubuntu 24.04 does)."""
     try:
         return Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text().strip() == "1"
     except OSError:
@@ -253,11 +253,13 @@ def unavailable_reason() -> str | None:
                     reason = f"the sandbox could not start Python: {detail[0][:200]}"
                     if k == "linux" and userns_restricted():
                         if Path("/.dockerenv").exists():
-                            reason = ("the machine running Docker (Ubuntu 24.04 or later) limits the Linux "
+                            reason = ("the machine running Docker (Ubuntu 24.04, say) limits the Linux "
                                       "namespaces the sandbox needs. Allow them for bubblewrap once, on that "
-                                      "machine, from the folder with compose.yaml: " + APPARMOR_FIX_DOCKER)
+                                      "machine, from the folder with compose.yaml: " + APPARMOR_FIX_DOCKER
+                                      + ". With Colima on a Mac, that machine is Colima's VM: put "
+                                      "`colima ssh --` before each sudo")
                         else:
-                            reason = ("this machine (Ubuntu 24.04 or later) limits the Linux namespaces the "
+                            reason = ("this machine (Ubuntu 24.04, say) limits the Linux namespaces the "
                                       "sandbox needs. Allow them for bubblewrap once, as an administrator: "
                                       + APPARMOR_FIX)
     _probe[k] = reason

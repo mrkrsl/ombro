@@ -137,6 +137,8 @@ export default function App() {
         {!inChat && screen !== "home" && (pages[screen] ?? <Placeholder screen={screen} args={s.screenArgs} />)}
         {screen === "home" && <HomeGreeting />}
         {chatScreen && <Composer conversation={inChat || (screen === "home" && s.welcome) ? conversation : null} />}
+        {/* On a page there is no chat box to show a notice under, so it shows here. */}
+        {!chatScreen && s.notice && <div className="notice column" role="status">{s.notice}</div>}
         {status === "lost" && <div className="notice column">{s.remote ? "Reconnecting to the server…" : "Reconnecting to Ombro…"}</div>}
       </main>
       {showInspector && (

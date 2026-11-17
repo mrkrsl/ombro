@@ -41,6 +41,7 @@ export function sendKey(value: string): [string, string] {
 }
 
 function ApiForm({ current, onDone, onCancel }: { current: ApiRow | null; onDone: (t: ToolList) => void; onCancel: () => void }) {
+  const here = useStore((s) => (s.remote ? "the server" : "this computer"));
   const { run, problem, busy } = useAction();
   const [name, setName] = useState(current?.name ?? "");
   const [url, setUrl] = useState(current?.url ?? "");
@@ -79,7 +80,7 @@ function ApiForm({ current, onDone, onCancel }: { current: ApiRow | null; onDone
       </Field>
       <Field
         label="Key"
-        hint={current?.key_set ? "A key is kept. Leave this empty to keep it." : "Kept on this computer and only sent to this address. Leave empty if it needs none."}
+        hint={current?.key_set ? "A key is kept. Leave this empty to keep it." : `Kept on ${here} and only sent to this address. Leave empty if it needs none.`}
       >
         <input className="text-input" type="password" autoComplete="off" aria-label="Key" value={key} onChange={(e) => setKey(e.target.value)} />
       </Field>
@@ -151,14 +152,15 @@ function where(s: ServerRow): string {
 }
 
 function Secrets({ rows, setRows, remote }: { rows: Secret[]; setRows: (r: Secret[]) => void; remote: boolean }) {
+  const here = useStore((s) => (s.remote ? "the server" : "this computer"));
   const what = remote ? "header" : "setting";
   return (
     <div className="secrets">
       <span className="field-label">{remote ? "Secret headers (optional)" : "Secret settings (optional)"}</span>
       <span className="field-hint">
         {remote
-          ? "If the service gives you a key, add it here, for example Authorization and the key. It's kept on this computer."
-          : "If the program needs a key, add it here, for example API_KEY and the key. It's kept on this computer."}
+          ? "If the service gives you a key, add it here, for example Authorization and the key. It's kept on " + here + "."
+          : "If the program needs a key, add it here, for example API_KEY and the key. It's kept on " + here + "."}
       </span>
       {rows.map((r, i) => (
         <span className="form-row tight" key={i}>
@@ -201,6 +203,7 @@ function ServerForm({ current, kind, onDone, onCancel }: {
   const [command, setCommand] = useState(current && !current.url ? where(current) : "");
   const [secrets, setSecrets] = useState<Secret[]>(current ? current.secrets.map((n) => ({ name: n, value: "", kept: true })) : []);
   const remote = kind === "remote";
+  const onServer = useStore((s) => s.remote);
 
   async function save() {
     const body = {
@@ -221,7 +224,7 @@ function ServerForm({ current, kind, onDone, onCancel }: {
 
   return (
     <div className="inline-form">
-      <h3>{current ? `Edit ${tidy(current.server)}` : remote ? "Add an online service" : "Add a program on this computer"}</h3>
+      <h3>{current ? `Edit ${tidy(current.server)}` : remote ? "Add an online service" : onServer ? "Add a program on the server" : "Add a program on this computer"}</h3>
       {!current && (
         <Field label="Name" hint="A short name crews will know it by, such as notion or sheets.">
           <input className="text-input short" value={name} onChange={(e) => setName(e.target.value)} />
@@ -257,6 +260,7 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
   onCancel: () => void;
 }) {
   const { run, problem, busy } = useAction();
+  const here = useStore((st) => (st.remote ? "the server" : "this computer"));
   const keyList = useView<KeyList>("/keys");
   const [which, setWhich] = useState(tool?.tool ?? "web.search");
   const now = tools.native.find((t) => t.tool === which);
@@ -298,7 +302,7 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
         </span>
       </Field>
       {keyName && (
-        <Field label="Key" hint={keySet ? "A key is set. Leave this empty to keep it." : "It's kept on this computer and only sent to the provider."}>
+        <Field label="Key" hint={keySet ? "A key is set. Leave this empty to keep it." : `It's kept on ${here} and only sent to the provider.`}>
           <input className="text-input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
         </Field>
       )}
@@ -562,7 +566,7 @@ export function Tools() {
                 }}
               >
                 <option value="remote">MCP - Online service</option>
-                <option value="local">MCP - On this computer</option>
+                <option value="local">{remote ? "MCP - On the server" : "MCP - On this computer"}</option>
                 <option value="api">API - Any web service</option>
                 <option value="builtin">Built in - Web search and reading pages</option>
               </select>

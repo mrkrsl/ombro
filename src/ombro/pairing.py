@@ -77,9 +77,14 @@ class Device:
     id: str
     name: str
     paired: float
+    how: str = ""  # "ssh" (the app, over SSH) or "code" (a pairing code); "" for devices paired before this was kept
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name, "paired": self.paired}
+        return {"id": self.id, "name": self.name, "paired": self.paired, "how": self.how}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Device":
+        return cls(d["id"], d.get("name", ""), d.get("paired", 0), d.get("how", ""))
 
 
 class Devices:
@@ -139,12 +144,13 @@ class Devices:
     # -- devices -----------------------------------------------------------------
 
     def list(self) -> list[Device]:
-        return [Device(d["id"], d.get("name", ""), d.get("paired", 0)) for d in self._read()["devices"]]
+        return [Device.from_dict(d) for d in self._read()["devices"]]
 
     def add(self, name: str) -> tuple[Device, str]:
-        """A new device and its token. The token is shown this once and kept only as a hash."""
+        """A new device and its token, for the app over SSH. The token is shown this once and kept
+        only as a hash."""
         token = secrets.token_urlsafe(32)
-        device = Device(secrets.token_hex(4), clean_name(name), self.clock())
+        device = Device(secrets.token_hex(4), clean_name(name), self.clock(), "ssh")
         with self._change() as data:
             data["devices"].append({**device.to_dict(), "token": _hash(token)})
         return device, token
@@ -154,7 +160,7 @@ class Devices:
         with self._change() as data:
             gone = [d for d in data["devices"] if ref in (d["id"], d.get("name"))]
             data["devices"] = [d for d in data["devices"] if d not in gone]
-        return [Device(d["id"], d.get("name", ""), d.get("paired", 0)) for d in gone]
+        return [Device.from_dict(d) for d in gone]
 
     def forget_all(self) -> int:
         """Forget every device, and any code, so a fresh first code is made at the next start."""
@@ -224,7 +230,7 @@ class Devices:
         if self.locked_out():
             raise PairingError("Too many wrong codes. Wait a minute, then try again.")
         token = secrets.token_urlsafe(32)
-        device = Device(secrets.token_hex(4), clean_name(name), self.clock())
+        device = Device(secrets.token_hex(4), clean_name(name), self.clock(), "code")
         with self._change() as data:
             live = self._live_code(data)
             given = normal_code(code).encode()

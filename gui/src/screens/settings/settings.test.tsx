@@ -82,7 +82,7 @@ beforeEach(() => {
   calls = [];
   replies = { "/preferences": prefs, "/models": models, "/limits": { allowance: "moderate" }, "/crews": crews,
     "/folders": folders, "/tools": tools, "/skills": library, "/keys": { keys: [], sign_ins: [], file: "/x" } };
-  useStore.setState({ api: fakeApi(), settingsPage: "general", screen: "settings" });
+  useStore.setState({ api: fakeApi(), settingsPage: "general", screen: "settings", remote: false });
 });
 
 describe("the settings rules", () => {
@@ -165,6 +165,16 @@ describe("Settings › General: known providers", () => {
     await userEvent.selectOptions(screen.getByLabelText("Provider"), "http://localhost:11434/v1");
     expect(screen.queryByLabelText(/^API key/)).toBeNull();
     expect(screen.getByText(/needs no key/)).toBeTruthy();
+  });
+
+  it("says a local model runs on the server when Ombro does", async () => {
+    useStore.setState({ remote: true });
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add provider" }));
+    expect(screen.getByRole("option", { name: "Ollama, on the server" })).toBeTruthy();
+    expect(screen.queryByText(/on this computer/)).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "http://localhost:11434/v1");
+    expect(screen.getByText(/runs on the server/)).toBeTruthy();
   });
 });
 

@@ -1116,8 +1116,13 @@ def cmd_pair(args) -> int:
             rows = devices.list()
             if not rows:
                 print("No device is paired with this server.")
+            how = {"ssh": " over SSH", "code": " with a code"}
             for d in rows:
-                print(f"{d.id}  {d.name}  (paired {datetime.fromtimestamp(d.paired):%d %b %Y %H:%M})")
+                print(f"{d.id}  {d.name}  (paired{how.get(d.how, '')} "
+                      f"{datetime.fromtimestamp(d.paired):%d %b %Y %H:%M})")
+            if len({d.name for d in rows}) < len(rows):
+                print("\nSome names appear twice: a computer that paired both over SSH and with a code is "
+                      "listed once for each. `ombro pair --forget <id>` forgets just one.")
             return 0
         if args.forget:
             gone = devices.forget(args.forget)
@@ -1155,6 +1160,13 @@ def cmd_sandbox(args) -> int:
         return 0
     print(f"Code a job writes can't run here: {reason}")
     return 1
+
+
+def cmd_fake_mcp(args) -> int:
+    from ombro.fake_mcp import main as run
+
+    run()
+    return 0
 
 
 def cmd_tick(args) -> int:
@@ -1372,7 +1384,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("sandbox", help="whether code a job writes can run here, and if not why")
     s.add_argument("--apparmor", action="store_true",
-                   help="print the AppArmor profile that lets bubblewrap work on Ubuntu 24.04 and later")
+                   help="print the AppArmor profile that lets bubblewrap work where Ubuntu restricts it (24.04, for one)")
     s.set_defaults(func=cmd_sandbox)
 
     s = sub.add_parser("pair", help="a code to pair the Ombro app with this server; --list, --forget, --forget-all")
@@ -1392,6 +1404,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("_exec")  # internal: the detached job process
     s.add_argument("job_dir")
     s.set_defaults(func=cmd_exec)
+
+    s = sub.add_parser("fake-mcp")  # unlisted: the fake MCP server for tests and dry runs (fake_mcp.py)
+    s.set_defaults(func=cmd_fake_mcp)
     return p
 
 

@@ -11,6 +11,8 @@ services:
     # This machine only. To reach it from another computer, use SSH or Tailscale, not a public port.
     # For Tailscale, publish on this machine's Tailscale address instead (`tailscale ip -4`):
     #   - "100.x.y.z:8765:8765"
+    # With Colima on a Mac, start it with `colima start --network-host-addresses` first: Docker runs
+    # in Colima's VM, which otherwise doesn't have that address. Never publish on every address.
     ports:
       - "127.0.0.1:8765:8765"
     volumes:
@@ -22,8 +24,8 @@ services:
     # Code a job writes runs inside bubblewrap, Ombro's sandbox: no internet, and only that job's
     # files. bubblewrap needs Linux namespaces, which Docker's default filters block, so these
     # three settings relax them for this container. Ombro still runs as an ordinary user here.
-    # Without them, everything else works and jobs say code can't run. On an Ubuntu 24.04+ host
-    # (Colima's VM is one), also load Ombro's AppArmor profile there once:
+    # Without them, everything else works and jobs say code can't run. On some Ubuntu hosts (24.04;
+    # Colima's VM is one), also load Ombro's AppArmor profile there once:
     # `docker compose exec ombro ombro sandbox` says how.
     security_opt:
       - seccomp=unconfined
