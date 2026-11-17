@@ -63,7 +63,7 @@ def no_system_scheduler(monkeypatch, tmp_path):
 
     def guarded(cmd, *args, **kwargs):
         name = Path(str(cmd[0] if isinstance(cmd, (list, tuple)) else str(cmd).split()[0])).name
-        if name in ("launchctl", "crontab", "systemctl", "loginctl"):
+        if name in ("launchctl", "crontab", "systemctl", "loginctl", "sudo"):
             raise AssertionError(f"a test tried to run {name}")
         return real_run(cmd, *args, **kwargs)
 

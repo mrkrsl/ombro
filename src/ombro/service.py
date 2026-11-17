@@ -162,6 +162,41 @@ class ServiceInstaller:
         return f"journalctl --user -u {UNIT.removesuffix('.service')}" if self.kind == "systemd" else str(self.log)
 
 
+def sandbox_step(*, ask: Callable[[str], bool] | None, run: Runner = subprocess.run,
+                 say: Callable[[str], None] = print) -> bool | None:
+    """On Linux, after installing: can code a job writes run here? Ubuntu 24.04 and later need an
+    AppArmor profile for bubblewrap, once; offer to load it (sudo asks for a password). With no
+    `ask` (--yes), only say how. Returns whether the sandbox works, or None off Linux."""
+    from ombro import sandbox
+
+    if sandbox.kind() != "linux":
+        return None
+    reason = sandbox.unavailable_reason()
+    if reason is None:
+        return True
+    if not sandbox.userns_restricted():
+        say(f"\nCode a job writes can't run here yet: {reason}. Everything else works.")
+        return False
+    say("\nThis machine is Ubuntu 24.04 or later, which limits the Linux namespaces Ombro's sandbox for "
+        "job code (bubblewrap) needs. A small AppArmor profile allows them for bubblewrap only:\n")
+    say(f"  {sandbox.APPARMOR_FIX}\n")
+    say("Without it, everything works except jobs that run code they write.")
+    if ask is None or not ask("Allow it now? sudo will ask for your password."):
+        say("Not done. Run the command above whenever you like; `ombro sandbox` checks it.")
+        return False
+    wrote = run(["sudo", "tee", sandbox.APPARMOR_PATH], input=sandbox.APPARMOR_PROFILE, text=True,
+                stdout=subprocess.DEVNULL)
+    loaded = run(["sudo", "apparmor_parser", "-r", sandbox.APPARMOR_PATH]) if wrote.returncode == 0 else wrote
+    if loaded.returncode != 0:
+        say("That didn't work, so nothing changed. Run the command above as an administrator.")
+        return False
+    sandbox._probe.clear()
+    reason = sandbox.unavailable_reason()
+    say("Done: code a job writes can run here, in the sandbox." if reason is None
+        else f"The profile is loaded, but code still can't run: {reason}")
+    return reason is None
+
+
 def make_installer(home: Home) -> ServiceInstaller:
     """The installer for this machine. Tests replace this function."""
     return ServiceInstaller(home)
@@ -226,6 +261,7 @@ def cmd(args) -> int:
     print("\nInstalled and started. `ombro serve status` checks it; `ombro serve remove` takes it away.")
     for w in warnings:
         print(f"\n{w}")
+    sandbox_step(ask=None if args.yes else cli._confirm)
     code = Devices(home).first_code()
     if code:
         for line in service_lines(host, port, code)[1:]:

@@ -358,3 +358,41 @@ def test_a_restricted_ubuntu_says_how_to_fix_it(monkeypatch):
     monkeypatch.setattr(sandbox, "_probe", {})
     reason = sandbox.unavailable_reason()
     assert "Ubuntu 24.04" in reason and "apparmor_parser -r /etc/apparmor.d/ombro-bwrap" in reason
+
+
+def test_serve_install_offers_the_ubuntu_sandbox_step(monkeypatch):
+    from ombro import sandbox, service
+
+    state = {"loaded": False}
+    monkeypatch.setattr(sandbox, "kind", lambda: "linux")
+    monkeypatch.setattr(sandbox, "userns_restricted", lambda: True)
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None if state["loaded"] else "limited")
+    said, ran = [], []
+
+    def fake_run(cmd, **kw):
+        ran.append((cmd, kw.get("input")))
+        if cmd[:2] == ["sudo", "apparmor_parser"]:
+            state["loaded"] = True
+        return subprocess.CompletedProcess(cmd, 0)
+
+    # --yes: only says how.
+    assert service.sandbox_step(ask=None, run=fake_run, say=said.append) is False and not ran
+    assert any("apparmor_parser -r /etc/apparmor.d/ombro-bwrap" in s for s in said)
+    # Declined: nothing runs.
+    assert service.sandbox_step(ask=lambda q: False, run=fake_run, say=said.append) is False and not ran
+    # Accepted: the profile is written and loaded with sudo, then checked.
+    assert service.sandbox_step(ask=lambda q: True, run=fake_run, say=said.append) is True
+    assert ran[0][0] == ["sudo", "tee", "/etc/apparmor.d/ombro-bwrap"] and "userns," in ran[0][1]
+    assert ran[1][0] == ["sudo", "apparmor_parser", "-r", "/etc/apparmor.d/ombro-bwrap"]
+    assert said[-1].startswith("Done")
+
+
+def test_serve_install_says_nothing_about_the_sandbox_where_it_works(monkeypatch):
+    from ombro import sandbox, service
+
+    monkeypatch.setattr(sandbox, "kind", lambda: "linux")
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
+    said = []
+    assert service.sandbox_step(ask=lambda q: True, say=said.append) is True and said == []
+    monkeypatch.setattr(sandbox, "kind", lambda: "macos")
+    assert service.sandbox_step(ask=lambda q: True, say=said.append) is None

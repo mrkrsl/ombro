@@ -235,8 +235,10 @@ ombro serve install                              # keeps the server running, now
 ```
 
 `ombro sandbox` says whether code a job writes can run on that machine. On
-Ubuntu 24.04 and later it needs a one-time AppArmor profile for bubblewrap, and
-says how:
+Ubuntu 24.04 and later, a security setting Ubuntu turns on stops bubblewrap
+(Ombro's sandbox for job code) working until it's allowed once, with a small
+AppArmor profile. `ombro serve install` offers to do it (sudo asks for your
+password); by hand it's:
 
 ```bash
 ombro sandbox --apparmor | sudo tee /etc/apparmor.d/ombro-bwrap >/dev/null
@@ -281,6 +283,10 @@ the address your browser ends up on.
 
 ### In Docker
 
+Requires Docker: on a Mac, Docker Desktop, OrbStack or Colima (the lightest,
+command-line only: `brew install colima docker docker-compose`, then
+`colima start`); on Linux, Docker Engine. Then, in this folder:
+
 ```bash
 docker compose up -d
 docker compose logs ombro        # the pairing code
@@ -299,11 +305,11 @@ relaxes three of them (`security_opt`) for this one container. Ombro still runs
 as an ordinary user inside it. Remove those lines and everything else works,
 but jobs report that code can't run.
 
-If the machine running Docker is Ubuntu 24.04 or later, it also needs
-Ombro's AppArmor profile, once: `docker compose exec ombro ombro sandbox` says so
-and gives the command. On a Mac with Colima (a small command-line Linux VM for
-Docker, `brew install colima docker docker-compose`), that machine is Colima's
-VM:
+If the machine running Docker is Ubuntu 24.04 or later, run one more command
+there, once, so jobs can run code: `docker compose exec ombro ombro sandbox`
+says whether it's needed and gives it. Without it, everything else works. A
+container can't do this for itself: it's a setting on the machine Docker runs
+on. With Colima on a Mac, that machine is Colima's VM, which is Ubuntu 24.04:
 
 ```bash
 docker compose exec -T ombro ombro sandbox --apparmor | colima ssh -- sudo tee /etc/apparmor.d/ombro-bwrap >/dev/null
