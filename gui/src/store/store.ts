@@ -25,6 +25,15 @@ import { PROTOCOL, startConnection, tooOld, whereNow, type Where } from "../wher
 import { SHORTCUTS, shortcutText } from "../shortcuts";
 import { addLocal, addReport, apply, newConversation, opening, type Conversation } from "./conversation";
 
+/** A toast, in the window's corner. Timed (`ms`), dismissable, both, or neither: a persistent one
+ *  (such as "Reconnecting…") stays until whatever showed it takes it away. One per id: showing an
+ *  id again replaces it. */
+export type Toast = { id: string; text: string; tone: "info" | "error"; dismissable: boolean; ms?: number };
+/** How long a notice stays. A problem stays until it's dismissed, or the next thing you do. */
+export const NOTICE_MS = 6000;
+/** How long "Restarting…" shows before the app restarts, so the switch doesn't look like a crash. */
+export const RESTART_PAUSE_MS = 900;
+
 export type FeedLine = { key: number; jobId: string; name: string; line: string; status: string };
 
 export type Screen = "home" | "chat" | "jobs" | "approvals" | "scheduled" | "settings" | "report";
@@ -62,7 +71,8 @@ type State = {
   theme: Theme;
   themeChoice: ThemeChoice;
   settingsPage: SettingsPage;
-  notice: string; // a short line under the input, e.g. a failed send
+  toasts: Toast[]; // in the corner, newest last: notices, problems, "Reconnecting…"
+  restarting: boolean; // switching where Ombro runs: the app is about to restart
   chatOn: string | null; // the saved chat on screen, by name
   inspector: boolean;
   prefs: Preferences | null;
@@ -110,6 +120,10 @@ type Actions = {
   openPath: (path: string, how: "open" | "reveal") => Promise<void>;
   openFolder: (path: string) => Promise<void>;
   openHref: (href: string) => Promise<void>;
+  toast: (t: Omit<Toast, "tone" | "dismissable"> & Partial<Toast>) => void;
+  dismissToast: (id: string) => void;
+  /** The one notice (a failed send, "That job made no files."): replaces the last; "" clears it. */
+  say: (text: string, tone?: Toast["tone"]) => void;
 };
 
 let socket: WebSocket | null = null;
@@ -162,11 +176,14 @@ export const useStore = create<State & Actions>((set, get) => {
       (m) => get().receive(m),
       () => {
         set({ status: "lost" });
+        // Until the socket is back: not timed, and not dismissable, since it clears itself.
+        get().toast({ id: "lost", text: get().remote ? "Reconnecting to the server…" : "Reconnecting to Ombro…" });
         setTimeout(() => connect(hs), 1000); // serve is still running: come back, and pick up what was missed
       },
     );
     socket.onopen = () => {
       set({ status: "connected" });
+      get().dismissToast("lost");
       const sessions = Object.fromEntries(Object.values(get().conversations).map((c) => [c.id, c.seq]));
       if (Object.keys(sessions).length) socket?.send(JSON.stringify({ type: "subscribe", sessions }));
     };
@@ -192,7 +209,8 @@ export const useStore = create<State & Actions>((set, get) => {
     theme: systemTheme(),
     themeChoice: "auto",
     settingsPage: "general",
-    notice: "",
+    toasts: [],
+    restarting: false,
     chatOn: null,
     inspector: false,
     prefs: null,
@@ -227,14 +245,19 @@ export const useStore = create<State & Actions>((set, get) => {
     },
 
     async connectNow() {
-      // After choosing (or pairing): start it now, or restart the app to switch to it.
+      // After choosing (or pairing): start it now, or restart the app to switch to it. A restart
+      // says so first, or the window would vanish as if it had crashed.
+      if (get().where?.started) {
+        set({ restarting: true });
+        await new Promise((r) => setTimeout(r, RESTART_PAUSE_MS));
+      }
       set({ status: "starting", problem: "" });
       try {
         await startConnection();
         set({ where: await whereNow() });
         await get().attach();
       } catch (e) {
-        set({ status: "failed", problem: String(e instanceof Error ? e.message : e) });
+        set({ status: "failed", problem: String(e instanceof Error ? e.message : e), restarting: false });
       }
     },
 
@@ -358,7 +381,8 @@ export const useStore = create<State & Actions>((set, get) => {
       // what's next, on an empty page. From anywhere else: the home screen.
       const { current, conversations, titles } = get();
       if (get().welcome) {
-        set({ screen: "home", notice: "", report: null }); // the welcome still waits for its answer
+        get().say("");
+        set({ screen: "home", report: null }); // the welcome still waits for its answer
         return;
       }
       const used = !!current && !!conversations[current]?.lines.some((l) => l.kind === "you");
@@ -366,7 +390,8 @@ export const useStore = create<State & Actions>((set, get) => {
       const opener = used
         ? `${title ? `I've saved the last chat, '${title}'.` : "I've saved the last chat."} This is a new chat. How would you like me to help?`
         : null;
-      set({ screen: "home", current: null, notice: "", chatOn: null, report: null, opener });
+      get().say("");
+      set({ screen: "home", current: null, chatOn: null, report: null, opener });
       void get().refresh();
     },
 
@@ -378,7 +403,8 @@ export const useStore = create<State & Actions>((set, get) => {
 
     show(screen, args = "") {
       // A notice belongs to the page it came from (such as "That job made no files." on Jobs).
-      set(screen === get().screen ? { screenArgs: args } : { screen, screenArgs: args, notice: "" });
+      if (screen !== get().screen) get().say("");
+      set(screen === get().screen ? { screenArgs: args } : { screen, screenArgs: args });
       if (screen === "report" && args) void get().readReport(args, false);
       else void get().load(screen);
     },
@@ -416,7 +442,7 @@ export const useStore = create<State & Actions>((set, get) => {
           set({ jobs: jobs.slice().reverse(), approvals, schedules });
         }
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
       }
     },
 
@@ -433,7 +459,7 @@ export const useStore = create<State & Actions>((set, get) => {
           set({ report, screen: "report", screenArgs: jobId });
         }
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
       }
     },
 
@@ -461,10 +487,10 @@ export const useStore = create<State & Actions>((set, get) => {
       const api = get().api;
       if (!api) return undefined;
       try {
-        set({ notice: "" });
+        get().say("");
         return await fn(api);
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
         return undefined;
       }
     },
@@ -474,7 +500,7 @@ export const useStore = create<State & Actions>((set, get) => {
       if (!trimmed) return;
       const { api, current, conversations, summary } = get();
       if (!api) return;
-      set({ notice: "" });
+      get().say("");
       // Commands for the window or one of its pages need no conversation.
       const word = trimmed.split(/\s+/)[0].toLowerCase();
       const cmd = trimmed.startsWith("/") ? get().commands.find((c) => c.name === word) : undefined;
@@ -496,7 +522,7 @@ export const useStore = create<State & Actions>((set, get) => {
         if (c.question) {
           // A command mid-question: /chat leaves a brief; the others wait until it's answered.
           if (cmd && cmd.name !== "/chat") {
-            set({ notice: `Answer the question first, or press Esc to stop, then ${cmd.name}.` });
+            get().say(`Answer the question first, or press Esc to stop, then ${cmd.name}.`);
             return;
           }
           await get().answer(trimmed);
@@ -510,7 +536,7 @@ export const useStore = create<State & Actions>((set, get) => {
           openScreen(r.screen, r.args);
         }
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
       }
 
       function openScreen(name: string, args: string) {
@@ -533,7 +559,7 @@ export const useStore = create<State & Actions>((set, get) => {
           } else {
             // From the home screen: a new chat, opening with the list.
             void openSession({}, [{ key: "local-0", kind: "lead", text }]).catch((e: unknown) =>
-              set({ notice: e instanceof Error ? e.message : String(e) }),
+              get().say(e instanceof Error ? e.message : String(e), "error"),
             );
           }
         }
@@ -545,7 +571,7 @@ export const useStore = create<State & Actions>((set, get) => {
       if (!api || !current) return;
       const q = conversations[current]?.question;
       if (!q) return;
-      set({ notice: "" }); // a note from the last turn, e.g. "Answer the question first…", has done its job
+      get().say(""); // a note from the last turn, e.g. "Answer the question first…", has done its job
       const label = shown ?? (q.field.kind === "secret" ? "•".repeat(String(value).length) : String(value || "(Enter)"));
       if (get().welcome) {
         // The welcome is answered: the home screen gives way to set-up's conversation, which
@@ -561,7 +587,7 @@ export const useStore = create<State & Actions>((set, get) => {
       try {
         await api.post(`/sessions/${current}/answer`, { id: q.id, value });
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
       }
     },
 
@@ -581,14 +607,14 @@ export const useStore = create<State & Actions>((set, get) => {
           }
         }
       } catch (e) {
-        set({ notice: `Your changes didn't reach the server: ${e instanceof Error ? e.message : String(e)}` });
+        get().say(`Your changes didn't reach the server: ${e instanceof Error ? e.message : String(e)}`, "error");
         return;
       }
       set((s) => ({ conversations: { ...s.conversations, [current]: addLocal(s.conversations[current], "you", "Done editing") } }));
       try {
         await api.post(`/sessions/${current}/answer`, { id: editing.id, value: null });
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
       }
     },
 
@@ -605,7 +631,7 @@ export const useStore = create<State & Actions>((set, get) => {
         set((s) => ({ copies: { ...s.copies, [path]: copy.saveAs } }));
         if (copy.local) await (how === "open" ? openFile(copy.local) : revealFile(copy.local));
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
         throw e;
       }
     },
@@ -619,10 +645,10 @@ export const useStore = create<State & Actions>((set, get) => {
         }
         if (!api) return;
         const saved = await saveFolder(api, path);
-        if (saved.count === 0) set({ notice: "That job made no files." });
+        if (saved.count === 0) get().say("That job made no files.");
         else if (saved.local) await openFile(saved.local);
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
       }
     },
 
@@ -652,7 +678,7 @@ export const useStore = create<State & Actions>((set, get) => {
         const row = get().chats.find((c) => c.name === name);
         if (row) set((s) => ({ titles: { ...s.titles, [id]: row.title } }));
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
       }
     },
 
@@ -701,11 +727,32 @@ export const useStore = create<State & Actions>((set, get) => {
       try {
         await openSession({ flow: "role.add", crew });
       } catch (e) {
-        set({ notice: e instanceof Error ? e.message : String(e) });
+        get().say(e instanceof Error ? e.message : String(e), "error");
       }
+    },
+
+    toast(t) {
+      const next: Toast = { tone: "info", dismissable: false, ...t };
+      clearTimeout(toastTimers.get(next.id));
+      toastTimers.delete(next.id);
+      if (next.ms) toastTimers.set(next.id, setTimeout(() => get().dismissToast(next.id), next.ms));
+      set((s) => ({ toasts: [...s.toasts.filter((x) => x.id !== next.id), next] }));
+    },
+
+    dismissToast(id) {
+      clearTimeout(toastTimers.get(id));
+      toastTimers.delete(id);
+      if (get().toasts.some((x) => x.id === id)) set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }));
+    },
+
+    say(text, tone = "info") {
+      if (!text) get().dismissToast("notice");
+      else get().toast({ id: "notice", text, tone, dismissable: true, ms: tone === "error" ? undefined : NOTICE_MS });
     },
   };
 });
+
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 // Which saved chat each session shows, so picking it again in the sidebar returns to it.
 const chatNames: Record<string, string> = {};

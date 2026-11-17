@@ -32,11 +32,12 @@ describe("the pages", () => {
   });
 
   it("keeps a page's notice on that page only", () => {
-    useStore.setState({ api: null, screen: "jobs", notice: "That job made no files." });
+    useStore.setState({ api: null, screen: "jobs", toasts: [] });
+    useStore.getState().say("That job made no files.");
     useStore.getState().show("jobs");
-    expect(useStore.getState().notice).toBe("That job made no files.");
+    expect(useStore.getState().toasts.map((t) => t.text)).toEqual(["That job made no files."]);
     useStore.getState().show("approvals");
-    expect(useStore.getState().notice).toBe("");
+    expect(useStore.getState().toasts).toEqual([]);
   });
 });
 

@@ -12,10 +12,9 @@ import { useStore } from "../store/store";
 // Each approval goes by its long reference (job ID and number): the short one (`1015-1`) is the
 // same for two jobs started in the same minute, and the server won't guess between them.
 export function Approvals() {
-  const { approvals, decide, call } = useStore();
+  const { approvals, decide, call, say } = useStore();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<Record<string, ApprovalDetail | "loading">>({});
-  const [problems, setProblems] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const refs = approvals.map((a) => a.long_ref);
   const chosen = refs.filter((r) => picked.has(r));
@@ -42,7 +41,9 @@ export function Approvals() {
 
   async function act(approve: boolean, which: string[] = chosen) {
     setBusy(true);
-    setProblems(await decide(approve, which));
+    // Any that didn't go through, one to a line, as a problem in the corner.
+    const problems = await decide(approve, which);
+    say(problems.join("\n"), "error");
     setPicked((p) => new Set([...p].filter((r) => !which.includes(r))));
     setOpen((o) => Object.fromEntries(Object.entries(o).filter(([r]) => !which.includes(r))));
     setBusy(false);
@@ -115,11 +116,6 @@ export function Approvals() {
             <span className="muted">Declined actions never run.</span>
           </div>
         )}
-        {problems.map((p) => (
-          <p key={p} className="notice">
-            {p}
-          </p>
-        ))}
       </div>
     </div>
   );

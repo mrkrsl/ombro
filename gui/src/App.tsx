@@ -5,6 +5,7 @@ import { useEffect, type ReactElement } from "react";
 import { PanelLeft, PanelRight } from "lucide-react";
 import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
+import { Restarting, Toasts } from "./components/Toasts";
 import { Conversation } from "./screens/Conversation";
 import { Home, HomeGreeting } from "./screens/Home";
 import { Inspector } from "./components/Inspector";
@@ -84,7 +85,12 @@ export default function App() {
     return <div className="startup">{s.where && s.where.mode !== "local" ? "Connecting to the server…" : "Starting Ombro…"}</div>;
   }
   if (status === "failed" && s.where && (s.where.mode === "ssh" || s.where.mode === "direct")) {
-    return <Connect problem={problem} onReady={() => void s.connectNow()} />;
+    return (
+      <>
+        <Connect problem={problem} onReady={() => void s.connectNow()} />
+        {s.restarting && <Restarting />}
+      </>
+    );
   }
   if (status === "failed") {
     return (
@@ -138,9 +144,6 @@ export default function App() {
         {!inChat && screen !== "home" && (pages[screen] ?? <Placeholder screen={screen} args={s.screenArgs} />)}
         {screen === "home" && <HomeGreeting />}
         {chatScreen && <Composer conversation={inChat || (screen === "home" && s.welcome) ? conversation : null} />}
-        {/* On a page there is no chat box to show a notice under, so it shows here. */}
-        {!chatScreen && s.notice && <div className="notice column" role="status">{s.notice}</div>}
-        {status === "lost" && <div className="notice column">{s.remote ? "Reconnecting to the server…" : "Reconnecting to Ombro…"}</div>}
       </main>
       {showInspector && (
         <div className="inspector-wrap">
@@ -152,6 +155,8 @@ export default function App() {
           <Inspector />
         </div>
       )}
+      <Toasts />
+      {s.restarting && <Restarting />}
     </div>
   );
 }

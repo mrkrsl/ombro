@@ -68,7 +68,7 @@ export function matching(commands: CommandView[], text: string): CommandView[] {
 }
 
 export function Composer({ conversation }: { conversation: Conversation | null }) {
-  const { send, answer, interrupt, setMode, commands, summary, models, notice, doneEditing } = useStore();
+  const { send, answer, interrupt, setMode, commands, summary, models, doneEditing, say } = useStore();
   const editing = conversation?.editing ?? null;
   const [text, setText] = useState("");
   const [pick, setPick] = useState(0);
@@ -189,7 +189,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
           )}
         </div>
         {editing && (
-          <Editing paths={editing.paths} onDone={() => void doneEditing()} onProblem={(p) => useStore.setState({ notice: p })} />
+          <Editing paths={editing.paths} onDone={() => void doneEditing()} onProblem={(p) => say(p, "error")} />
         )}
         {choices.length > 0 && (
           <ul className="choices" aria-label={question?.field.label || "Choices"}>
@@ -284,7 +284,6 @@ export function Composer({ conversation }: { conversation: Conversation | null }
           <span className="hint">/ for commands</span>
           <span className="usage">{usageText(conversation?.usage ?? null) || "Usage: 0%"}</span>
         </div>
-        {notice && <div className="notice">{notice}</div>}
       </div>
     </div>
   );

@@ -13,7 +13,7 @@ const commands: CommandView[] = [
   { name: "/chat", help: "back to Chat", where: "chat", screen: "" },
 ];
 
-beforeEach(() => useStore.setState({ commands, summary: null, notice: "" }));
+beforeEach(() => useStore.setState({ commands, summary: null, toasts: [] }));
 
 describe("the composer", () => {
   it("lists the commands that match what has been typed", async () => {
