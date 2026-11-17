@@ -305,7 +305,7 @@ class Session:
             chat.exchanges.pop()
 
     def save(self) -> None:
-        if self.chat is not None and self.chat.exchanges:
+        if self.chat is not None:  # a chat with nothing in it is never written
             try:
                 self.chat._save()
             except OSError:

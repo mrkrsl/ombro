@@ -113,9 +113,8 @@ class Flows:
             self.cmd_crew(["list"], "")
             return
         if action == "add":
-            from ombro.interviews import RolePurpose, start
             from ombro.roles import folder_name
-            from ombro.settings import load_limits, load_preferences
+            from ombro.settings import load_preferences
 
             title = " ".join(words[1:]) or None
             crew = load_preferences(self.home).default_crew
@@ -131,20 +130,8 @@ class Flows:
             if title and self.home.roles_dir(crew).joinpath(folder_name(title)).exists():
                 self.say(f"The {crew_title(self.home, crew)} already has a role called {title}.")
                 return
-            limits = load_limits(self.home)
-            kw = {"client_factory": self.session.client_factory} if self.session.client_factory else {}
-            from ombro.chat import BriefLookups, interview_entries
-            from ombro.interviews import role_added
-
-            # Typed in a chat: the interview starts from what the chat knows, with its lookups.
-            chat = self.session.ensure_chat()
-            task = chat.brief_opening("", None) if chat.exchanges else ""
-            outcome = start(self.home, RolePurpose(self.home, crew, limits, title, task=task), crew, limits,
-                            ui=self.ui, lookups=BriefLookups(chat), **kw)
-            # The interview is part of the chat, and the chat that follows knows what it said.
-            chat.transcript.entries += interview_entries(getattr(outcome, "transcript", None), "Role")
-            role_added(self.home, self.ui, crew, outcome)
-            chat.pending_note += chat.interview_back(outcome, "a role interview (adding a crew member)")
+            # Held in the chat, which starts from what it knows and is kept in the list of chats.
+            self.session.ensure_chat().role_interview(crew, title)
             return
         if action == "edit" and len(words) > 1:
             name = words[1]

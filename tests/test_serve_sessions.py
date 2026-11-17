@@ -408,3 +408,26 @@ def test_the_feed_and_notifications_preferences(serve, home):
     assert prefs["background_feed"] is True and prefs["notifications"] is True
     assert serve.http.put("/preferences", json={"background_feed": False}).json()["background_feed"] is False
     assert serve.http.put("/preferences", json={"notifications": "no"}).status_code == 400
+
+
+def test_a_new_crew_member_interview_is_a_chat_you_can_leave_and_come_back_to(serve, home):
+    """Add crew member in the app: the chat is saved as the interview starts, so it is listed while
+    it waits on you, and what the interview said is kept when the session ends mid-way."""
+    _script(serve.client, [fake.say("What should your invented teapot watcher look out for?")])
+    ws = serve.socket()
+    sid = serve.post("/sessions", {"flow": "role.add", "crew": "default"}, status=201)["session"]["id"]
+    ws.send({"type": "subscribe", "sessions": {sid: 0}})
+    ws.until(question(sid))
+    view = serve.get(f"/sessions/{sid}")
+    assert view["chat"] and view["title"] == "New crew member"
+    assert [c["title"] for c in serve.get("/chats")][0] == "New crew member"
+
+    serve.http.delete(f"/sessions/{sid}")  # the window let it go, half-way
+    body = mdfile.read(home.chats_dir / f"{view['chat']}.md")[1]
+    assert "**Lead (Role):** What should your invented teapot watcher look out for?" in body
+
+    ws.send({"type": "subscribe", "all": True})
+    again = serve.post("/sessions", {"chat": view["chat"]}, status=201)["session"]["id"]
+    past = ws.until(lambda m: event("past", again)(m) and m["event"]["who"] == "lead")
+    assert past["event"]["text"] == "What should your invented teapot watcher look out for?"
+    ws.close()

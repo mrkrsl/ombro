@@ -330,6 +330,7 @@ class Interview:
             f"{p.title}" + (f" It is {p.typical}." if p.typical else "")
             + " Type /quit to stop; nothing is written unless you accept it."
         ), level="lead")
+        stopped = False
         try:
             outcome = self._loop(messages, tools)
         except LimitReached as e:
@@ -342,13 +343,18 @@ class Interview:
             outcome = Outcome("failed", detail=str(e))
         except (KeyboardInterrupt, EOFError):
             self.transcript.note("You stopped the interview.")
-            self.ui.say(self.purpose.stopped, spaced=True, level="lead")
-            outcome = Outcome("quit", detail="stopped by you")
+            outcome, stopped = Outcome("quit", detail="stopped by you"), True
         outcome.usage = self.gate.snapshot()
         outcome.answers = list(self.answers)
         outcome.transcript = self._save_transcript(outcome)
-        self.ui.show(Usage("interview", self.purpose.kind, outcome.usage.get("counted_tokens", 0),
-                           self.limits.max_tokens, sum((outcome.usage.get("tool_calls") or {}).values()), final=True))
+        try:
+            if stopped:
+                self.ui.say(self.purpose.stopped, spaced=True, level="lead")
+            self.ui.show(Usage("interview", self.purpose.kind, outcome.usage.get("counted_tokens", 0),
+                               self.limits.max_tokens, sum((outcome.usage.get("tool_calls") or {}).values()),
+                               final=True))
+        except KeyboardInterrupt:
+            pass  # the window let the session go: what was said still goes back to the chat it was held in
         return outcome
 
     def _loop(self, messages: list[dict], tools: list[dict]) -> Outcome:

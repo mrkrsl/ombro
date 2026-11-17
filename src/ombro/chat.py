@@ -144,12 +144,19 @@ def _tool_msg(call_id: str, payload: Any, src: str | None = None) -> dict:
 ENTRY = re.compile(r"^\*\*(You \((Chat|Brief|Role)\)|Lead(?: \((Brief|Role)\))?|Ombro):\*\* ?")
 
 
+def _is_note(chunk: str) -> bool:
+    """One of Ombro's notes in a saved chat (`_Reopened …_`): kept in the file, never shown. The
+    file's last chunk ends with a newline, so that is set aside first."""
+    chunk = chunk.strip()
+    return chunk.startswith("_") and chunk.endswith("_") and "\n" not in chunk
+
+
 def parse_entries(body: str) -> list[str]:
     """A saved chat's entries: each turn, yours or the Lead's, and Ombro's notes. A turn
     may run over several paragraphs; it ends where the next entry begins."""
     entries: list[str] = []
     for chunk in body.split("\n\n"):
-        if ENTRY.match(chunk) or (chunk.startswith("_") and chunk.rstrip().endswith("_") and "\n" not in chunk):
+        if ENTRY.match(chunk) or _is_note(chunk):
             entries.append(chunk)
         elif entries:
             entries[-1] += "\n\n" + chunk
@@ -198,8 +205,8 @@ def interview_entries(path: Path | None, mode: str) -> list[str]:
             out.append(f"**You ({mode}):**" + chunk[len("**You:**"):])
         elif chunk.startswith("**Lead proposed:**") or chunk.startswith("**You edited it to:**"):
             out.append(f"**Lead ({mode}):** {chunk.split(':**', 1)[0][2:]}:" + chunk.split(":**", 1)[1])
-        elif chunk.startswith("_") and chunk.rstrip().endswith("_") and "\n" not in chunk:
-            out.append(chunk)
+        elif _is_note(chunk):
+            out.append(chunk.strip())
         elif out:
             out[-1] += "\n\n" + chunk
     return [e.rstrip() for e in out]
@@ -1101,10 +1108,20 @@ class Chat:
         self.transcript.note(f"The Lead offered a new crew member ({summary}); you declined.")
         return {"status": "the user declined; carry on the conversation and do not offer again for this"}, None
 
-    def _role(self, crew: str, title: str | None, summary: str) -> None:
+    def _role(self, crew: str, title: str | None, summary: str | None) -> None:
+        self.role_interview(crew, title, summary)
+
+    def role_interview(self, crew: str, title: str | None = None, summary: str | None = None) -> None:
+        """The role interview (a new crew member), held in this chat: from the Lead's offer, from
+        /role add, or from Add crew member in the app. The chat is saved as it starts, so it is in
+        the list of chats to come back to, and again once the interview has ended, however it ended."""
         from ombro.interviews import RolePurpose, role_added, start
 
         self.transcript.note(f"Role interview for the {crew_title(self.home, crew)}.")
+        if not self.title:
+            self.set_title(f"New crew member: {title}" if title else "New crew member", "ombro")  # saves
+        else:
+            self._save()
         try:
             outcome = start(
                 self.home, RolePurpose(self.home, crew, self.base_limits, title, task=self.brief_opening("", summary)),
@@ -1114,9 +1131,11 @@ class Chat:
         except (SetupError, ModelError) as e:
             self.ui.show(Failure(f"The role interview could not start: {e}"))
             return
+        # Kept before anything more is shown: a window closed mid-interview stops what follows.
         self.transcript.entries += interview_entries(getattr(outcome, "transcript", None), "Role")
-        role_added(self.home, self.ui, crew, outcome)
         self.pending_note += self.interview_back(outcome, "the role interview (adding a crew member)")
+        self._save()
+        role_added(self.home, self.ui, crew, outcome)
 
     def _offer_work(self, args: dict) -> tuple[dict, tuple | None]:
         """Report back, or do it live: the one question that says how Ombro works."""

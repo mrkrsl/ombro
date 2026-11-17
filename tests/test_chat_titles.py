@@ -132,3 +132,17 @@ def json_dump(messages) -> str:
     import json
 
     return json.dumps(messages)
+
+
+def test_a_reopened_chat_never_shows_its_reopened_notes(home):
+    first = ChatSession(home)
+    first([fake.say("Hi there.")], ["/rename Teapots", "Hello"])
+    for i in range(2):  # the last note in the file is the one that used to stick to the turn before
+        ChatSession(home)([fake.say(f"Reply {i}.")], ["/chats", "1", f"Question {i}"])
+    again = ChatSession(home)
+    again([], ["/chats", "1"])
+    assert "Reply 1." in again.output and "Reopened" not in again.output
+    body = mdfile.read(first.chat.path)[1]
+    assert body.count("_Reopened ") == 3  # kept in the file
+    from ombro.chat import parse_entries
+    assert all(not e.startswith("**") or "_Reopened" not in e for e in parse_entries(body))

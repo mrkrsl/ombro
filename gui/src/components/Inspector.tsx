@@ -14,7 +14,9 @@ export function Inspector() {
   const title = (s.current && s.titles[s.current]) || (s.screen === "chat" ? "New chat" : "");
   const chat = s.chats.find((c) => c.name === s.chatOn);
   const jobIds = chat?.jobs ?? [];
-  const job = [...s.jobs].reverse().find((j) => jobIds.includes(j.job_id) || (s.current && j.chat === chatId(s)));
+  // Only this chat's jobs: a new chat (no id yet) must not match the jobs started from no chat.
+  const id = chat?.id ?? null;
+  const job = [...s.jobs].reverse().find((j) => jobIds.includes(j.job_id) || (!!id && j.chat === id));
   const crews = s.summary?.crews ?? [];
   const jobCrews = job ? crews.filter((c) => job.crews.includes(c.name)) : [];
   // The models the job's crew members work with, each once, with who uses it.
@@ -33,6 +35,8 @@ export function Inspector() {
     ? `${job.name} · ${job.active ? "running" : (job.status ?? "").replace(/_/g, " ")}`
     : conversation?.mode === "Brief"
       ? "Writing a brief"
+      : conversation?.kind === "role.add"
+        ? "Adding a crew member"
       : `Pre-brief chat${name ? ` with ${name}` : ""}`;
 
   return (
@@ -101,11 +105,6 @@ export function Inspector() {
       <Feed />
     </aside>
   );
-}
-
-function chatId(s: ReturnType<typeof useStore.getState>): string | null {
-  const chat = s.chats.find((c) => c.name === s.chatOn);
-  return chat?.id ?? null;
 }
 
 function Feed() {

@@ -131,6 +131,9 @@ export const useStore = create<State & Actions>((set, get) => {
     set((s) => ({
       conversations: { ...s.conversations, [session.id]: c },
       current: session.id,
+      // A new session shows no saved chat until it has one (openChat names it): the side panel
+      // must not go on showing the chat, or the job, that was on screen before.
+      chatOn: null,
       screen: stay ? s.screen : "chat",
     }));
     socket?.send(JSON.stringify({ type: "subscribe", sessions: { [session.id]: 0 } }));
@@ -145,7 +148,12 @@ export const useStore = create<State & Actions>((set, get) => {
       api.get<ChatRow[]>("/chats").catch(() => get().chats),
     ]);
     if (view?.chat) chatNames[id] = view.chat;
-    set((s) => ({ chats, titles: view?.title ? { ...s.titles, [id]: view.title } : s.titles, chatOn: view?.chat ?? s.chatOn }));
+    set((s) => ({
+      chats,
+      titles: view?.title ? { ...s.titles, [id]: view.title } : s.titles,
+      // Only the session on screen says which chat is on screen; one working in the background doesn't.
+      chatOn: s.current === id && view?.chat ? view.chat : s.chatOn,
+    }));
   }
 
   function connect(hs: { port: number; token: string }) {
@@ -332,6 +340,9 @@ export const useStore = create<State & Actions>((set, get) => {
         // Ombro suggests a page (Schedule it, after a live job): go there, with the brief picked.
         get().show(m.event.screen as Screen, m.event.args);
       }
+      // A session waiting on you (an interview's question) has been saved by then: the chat list
+      // and the side panel learn of it, so you can click away and come back to it.
+      if (m.type === "session" && m.state === "waiting" && !chatOf(id)) void afterIdle(id);
       if (m.type === "session" && (m.state === "idle" || m.state === "ended")) {
         void afterIdle(id);
         if (c.kind === "setup") {
