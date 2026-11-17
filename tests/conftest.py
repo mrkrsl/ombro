@@ -53,8 +53,8 @@ def no_network(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_system_scheduler(monkeypatch, tmp_path):
-    """No test may touch the real launchctl or crontab. Commands that would are
-    refused, and the installer the CLI uses writes into a temporary folder."""
+    """No test may touch the real launchctl, crontab or systemd. Commands that would are
+    refused, and the installers the CLI uses write into a temporary folder."""
     import subprocess
 
     from ombro import scheduler
@@ -63,7 +63,7 @@ def no_system_scheduler(monkeypatch, tmp_path):
 
     def guarded(cmd, *args, **kwargs):
         name = Path(str(cmd[0] if isinstance(cmd, (list, tuple)) else str(cmd).split()[0])).name
-        if name in ("launchctl", "crontab"):
+        if name in ("launchctl", "crontab", "systemctl", "loginctl"):
             raise AssertionError(f"a test tried to run {name}")
         return real_run(cmd, *args, **kwargs)
 

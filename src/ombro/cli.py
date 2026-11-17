@@ -1048,12 +1048,53 @@ def cmd_folders(args) -> int:
 
 
 def cmd_serve(args) -> int:
-    from ombro.serve import run
+    from ombro.serve import dispatch
 
     try:
-        return run(args.port, args.handshake, args.dev)
+        return dispatch(args)
     except KeyboardInterrupt:
         return 0
+
+
+def cmd_pair(args) -> int:
+    """Pairing devices with this machine's Ombro server (pairing.py)."""
+    from datetime import datetime
+
+    from ombro.pairing import Devices, PairingError
+
+    devices = Devices(_home(require=False))
+    try:
+        if args.device is not None:
+            # For the app over SSH: a new device's token, as JSON, and nothing else on stdout.
+            device, token = devices.add(args.device)
+            return _print_json({"token": token, "device": device.to_dict()})
+        if args.list:
+            rows = devices.list()
+            if not rows:
+                print("No device is paired with this server.")
+            for d in rows:
+                print(f"{d.id}  {d.name}  (paired {datetime.fromtimestamp(d.paired):%d %b %Y %H:%M})")
+            return 0
+        if args.forget:
+            gone = devices.forget(args.forget)
+            if not gone:
+                raise CliError(f"No paired device is called {args.forget!r}. `ombro pair --list` shows them.")
+            print(f"Forgot {', '.join(d.name for d in gone)}. It can't connect any more.")
+            return 0
+        if args.forget_all:
+            if not _confirm("Forget every paired device? Each will need pairing again."):
+                print("Nothing forgotten.")
+                return 1
+            n = devices.forget_all()
+            print(f"Forgot {n} device{'s' if n != 1 else ''}. Restart the server to see a new first code.")
+            return 0
+        code, expires = devices.later_code()
+    except PairingError as e:
+        raise CliError(str(e)) from None
+    print(f"Pairing code: {code}\n")
+    print("Type it into the Ombro app (Connect to a server). It works once, until "
+          f"{datetime.fromtimestamp(expires):%a %d %b %H:%M}. A new code replaces this one.")
+    return 0
 
 
 def cmd_tick(args) -> int:
@@ -1267,7 +1308,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true", help="show what would start or be noted, and change nothing")
     s.set_defaults(func=cmd_tick)
 
-    s = sub.add_parser("serve", help="the local API for the desktop app (127.0.0.1, a fresh token each start)")
+    s = sub.add_parser("pair", help="a code to pair the Ombro app with this server; --list, --forget, --forget-all")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--list", action="store_true", help="the devices paired now")
+    g.add_argument("--forget", metavar="NAME", help="stop one device connecting (its name or id)")
+    g.add_argument("--forget-all", action="store_true", help="stop every device connecting")
+    g.add_argument("--device", metavar="NAME", help=argparse.SUPPRESS)  # the app, over SSH
+    s.set_defaults(func=cmd_pair)
+
+    s = sub.add_parser("serve", help="the server the desktop app connects to; `ombro serve install` starts it on its own")
     from ombro.serve import add_arguments
 
     add_arguments(s)

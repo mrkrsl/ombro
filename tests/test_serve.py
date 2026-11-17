@@ -14,7 +14,7 @@ from starlette.websockets import WebSocketDisconnect
 from websockets.sync.client import connect
 
 from ombro import __version__
-from ombro.serve.app import build_app, hello
+from ombro.serve.app import PROTOCOL, build_app, hello
 
 # The network guard in conftest refuses every connection; these tests talk to
 # a serve they started themselves, so they may reach 127.0.0.1 and nothing else.
@@ -42,7 +42,7 @@ def test_http_needs_the_token():
     assert c.get("/hello").status_code == 403
     assert c.get("/hello", headers={"Authorization": "Bearer wrong"}).status_code == 403
     r = c.get("/hello", headers={"Authorization": f"Bearer {TOKEN}", "Origin": APP})
-    assert r.status_code == 200 and r.json() == {"version": __version__}
+    assert r.status_code == 200 and r.json() == {"version": __version__, "protocol": PROTOCOL}
     assert r.headers["access-control-allow-origin"] == APP
 
 

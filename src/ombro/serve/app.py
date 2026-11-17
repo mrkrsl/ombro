@@ -34,6 +34,11 @@ from ombro.ui import JobEnded, JobProgress, Note
 
 APP_ORIGINS = ("tauri://localhost", "http://tauri.localhost")
 SUBPROTOCOL = "ombro"
+# Raised when the app and a server would no longer understand each other. The app reads it from
+# /hello and refuses, with a clear message, a server too old or too new for it.
+PROTOCOL = 1
+# Paths a service answers without a device token: swapping a pairing code for one.
+OPEN_PATHS = ("/pair",)
 
 
 def origins(dev: bool = False) -> list[str]:
@@ -47,10 +52,12 @@ def hello() -> dict[str, Any]:
 
 
 class Guard:
-    """Refuses any request without the token, or from an origin that isn't the app's."""
+    """Refuses any request without a token `check` accepts, or from an origin that isn't the app's.
+    A path in `open_paths` needs no token (the origin check still applies)."""
 
-    def __init__(self, app: ASGIApp, token: str, allowed: list[str]):
-        self.app, self.token, self.allowed = app, token, allowed
+    def __init__(self, app: ASGIApp, check: Callable[[str], bool], allowed: list[str],
+                 open_paths: tuple[str, ...] = ()):
+        self.app, self.check, self.allowed, self.open_paths = app, check, allowed, open_paths
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in ("http", "websocket"):
@@ -60,10 +67,12 @@ class Guard:
         if origin is not None and origin not in self.allowed:
             return await self._refuse(scope, receive, send)
         if scope["type"] == "http":
+            if scope["path"] in self.open_paths:
+                return await self.app(scope, receive, send)
             given = headers.get("authorization", "").removeprefix("Bearer ")
         else:
             given = next((p for p in scope.get("subprotocols", []) if p != SUBPROTOCOL), "")
-        if not secrets.compare_digest(given.encode(), self.token.encode()):
+        if not self.check(given):
             return await self._refuse(scope, receive, send)
         await self.app(scope, receive, send)
 
@@ -130,8 +139,10 @@ class Serve:
     """What serve keeps while it runs: the home, the live sessions, the open sockets and the job watcher."""
 
     def __init__(self, home: Home, *, client_factory: Callable | None = None, titles: bool = True,
-                 poll_seconds: float = POLL_SECONDS):
+                 poll_seconds: float = POLL_SECONDS, tick: bool = False):
         self.home = home
+        self.ticking = tick  # this serve starts scheduled jobs itself (--tick)
+        self._ticker: asyncio.Task | None = None
         self.hub = Hub()
         self.sessions = Sessions(home, self.hub, client_factory=client_factory, titles=titles,
                                  watch_job=self.watch_job)
@@ -215,15 +226,38 @@ class Serve:
         puts it right, when it starts and when a schedule is added or turned on."""
         from ombro import scheduler
 
-        if scheduler.may_install_itself(self.home):
+        if not self.ticking and scheduler.may_install_itself(self.home):
             scheduler.ensure(self.home)
+
+    def tick_once(self) -> None:
+        """What the system scheduler's `ombro tick` does, from inside serve. The tick lock keeps it
+        from starting a job twice if the system scheduler runs too."""
+        from ombro import schedules
+
+        if self.home.exists():
+            schedules.tick(self.home)
+
+    async def run_ticker(self) -> None:
+        """With --tick: a tick at the start of every minute, as cron would."""
+        import time
+
+        while True:
+            await asyncio.sleep(60 - time.time() % 60 + 0.5)
+            try:
+                await asyncio.to_thread(self.tick_once)
+            except Exception:  # noqa: BLE001 - never let the ticker die; tick logs its own problems
+                pass
 
     async def startup(self) -> None:
         self.hub.bind(asyncio.get_running_loop())
         self._poller = asyncio.create_task(self.run_poller())
         self._scheduler = asyncio.create_task(asyncio.to_thread(self.ensure_scheduler))
+        if self.ticking:
+            self._ticker = asyncio.create_task(self.run_ticker())
 
     async def shutdown(self) -> None:
+        if self._ticker:
+            self._ticker.cancel()
         if self._poller:
             self._poller.cancel()
         await asyncio.to_thread(self.sessions.close_all)
@@ -240,6 +274,8 @@ def _views(s: Serve) -> list[Route]:
     def scheduler_check() -> Any:
         from ombro import scheduler
 
+        if s.ticking:  # serve starts scheduled jobs itself, so no system service is needed
+            return {"ok": True, "message": "", "can_install": False}
         return scheduler.check(home)
 
     def skills_view(r: Request) -> Any:
@@ -594,7 +630,30 @@ def _action_routes(s: Serve) -> list[Route]:
 
 
 async def _hello(request: Request) -> JSONResponse:
-    return JSONResponse({"version": __version__})
+    return JSONResponse({"version": __version__, "protocol": PROTOCOL})
+
+
+def _pair_route(devices) -> Route:
+    """POST /pair {"code", "name"}: a pairing code for a new device's token. The only route a
+    service answers without a token; wrong codes count towards a lockout (pairing.py)."""
+    from ombro.pairing import PairingError
+
+    async def pair(request: Request) -> Response:
+        try:
+            data = await _body(request)
+            code = _need(data, "code")
+            name = data.get("name") if isinstance(data.get("name"), str) else ""
+        except HttpError as e:
+            return _error(e.status, str(e))
+        try:
+            device, token = await asyncio.to_thread(devices.pair, code, name)
+        except PairingError as e:
+            status = 429 if devices.locked_out() else 403
+            return _error(status, str(e))
+        return JSONResponse({"token": token, "device": device.to_dict(), "version": __version__,
+                             "protocol": PROTOCOL}, status_code=201)
+
+    return Route("/pair", pair, methods=["POST"])
 
 
 def _socket(s: Serve):
@@ -657,20 +716,32 @@ def _subscribe(s: Serve, client: Client, text: str) -> None:
             client.offer(m)
 
 
-def build_app(token: str, dev: bool = False, *, home: Home | None = None, client_factory: Callable | None = None,
-              titles: bool = True, poll_seconds: float = POLL_SECONDS) -> Starlette:
+def build_app(token: str | None, dev: bool = False, *, home: Home | None = None, client_factory: Callable | None = None,
+              titles: bool = True, poll_seconds: float = POLL_SECONDS, devices: Any = None,
+              hosts: list[str] | None = None, tick: bool = False) -> Starlette:
+    """For the app: one `token`, made for this launch. For a service: `devices` (pairing.Devices),
+    whose paired tokens are accepted, `POST /pair` to pair a new one, and the `hosts` it answers to."""
     from ombro.serve.settings_routes import settings_routes
 
     allowed = origins(dev)
-    s = Serve(home or Home(), client_factory=client_factory, titles=titles, poll_seconds=poll_seconds)
+    s = Serve(home or Home(), client_factory=client_factory, titles=titles, poll_seconds=poll_seconds, tick=tick)
+    if devices is not None:
+        check, open_paths = devices.valid, OPEN_PATHS
+    elif token:
+        def check(given: str) -> bool:
+            return secrets.compare_digest(given.encode(), token.encode())
+        open_paths = ()
+    else:
+        raise ValueError("serve needs a token or paired devices")
     middleware = [
-        Middleware(TrustedHostMiddleware, allowed_hosts=[HOST, "localhost"] if dev else [HOST]),
+        Middleware(TrustedHostMiddleware, allowed_hosts=hosts or ([HOST, "localhost"] if dev else [HOST])),
         # Answers the app's preflight; never a wildcard.
         Middleware(CORSMiddleware, allow_origins=allowed, allow_methods=["GET", "POST", "PUT", "DELETE"],
                    allow_headers=["authorization", "content-type"]),
-        Middleware(Guard, token=token, allowed=allowed),
+        Middleware(Guard, check=check, allowed=allowed, open_paths=open_paths),
     ]
     routes = [Route("/hello", _hello), WebSocketRoute("/events", _socket(s)),
+              *([_pair_route(devices)] if devices is not None else []),
               *_action_routes(s), *settings_routes(s), *_session_routes(s), *_views(s)]
     from contextlib import asynccontextmanager
 
