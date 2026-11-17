@@ -11,8 +11,8 @@ What is in it: a live job to try (the first message in a new chat is offered as 
 Do it live), four crews with roles, two skills, three model providers (only the canned one is
 used), built-in tools with providers, a web API,
 two MCP servers (one local, one remote), two keys (dummy values), a shared folder,
-saved specs, three chats, four finished jobs (one that made a file, one with two
-actions waiting for approval, one that failed), and two schedules.
+saved specs, three chats, four finished jobs (one that made a file and proposes a skill, one with
+two actions waiting for approval, one that failed), and two schedules.
 
 The model is Ombro's fake one: it answers chat with canned replies and never
 reaches the internet. Jobs it runs come from the scripts below. A brief interview
@@ -84,6 +84,42 @@ def role(home, crew: str, name: str, title: str, description: str, *, kind: str 
         meta["skills"] = skills
     mdfile.write(folder / "config.md", meta)
     (folder / "soul.md").write_text(f"You are the {title}. You work carefully and say what you did not do.\n")
+
+
+PROPOSED_SKILL = """---
+name: gopher-facts
+description: Find and check facts about the pet gopher market before they go in a report.
+---
+# Gopher facts
+
+A method for the **Marketing Crew**, learned on the invented gopher research job.
+
+## Steps
+
+1. Search for each fact in at least *two* places.
+2. Keep the source beside each fact, as a link.
+3. Leave out anything only one source says.
+
+## Checklist
+
+| Check | Why |
+| --- | --- |
+| Two sources | One source can be wrong |
+| A date on each | Markets change |
+
+> Invented for the demo: nothing here is real.
+"""
+
+
+def demo_skill_proposal(home) -> None:
+    """A skill the Lead proposes, waiting in Approvals, so its formatted preview can be seen.
+    Staged once (stage_skill keeps one per text), on the gopher research job."""
+    from ombro import jobs, outbox
+
+    found = [d for d in jobs.all_jobs(home) if d.name.startswith("gopher-market-research-")]
+    if found:
+        outbox.stage_skill(found[0], name="gopher-facts", text=PROPOSED_SKILL, for_roles=["market-researcher"],
+                           reason="The research job found a method worth keeping.", base_sha="", flags=[])
 
 
 def run_job(home, spec: str, script: list) -> str:
@@ -242,6 +278,8 @@ def build(root: Path) -> None:
         fake.brief("finance-assistant", "Tidy the invented figures."), fake.result("Made the table."), fake.finish(),
         fake.keep_notes(), report("Monthly figures", "The figures are in one table.")])
 
+    demo_skill_proposal(home)
+
     print("chats")
     chat(home, "market-research-for-gophers", "Market research for gophers", [
         ("you", "Can we look into the market for pet gophers?"),
@@ -277,6 +315,7 @@ def main(argv: list[str]) -> int:
 
         demo_providers(Home(root))  # added in stage 7; a demo made before then gets them too
         demo_api(Home(root))
+        demo_skill_proposal(Home(root))
     else:
         build(root)
     if "--open" in argv:

@@ -5,7 +5,7 @@
 import { useState } from "react";
 import type { Crews } from "../../api/types";
 import { useStore } from "../../store/store";
-import { Field, Problem, RemovePanel, tidy, useAction, useRemoval, useView, type Check } from "./common";
+import { Field, Item, Problem, RemovePanel, tidy, useAction, useRemoval, useView, type Check } from "./common";
 
 export type SkillRow = { name: string; description: string; source: string; path: string; used_by: string[]; warning: string | null };
 export type Library = { skills: SkillRow[]; all_skills: string[]; waiting: { ref: string; name: string | null }[] };
@@ -99,23 +99,24 @@ export function Skills() {
           {l.skills.length === 0 && <p className="muted">No skills yet.</p>}
           {l.skills.map((s) => (
             <div className="row-block" key={s.name}>
-              <div className="skill-row">
-                <span className="item-name" title={s.description}>
-                  {tidy(s.name)}
-                </span>
-                <span className="used-by" title="The crews whose members use it">{usedBy(s, l, crews.data)}</span>
-                <span className="row-actions">
-                  <button className="text-button strong" onClick={() => { setEditing(s.name); setAdding(false); }}>
-                    Edit
-                  </button>
-                  <button
-                    className="text-button strong"
-                    onClick={() => void removal.ask(s.name, () => useStore.getState().api!.get<Check>(`/skills/${s.name}/check`))}
-                  >
-                    Delete
-                  </button>
-                </span>
-              </div>
+              <Item
+                name={tidy(s.name)}
+                title={s.description}
+                details={[<span title="The crews whose members use it">{usedBy(s, l, crews.data)}</span>]}
+                actions={
+                  <>
+                    <button className="text-button strong" onClick={() => { setEditing(s.name); setAdding(false); }}>
+                      Edit
+                    </button>
+                    <button
+                      className="text-button strong"
+                      onClick={() => void removal.ask(s.name, () => useStore.getState().api!.get<Check>(`/skills/${s.name}/check`))}
+                    >
+                      Delete
+                    </button>
+                  </>
+                }
+              />
               {editing === s.name && (
                 <SkillForm current={s.name} onCancel={() => setEditing(null)} onDone={(x) => { lib.set(x); setEditing(null); }} />
               )}

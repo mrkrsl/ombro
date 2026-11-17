@@ -1020,6 +1020,12 @@ input[type="checkbox"]:not([role="switch"]) {
   gap: 12px;
 }
 
+/* Small buttons side by side are one size too: Decline as small as Approve. */
+.actions .secondary.small {
+  padding: 5px 15px; /* plus its 1px border: Approve's size */
+  font-size: 13px;
+}
+
 .what-it-does {
   background: var(--hover);
   border-radius: 8px;
@@ -1505,31 +1511,6 @@ input[type="checkbox"]:not([role="switch"]) {
 
 .item .row-actions {
   flex: none;
-}
-
-/* Skills: the name, then who uses it beside the actions. */
-.skill-row {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 14px 0;
-}
-
-.skill-row .item-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.skill-row .used-by {
-  flex: none;
-  max-width: 45%;
-  color: var(--muted);
-  font-size: 14px;
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* -- where Ombro runs: the first question, and reconnecting to a server ------------- */
