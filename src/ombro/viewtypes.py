@@ -82,6 +82,7 @@ class JobRow(TypedDict):
     path: str
     chat: str | None  # the id of the chat that started it
     live: bool  # a live job: started from a chat and followed there
+    cleared_at: str | None  # cleared from the app's Jobs list (hidden, not deleted)
 
 
 class JobStatus(JobRow):
@@ -104,6 +105,10 @@ class Deliverable(TypedDict):
     exists: bool
     kind: str  # deliverable, created, changed, other
     text: NotRequired[str]  # a Markdown file's contents, to read in the app (up to MARKDOWN_SHOWN bytes)
+
+
+class Brief(JobRow):
+    spec: str  # the brief the job ran from, as Markdown
 
 
 class Report(JobRow):

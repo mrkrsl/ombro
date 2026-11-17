@@ -2,12 +2,12 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { ApprovalRow } from "../api/types";
+import type { ApprovalRow, JobRow } from "../api/types";
 import { approvalTitle, argumentLines } from "../store/approvals";
 import { splitReport } from "../store/conversation";
 import { useStore } from "../store/store";
 import { Approvals } from "./Approvals";
-import { statusText } from "./Jobs";
+import { Jobs, statusText } from "./Jobs";
 import { cronFor } from "./Scheduled";
 
 describe("the pages", () => {
@@ -114,5 +114,57 @@ describe("approvals", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Show the detail" })[0]);
     expect(screen.queryByText("Opening…")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Show the detail" })).toHaveLength(2);
+  });
+});
+
+describe("the Jobs page", () => {
+  const job: JobRow = { job_id: "invented-20261117-0900", name: "Invented", crews: ["default"], status: "completed",
+    active: false, brief: "An invented brief", source: "chat", created_at: null, started_at: null,
+    finished_at: "2026-11-17T09:10:00Z", limit_hit: null, total_tokens: 10, waiting: 0, seen_at: "2026-11-17T09:11:00Z",
+    path: "/jobs/invented-20261117-0900", chat: null, live: false, cleared_at: null };
+  const running: JobRow = { ...job, job_id: "busy-20261117-0930", name: "Busy", status: "running", active: true,
+    finished_at: null, seen_at: null };
+  const gone: JobRow = { ...job, job_id: "old-20261116-0800", name: "Old", cleared_at: "2026-11-17T10:00:00Z" };
+
+  it("offers View brief for running jobs too, and Clear only for finished ones", async () => {
+    const briefs: string[] = [];
+    const cleared: (string | undefined)[] = [];
+    useStore.setState({
+      jobs: [running, job],
+      readBrief: async (id: string) => { briefs.push(id); },
+      clearJobs: async (id?: string) => { cleared.push(id); },
+    });
+    render(<Jobs />);
+    const busy = screen.getByText("Busy").closest(".item") as HTMLElement;
+    expect(within(busy).queryByRole("button", { name: "Clear" })).toBeNull();
+    await userEvent.click(within(busy).getByRole("button", { name: "View brief" }));
+    const done = screen.getByText("Invented").closest(".item") as HTMLElement;
+    const names = within(done).getAllByRole("button").map((b) => b.textContent);
+    expect(names).toEqual(["View brief", "View report", "Files", "Clear"]);
+    await userEvent.click(within(done).getByRole("button", { name: "Clear" }));
+    expect(briefs).toEqual(["busy-20261117-0930"]);
+    expect(cleared).toEqual(["invented-20261117-0900"]);
+  });
+
+  it("asks before clearing all finished jobs", async () => {
+    const cleared: (string | undefined)[] = [];
+    useStore.setState({ jobs: [running, job], clearJobs: async (id?: string) => { cleared.push(id); } });
+    render(<Jobs />);
+    await userEvent.click(screen.getByRole("button", { name: "Clear all finished" }));
+    expect(cleared).toEqual([]);
+    expect(screen.getByText(/Clear 1 finished job from this list\?/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(cleared).toEqual([undefined]);
+  });
+
+  it("hides cleared jobs until asked, and can put one back", async () => {
+    const back: string[] = [];
+    useStore.setState({ jobs: [job, gone], restoreJob: async (id: string) => { back.push(id); } });
+    render(<Jobs />);
+    expect(screen.queryByText("Old")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Show cleared jobs (1)" }));
+    const old = screen.getByText("Old").closest(".item") as HTMLElement;
+    await userEvent.click(within(old).getByRole("button", { name: "Put back" }));
+    expect(back).toEqual(["old-20261116-0800"]);
   });
 });

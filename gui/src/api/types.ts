@@ -60,6 +60,7 @@ export interface Api {
   answer_reply: AnswerReply;
   approval: ApprovalRow;
   approval_detail: ApprovalDetail;
+  brief: Brief;
   chat: ChatRow;
   chat_detail: ChatDetail;
   command: CommandView;
@@ -138,6 +139,31 @@ export interface ApprovalDetail {
   status: string;
   summary: string;
   tool: string;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "Brief".
+ */
+export interface Brief {
+  active: boolean;
+  brief: string;
+  chat: string | null;
+  cleared_at: string | null;
+  created_at: string | null;
+  crews: string[];
+  finished_at: string | null;
+  job_id: string;
+  limit_hit: string | null;
+  live: boolean;
+  name: string;
+  path: string;
+  seen_at: string | null;
+  source: string;
+  spec: string;
+  started_at: string | null;
+  status: string | null;
+  total_tokens: number;
+  waiting: number;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema
@@ -277,6 +303,7 @@ export interface JobRow {
   active: boolean;
   brief: string;
   chat: string | null;
+  cleared_at: string | null;
   created_at: string | null;
   crews: string[];
   finished_at: string | null;
@@ -301,6 +328,7 @@ export interface JobStatus {
   allowance: string;
   brief: string;
   chat: string | null;
+  cleared_at: string | null;
   created_at: string | null;
   crews: string[];
   finished_at: string | null;
@@ -428,6 +456,7 @@ export interface Report {
   active: boolean;
   brief: string;
   chat: string | null;
+  cleared_at: string | null;
   created_at: string | null;
   crews: string[];
   deliverables: Deliverable[];

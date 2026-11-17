@@ -1298,6 +1298,19 @@ input[type="checkbox"]:not([role="switch"]) {
   min-width: 440px; /* narrower than this, the page scrolls sideways rather than breaking its rows */
 }
 
+/* A page title with an action at its right (Jobs' "Clear all finished"). */
+.page-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.rows.cleared {
+  opacity: 0.75;
+}
+
 .settings-page .page-title {
   margin-bottom: 14px;
 }

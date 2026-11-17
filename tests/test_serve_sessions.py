@@ -431,3 +431,44 @@ def test_a_new_crew_member_interview_is_a_chat_you_can_leave_and_come_back_to(se
     past = ws.until(lambda m: event("past", again)(m) and m["event"]["who"] == "lead")
     assert past["event"]["text"] == "What should your invented teapot watcher look out for?"
     ws.close()
+
+
+def test_a_jobs_brief_and_clearing_finished_jobs(serve, home):
+    """The Jobs page: any job's brief, from the copy the job keeps; finished jobs cleared one at a time
+    or all at once, only hidden (their folders stay) and put back; a running job can't be cleared."""
+    from ombro import jobs
+    from ombro.settings import load_limits
+
+    def job(brief: str, status: str) -> str:
+        d = jobs.create_job(home, ["default"], {"crews": ["default"]}, brief, load_limits(home), source="test")
+        if status != "running":
+            jobs.update_job(d, status=status, finished_at="2026-11-17T09:00:00Z")
+            (d / "report.md").write_text("# Invented report\n", encoding="utf-8")
+        return d.name
+
+    done = job("# Invented teapots\n\nCount the **invented** teapots.", "completed")
+    other = job("# Invented kettles\n\nAnother one.", "failed")
+    busy = job("# Invented pans\n\nStill going.", "running")
+
+    # A running job's brief opens too, as the Markdown the job ran from, front matter left out.
+    brief = serve.get(f"/jobs/{busy}/brief")
+    assert brief["spec"] == "# Invented pans\n\nStill going." and brief["active"] and brief["cleared_at"] is None
+    assert "Count the **invented** teapots." in serve.get(f"/jobs/{done}/brief")["spec"]
+
+    # A running job can't be cleared; a finished one can, and counts as seen.
+    assert serve.http.post(f"/jobs/{busy}/clear").status_code == 409
+    assert serve.post(f"/jobs/{done}/clear")["cleared"] is True
+    assert serve.post(f"/jobs/{done}/clear")["cleared"] is False
+    rows = {r["job_id"]: r for r in serve.get("/jobs")}
+    assert rows[done]["cleared_at"] and rows[done]["seen_at"] and not rows[other]["cleared_at"]
+    # Only hidden: the folder, its report and its files stay, and the job is still found by name.
+    assert (home.jobs_dir / done / "report.md").is_file()
+    assert serve.get(f"/jobs/{done}/report")["report"]
+
+    # Clear all finished: the other finished job, never the running one; then one put back.
+    assert serve.post("/jobs/clear")["cleared"] == 1
+    rows = {r["job_id"]: r for r in serve.get("/jobs")}
+    assert rows[other]["cleared_at"] and rows[busy]["cleared_at"] is None
+    assert serve.get("/summary")["counts"]["unseen_jobs"] == 0
+    assert serve.post(f"/jobs/{done}/restore")["restored"] is True
+    assert {r["job_id"] for r in serve.get("/jobs") if not r["cleared_at"]} == {done, busy}

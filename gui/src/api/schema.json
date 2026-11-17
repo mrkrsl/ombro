@@ -35,6 +35,9 @@
         "approval_detail": {
           "$ref": "#/$defs/ApprovalDetail"
         },
+        "brief": {
+          "$ref": "#/$defs/Brief"
+        },
         "chat": {
           "$ref": "#/$defs/ChatRow"
         },
@@ -137,6 +140,7 @@
         "job",
         "job_status",
         "report",
+        "brief",
         "chat",
         "chat_detail",
         "approval",
@@ -342,6 +346,149 @@
         "arguments"
       ],
       "title": "ApprovalRow",
+      "type": "object"
+    },
+    "Brief": {
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "chat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleared_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "crews": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "limit_hit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "seen_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total_tokens": {
+          "type": "integer"
+        },
+        "waiting": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id",
+        "name",
+        "crews",
+        "status",
+        "active",
+        "brief",
+        "source",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "limit_hit",
+        "total_tokens",
+        "waiting",
+        "seen_at",
+        "path",
+        "chat",
+        "live",
+        "cleared_at",
+        "spec"
+      ],
+      "title": "Brief",
       "type": "object"
     },
     "ChatCleared": {
@@ -1251,6 +1398,16 @@
             }
           ]
         },
+        "cleared_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "created_at": {
           "anyOf": [
             {
@@ -1356,7 +1513,8 @@
         "seen_at",
         "path",
         "chat",
-        "live"
+        "live",
+        "cleared_at"
       ],
       "title": "JobRow",
       "type": "object"
@@ -1399,6 +1557,16 @@
           "type": "string"
         },
         "chat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleared_at": {
           "anyOf": [
             {
               "type": "string"
@@ -1558,6 +1726,7 @@
         "path",
         "chat",
         "live",
+        "cleared_at",
         "pid",
         "allowance",
         "usage",
@@ -2197,6 +2366,16 @@
             }
           ]
         },
+        "cleared_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "created_at": {
           "anyOf": [
             {
@@ -2325,6 +2504,7 @@
         "path",
         "chat",
         "live",
+        "cleared_at",
         "report_path",
         "report",
         "deliverables",

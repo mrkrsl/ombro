@@ -359,3 +359,57 @@ def reap_dead_jobs(home: Home) -> list[Path]:
         report.write_mechanical_report(home, job_dir, status="failed", failure=failure)
         reaped.append(job_dir)
     return reaped
+
+
+def brief_text(job_dir: Path) -> str:
+    """The brief a job ran from: the body of the copy of the spec it keeps (spec.md),
+    else the one line job.md holds for jobs from before that copy."""
+    path = Path(job_dir) / "spec.md"
+    if path.is_file():
+        try:
+            return mdfile.read(path)[1].strip()
+        except mdfile.FrontMatterError:
+            return path.read_text(encoding="utf-8").strip()
+    return str(read_job(job_dir)[0].get("brief") or "")
+
+
+class StillRunning(ValueError):
+    pass
+
+
+def clear_job(job_dir: Path) -> bool:
+    """Hide a finished job from the app's Jobs list. Nothing is deleted: its folder, report and
+    files stay where chats, approvals and schedules may point. It counts as seen. Returns True if
+    it was not cleared before. A running job can't be cleared."""
+    with job_lock(job_dir):
+        meta, body = read_job(job_dir)
+        if meta.get("status") == "running" and not is_dead(meta):
+            raise StillRunning(f"job {Path(job_dir).name} is still running; stop it first")
+        if meta.get("cleared_at"):
+            return False
+        now = utc_now()
+        meta["cleared_at"] = now
+        meta["seen_at"] = meta.get("seen_at") or now
+        mdfile.write(Path(job_dir) / "job.md", meta, body or JOB_BODY)
+    return True
+
+
+def restore_job(job_dir: Path) -> bool:
+    """Put a cleared job back on the Jobs list. Returns True if it was cleared."""
+    with job_lock(job_dir):
+        meta, body = read_job(job_dir)
+        if not meta.pop("cleared_at", None):
+            return False
+        mdfile.write(Path(job_dir) / "job.md", meta, body or JOB_BODY)
+    return True
+
+
+def clear_finished(home: Home) -> int:
+    """Clear every finished job from the Jobs list; running ones stay. Returns how many."""
+    n = 0
+    for d in all_jobs(home):
+        try:
+            n += clear_job(d)
+        except (StillRunning, OSError, mdfile.FrontMatterError):
+            continue
+    return n

@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { client, events, handshake, inTauri, type Client, type ServerMessage } from "../api/serve";
 import type {
   ApprovalRow,
+  Brief,
   ChatRow,
   CommandView,
   CountsMessage,
@@ -36,7 +37,7 @@ export const RESTART_PAUSE_MS = 900;
 
 export type FeedLine = { key: number; jobId: string; name: string; line: string; status: string };
 
-export type Screen = "home" | "chat" | "jobs" | "approvals" | "scheduled" | "settings" | "report";
+export type Screen = "home" | "chat" | "jobs" | "approvals" | "scheduled" | "settings" | "report" | "brief";
 export type Theme = "light" | "dark";
 export type ThemeChoice = "auto" | "light" | "dark"; // auto: as the system
 export type SettingsPage = "general" | "crews" | "folders" | "tools" | "skills";
@@ -83,6 +84,7 @@ type State = {
   scheduler: SchedulerState | null; // whether the scheduler service is there to run them
   specs: SpecRow[];
   report: Report | null; // on the report page
+  brief: Brief | null; // on the brief page: the brief a job ran from
   opener: string | null; // after New from a chat you'd used: the Lead's line that it was saved, in place of the home screen
   welcome: boolean; // a fresh install: set-up's first question waits under the home screen
   running: string[]; // the jobs running now, by id: a chat that started one shows the ring in the sidebar
@@ -114,6 +116,9 @@ type Actions = {
   setPref: (key: "background_feed" | "notifications", value: boolean) => Promise<void>;
   load: (screen?: Screen) => Promise<void>;
   readReport: (jobId: string, inChat: boolean) => Promise<void>;
+  readBrief: (jobId: string) => Promise<void>;
+  clearJobs: (jobId?: string) => Promise<void>;
+  restoreJob: (jobId: string) => Promise<void>;
   decide: (approve: boolean, refs: string[]) => Promise<string[]>;
   stopJob: (jobId: string) => Promise<void>;
   call: <T>(fn: (api: Client) => Promise<T>) => Promise<T | undefined>;
@@ -221,6 +226,7 @@ export const useStore = create<State & Actions>((set, get) => {
     scheduler: null,
     specs: [],
     report: null,
+    brief: null,
     opener: null,
     welcome: false,
     running: [],
@@ -406,6 +412,7 @@ export const useStore = create<State & Actions>((set, get) => {
       if (screen !== get().screen) get().say("");
       set(screen === get().screen ? { screenArgs: args } : { screen, screenArgs: args });
       if (screen === "report" && args) void get().readReport(args, false);
+      else if (screen === "brief" && args) void get().readBrief(args);
       else void get().load(screen);
     },
 
@@ -461,6 +468,35 @@ export const useStore = create<State & Actions>((set, get) => {
       } catch (e) {
         get().say(e instanceof Error ? e.message : String(e), "error");
       }
+    },
+
+    async readBrief(jobId) {
+      const api = get().api;
+      if (!api) return;
+      if (get().brief?.job_id !== jobId) set({ brief: null });
+      try {
+        const brief = await api.get<Brief>(`/jobs/${encodeURIComponent(jobId)}/brief`);
+        set({ brief, screen: "brief", screenArgs: jobId });
+      } catch (e) {
+        get().say(e instanceof Error ? e.message : String(e), "error");
+      }
+    },
+
+    async clearJobs(jobId) {
+      // Cleared jobs are only hidden from the Jobs page; their folders stay.
+      const r = await get().call((api) =>
+        api.post<{ cleared: number | boolean }>(jobId ? `/jobs/${encodeURIComponent(jobId)}/clear` : "/jobs/clear"),
+      );
+      if (r && !jobId) {
+        const n = Number(r.cleared);
+        get().say(n ? `Cleared ${n} finished job${n === 1 ? "" : "s"}.` : "No finished jobs to clear.");
+      }
+      await get().load("jobs");
+    },
+
+    async restoreJob(jobId) {
+      await get().call((api) => api.post(`/jobs/${encodeURIComponent(jobId)}/restore`));
+      await get().load("jobs");
     },
 
     async decide(approve, refs) {

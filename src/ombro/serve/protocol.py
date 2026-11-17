@@ -156,6 +156,7 @@ class Api(TypedDict):
     job: vt.JobRow
     job_status: vt.JobStatus
     report: vt.Report
+    brief: vt.Brief
     chat: vt.ChatRow
     chat_detail: vt.ChatDetail
     approval: vt.ApprovalRow

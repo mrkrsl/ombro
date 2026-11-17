@@ -103,6 +103,7 @@ def job_row(job_dir: Path) -> vt.JobRow:
         "name": jobs.job_name(job_dir.name),
         "chat": meta.get("chat"),
         "live": bool(meta.get("live")),
+        "cleared_at": meta.get("cleared_at"),
     }
 
 
@@ -212,6 +213,10 @@ def report(home: Home, job_dir: Path) -> vt.Report:
     text = path.read_text(encoding="utf-8") if path.is_file() else None
     return {**job_row(job_dir), "report_path": str(path), "report": text,
             "deliverables": deliverables(home, job_dir), "workspace": str(job_dir / "workspace")}
+
+
+def brief(job_dir: Path) -> vt.Brief:
+    return {**job_row(job_dir), "spec": jobs.brief_text(job_dir)}
 
 
 def journal_events(job_dir: Path, include_model_calls: bool = False) -> list[dict[str, Any]]:

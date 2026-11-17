@@ -9,7 +9,7 @@ import { Inspector } from "./Inspector";
 const job: JobRow = { active: true, brief: "Invented", chat: null, created_at: null, crews: ["default"], finished_at: null,
   job_id: "invented-teapots-20261117-1200", limit_hit: null, live: false, name: "Invented teapots",
   path: "/invented/jobs/invented-teapots-20261117-1200", seen_at: null, source: "spec", started_at: null,
-  status: "running", total_tokens: 10, waiting: 0 };
+  status: "running", total_tokens: 10, waiting: 0, cleared_at: null };
 
 describe("the inspector", () => {
   beforeEach(() =>

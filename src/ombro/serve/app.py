@@ -293,6 +293,7 @@ def _views(s: Serve) -> list[Route]:
         "/jobs": lambda r: views.job_list(home),
         "/jobs/{job_id}": lambda r: views.status(job_dir(r)),
         "/jobs/{job_id}/report": lambda r: views.report(home, job_dir(r)),
+        "/jobs/{job_id}/brief": lambda r: views.brief(job_dir(r)),
         "/approvals": lambda r: views.approval_list(home),
         "/approvals/{ref}": lambda r: (find_approval(home, r.path_params["ref"]),
                                        views.approval(home, r.path_params["ref"]))[1],
@@ -499,6 +500,19 @@ def _action_routes(s: Serve) -> list[Route]:
         """The Jobs page has been looked at: every finished job counts as seen."""
         return {"seen": sum(jobs.mark_seen(d) for d in jobs.unseen_jobs(home))}
 
+    def clear(r: Request) -> Any:
+        """Hide a finished job from the Jobs page; its folder stays."""
+        try:
+            return {"cleared": jobs.clear_job(jobs.find_job(home, r.path_params["job_id"]))}
+        except jobs.StillRunning as e:
+            raise HttpError(409, str(e)) from None
+
+    def clear_all(r: Request) -> Any:
+        return {"cleared": jobs.clear_finished(home)}
+
+    def restore(r: Request) -> Any:
+        return {"restored": jobs.restore_job(jobs.find_job(home, r.path_params["job_id"]))}
+
     def add_crew(r: Request, data: dict[str, Any]) -> Any:
         from ombro.home import ensure_crew
         from ombro.roles import NAME
@@ -614,6 +628,9 @@ def _action_routes(s: Serve) -> list[Route]:
         Route("/schedules/{name}", _handler(delete_schedule, after=after), methods=["DELETE"]),
         Route("/jobs/seen", _handler(seen_all, after=after), methods=["POST"]),
         Route("/jobs/{job_id}/seen", _handler(seen, after=after), methods=["POST"]),
+        Route("/jobs/clear", _handler(clear_all, after=after), methods=["POST"]),
+        Route("/jobs/{job_id}/clear", _handler(clear, after=after), methods=["POST"]),
+        Route("/jobs/{job_id}/restore", _handler(restore, after=after), methods=["POST"]),
         Route("/schedules/{name}/enable", _handler(schedule(True), after=after), methods=["POST"]),
         Route("/schedules/{name}/disable", _handler(schedule(False), after=after), methods=["POST"]),
         Route("/crews", _handler(add_crew, status=201, with_body=True, after=after), methods=["POST"]),

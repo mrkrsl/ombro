@@ -13,6 +13,7 @@ import { Approvals } from "./screens/Approvals";
 import { Connect } from "./screens/Connect";
 import { Jobs } from "./screens/Jobs";
 import { Placeholder } from "./screens/Placeholder";
+import { BriefPage } from "./screens/BriefPage";
 import { ReportPage } from "./screens/ReportPage";
 import { Scheduled } from "./screens/Scheduled";
 import { Settings } from "./screens/settings/Settings";
@@ -110,14 +111,14 @@ export default function App() {
   const showInspector = inspector && chatScreen;
   const inChat = screen === "chat" && conversation;
   const PAGE_TITLES: Record<string, string> = {
-    jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Report",
+    jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Report", brief: "Brief",
   };
   const title =
     screen === "chat"
       ? (current && titles[current]) || (conversation?.kind === "setup" ? "Setting up Ombro" : "New chat")
       : PAGE_TITLES[screen] ?? "";
   const pages: Record<string, ReactElement> = {
-    jobs: <Jobs />, approvals: <Approvals />, scheduled: <Scheduled />, report: <ReportPage />, settings: <Settings />,
+    jobs: <Jobs />, approvals: <Approvals />, scheduled: <Scheduled />, report: <ReportPage />, brief: <BriefPage />, settings: <Settings />,
   };
 
   return (
