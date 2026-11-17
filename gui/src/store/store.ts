@@ -74,7 +74,7 @@ type State = {
   opener: string | null; // after New from a chat you'd used: the Lead's line that it was saved, in place of the home screen
   welcome: boolean; // a fresh install: set-up's first question waits under the home screen
   running: string[]; // the jobs running now, by id: a chat that started one shows the ring in the sidebar
-  remote: boolean; // serve is on another machine: its files come here as copies ("Save to this Mac")
+  remote: boolean; // serve is on another machine: its files come here as copies ("Save to this computer")
   copies: Record<string, string>; // a server file: where its copy is kept, under ~/Downloads/Ombro
 };
 

@@ -31,12 +31,12 @@ describe("ReportCard", () => {
   describe("with a server elsewhere", () => {
     afterEach(() => useStore.setState({ remote: false }));
 
-    it("offers to save the job's files to this Mac, and saves a file before opening it", () => {
+    it("offers to save the job's files to this computer, and saves a file before opening it", () => {
       const openFolder = vi.fn(async () => undefined);
       const openPath = vi.fn(async () => undefined);
       useStore.setState({ remote: true, openFolder, openPath });
       render(<ReportCard report={report} />);
-      fireEvent.click(screen.getByRole("button", { name: /Save to this Mac/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Save to this computer/ }));
       expect(openFolder).toHaveBeenCalledWith("/x/workspace");
       fireEvent.click(screen.getByRole("link", { name: "data.csv" }));
       expect(openPath).toHaveBeenCalledWith("/x/workspace/data.csv", "open");
@@ -45,7 +45,7 @@ describe("ReportCard", () => {
     it("keeps Files when the server is here", () => {
       render(<ReportCard report={report} />);
       expect(screen.getByRole("button", { name: /Files/ })).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /Save to this Mac/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Save to this computer/ })).toBeNull();
     });
   });
 });

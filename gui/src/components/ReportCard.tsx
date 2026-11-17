@@ -50,7 +50,7 @@ export function ReportCard({ report }: { report: Report }) {
             onClick={() => void openFolder(report.workspace)}
             title={remote ? "Copy the job's files from the server into Downloads › Ombro" : "Open the job's folder"}
           >
-            <FolderOpen size={16} /> {remote ? "Save to this Mac" : "Files"}
+            <FolderOpen size={16} /> {remote ? "Save to this computer" : "Files"}
           </button>
           <button
             className="text-button"

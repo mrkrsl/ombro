@@ -42,7 +42,7 @@ export function Folders() {
       <p className="lede">
         Ombro's crews can only reach the folders you share here. Each one is open to the Lead and to every crew.
         Ombro's own files are never shared.
-        {remote && " Ombro runs on a server, so these are folders on the server, not on this Mac."}
+        {remote && " Ombro runs on a server, so these are folders on the server, not on this computer."}
       </p>
       <Problem text={folders.problem} />
       <div className="rows">

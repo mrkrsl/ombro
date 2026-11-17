@@ -1,4 +1,4 @@
-//! "Save to this Mac": copies of a remote server's files, kept under ~/Downloads/Ombro.
+//! "Save to this computer": copies of a remote server's files, kept under ~/Downloads/Ombro.
 //!
 //! The web view fetches a file's bytes from serve and hands them here with the relative path serve
 //! suggested (`X-Ombro-Save-As`, such as `<job id>/workspace/notes.md`). Nothing outside

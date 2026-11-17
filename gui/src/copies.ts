@@ -1,4 +1,4 @@
-// "Save to this Mac": when serve runs on another machine, its files reach this one as copies kept in
+// "Save to this computer": when serve runs on another machine, its files reach this one as copies kept in
 // ~/Downloads/Ombro, under the path serve suggests (`<job id>/workspace/notes.md`). Files only come
 // down, and only when asked. A draft edited by hand is the one thing sent back (on Done).
 // In a browser there's no folder to keep copies in, so a file is downloaded the browser's way.

@@ -1,4 +1,4 @@
-"""Files over the API, for an app that isn't on the same machine as serve ("Save to this Mac").
+"""Files over the API, for an app that isn't on the same machine as serve ("Save to this computer").
 
 - `GET /files?path=…` sends one file's bytes.
 - `GET /files/list?path=…` lists the files in a folder (a job's workspace, say), each with its own

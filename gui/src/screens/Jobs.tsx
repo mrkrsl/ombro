@@ -48,7 +48,7 @@ export function Jobs() {
                         View report
                       </button>
                       <button className="text-button" onClick={() => void openFolder(`${j.path}/workspace`)}>
-                        {remote ? "Save to this Mac" : "Files"}
+                        {remote ? "Save to this computer" : "Files"}
                       </button>
                     </>
                   )
