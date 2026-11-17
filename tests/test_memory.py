@@ -313,3 +313,23 @@ def test_a_block_of_several_lines_is_one_answer():
     assert read_answer(lambda p: next(lines), "You: ") == "First line of a pasted paragraph.\n\nSecond part."
     one = iter(['"""All on one line."""'])
     assert read_answer(lambda p: next(one), "You: ") == "All on one line."
+
+
+def test_a_job_that_never_started_says_so(home):
+    from ombro.settings import load_tool_settings
+
+    tools = load_tool_settings(home)
+    job_dir = jobs.create_job(home, ["default"], {}, SPEC, load_limits(home, None, tools), source="test")
+    jobs.update_job(job_dir, status="running", created_at="2000-01-01T00:00:00Z")
+    assert jobs.reap_dead_jobs(home) == [job_dir]
+    meta, _ = jobs.read_job(job_dir)
+    assert meta["status"] == "failed"
+    assert "process.log" in (job_dir / "report.md").read_text()
+
+
+def test_a_frozen_app_starts_jobs_with_their_own_unpacked_copy(home, monkeypatch):
+    import sys
+
+    assert "PYINSTALLER_RESET_ENVIRONMENT" not in jobs.detached_env(home)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert jobs.detached_env(home)["PYINSTALLER_RESET_ENVIRONMENT"] == "1"

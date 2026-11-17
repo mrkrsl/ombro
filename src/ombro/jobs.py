@@ -176,11 +176,26 @@ def create_job(
     return job_dir
 
 
+def detached_env(home: Home) -> dict[str, str]:
+    """The environment for a job process that outlives the one starting it.
+
+    The app's binary is a PyInstaller one-file build: each run unpacks itself into a
+    temporary folder and deletes it on exit. A child that inherits the parent's
+    PyInstaller variables reuses that folder, so when the parent is short-lived (the
+    scheduler's `tick`) the folder is gone before the job loads and the job dies at once.
+    PYINSTALLER_RESET_ENVIRONMENT makes the child unpack its own copy."""
+    import sys
+
+    env = {**os.environ, **home.process_env()}
+    if getattr(sys, "frozen", False):
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
 def start_detached(home: Home, job_dir: Path) -> int:
     """Start `ombro _exec <job_dir>` in its own session, logging to process.log.
     The child records its own pid in job.md. Returns the child's pid."""
     import subprocess
-    import sys
 
     log = open(Path(job_dir) / "process.log", "ab")
     try:
@@ -190,7 +205,7 @@ def start_detached(home: Home, job_dir: Path) -> int:
             stdout=log,
             stderr=log,
             start_new_session=True,
-            env={**os.environ, **home.process_env()},
+            env=detached_env(home),
         )
     finally:
         log.close()
@@ -336,11 +351,11 @@ def reap_dead_jobs(home: Home) -> list[Path]:
             continue
         if not is_dead(meta):
             continue
-        report.write_mechanical_report(
-            home,
-            job_dir,
-            status="failed",
-            failure="The job's process ended without finishing; this report was written from the journal.",
-        )
+        if meta.get("pid"):
+            failure = "The job's process ended without finishing; this report was written from the journal."
+        else:  # the engine records its pid first thing, so the process never got going
+            failure = ("The job's process stopped before it could start; process.log in the job's "
+                       "folder says why. This report was written from the journal.")
+        report.write_mechanical_report(home, job_dir, status="failed", failure=failure)
         reaped.append(job_dir)
     return reaped
