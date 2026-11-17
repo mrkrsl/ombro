@@ -11,6 +11,7 @@ import os
 import stat
 import time
 import urllib.parse
+from pathlib import Path
 
 import httpx
 import pytest
@@ -331,10 +332,29 @@ def test_the_callback_ignores_an_answer_for_another_sign_in(monkeypatch):
         assert b" 400 " in get("code=from-elsewhere&state=wrong").split(b"\r\n", 1)[0] + b" "
         with pytest.raises(oauth.SignInError, match="no answer"):
             rec.wait(0.2)  # still waiting: the wrong answer did not end the sign-in
-        get("code=invented-code&state=the-right-state")
+        page = get("code=invented-code&state=the-right-state")
         assert rec.wait(2) == {"code": "invented-code", "state": "the-right-state"}
+        assert b"Sign-in successful." in page and b"return to the terminal." in page
     finally:
         rec.close()
+
+
+def test_the_signed_in_page_says_where_to_go_back_to():
+    from ombro import signin_page
+
+    app = signin_page.success_page()
+    assert "Sign-in successful." in app and "You can close this tab and return to the Ombro app." in app
+    assert "Inter" in app and 'aria-label="Ombro"' in app
+    assert "return to the terminal." in signin_page.success_page("the terminal")
+
+
+def test_the_apps_signed_in_page_is_ombros():
+    # The app's listener (gui/src-tauri/src/signin.rs) includes this file; it is written by
+    # `python -m ombro.signin_page` and must match.
+    copy = Path(__file__).resolve().parents[1] / "gui/src-tauri/src/signin_page.html"
+    from ombro import signin_page
+
+    assert copy.read_text(encoding="utf-8") == signin_page.success_page()
 
 
 # -- signing in when the browser is on another computer (Ombro on a server) ------------------

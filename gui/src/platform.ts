@@ -132,3 +132,14 @@ export function whenVisible(fn: () => void): void {
   };
   document.addEventListener("visibilitychange", once);
 }
+
+/** The desktop app's version (from its bundle), or "" outside the app. */
+export async function appVersion(): Promise<string> {
+  if (!inTauri) return "";
+  try {
+    const { getVersion } = await import("@tauri-apps/api/app");
+    return await getVersion();
+  } catch {
+    return "";
+  }
+}

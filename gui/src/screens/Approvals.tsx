@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ApprovalDetail } from "../api/types";
 import { approvalTitle, argumentLines, toolAction } from "../store/approvals";
+import { MarkdownFile } from "../components/Markdown";
 import { useStore } from "../store/store";
 
 export function Approvals() {
@@ -36,10 +37,11 @@ export function Approvals() {
     if (d) setOpen((o) => ({ ...o, [ref]: d }));
   }
 
-  async function act(approve: boolean) {
+  async function act(approve: boolean, which: string[] = chosen) {
     setBusy(true);
-    setProblems(await decide(approve, chosen));
-    setPicked(new Set());
+    setProblems(await decide(approve, which));
+    setPicked((p) => new Set([...p].filter((r) => !which.includes(r))));
+    setOpen((o) => Object.fromEntries(Object.entries(o).filter(([r]) => !which.includes(r))));
     setBusy(false);
   }
 
@@ -78,7 +80,21 @@ export function Approvals() {
                 </div>
                 {d && (
                   <div className="approval-open">
-                    {d === "loading" ? <p className="muted">Opening…</p> : <Detail d={d} />}
+                    {d === "loading" ? (
+                      <p className="muted">Opening…</p>
+                    ) : (
+                      <>
+                        <Detail d={d} />
+                        <div className="actions compact">
+                          <button className="primary small" disabled={busy} onClick={() => void act(true, [a.ref])}>
+                            Approve
+                          </button>
+                          <button className="secondary small" disabled={busy} onClick={() => void act(false, [a.ref])}>
+                            Decline
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -114,6 +130,7 @@ function person(role: string): string {
 function Detail({ d }: { d: ApprovalDetail }) {
   const lines = argumentLines(d.arguments);
   const skill = d.skill as { diff?: string; text?: string } | null;
+  const [changes, setChanges] = useState(false);
   return (
     <>
       <p>
@@ -135,7 +152,20 @@ function Detail({ d }: { d: ApprovalDetail }) {
           <p className="muted">Nothing more to send.</p>
         )}
       </div>
-      {skill && (skill.diff || skill.text) && <pre>{String(skill.diff || skill.text)}</pre>}
+      {skill?.text && (
+        <div className="proposed-file">
+          <MarkdownFile text={String(skill.text)} />
+        </div>
+      )}
+      {skill?.diff && (
+        <>
+          <button className="text-button" aria-expanded={changes} onClick={() => setChanges(!changes)}>
+            {changes ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            {changes ? "Hide what changes" : "Show what changes"}
+          </button>
+          {changes && <pre>{String(skill.diff)}</pre>}
+        </>
+      )}
       <p className="muted">
         From the job {d.job_name}
         {d.edited ? " · changed since it was staged" : ""}

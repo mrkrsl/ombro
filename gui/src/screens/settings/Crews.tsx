@@ -5,7 +5,7 @@
 import { useState } from "react";
 import type { Crews as CrewsView, CrewRow, ModelList, RoleDetail, RoleRow } from "../../api/types";
 import { useStore } from "../../store/store";
-import { Field, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
+import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 import { modelLabel } from "../../store/models";
 
 const KINDS: Record<string, string> = { specialist: "Specialist", helper: "Helper", lead: "Lead" };
@@ -109,26 +109,28 @@ function Member({ crew, role, models, onEdit, removal, onRemoved }: {
   const key = `${crew.name}/${role.name}`;
   return (
     <div className="row-block">
-      <div className="row settings-row member">
-        <span className="row-name">{role.title}</span>
-        <span className="row-detail">{role.problem ? <span className="problem-inline">Has a problem</span> : KINDS[role.kind ?? ""] ?? role.kind}</span>
-        <span className="row-detail" title={role.problem ?? undefined}>
-          {role.problem ? role.problem : `Model: ${modelLabel(role.model, models)}`}
-        </span>
-        <span className="row-actions">
-          <button className="text-button strong" onClick={onEdit}>
-            Edit
-          </button>
-          <button
-            className="text-button strong"
-            onClick={() =>
-              void removal.ask(key, () => useStore.getState().api!.get<Check>(`/roles/${crew.name}/${role.name}/check`))
-            }
-          >
-            Delete
-          </button>
-        </span>
-      </div>
+      <Item
+        name={role.title}
+        details={[
+          role.problem ? <span className="problem-inline">Has a problem</span> : KINDS[role.kind ?? ""] ?? role.kind,
+          role.problem ? <span title={role.problem}>{role.problem}</span> : `Model: ${modelLabel(role.model, models)}`,
+        ]}
+        actions={
+          <>
+            <button className="text-button strong" onClick={onEdit}>
+              Edit
+            </button>
+            <button
+              className="text-button strong"
+              onClick={() =>
+                void removal.ask(key, () => useStore.getState().api!.get<Check>(`/roles/${crew.name}/${role.name}/check`))
+              }
+            >
+              Delete
+            </button>
+          </>
+        }
+      />
       {removal.target === key && (
         <RemovePanel
           removal={removal}

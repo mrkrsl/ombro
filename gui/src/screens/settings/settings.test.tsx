@@ -184,7 +184,7 @@ describe("Settings › Crews", () => {
   it("shows each member's kind and model, and renames a crew", async () => {
     replies["PUT /crews/legal"] = crews;
     render(<Settings />);
-    const row = (await screen.findByText("Legal Assistant")).closest(".row") as HTMLElement;
+    const row = (await screen.findByText("Legal Assistant")).closest(".item") as HTMLElement;
     expect(within(row).getByText("Helper")).toBeInTheDocument();
     expect(within(row).getByText("Model: local-model")).toBeInTheDocument();
     expect(screen.queryByText(/Ombro Lead/)).not.toBeInTheDocument(); // the Lead isn't a crew member
@@ -200,7 +200,7 @@ describe("Settings › Crews", () => {
     replies["/roles/legal/counsel/check"] = { blocked: null, warnings: ["An invented warning."] };
     replies["DELETE /roles/legal/counsel"] = crews;
     render(<Settings />);
-    const row = (await screen.findByText("Legal Researcher")).closest(".row") as HTMLElement;
+    const row = (await screen.findByText("Legal Researcher")).closest(".item") as HTMLElement;
     await userEvent.click(within(row).getByRole("button", { name: "Delete" }));
     const ask = await screen.findByRole("group", { name: "Delete Legal Researcher?" });
     expect(ask).toHaveTextContent("An invented warning.");

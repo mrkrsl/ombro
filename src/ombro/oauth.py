@@ -303,9 +303,13 @@ def _oauth_error(r: httpx.Response) -> str:
 
 
 class Receiver:
-    """Catches the sign-in answer on a 127.0.0.1 address, once."""
+    """Catches the sign-in answer on a 127.0.0.1 address, once. `back_to` is where the page it
+    shows sends the user back to: the terminal, or the app (when the app's own Ombro signs in)."""
 
-    def __init__(self):
+    def __init__(self, back_to: str = "the terminal"):
+        from ombro.signin_page import success_page
+
+        page = success_page(back_to).encode("utf-8")
         received: dict[str, str] = {}
         done = threading.Event()
         expected: dict[str, str] = {}
@@ -333,7 +337,7 @@ class Receiver:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(b"<p>Ombro has the answer. You can close this tab and go back to the terminal.</p>")
+                self.wfile.write(page)
 
             def log_message(self, *a):  # keep the terminal quiet, and codes out of logs
                 pass
@@ -415,9 +419,10 @@ class Connected:
 
 def connect(home: Home, server: str, cfg: dict[str, Any], *, open_browser: Callable[[str], Any],
             say: Callable[[str], None] = print, transport: httpx.BaseTransport | None = None,
-            receiver: Any = None, timeout: float = CONNECT_TIMEOUT) -> Connected:
+            receiver: Any = None, timeout: float = CONNECT_TIMEOUT, back_to: str = "the terminal") -> Connected:
     """Sign in to one remote server and keep the result. `open_browser(url)` shows
-    the sign-in page; `receiver` (for tests) stands in for the local listener."""
+    the sign-in page; `receiver` (for tests) stands in for the local listener, whose page
+    afterwards sends the user back to `back_to`."""
     url = cfg.get("url")
     if not url:
         raise SignInError(f"server {server} is started by a command, so it signs in by itself; "
@@ -432,7 +437,7 @@ def connect(home: Home, server: str, cfg: dict[str, Any], *, open_browser: Calla
         issuer = str(prm["authorization_servers"][0])
         meta = server_metadata(client, issuer)
 
-        rec = receiver or Receiver()
+        rec = receiver or Receiver(back_to)
         try:
             if cfg.get("client_id"):
                 client_info = {"client_id": str(cfg["client_id"]), "registered": False,

@@ -1,5 +1,5 @@
 // The pages' own rules: cron from a choice of when, a report's two parts, and how a job's status reads.
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ApprovalRow } from "../api/types";
@@ -66,5 +66,25 @@ describe("approvals", () => {
     expect(approve).toHaveTextContent("Approve (1)");
     await userEvent.click(approve);
     expect(seen).toEqual([["ab12-2"]]);
+  });
+
+  it("shows an opened skill as formatted Markdown, with its own Approve and Decline", async () => {
+    const seen: [boolean, string[]][] = [];
+    const detail = { ...row, ref: "ab12-2", tool: "skills.propose", arguments: { name: "invented" },
+      skill: { name: "invented", text: "---\nname: invented\n---\n# Invented skill\n\nDo **this** first." } };
+    useStore.setState({
+      approvals: [row, { ...row, ref: "ab12-2", tool: "skills.propose", arguments: { name: "invented" } }],
+      call: (async () => detail) as never,
+      decide: async (approve: boolean, refs: string[]) => { seen.push([approve, refs]); return []; },
+    });
+    render(<Approvals />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Show the detail" })[1]);
+    expect(await screen.findByRole("heading", { name: "Invented skill" })).toBeInTheDocument();
+    expect(screen.getByText("this").tagName).toBe("STRONG");
+    // Nothing ticked: the opened one's own buttons work all the same.
+    const opened = within(document.querySelector(".approval-open") as HTMLElement);
+    expect(opened.getByRole("button", { name: "Approve" })).toBeEnabled();
+    await userEvent.click(opened.getByRole("button", { name: "Decline" }));
+    expect(seen).toEqual([[false, ["ab12-2"]]]);
   });
 });

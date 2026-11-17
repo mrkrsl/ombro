@@ -27,7 +27,8 @@ export default function App() {
     void useStore.getState().start();
     void onTrayOpen((screen) => {
       const st = useStore.getState();
-      if (screen === "home") st.goHome();
+      // View › Chat: the chat on screen last, or the home screen when there is none.
+      if (screen === "home" || (screen === "chat" && !st.current)) st.goHome();
       else if (screen !== "current") st.show(screen as Parameters<typeof st.show>[0]);
     });
   }, []);

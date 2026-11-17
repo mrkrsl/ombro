@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { ConfirmButton } from "../components/ConfirmButton";
+import { Item } from "./settings/common";
 import { useStore } from "../store/store";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -108,35 +109,39 @@ export function Scheduled() {
         <div className="rows">
           {schedules.map((s) => (
             <div key={s.name} className="row-block">
-              <div className="row">
-                <span className="row-name">{s.name.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase())}</span>
-                <span className="row-detail" title={s.spec_title}>
-                  {s.spec_title || s.spec}
-                </span>
-                <span className="row-when" title={s.next ? `Next: ${s.next.replace("T", " ")}` : ""}>
-                  {s.problem ? `Problem: ${s.problem}` : s.when}
-                </span>
-                <span className="row-actions">
-                  <label className="switch compact" title={s.enabled ? "On" : "Off"}>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      aria-label={`${s.name} on`}
-                      checked={s.enabled}
-                      onChange={(e) => void change((api) => api.post(`/schedules/${s.name}/${e.target.checked ? "enable" : "disable"}`))}
+              <Item
+                name={s.name.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase())}
+                details={[
+                  <span title={s.spec_title}>{s.spec_title || s.spec}</span>,
+                  s.problem ? (
+                    <span className="problem-inline">Problem: {s.problem}</span>
+                  ) : (
+                    <span title={s.next ? `Next: ${s.next.replace("T", " ")}` : ""}>{s.when}</span>
+                  ),
+                ]}
+                actions={
+                  <>
+                    <label className="switch compact" title={s.enabled ? "On" : "Off"}>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        aria-label={`${s.name} on`}
+                        checked={s.enabled}
+                        onChange={(e) => void change((api) => api.post(`/schedules/${s.name}/${e.target.checked ? "enable" : "disable"}`))}
+                      />
+                    </label>
+                    <button className="text-button strong" onClick={() => setEditing(editing === s.name ? null : s.name)}>
+                      Edit
+                    </button>
+                    <ConfirmButton
+                      label="Delete"
+                      className="text-button strong"
+                      ask="Delete it? Its jobs are kept."
+                      onConfirm={() => change((api) => api.del(`/schedules/${s.name}`))}
                     />
-                  </label>
-                  <button className="text-button strong" onClick={() => setEditing(editing === s.name ? null : s.name)}>
-                    Edit
-                  </button>
-                  <ConfirmButton
-                    label="Delete"
-                    className="text-button strong"
-                    ask="Delete it? Its jobs are kept."
-                    onConfirm={() => change((api) => api.del(`/schedules/${s.name}`))}
-                  />
-                </span>
-              </div>
+                  </>
+                }
+              />
               {editing === s.name && (
                 <div className="row-open">
                   <p className="muted">Now: {s.when} ({s.cron})</p>

@@ -7,6 +7,7 @@ import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 import { ServerForm } from "../Connect";
 import { describe, useThisComputer } from "../../where";
+import { appVersion } from "../../platform";
 
 export const LIMITS: [string, string][] = [
   ["conservative", "Light: up to 300k tokens a job"],
@@ -395,6 +396,36 @@ function WhereItRuns() {
   );
 }
 
+/** The app's version, and the server's when Ombro runs on one with another version. */
+export function Version() {
+  const api = useStore((s) => s.api);
+  const remote = useStore((s) => s.remote);
+  const [app, setApp] = useState("");
+  const [server, setServer] = useState("");
+  useEffect(() => {
+    let gone = false;
+    void appVersion().then((v) => !gone && setApp(v));
+    void api
+      ?.get<{ version?: string }>("/hello")
+      .then((h) => !gone && setServer(h.version ?? ""))
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+    };
+  }, [api]);
+  const shown = app || server;
+  if (!shown) return null;
+  return (
+    <section className="settings-section">
+      <h2>Version</h2>
+      <p>
+        Ombro {shown}
+        {remote && server && server !== shown && <span className="muted"> · the server runs Ombro {server}</span>}
+      </p>
+    </section>
+  );
+}
+
 export function General() {
   const models = useView<ModelList>("/models");
   return (
@@ -410,6 +441,7 @@ export function General() {
       ) : (
         <Problem text={models.problem} />
       )}
+      <Version />
     </>
   );
 }

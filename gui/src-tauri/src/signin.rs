@@ -19,9 +19,9 @@ pub struct Catches {
     waiting: Mutex<HashMap<u16, watch::Receiver<Option<String>>>>,
 }
 
-const PAGE: &str = "<!doctype html><meta charset=utf-8><title>Ombro</title>\
-<body style=\"font:16px -apple-system,system-ui,sans-serif;margin:3em\">\
-<p>Ombro has the answer. You can close this tab and go back to Ombro.</p>";
+// The page the browser shows once the answer is caught, written by `python -m ombro.signin_page`
+// (the same page Ombro's own listener shows).
+const PAGE: &str = include_str!("signin_page.html");
 
 /// The path and query of a request's first line (`GET /callback?code=… HTTP/1.1`).
 fn target(head: &str) -> Option<&str> {

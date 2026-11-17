@@ -110,6 +110,14 @@
   vertical-align: -3px;
   margin-right: 9px;
   color: var(--muted);
+  animation: spin 3s linear infinite;
+}
+
+/* The dotted ring turns slowly while a job runs; still for anyone who asks for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-link .working {
+    animation: none;
+  }
 }
 
 .sidebar-foot .nav + .nav {
@@ -796,34 +804,8 @@ a:visited {
   flex-direction: column;
 }
 
-.row-block + .row-block,
-.rows > .row + .row {
+.row-block + .row-block {
   border-top: 1px solid var(--list-rule);
-}
-
-.row {
-  display: grid;
-  grid-template-columns: minmax(140px, 1.1fr) minmax(120px, 1.2fr) minmax(140px, 1fr) auto;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 0;
-  font-size: 16px;
-}
-
-/* In a row: the name darkest, what it is in the mid tone, the actions semi-bold and darkest. */
-.row-name {
-  color: var(--strong);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-detail,
-.row-when {
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .row-actions {
@@ -839,7 +821,7 @@ a:visited {
 }
 
 .row-open {
-  padding: 0 0 16px 28px;
+  padding: 0 0 16px;
   font-size: 14px;
 }
 
@@ -959,7 +941,7 @@ input[type="checkbox"]:not([role="switch"]) {
   grid-template-columns: 18px 1fr auto;
   column-gap: 14px;
   align-items: start;
-  padding: 14px 0;
+  padding: 12px 0;
 }
 
 .approval > input {
@@ -979,6 +961,7 @@ input[type="checkbox"]:not([role="switch"]) {
 .approval-title {
   display: block;
   font-size: 16px;
+  font-weight: 600;
   color: var(--strong);
   overflow-wrap: anywhere;
 }
@@ -1015,6 +998,26 @@ input[type="checkbox"]:not([role="switch"]) {
 
 .approval-open p {
   margin: 0 0 8px;
+}
+
+/* A proposed skill, formatted as it will read, in a card like the report's. */
+.proposed-file {
+  border: 1px solid var(--list-rule);
+  border-radius: 8px;
+  padding: 4px 16px;
+  margin: 4px 0 10px;
+  max-height: 480px;
+  overflow: auto;
+}
+
+.approval-open .proposed-file p {
+  margin: 0.6em 0;
+}
+
+/* An opened approval's own Approve and Decline. */
+.actions.compact {
+  margin-top: 14px;
+  gap: 12px;
 }
 
 .what-it-does {
@@ -1357,29 +1360,6 @@ input[type="checkbox"]:not([role="switch"]) {
 
 .small {
   font-size: 13px;
-}
-
-/* Rows on the settings pages: name, detail, detail, actions. */
-/* The actions column has a fixed width, so the columns line up from row to row. */
-.settings-row {
-  grid-template-columns: minmax(130px, 1fr) minmax(120px, 1.4fr) minmax(110px, 1fr) 130px;
-}
-
-.settings-row.tool {
-  grid-template-columns: minmax(130px, 1fr) minmax(120px, 1.4fr) minmax(110px, 1fr) 180px;
-}
-
-.settings-row.member {
-  grid-template-columns: minmax(120px, 1.1fr) 90px minmax(120px, 1.6fr) 110px;
-  gap: 16px;
-}
-
-.settings-row.three {
-  grid-template-columns: minmax(150px, 1fr) minmax(160px, 2fr) 130px;
-}
-
-.settings-row .row-name {
-  font-weight: 600;
 }
 
 .inline-form {

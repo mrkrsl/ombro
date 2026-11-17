@@ -8,7 +8,8 @@
 # An app with only an .icns is shrunk onto a grey plate. actool also renders a masked
 # icon.icns for older macOS. Both results are committed, so a build needs no Xcode.
 #
-# To change the artwork, replace icons/AppIcon.icon/Assets/art.png (1024 px, full bleed),
+# To change the artwork, replace icons/AppIcon.icon/Assets/art.png (1024 px, full bleed; light)
+# and art-dark.png (the same, for dark mode, from ombro-meta/assets/app-icon-dark.svg),
 # or open AppIcon.icon in Icon Composer.
 set -euo pipefail
 cd "$(dirname "$0")/../src-tauri/icons"

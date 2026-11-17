@@ -4,6 +4,7 @@
 //! exits when its stdin closes, so it never outlives the app; we also stop it on the way out.
 
 mod connection;
+mod menu;
 mod saved;
 mod signin;
 mod tray;
@@ -215,6 +216,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .menu(|app| menu::build(app))
+        .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()))
         .setup(|app| {
             let (tx, rx) = watch::channel::<Ready>(None);
             app.manage(Serve { tx, ready: rx, child: Mutex::new(None), started: Mutex::new(None) });

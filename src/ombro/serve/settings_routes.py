@@ -266,7 +266,8 @@ def settings_routes(s: Serve) -> list[Route]:
 
         def run() -> None:
             try:
-                oauth.connect(home, name, cfg, open_browser=open_browser, say=lambda _t: None, receiver=receiver)
+                oauth.connect(home, name, cfg, open_browser=open_browser, say=lambda _t: None, receiver=receiver,
+                              back_to="the Ombro app")
                 s.signing[name] = {"state": "done"}
             except oauth.SignInError as e:
                 text = str(e)
