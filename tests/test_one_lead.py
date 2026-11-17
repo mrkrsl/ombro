@@ -40,7 +40,7 @@ def test_a_fresh_home_has_one_lead_and_a_general_assistant(tmp_path):
     roles = crew_roles(h, "default", limits)
     assert list(roles) == [ASSISTANT_NAME]
     ga = roles[ASSISTANT_NAME]
-    assert ga.kind == "specialist" and ga.model == "default" and ga.max_steps == 15
+    assert ga.kind == "specialist" and ga.model == "default" and ga.max_steps == 40
     assert ga.all_tools and ga.all_skills  # every tool and skill, now and later
 
 

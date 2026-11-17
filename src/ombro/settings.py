@@ -78,7 +78,7 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
 # jobs may start in one tick or be in progress at once.
 SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "15m", "schedule_max_running": 2, "schedule_max_starts": 3}
 # Code execution: limits on each script code.run runs.
-CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 8_000,
+CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 30_000,
                                  "code_max_total": "2GB"}
 # Skills: the listing in a prompt, a read, a model-written SKILL.md, and proposals waiting.
 SKILL_DEFAULTS: dict[str, Any] = {"skills_list_chars": 4_000, "skill_read_chars": 20_000,
@@ -88,13 +88,20 @@ CODE_DEFAULT_CALLS = 10  # code.job's max_calls when neither limits.md nor tools
 # a generous job ran out of searches, fetches and code runs). Values set by hand still win.
 TOOL_SCALE = {"generous": 2, "unlimited": 3}  # web.search and web.fetch, times their provider's default
 FREE_PROVIDERS = {"duckduckgo", "direct"}  # only these are scaled: one that bills per call is not
-CODE_CALLS = {"generous": 30, "unlimited": 50}  # code.run
+CODE_CALLS = {"generous": 100, "unlimited": 200}  # code.run (30 and 50 until 17 Nov 2026)
+# The job's own files cost nothing but tokens, which the token limit bounds: a call cap only stopped real work
+# (17 Nov 2026: a job's 20 reads ran out halfway through writing one document). Values set by hand still win.
+WORKSPACE_CALLS = {"conservative": 60, "moderate": 100, "generous": 200, "unlimited": 400}
+WORKSPACE_TOOLS = ("workspace.read", "workspace.list", "workspace.write", "workspace.set_aside")
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
 RETIRED_LIMITS = ("budget_usd", "tool_cost_per_call")
 # Defaults that changed, which every home's limits.md was given when it was made: the old value,
 # left as it was, means the new default. (chat_history_chars: 30,000 until 16 Nov 2026.)
-CHANGED_DEFAULTS = {"chat_history_chars": (30_000, 200_000)}
+CHANGED_DEFAULTS = {"chat_history_chars": (30_000, 200_000), "code_output_chars": (8_000, 30_000)}
+# The same for model calls per brief, by kind (17 Nov 2026: 15 calls left a specialist four to write a document
+# with after reading its sources, and the job split into six briefs; tokens and time bound a brief anyway).
+CHANGED_STEPS = {"specialist": (15, 40), "helper": (8, 20)}
 # Limits that were renamed: read under their old names too (jobs were once called runs).
 RENAMED_LIMITS = {"run_timeout": "job_timeout"}
 
@@ -166,7 +173,7 @@ class Limits:
     schedule_max_starts: int = 3
     code_timeout: float = 60.0
     code_max_memory: int = 1024**3
-    code_output_chars: int = 8_000
+    code_output_chars: int = 30_000
     code_max_total: int = 2 * 1024**3  # all the files in workspace/ and scratch/ together
     skills_list_chars: int = 4_000
     skill_read_chars: int = 20_000
@@ -250,7 +257,8 @@ class Limits:
             schedule_max_starts=pos_num("schedule_max_starts", d["schedule_max_starts"], integer=True),
             code_timeout=pos_num("code_timeout", parse_duration(d["code_timeout"])),
             code_max_memory=pos_num("code_max_memory", parse_size(d["code_max_memory"]), integer=True),
-            code_output_chars=pos_num("code_output_chars", d["code_output_chars"], integer=True),
+            code_output_chars=pos_num("code_output_chars", _changed("code_output_chars", d["code_output_chars"]),
+                                      integer=True),
             code_max_total=pos_num("code_max_total", parse_size(d["code_max_total"]), integer=True),
             **{k: pos_num(k, d[k], integer=True) for k in SKILL_DEFAULTS},
         )
@@ -332,6 +340,13 @@ def load_limits(
             * (TOOL_SCALE.get(level, 1) if provider in FREE_PROVIDERS else 1)
     if level in CODE_CALLS and "code.run" not in (meta.get("tool_max_calls") or {}):
         per_tool["tool_max_calls"]["code.run"] = CODE_CALLS[level]
+    for name in WORKSPACE_TOOLS:
+        if level in WORKSPACE_CALLS and name not in (meta.get("tool_max_calls") or {}):
+            per_tool["tool_max_calls"][name] = WORKSPACE_CALLS[level]
+    steps = merged.get("max_steps")
+    if isinstance(steps, dict):
+        merged["max_steps"] = {k: (CHANGED_STEPS[k][1] if k in CHANGED_STEPS and v == CHANGED_STEPS[k][0] else v)
+                               for k, v in steps.items()}
     from ombro.apitool import DEFAULT_CALLS, tool_names
 
     for api, cfg in tools.apis.items():  # each of a web API's tools gets its call limit
@@ -520,6 +535,7 @@ class ModelSpec:
     key: str | None = None
     script: str | None = None
     max_output_tokens: int | None = None  # the most this model may write in one reply, if less than the limit
+    reasoning_effort: str | None = None  # how hard a thinking model thinks (sent as reasoning_effort), e.g. low
 
 
 def load_models(home: Home) -> dict[str, ModelSpec]:
@@ -548,6 +564,10 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
             raise SetupError(f"{home.models}: model {name!r} has no endpoint")
         if api == "fake" and not entry.get("script"):
             raise SetupError(f"{home.models}: fake model {name!r} has no script")
+        effort = entry.get("reasoning_effort")
+        if effort is not None and not (isinstance(effort, str) and effort.isalpha() and len(effort) <= 20):
+            raise SetupError(f"{home.models}: model {name!r} has reasoning_effort {effort!r}; use one word the "
+                             "provider accepts, e.g. none, low, high")
         return ModelSpec(
             name=name,
             api=api,
@@ -556,6 +576,7 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
             key=entry.get("key") or None,
             script=entry.get("script"),
             max_output_tokens=int(entry["max_output_tokens"]) if entry.get("max_output_tokens") else None,
+            reasoning_effort=effort.lower() if effort else None,
         )
 
     return {name: resolve(name) for name in raw}

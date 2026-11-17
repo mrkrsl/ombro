@@ -182,7 +182,7 @@ def test_one_file_is_capped_in_size(job_dir):
 
 def test_code_limits_have_defaults_and_can_be_set():
     lim = Limits.from_dict(load_limits_dict())
-    assert lim.code_timeout == 60 and lim.code_max_memory == 1024**3 and lim.code_output_chars == 8000
+    assert lim.code_timeout == 60 and lim.code_max_memory == 1024**3 and lim.code_output_chars == 30000
     assert lim.max_calls_for("code.run") == 10
     assert parse_size("512MB") == 512 * 1024**2 and parse_size("1.5gb") == int(1.5 * 1024**3)
     old = Limits.from_dict({k: v for k, v in load_limits_dict().items() if not k.startswith("code_")})

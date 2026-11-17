@@ -13,7 +13,7 @@ from ombro.settings import Limits, SetupError
 KINDS = ("lead", "specialist", "helper")
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 DEFAULT_MODEL = {"lead": "default", "specialist": "default", "helper": "cheap"}
-FALLBACK_STEPS = {"lead": 6, "specialist": 15, "helper": 8}
+FALLBACK_STEPS = {"lead": 6, "specialist": 40, "helper": 20}
 
 
 class RoleError(SetupError):
@@ -76,6 +76,10 @@ def load_role(folder: Path, limits: Limits, lead: bool = False) -> Role:
     if not description and kind != "lead":
         raise RoleError(f"{cfg}: a description is required; it is what the Lead sees when choosing whom to brief")
     steps = meta.get("max_steps", limits.max_steps.get(kind, FALLBACK_STEPS[kind]))
+    from ombro.settings import CHANGED_STEPS
+
+    if kind in CHANGED_STEPS and steps == CHANGED_STEPS[kind][0] and "max_steps" in meta:
+        steps = CHANGED_STEPS[kind][1]  # the old built-in default, written into a role's file: the new one
     if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
         raise RoleError(f"{cfg}: max_steps must be a positive whole number")
     soul = mdfile.prompt_text(soul_body)

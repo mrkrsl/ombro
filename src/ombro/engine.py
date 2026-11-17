@@ -24,7 +24,9 @@ from ombro.settings import Limits, ModelSpec, SetupError, ToolSettings, load_mod
 from ombro.tools import LOAD_NAME, NotGranted, SharedFolder, Tool, ToolContext, ToolError, ToolRegistry
 from ombro.tools import is_deferred, load_tool_schema, load_tools
 
-TOOL_RESULT_CAP = 20_000
+# What a brief's last model call may still do beside submit_result: save what it has drafted.
+LAST_CALL_TOOLS = ("workspace.write", "workspace.place")
+TOOL_RESULT_CAP = 64_000  # room for one workspace.read of READ_MAX_CHARS, with its fencing
 
 
 def _short(text: str, n: int = 160) -> str:
@@ -611,7 +613,7 @@ class Engine:
             return self._search(tc.arguments)
         if reading:
             return self._lead_read_skill(tc.arguments)
-        if tc.name in ("workspace__read", "workspace__list"):
+        if tc.name in ("workspace__read", "workspace__list", "workspace__edit"):
             return self._lead_workspace(tc.name.replace("__", "."), tc.arguments)
         if tc.name == "brief":
             return self._brief(tc.arguments)
@@ -629,11 +631,15 @@ class Engine:
         return {"error": f"unknown tool {tc.name!r}; use brief, memory__search, workspace__read, skills__read "
                 "or finish"}
 
+    LEAD_EDIT_MAX_CHARS = 2_000  # a correction, not new writing: that is a role's work
+
     def _lead_workspace(self, name: str, args: dict) -> dict[str, Any]:
-        """workspace.read or .list for the Lead: this job's own files only, never a shared folder."""
+        """workspace.read, .list or .edit for the Lead: this job's files and the folders shared with it."""
         path = str(args.get("path") or "").strip().lstrip("/")
-        if path and path.split("/", 1)[0] not in ("workspace", "scratch"):
-            return {"error": "the Lead reads only this job's files, under workspace/ or scratch/"}
+        if path and path.split("/", 1)[0] not in ("workspace", "scratch", "shared"):
+            return {"error": "the Lead reaches only this job's files (workspace/, scratch/) and shared/<name>/"}
+        if name == "workspace.edit":
+            return self._lead_edit(path, args)
         tool = self.registry.get(name)
         if tool is None or tool.handler is None:
             return {"error": f"{name} is not available"}
@@ -643,11 +649,47 @@ class Engine:
         except ToolError as e:
             self.journal.write("lead", "tool_error", f"{name}: {_short(str(e))}", tool=name)
             return {"error": str(e)}
-        if name == "workspace.list" and not path:
-            out = {**out, "entries": [e for e in out.get("entries", [])
-                                      if str(e.get("path", "")).split("/", 1)[0] in ("workspace", "scratch")]}
         self.journal.write("lead", "tool_call", f"{name} {path or '(all)'}", tool=name)
         return out
+
+    def _lead_edit(self, path: str, args: dict) -> dict[str, Any]:
+        """One exact replacement in a file, for a small correction the Lead can make without briefing a role."""
+        old, new = args.get("old"), args.get("new")
+        if not path or not isinstance(old, str) or not old or not isinstance(new, str):
+            return {"error": "give path, old (the exact text to replace) and new"}
+        if len(new) > self.LEAD_EDIT_MAX_CHARS or len(old) > self.LEAD_EDIT_MAX_CHARS:
+            return {"error": f"an edit is a small correction, at most {self.LEAD_EDIT_MAX_CHARS:,} characters; "
+                    "brief a role for anything longer"}
+        read, write = self.registry.get("workspace.read"), self.registry.get("workspace.write")
+        if not (read and read.handler and write and write.handler):
+            return {"error": "workspace.edit is not available"}
+        ctx = self._context(self.lead, "workspace.write")
+        try:
+            from ombro.native import READ_MAX_CHARS
+
+            parts, offset = [], 0
+            while True:  # the whole file, in reads of the largest size
+                got = read.handler({"path": path, "offset": offset, "max_chars": READ_MAX_CHARS}, ctx)
+                parts.append(got["content"])
+                if "next_offset" not in got:
+                    break
+                offset = got["next_offset"]
+            text = "".join(parts)
+            n = text.count(old)
+            if n != 1:
+                return {"error": f"`old` occurs {n} times in {path}; give text that occurs exactly once"}
+            watch = self._folder_manifests() if self._folders_before else None
+            try:
+                write.handler({"path": path, "content": text.replace(old, new, 1)}, ctx)
+            finally:
+                if watch is not None:
+                    self._note_touched(watch)
+        except ToolError as e:
+            self.journal.write("lead", "tool_error", f"workspace.edit: {_short(str(e))}", tool="workspace.edit")
+            return {"error": str(e)}
+        self.journal.write("lead", "tool_call", f"workspace.edit {path}: {_short(old, 80)} -> {_short(new, 80)}",
+                           tool="workspace.edit", path=path)
+        return {"ok": True, "path": path, "replaced": 1}
 
     def _lead_read_skill(self, args: dict) -> dict[str, Any]:
         try:
@@ -768,9 +810,9 @@ class Engine:
             g = self.gate
             last = g.scope_max is not None and g.scope_max > 1 and g.scope_steps == g.scope_max - 1
             if last:
-                # The last call the brief has: ask for the result, so work done is reported, not lost.
+                # The last call the brief has: ask for the result, so work done is reported, not lost. The tools
+                # stay as they were, so the provider's cache still holds; only writing and the result are run.
                 messages.append({"role": "user", "content": contract.LAST_CALL_INSTRUCTION})
-                tools = [contract.SUBMIT_TOOL]
             reply = self._model_call(role, messages, tools)
             messages.append(reply.as_message())
             if getattr(reply, "cut_off", False):
@@ -793,7 +835,12 @@ class Engine:
             if submitted:
                 tc = submitted[0]
                 for other in reply.tool_calls:
-                    if other is not tc:
+                    if other is tc:
+                        continue
+                    if last and by_wire.get(other.name) and by_wire[other.name].name in LAST_CALL_TOOLS:
+                        # Writing what it drafted, in the same reply as its result: run it first.
+                        messages.append(_tool_message(other.id, self._role_tool(role, other, by_wire)))
+                    else:
                         messages.append(_tool_message(other.id, {"error": "not run: submit_result ends the brief"}))
                 result, errors = contract.validate_value(tc.arguments)
                 if result is not None:
@@ -812,9 +859,9 @@ class Engine:
                 continue
             if reply.tool_calls:
                 for tc in reply.tool_calls:
-                    if last:
+                    if last and not (by_wire.get(tc.name) and by_wire[tc.name].name in LAST_CALL_TOOLS):
                         messages.append(_tool_message(tc.id, {"error": "not run: that was your last model call, "
-                                                              "and only submit_result could be called"}))
+                                                              "when only writing files and submit_result are run"}))
                         continue
                     if tc.name == LOAD_NAME and deferred:
                         messages.append(_tool_message(tc.id, self._load_tools(role, tc, deferred, loaded)))

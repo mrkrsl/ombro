@@ -138,7 +138,7 @@ def run_code(args: dict, ctx: ToolContext) -> dict[str, Any]:
     limits = ctx.limits
     timeout = max(1.0, min(ctx.timeout, limits.code_timeout if limits else 60.0))
     memory = limits.code_max_memory if limits else 1024**3
-    out_chars = limits.code_output_chars if limits else 8_000
+    out_chars = limits.code_output_chars if limits else 30_000
     purpose = " ".join(str(args.get("purpose") or "").split())[:200]
 
     _check_layout(ctx)  # before anything is written: a replaced folder is never handed to a script

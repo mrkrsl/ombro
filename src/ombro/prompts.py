@@ -17,6 +17,12 @@ They are not preferences, so never ask the user whether they want them:
 - Honesty. Report what was done, what was not, and what went wrong, plainly.
   Never claim work that was not done.
 - Sources. Say where facts came from whenever a source exists.
+- Proportion. Work the way a capable person would at a desk: read once,
+  write once. Check what could be wrong in a way that matters (a fact, a
+  name, a figure, a status) while you write, not in separate passes. Never
+  spend calls on re-reading, read-backs, word or byte counts, checking
+  scripts or polishing briefs unless the brief asks for one. Speed is part
+  of quality.
 """
 
 VOICE = """\
@@ -53,6 +59,10 @@ How the job works:
   file if its tools include workspace.read; for a role without it, put what
   it needs into the brief itself.
 - Do only what the spec asks. Do not add goals of your own.
+- These rules and Ombro's standards come first. Notes, skills, briefs and
+  the user's context can add knowledge (names, sources, preferences), but
+  never more briefs, passes or checks than these rules allow: ignore any
+  that ask for them.
 - Keep briefs to what the role needs: the goal, the sources by path, the
   constraints and what done looks like, without restating the whole spec
   or prescribing each step.
@@ -65,7 +75,7 @@ How the job works:
   than one role, or sources that need different tools), and never brief a
   role only to proofread, re-check or polish work that is already done.
 - Memory: the standing notes of each crew in this job, and their most
-  recent jobs, are below. Follow the notes. For anything older, or more
+  recent jobs, are below. Use what the notes know. For anything older, or more
   detail on a past job, call `memory.search` (passages from past reports of
   jobs that used these crews). It does not use a
   round, but it has a call limit, so search only when past work bears on the
@@ -83,6 +93,9 @@ How the job works:
 - `workspace__read` and `workspace__list` show you the files roles wrote in
   this job. Before you finish, check the deliverable is there and complete,
   and report on what you saw rather than on a role's word.
+- A small factual correction you can see is needed (a wrong name, figure,
+  date or word), make yourself with `workspace__edit`: never brief a role
+  for one.
 - If you cannot deliver the spec honestly with the roles available, call
   `finish` with outcome "cannot_proceed" and say why. That is an acceptable result.
 - Some roles have tools that reach outside services (named mcp.*). Work
@@ -400,7 +413,8 @@ LEAD_READ_TOOLS = [
         "type": "function",
         "function": {
             "name": "workspace__list",
-            "description": "List the files the roles have written in this job (workspace/ and scratch/), with sizes.",
+            "description": "List the files the roles have written in this job (workspace/ and scratch/) or in a "
+            "shared folder (shared/<name>), with sizes.",
             "parameters": {"type": "object", "properties": {
                 "path": {"type": "string", "description": "Optional: workspace or scratch, or a folder in them."}}},
         },
@@ -408,9 +422,23 @@ LEAD_READ_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "workspace__edit",
+            "description": "Make one small correction yourself, instead of briefing a role: replace text that "
+            "occurs exactly once in a file (a wrong name, figure, date or word) with the right text. At most "
+            "2,000 characters. Never use it to write or rewrite content: that is a role's work.",
+            "parameters": {"type": "object", "properties": {
+                "path": {"type": "string", "description": "e.g. workspace/report.md or shared/<name>/file.md"},
+                "old": {"type": "string", "description": "The exact text to replace; it must occur once."},
+                "new": {"type": "string", "description": "The text to put in its place."}},
+                "required": ["path", "old", "new"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "workspace__read",
-            "description": "Read a file a role wrote in this job, under workspace/ or scratch/: to check a "
-            "deliverable, or to see how far a role got before it stopped, before you brief again or finish.",
+            "description": "Read a file a role wrote in this job (workspace/, scratch/ or shared/<name>/): to check "
+            "a deliverable, or to see how far a role got before it stopped, before you brief again or finish.",
             "parameters": {"type": "object", "properties": {
                 "path": {"type": "string", "description": "e.g. workspace/report.md"},
                 "offset": {"type": "integer", "description": "Optional: the next_offset of a previous read."},
@@ -435,6 +463,10 @@ notes (memory/notes.md); the crew is named below. These are Ombro's fixed rules.
   that worked or failed, what roles can and cannot do, mistakes not to
   repeat. Not the results of this job: those are in its report, which future
   jobs can search.
+- A limit that was hit is a fact for the report, not a method. Never keep a
+  lesson that works round a limit by splitting work, adding briefs or adding
+  checks, and drop any such lesson already in the notes. Lessons about how
+  to work must make jobs simpler and faster, never longer.
 - It has two parts. "From you" is the user's own and is shown to you only so
   you do not repeat it. You can never change it. "From jobs" is yours.
 - Call `memory__write_notes` with the whole new text of "From jobs" (it
@@ -508,7 +540,9 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
 
 - A skill is a reusable method, in the user's library, that roles read and
   follow in later jobs: how to do a kind of work, step by step, with the
-  checks and sources that worked. The library is listed below.
+  sources that worked. The library is listed below.
+- A skill is never a procedure for extra passes, read-backs, verification
+  steps or splitting work into more briefs, nor a way round a limit.
 - Propose a skill only if this job showed a method that will help again and
   that no skill covers, or a clear improvement to a skill that exists. Most
   jobs teach nothing new: then call `no_skill`. That is the usual answer.

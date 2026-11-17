@@ -198,7 +198,7 @@ LIMITS_META = {
     "max_output_tokens": 32000,
     "report_reserve": 0.10,
     "loop_threshold": 3,
-    "max_steps": {"lead": 6, "specialist": 15, "helper": 8},
+    "max_steps": {"lead": 6, "specialist": 40, "helper": 20},
     "tool_max_calls": {"default": 20, "memory.search": 8},
     "report_max_output_tokens": 2000,
     "report_timeout": "2m",
@@ -218,7 +218,7 @@ LIMITS_META = {
     "schedule_max_starts": 3,
     "code_timeout": "60s",
     "code_max_memory": "1GB",
-    "code_output_chars": 8_000,
+    "code_output_chars": 30_000,
     "code_max_total": "2GB",
 }
 
@@ -332,6 +332,11 @@ endpoints. Any OpenAI-compatible chat endpoint with tool calling works.
   model used in tests and dry runs (`script:` names a JSON file of replies).
 - max_output_tokens (optional): the most this model may write in one reply,
   where its endpoint allows less than max_output_tokens in limits.md.
+- reasoning_effort (optional): for a thinking model, how hard it thinks
+  before answering, sent to the endpoint as reasoning_effort (for example
+  `low`; DeepSeek takes none, low, high and max, and thinks at high when it
+  is not set). Thinking is most of a thinking model's time, so `low` makes
+  jobs much faster. An endpoint that refuses it is called without it.
 - key: the name of the variable in secrets/keys.env that holds the API key. Keys never go in this file.
 - A name can point at another name, as `cheap: default` does.
 """
@@ -553,7 +558,6 @@ ASSISTANT_CONFIG = {
     "model": "default",
     "tools": "all",
     "skills": "all",
-    "max_steps": 15,
 }
 
 ASSISTANT_SOUL = """\

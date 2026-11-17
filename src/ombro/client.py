@@ -123,6 +123,7 @@ class OpenAICompatibleClient:
         transport: httpx.BaseTransport | None = None,
         retries: int = 2,
         sleep: Callable[[float], None] = time.sleep,
+        reasoning_effort: str | None = None,
     ):
         self.url = endpoint.rstrip("/") + "/chat/completions"
         self.host = urlparse(endpoint).netloc or endpoint
@@ -133,6 +134,9 @@ class OpenAICompatibleClient:
         self.retries = retries
         self.sleep = sleep
         self.learned_max: int | None = None  # the most the endpoint allows per reply, learned from its refusal
+        # How hard a thinking model thinks, from models.md. An endpoint that refuses the field gets calls without it.
+        self.reasoning_effort = reasoning_effort
+        self.effort_refused = False
 
     def complete(self, messages, *, tools=None, max_output_tokens, timeout) -> ModelReply:
         key = self.key_getter()
@@ -144,6 +148,8 @@ class OpenAICompatibleClient:
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
+        if self.reasoning_effort and not self.effort_refused:
+            body["reasoning_effort"] = self.reasoning_effort
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
@@ -177,6 +183,11 @@ class OpenAICompatibleClient:
                     reply.lost_attempts = lost
                     return reply
                 detail = self._error_text(resp, key)
+                if resp.status_code in (400, 422) and "reasoning_effort" in body and "reasoning" in detail.lower():
+                    # The endpoint does not take reasoning_effort (or not this value): carry on without it.
+                    self.effort_refused = True
+                    del body["reasoning_effort"]
+                    continue
                 allowed = allowed_max_tokens(detail) if resp.status_code in (400, 422) else None
                 if allowed and allowed < body["max_tokens"] and not self.learned_max:
                     # The endpoint allows fewer output tokens than asked: use its maximum from now on.
@@ -289,4 +300,5 @@ def make_client(spec, home) -> ChatClient:
         spec.model,
         (lambda: keys.get_key(home, key_name)) if key_name else (lambda: None),
         key_required=bool(key_name),
+        reasoning_effort=getattr(spec, "reasoning_effort", None),
     )

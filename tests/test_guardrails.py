@@ -146,7 +146,7 @@ def test_over_token_limit_stops_and_reserve_pays_for_report(job, short_character
     status = job(
         [
             fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 11600, "output": 200}),
+            fake.result("Read it all.", usage={"input": 11200, "output": 200}),
             LEAD_REPORT,  # no notes call: it would have left too little for the report
         ],
         limits=limits,
@@ -553,16 +553,23 @@ def test_a_brief_s_last_call_asks_for_its_result_and_a_stopped_brief_lists_its_f
             fake.brief("researcher", "Write it up."),
             fake.call("workspace__write", {"path": "workspace/notes.md", "content": "# Invented notes\n"}),
             fake.call("test__echo", {"q": "b"}),
-            fake.result("Wrote workspace/notes.md; it is complete."),
+            {"tool_calls": [  # the last call: an echo (not run), the rest of the draft (run), and the result
+                {"name": "test__echo", "arguments": {"q": "c"}},
+                {"name": "workspace__write", "arguments": {"path": "workspace/notes.md", "content": "More.\n",
+                                                         "mode": "append"}},
+                {"name": "submit_result", "arguments": fake.result("Wrote workspace/notes.md.")["content"]}]},
             fake.finish(),
             fake.keep_notes(), LEAD_REPORT,
         ],
         registry=echo_and_files(home),
     )
     assert status == "completed"
-    last = job.client.calls[3]  # the Lead's first call, then the role's three
-    assert [t["function"]["name"] for t in last["tools"]] == ["submit_result"]
+    calls = job.client.calls
+    last = calls[3]  # the Lead's first call, then the role's three
+    assert [t["function"]["name"] for t in last["tools"]] == [t["function"]["name"] for t in calls[2]["tools"]]
     assert "This is your last model call for this brief" in last["messages"][-1]["content"]
+    assert (job.job_dir / "workspace" / "notes.md").read_text() == "# Invented notes\nMore.\n"
+    assert [e["note"] for e in job.events if e.get("tool") == "test.echo"] == ['test.echo {"q": "b"}']
     assert "1. **researcher** (ok)" in job.report
 
 
@@ -574,7 +581,7 @@ def test_the_lead_reads_the_job_s_own_files_and_nothing_else(job, home):
             fake.call("workspace__write", {"path": "workspace/notes.md", "content": "# Invented notes\n"}),
             fake.call("workspace__write", {"path": "workspace/more.md", "content": "more"}),
             fake.call("workspace__read", {"path": "workspace/notes.md"}),
-            fake.call("workspace__read", {"path": "shared/x/secret.md"}),
+            fake.call("workspace__read", {"path": "Library/Mail/secret.md"}),
             fake.finish(),
             fake.keep_notes(), LEAD_REPORT,
         ],
@@ -584,4 +591,53 @@ def test_the_lead_reads_the_job_s_own_files_and_nothing_else(job, home):
     stopped = next(r for r in replies if "stopped_by_limit" in r)
     assert "workspace/notes.md" in stopped and "files_written" in stopped
     assert any("# Invented notes" in r for r in replies)
-    assert any("only this job's files" in r for r in replies)
+    assert any("reaches only this job's files" in r for r in replies)
+
+
+def test_the_lead_corrects_a_name_itself_with_one_exact_edit(job, home):
+    write_role(home, "researcher", max_steps=5, tools=["workspace.write"])
+    job(
+        [
+            fake.brief("researcher", "Write it up."),
+            fake.call("workspace__write", {"path": "workspace/notes.md", "content": "For Heliotrope Atelier.\n"}),
+            fake.result("Wrote workspace/notes.md."),
+            fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "Atelier", "new": "x" * 2001}),
+            fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "e", "new": "E"}),
+            fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "Heliotrope Atelier",
+                                          "new": "Helotrope Atelier Limited"}),
+            fake.finish(),
+            fake.keep_notes(), LEAD_REPORT,
+        ],
+        registry=echo_and_files(home),
+    )
+    replies = [m["content"] for c in job.client.calls for m in c["messages"] if m.get("role") == "tool"]
+    assert (job.job_dir / "workspace" / "notes.md").read_text() == "For Helotrope Atelier Limited.\n"
+    replies = [m["content"] for c in job.client.calls for m in c["messages"] if m.get("role") == "tool"]
+    assert any("a small correction" in r for r in replies) and any("give text that occurs exactly once" in r for r in replies)
+    assert any(e.get("tool") == "workspace.edit" and e["role"] == "lead" for e in job.events)
+
+
+def test_reasoning_effort_is_sent_and_dropped_where_an_endpoint_refuses_it():
+    import json as _json
+
+    import httpx
+
+    from ombro.client import OpenAICompatibleClient
+
+    sent = []
+
+    def answer(refuse):
+        def handler(request):
+            body = _json.loads(request.content)
+            sent.append(body.get("reasoning_effort"))
+            if refuse and "reasoning_effort" in body:
+                return httpx.Response(400, json={"error": {"message": "Unknown parameter: reasoning_effort"}})
+            return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
+                                             "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+        return handler
+
+    for refuse in (False, True):
+        c = OpenAICompatibleClient("https://invented.example/v1", "m", lambda: "k", reasoning_effort="low",
+                                   transport=httpx.MockTransport(answer(refuse)))
+        assert c.complete([{"role": "user", "content": "Hi"}], max_output_tokens=10, timeout=5).content == "OK"
+    assert sent == ["low", "low", None]

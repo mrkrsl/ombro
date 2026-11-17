@@ -163,7 +163,7 @@ def test_spec_overrides_merge_with_defaults(home):
     limits = load_limits(home, {"max_rounds": 2, "tool_max_calls": {"web.search": 3}})
     assert limits.max_rounds == 2
     assert limits.max_calls_for("web.search") == 3
-    assert limits.max_calls_for("workspace.list") == limits.tool_max_calls["default"]
+    assert limits.max_calls_for("workspace.list") == 200  # the job's own files: by allowance, not `default`
 
 
 # -- result contract ---------------------------------------------------------------

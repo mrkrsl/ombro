@@ -95,9 +95,10 @@ SUBMIT_TOOL: dict[str, Any] = {
 }
 
 LAST_CALL_INSTRUCTION = (
-    "This is your last model call for this brief. Call submit_result now with what you have: give the path of "
-    "every file you wrote, say in the summary how complete each one is, and put whatever is unfinished in "
-    "did_not_do. No other tool can be called."
+    "This is your last model call for this brief. In this one reply, save anything you have drafted but not yet "
+    "written with workspace.write (mode append to add to a file), then call submit_result: give the path of every "
+    "file you wrote, say in the summary how complete each one is, and put whatever is unfinished in did_not_do. "
+    "Only workspace.write, workspace.place and submit_result are run now."
 )
 
 CUT_OFF_INSTRUCTION = (
