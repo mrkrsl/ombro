@@ -47,8 +47,12 @@ class ServicePlan:
 class ServiceInstaller:
     def __init__(self, home: Home, *, platform: str = sys.platform, run: Runner = subprocess.run,
                  python: str = sys.executable, uid: int | None = None, units_dir: Path | None = None,
-                 agents_dir: Path | None = None, user: str | None = None, has_systemd: bool | None = None):
+                 agents_dir: Path | None = None, user: str | None = None, has_systemd: bool | None = None,
+                 sleep: Callable[[float], None] | None = None):
+        import time
+
         self.home = home
+        self.sleep = sleep or time.sleep
         self.kind = "launchd" if platform == "darwin" else "systemd"
         self.run = run
         self.python = str(Path(python).absolute())
@@ -124,6 +128,13 @@ class ServiceInstaller:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if plan.kind == "launchd" and plan.exists:
             self.run(plan.commands[0], capture_output=True, text=True)  # not loaded is fine
+            # launchd unloads the old one in the background; loading the new one before it has
+            # gone fails. Wait for it, up to five seconds.
+            for _ in range(20):
+                if self.run(["launchctl", "print", f"gui/{self.uid}/{LABEL}"], capture_output=True,
+                            text=True).returncode != 0:
+                    break
+                self.sleep(0.25)
         self.path.write_text(plan.text, encoding="utf-8")
         for cmd in plan.commands[1 if plan.kind == "launchd" and plan.exists else 0:]:
             r = self.run(cmd, capture_output=True, text=True)

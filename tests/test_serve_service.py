@@ -285,7 +285,7 @@ def installer(home, tmp_path, platform="linux", **kw):
     run = kw.pop("run", FakeRun())
     return ServiceInstaller(home, platform=platform, run=run, python="/opt/ombro/bin/python", uid=501,
                             units_dir=tmp_path / "units", agents_dir=tmp_path / "agents", user="mark",
-                            has_systemd=kw.pop("has_systemd", True), **kw), run
+                            has_systemd=kw.pop("has_systemd", True), sleep=lambda s: None, **kw), run
 
 
 def test_systemd_unit_runs_serve_with_tick_and_lingers(home, tmp_path):
@@ -335,8 +335,9 @@ def test_launch_agent_keeps_serve_alive(home, tmp_path):
     again = inst.plan(8765, "127.0.0.1", [])
     assert again.exists
     inst.install(again)
-    assert run.commands[-2:] == [["launchctl", "bootout", "gui/501/local.ombro.serve"],
-                                 ["launchctl", "bootstrap", "gui/501", str(plan.path)]]
+    changes = [c for c in run.commands if c[1] != "print"]
+    assert changes[-2:] == [["launchctl", "bootout", "gui/501/local.ombro.serve"],
+                            ["launchctl", "bootstrap", "gui/501", str(plan.path)]]
 
 
 # -- ombro sandbox ------------------------------------------------------------------------------
@@ -396,3 +397,24 @@ def test_serve_install_says_nothing_about_the_sandbox_where_it_works(monkeypatch
     assert service.sandbox_step(ask=lambda q: True, say=said.append) is True and said == []
     monkeypatch.setattr(sandbox, "kind", lambda: "macos")
     assert service.sandbox_step(ask=lambda q: True, say=said.append) is None
+
+
+def test_a_service_on_another_address_also_listens_on_127_0_0_1(monkeypatch):
+    import ombro.serve as serve_mod
+
+    bound = []
+
+    class Sock:
+        def __init__(self, host, port):
+            self.host, self.port = host, port or 8765
+
+        def getsockname(self):
+            return (self.host, self.port)
+
+    monkeypatch.setattr(serve_mod, "bind", lambda port, host="127.0.0.1": bound.append((host, port)) or Sock(host, port))
+    socks = serve_mod.listen(0, "100.101.102.103")  # a Tailscale address
+    assert bound == [("100.101.102.103", 0), ("127.0.0.1", 8765)] and len(socks) == 2
+    bound.clear()
+    for host in ("127.0.0.1", "0.0.0.0"):
+        assert len(serve_mod.listen(8765, host)) == 1
+    assert bound == [("127.0.0.1", 8765), ("0.0.0.0", 8765)]

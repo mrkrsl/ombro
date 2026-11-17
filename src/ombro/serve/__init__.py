@@ -150,15 +150,25 @@ def run_service(port: int = SERVICE_PORT, host: str = HOST, allow: list[str] | N
         for line in tidy_layout(home):
             print(line, file=sys.stderr, flush=True)
     devices = Devices(home)
-    sock = bind(port, host)
-    port = sock.getsockname()[1]
+    socks = listen(port, host)
+    port = socks[0].getsockname()[1]
     for line in service_lines(host, port, devices.first_code()):
         print(line, flush=True)
     app = build_app(None, home=home, devices=devices, hosts=service_hosts(host, allow or []), tick=tick)
     config = uvicorn.Config(app, log_level="warning", loop="asyncio", http="h11",
                             ws="websockets-sansio", lifespan="on")
-    uvicorn.Server(config).run(sockets=[sock])
+    uvicorn.Server(config).run(sockets=socks)
     return 0
+
+
+def listen(port: int, host: str) -> list[socket.socket]:
+    """The sockets a service listens on: `host`, and 127.0.0.1 as well when `host` is another single
+    address (a Tailscale one, say), so the app can also reach it through an SSH tunnel, which
+    arrives at the server's own 127.0.0.1."""
+    first = bind(port, host)
+    if host in (HOST, "0.0.0.0", "::", "localhost"):
+        return [first]
+    return [first, bind(first.getsockname()[1], HOST)]
 
 
 def build_parser() -> argparse.ArgumentParser:

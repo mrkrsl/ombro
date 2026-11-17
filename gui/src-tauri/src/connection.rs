@@ -288,7 +288,37 @@ fn spawn_tunnel(host: &str, local: u16, remote: u16) -> Result<Child, String> {
 }
 
 /// Start the SSH tunnel and keep it up. Returns once the local port answers (or with why not).
+/// Where the running tunnel's process id is kept, so a tunnel left by an app that didn't quit
+/// cleanly (it crashed, or was killed) can be stopped next time.
+fn tunnel_pid_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    config_path(app).ok().map(|p| p.with_file_name("tunnel.pid"))
+}
+
+fn remember_tunnel(app: &tauri::AppHandle, pid: u32) {
+    if let Some(r) = app.try_state::<Remote>() {
+        *r.ssh.lock().unwrap() = Some(pid);
+    }
+    if let Some(path) = tunnel_pid_path(app) {
+        let _ = std::fs::write(path, pid.to_string());
+    }
+}
+
+/// Stop a tunnel an earlier run of the app left behind: only an ssh process that is one of ours.
+fn stop_stale_tunnel(app: &tauri::AppHandle) {
+    let Some(path) = tunnel_pid_path(app) else { return };
+    let Some(pid) = std::fs::read_to_string(&path).ok().and_then(|t| t.trim().parse::<u32>().ok()) else { return };
+    let _ = std::fs::remove_file(&path);
+    let cmd = std::process::Command::new("ps").args(["-p", &pid.to_string(), "-o", "command="]).output();
+    if let Ok(out) = cmd {
+        let line = String::from_utf8_lossy(&out.stdout);
+        if line.contains("ssh") && line.contains("-N -L 127.0.0.1:") {
+            let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
+        }
+    }
+}
+
 pub async fn start_tunnel(app: tauri::AppHandle, host: String, remote: u16) -> Result<u16, String> {
+    stop_stale_tunnel(&app);
     let local = free_port()?;
     let mut child = spawn_tunnel(&host, local, remote)?;
     if !wait_for_port(local, Duration::from_secs(20)).await {
@@ -299,9 +329,7 @@ pub async fn start_tunnel(app: tauri::AppHandle, host: String, remote: u16) -> R
     tauri::async_runtime::spawn(async move {
         loop {
             if let Some(pid) = child.id() {
-                if let Some(r) = app.try_state::<Remote>() {
-                    *r.ssh.lock().unwrap() = Some(pid);
-                }
+                remember_tunnel(&app, pid);
             }
             let _ = child.wait().await;
             eprintln!("[ssh] the tunnel to {host} closed; starting it again");
@@ -343,6 +371,9 @@ pub fn stop(app: &tauri::AppHandle) {
         if let Some(pid) = r.ssh.lock().unwrap().take() {
             let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
         }
+    }
+    if let Some(path) = tunnel_pid_path(app) {
+        let _ = std::fs::remove_file(path);
     }
 }
 
