@@ -37,6 +37,34 @@ MEMORY_POLL_SECONDS = 0.25
 OPEN_FILES = 256
 
 
+# Ubuntu 24.04 and later let a program make Linux user namespaces, but take away its rights inside
+# them, unless an AppArmor profile allows it. bubblewrap then fails (for example "loopback: Failed
+# RTM_NEWADDR"). This profile, loaded once on the machine (the host, when Ombro is in Docker), lets
+# /usr/bin/bwrap use them properly; nothing else changes.
+APPARMOR_PROFILE = """# Lets bubblewrap, the sandbox Ombro runs job code in, use Linux user namespaces (Ubuntu 24.04+).
+abi <abi/4.0>,
+include <tunables/global>
+
+profile ombro-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/ombro-bwrap>
+}
+"""
+APPARMOR_PATH = "/etc/apparmor.d/ombro-bwrap"
+APPARMOR_FIX = (f"ombro sandbox --apparmor | sudo tee {APPARMOR_PATH} >/dev/null && "
+                f"sudo apparmor_parser -r {APPARMOR_PATH}")
+APPARMOR_FIX_DOCKER = (f"docker compose exec -T ombro ombro sandbox --apparmor | sudo tee {APPARMOR_PATH} >/dev/null "
+                       f"&& sudo apparmor_parser -r {APPARMOR_PATH}, then docker compose restart")
+
+
+def userns_restricted() -> bool:
+    """Whether this Linux machine restricts user namespaces through AppArmor (Ubuntu 24.04+)."""
+    try:
+        return Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text().strip() == "1"
+    except OSError:
+        return False
+
+
 class SandboxUnavailable(Exception):
     """The sandbox cannot be set up here, so no code may run. The message says why."""
 
@@ -223,6 +251,15 @@ def unavailable_reason() -> str | None:
                 if out.exit_code != 0 or b"ok" not in out.output:
                     detail = out.output.decode("utf-8", "replace").strip().splitlines()[-1:] or ["no output"]
                     reason = f"the sandbox could not start Python: {detail[0][:200]}"
+                    if k == "linux" and userns_restricted():
+                        if Path("/.dockerenv").exists():
+                            reason = ("the machine running Docker (Ubuntu 24.04 or later) limits the Linux "
+                                      "namespaces the sandbox needs. Allow them for bubblewrap once, on that "
+                                      "machine, from the folder with compose.yaml: " + APPARMOR_FIX_DOCKER)
+                        else:
+                            reason = ("this machine (Ubuntu 24.04 or later) limits the Linux namespaces the "
+                                      "sandbox needs. Allow them for bubblewrap once, as an administrator: "
+                                      + APPARMOR_FIX)
     _probe[k] = reason
     return reason
 

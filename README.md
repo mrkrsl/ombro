@@ -234,6 +234,15 @@ pipx install ./ombro-0.1.0-py3-none-any.whl      # or: uv tool install ./ombro-0
 ombro serve install                              # keeps the server running, now and after a restart
 ```
 
+`ombro sandbox` says whether code a job writes can run on that machine. On
+Ubuntu 24.04 and later it needs a one-time AppArmor profile for bubblewrap, and
+says how:
+
+```bash
+ombro sandbox --apparmor | sudo tee /etc/apparmor.d/ombro-bwrap >/dev/null
+sudo apparmor_parser -r /etc/apparmor.d/ombro-bwrap
+```
+
 `ombro serve install` shows what it will set up and asks first: a systemd user
 service on Linux (with lingering, so it keeps running when you log out) or a
 launch agent on macOS. Either way the server also starts scheduled jobs, so no
@@ -289,6 +298,18 @@ needs Linux namespaces, which Docker's default filters block, so `compose.yaml`
 relaxes three of them (`security_opt`) for this one container. Ombro still runs
 as an ordinary user inside it. Remove those lines and everything else works,
 but jobs report that code can't run.
+
+If the machine running Docker is Ubuntu 24.04 or later, it also needs
+Ombro's AppArmor profile, once: `docker compose exec ombro ombro sandbox` says so
+and gives the command. On a Mac with Colima (a small command-line Linux VM for
+Docker, `brew install colima docker docker-compose`), that machine is Colima's
+VM:
+
+```bash
+docker compose exec -T ombro ombro sandbox --apparmor | colima ssh -- sudo tee /etc/apparmor.d/ombro-bwrap >/dev/null
+colima ssh -- sudo apparmor_parser -r /etc/apparmor.d/ombro-bwrap
+docker compose restart
+```
 
 ## Interviews
 

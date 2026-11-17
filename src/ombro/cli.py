@@ -1141,6 +1141,22 @@ def cmd_pair(args) -> int:
     return 0
 
 
+def cmd_sandbox(args) -> int:
+    """Whether code a job writes can run here, in the operating system's sandbox, and if not why."""
+    from ombro import sandbox
+
+    if args.apparmor:
+        print(sandbox.APPARMOR_PROFILE, end="")
+        return 0
+    reason = sandbox.unavailable_reason()
+    if reason is None:
+        print(f"The sandbox works here ({'sandbox-exec' if sandbox.kind() == 'macos' else 'bubblewrap'}): "
+              "code a job writes can run, with no internet and only its own files.")
+        return 0
+    print(f"Code a job writes can't run here: {reason}")
+    return 1
+
+
 def cmd_tick(args) -> int:
     from ombro.schedule_cmd import cmd_tick as run
 
@@ -1353,6 +1369,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("tick", help="start due scheduled jobs (called each minute by the system scheduler)")
     s.add_argument("--dry-run", action="store_true", help="show what would start or be noted, and change nothing")
     s.set_defaults(func=cmd_tick)
+
+    s = sub.add_parser("sandbox", help="whether code a job writes can run here, and if not why")
+    s.add_argument("--apparmor", action="store_true",
+                   help="print the AppArmor profile that lets bubblewrap work on Ubuntu 24.04 and later")
+    s.set_defaults(func=cmd_sandbox)
 
     s = sub.add_parser("pair", help="a code to pair the Ombro app with this server; --list, --forget, --forget-all")
     g = s.add_mutually_exclusive_group()

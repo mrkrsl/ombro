@@ -337,3 +337,24 @@ def test_launch_agent_keeps_serve_alive(home, tmp_path):
     inst.install(again)
     assert run.commands[-2:] == [["launchctl", "bootout", "gui/501/local.ombro.serve"],
                                  ["launchctl", "bootstrap", "gui/501", str(plan.path)]]
+
+
+# -- ombro sandbox ------------------------------------------------------------------------------
+
+
+def test_ombro_sandbox_prints_the_apparmor_profile(tmp_path):
+    r = run_cli(["sandbox", "--apparmor"], tmp_path / "home")
+    assert r.returncode == 0
+    assert "profile ombro-bwrap /usr/bin/bwrap" in r.stdout and "userns," in r.stdout
+
+
+def test_a_restricted_ubuntu_says_how_to_fix_it(monkeypatch):
+    from ombro import sandbox
+
+    monkeypatch.setattr(sandbox, "kind", lambda: "linux")
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(sandbox, "userns_restricted", lambda: True)
+    monkeypatch.setattr(sandbox, "run", lambda *a, **k: sandbox.Outcome(1, 0.1, b"bwrap: loopback: Failed RTM_NEWADDR", 36))
+    monkeypatch.setattr(sandbox, "_probe", {})
+    reason = sandbox.unavailable_reason()
+    assert "Ubuntu 24.04" in reason and "apparmor_parser -r /etc/apparmor.d/ombro-bwrap" in reason

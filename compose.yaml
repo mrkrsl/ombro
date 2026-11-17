@@ -1,6 +1,8 @@
 # Ombro as a server in Docker. Start it with `docker compose up -d`; the pairing code is in
 # `docker compose logs ombro`. In the app, connect by address to 127.0.0.1:8765 with that code.
 
+name: ombro
+
 services:
   ombro:
     build: .
@@ -18,7 +20,9 @@ services:
     # Code a job writes runs inside bubblewrap, Ombro's sandbox: no internet, and only that job's
     # files. bubblewrap needs Linux namespaces, which Docker's default filters block, so these
     # three settings relax them for this container. Ombro still runs as an ordinary user here.
-    # Without them, everything else works and jobs say code can't run.
+    # Without them, everything else works and jobs say code can't run. On an Ubuntu 24.04+ host
+    # (Colima's VM is one), also load Ombro's AppArmor profile there once:
+    # `docker compose exec ombro ombro sandbox` says how.
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
