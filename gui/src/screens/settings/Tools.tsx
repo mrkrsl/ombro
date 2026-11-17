@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import type { ApiRow, KeyList, NativeTool, ServerRow, ToolList } from "../../api/types";
+import { inTauri } from "../../api/serve";
 import { openLink } from "../../platform";
 import { useStore } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, shortPath, tidy, useAction, useRemoval, useView, type Check } from "./common";
@@ -133,11 +134,12 @@ function ApiForm({ current, onDone, onCancel }: { current: ApiRow | null; onDone
 }
 type Secret = { name: string; value: string; kept: boolean };
 
-/** How a server's sign-in reads, and whether it needs one now. */
-export function signInText(s: ServerRow): [string, boolean] {
+/** How a server's sign-in reads, and whether it needs one now. `remote`: Ombro is on a server, so a
+ * tool started by a command runs there. */
+export function signInText(s: ServerRow, remote = false): [string, boolean] {
   if (s.signing_in) return ["Waiting for you to sign in, in your browser…", false];
   if (s.problem) return [s.problem, true];
-  if (!s.url) return ["On this computer", false];
+  if (!s.url) return [remote ? "On the server" : "On this computer", false];
   const st = s.sign_in ?? "";
   if (st === "not signed in") return ["Not signed in", true];
   if (st === "sign-in expired") return ["Sign-in expired", true];
@@ -345,6 +347,9 @@ export function Tools() {
   const [adding, setAdding] = useState<Kind | null>(null);
   const [kind, setKind] = useState<Kind>("remote");
   const [warning, setWarning] = useState<string | null>(null);
+  const remote = useStore((st) => st.remote);
+  const [pasting, setPasting] = useState<string | null>(null); // a server whose sign-in answer may be pasted
+  const [pasted, setPasted] = useState("");
   const t = tools.data;
   const waiting = !!t?.servers.some((s) => s.signing_in);
 
@@ -356,8 +361,43 @@ export function Tools() {
   }, [waiting, tools]);
 
   async function signIn(server: string) {
-    const r = await run((api) => api.post<{ url: string | null; state?: string; problem?: string }>(`/tools/servers/${server}/sign-in`));
-    if (r?.url) await openLink(r.url);
+    if (!remote) {
+      const r = await run((api) => api.post<{ url: string | null; state?: string; problem?: string }>(`/tools/servers/${server}/sign-in`));
+      if (r?.url) await openLink(r.url);
+      await tools.reload();
+      return;
+    }
+    // Ombro is on a server, but the browser is here: the tool sends it back to this computer, where
+    // the app catches the answer and hands it to the server. In a browser, paste the address instead.
+    let port: number | null = null;
+    if (inTauri) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      port = await invoke<number>("sign_in_listener");
+    }
+    const r = await run((api) =>
+      api.post<{ url: string | null; state?: string; problem?: string }>(`/tools/servers/${server}/sign-in`, {
+        hand_over: true,
+        redirect_port: port,
+      }),
+    );
+    if (!r?.url) {
+      await tools.reload();
+      return;
+    }
+    setPasting(server);
+    setPasted("");
+    await openLink(r.url);
+    await tools.reload();
+    if (port !== null) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const answer = await invoke<string | null>("sign_in_answer", { port, seconds: 600 }).catch(() => null);
+      if (answer) await handOver(server, answer);
+    }
+  }
+
+  async function handOver(server: string, url: string) {
+    const ok = await run((api) => api.post(`/tools/servers/${server}/sign-in/answer`, { url }));
+    if (ok) setPasting(null);
     await tools.reload();
   }
 
@@ -432,7 +472,7 @@ export function Tools() {
             </div>
           ))}
           {t.servers.map((s) => {
-            const [state, needs] = signInText(s);
+            const [state, needs] = signInText(s, remote);
             return (
               <div className="row-block" key={s.server}>
                 <Item
@@ -467,6 +507,24 @@ export function Tools() {
                     onCancel={() => setEditing(null)}
                     onDone={(x, _s, w) => { tools.set(x); setEditing(null); setWarning(w); }}
                   />
+                )}
+                {pasting === s.server && s.signing_in && (
+                  <details className="more paste-answer">
+                    <summary>Signed in, but Ombro is still waiting?</summary>
+                    <Field label="Paste the address your browser ended up on" hint="Copy it from the browser's address bar after signing in.">
+                      <span className="form-row">
+                        <input
+                          className="text-input"
+                          aria-label="The address your browser ended up on"
+                          value={pasted}
+                          onChange={(e) => setPasted(e.target.value)}
+                        />
+                        <button className="secondary" disabled={!pasted.trim()} onClick={() => void handOver(s.server, pasted)}>
+                          Use it
+                        </button>
+                      </span>
+                    </Field>
+                  </details>
                 )}
                 {removal.target === s.server && (
                   <RemovePanel

@@ -357,6 +357,54 @@ class Receiver:
         self._server.server_close()
 
 
+class HandOver:
+    """For a sign-in whose browser isn't on this machine (Ombro on a server): the browser is sent
+    back to `http://127.0.0.1:<port>/callback` on the computer it runs on, where the desktop app
+    catches the answer and hands it over through serve, or you paste the address the browser
+    ended up on (`ombro connect` over SSH). `give` takes it; only the answer to this sign-in
+    (its `state`) is taken, so a stray one can't end it."""
+
+    def __init__(self, port: int | None = None):
+        if not port:
+            import socket
+
+            with socket.socket() as sock:  # a port that's free here; the browser's machine may differ
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+        self.redirect_uri = f"http://127.0.0.1:{port}/callback"
+        self._expected: str | None = None
+        self._answer: dict[str, str] = {}
+        self._done = threading.Event()
+
+    def expect(self, state: str) -> None:
+        self._expected = state
+
+    def give(self, answer: dict[str, str]) -> bool:
+        """Hand over the answer. False if it isn't the answer to this sign-in."""
+        if self._expected and answer.get("state") != self._expected:
+            return False
+        if not self._done.is_set():
+            self._answer.update(answer)
+            self._done.set()
+        return True
+
+    def wait(self, timeout: float) -> dict[str, str]:
+        if not self._done.wait(timeout):
+            raise SignInError(f"no answer came from the browser within {timeout:.0f}s; try again")
+        return dict(self._answer)
+
+    def close(self) -> None:
+        self._done.set()  # nothing more is waited for
+
+
+def answer_from(text: str) -> dict[str, str]:
+    """The answer in an address the browser ended up on, as pasted: the whole address, or just
+    what follows its `?`."""
+    text = text.strip()
+    query = urllib.parse.urlsplit(text).query if "://" in text else text.lstrip("?")
+    return {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
+
+
 @dataclass
 class Connected:
     server: str

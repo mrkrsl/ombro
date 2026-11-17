@@ -5,6 +5,7 @@
 
 mod connection;
 mod saved;
+mod signin;
 mod tray;
 
 use std::sync::Mutex;
@@ -195,6 +196,7 @@ pub fn run() {
             let (tx, rx) = watch::channel::<Ready>(None);
             app.manage(Serve { tx, ready: rx, child: Mutex::new(None), started: Mutex::new(None) });
             app.manage(Remote::default());
+            app.manage(signin::Catches::default());
             // A fresh install waits for the web view to ask where Ombro runs.
             if let Some(conn) = connection::at_start(app.handle()) {
                 let _ = begin(app.handle(), conn);
@@ -220,7 +222,9 @@ pub fn run() {
             pair_over_ssh,
             reach_address,
             keep_address,
-            start_connection
+            start_connection,
+            signin::sign_in_listener,
+            signin::sign_in_answer
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Ombro app")

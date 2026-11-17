@@ -154,6 +154,7 @@ class Serve:
         self._poller: asyncio.Task | None = None
         self._scheduler: asyncio.Task | None = None  # installing the scheduler service at start
         self.signing: dict[str, dict[str, Any]] = {}  # tool server: its sign-in from the app, while it lasts
+        self.handovers: dict[str, Any] = {}  # tool server: its sign-in waiting for the app to hand over the answer
 
     # -- jobs -------------------------------------------------------------------
 

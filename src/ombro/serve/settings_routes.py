@@ -236,7 +236,7 @@ def settings_routes(s: Serve) -> list[Route]:
         s.signing.pop(name, None)
         return tools_view()
 
-    def sign_in(r: Request) -> Any:
+    def sign_in(r: Request, data: dict[str, Any]) -> Any:
         """Start the sign-in (the existing OAuth flow) on a thread, and hand back the page to open.
         The flow then waits for the browser; GET /tools shows when it has finished."""
         from ombro import oauth
@@ -250,6 +250,15 @@ def settings_routes(s: Serve) -> list[Route]:
             raise HttpError(400, "It runs on this computer, so it needs no sign-in.")
         opened: dict[str, str] = {}
         ready = threading.Event()
+        # The app on another computer: its browser comes back to that computer, where the app
+        # catches the answer (on `redirect_port`) and hands it over with POST …/sign-in/answer.
+        receiver = None
+        if data.get("hand_over"):
+            port = data.get("redirect_port")
+            if port is not None and (not isinstance(port, int) or not 0 < port < 65536):
+                raise HttpError(400, "`redirect_port` must be a port number")
+            receiver = oauth.HandOver(port)
+            s.handovers[name] = receiver
 
         def open_browser(url: str) -> None:
             opened["url"] = url
@@ -257,7 +266,7 @@ def settings_routes(s: Serve) -> list[Route]:
 
         def run() -> None:
             try:
-                oauth.connect(home, name, cfg, open_browser=open_browser, say=lambda _t: None)
+                oauth.connect(home, name, cfg, open_browser=open_browser, say=lambda _t: None, receiver=receiver)
                 s.signing[name] = {"state": "done"}
             except oauth.SignInError as e:
                 text = str(e)
@@ -269,6 +278,8 @@ def settings_routes(s: Serve) -> list[Route]:
                 s.signing[name] = {"state": "failed", "problem": f"It couldn't be reached: {e}"}
             finally:
                 ready.set()
+                if s.handovers.get(name) is receiver:
+                    s.handovers.pop(name, None)
 
         s.signing[name] = {"state": "waiting"}
         threading.Thread(target=run, daemon=True, name=f"sign-in-{name}").start()
@@ -277,6 +288,23 @@ def settings_routes(s: Serve) -> list[Route]:
         if "url" in opened and state.get("state") == "waiting":
             return {"url": opened["url"], "state": "waiting"}
         return {"url": None, **state}
+
+    def sign_in_answer(r: Request, data: dict[str, Any]) -> Any:
+        """The browser's answer, handed over by the app (or pasted): {"url": the address the
+        browser was sent back to}. Only for a sign-in started with `hand_over`."""
+        from ombro import oauth
+
+        name = r.path_params["name"]
+        receiver = s.handovers.get(name)
+        if receiver is None:
+            raise LookupError(f"no sign-in to {name} is waiting for an answer")
+        answer = oauth.answer_from(str(data.get("url") or ""))
+        if not answer:
+            raise HttpError(400, "That address has no sign-in answer in it. Copy the whole address from "
+                                 "the browser's address bar.")
+        if not receiver.give(answer):
+            raise HttpError(400, "That isn't the answer to this sign-in. Start the sign-in again.")
+        return {"state": "answered"}
 
     def sign_out(r: Request) -> Any:
         from ombro import oauth
@@ -428,7 +456,8 @@ def settings_routes(s: Serve) -> list[Route]:
         Route("/tools/servers/{name}", _handler(edit_server, with_body=True), methods=["PUT"]),
         Route("/tools/servers/{name}/check", _handler(check_server), methods=["GET"]),
         Route("/tools/servers/{name}", _handler(remove_server), methods=["DELETE"]),
-        Route("/tools/servers/{name}/sign-in", _handler(sign_in), methods=["POST"]),
+        Route("/tools/servers/{name}/sign-in", _handler(sign_in, with_body=True), methods=["POST"]),
+        Route("/tools/servers/{name}/sign-in/answer", _handler(sign_in_answer, with_body=True), methods=["POST"]),
         Route("/tools/servers/{name}/sign-in", _handler(sign_out), methods=["DELETE"]),
         Route("/tools/apis", _handler(add_api, status=201, with_body=True), methods=["POST"]),
         Route("/tools/apis/{name}", _handler(edit_api, with_body=True), methods=["PUT"]),

@@ -214,3 +214,36 @@ def test_skills_over_http(serve, home):
     assert serve.get("/skills/invented-fact-check/check") == {"blocked": None, "warnings": []}
     gone = serve.http.delete("/skills/invented-fact-check").json()
     assert gone["skills"] == [] and "/removed/skills/" in gone["moved_to"]
+
+
+def test_a_sign_in_from_an_app_on_another_computer(serve, home, monkeypatch):
+    """Ombro on a server: the app catches the browser's answer on its own computer and hands it
+    over; serve checks it and finishes the sign-in."""
+    import time as _time
+
+    from ombro import oauth
+    from test_oauth import CFG, MCP, World, browse
+
+    world = World()
+    real = oauth.connect
+    monkeypatch.setattr(oauth, "connect", lambda *a, **k: real(*a, transport=world.transport(), **k))
+    server_cmd.add_server(home, "notes", server_cmd.server_entry(url=MCP))
+
+    assert serve.http.post("/tools/servers/notes/sign-in/answer", json={"url": "x"}).status_code == 404
+    started = serve.http.post("/tools/servers/notes/sign-in", json={"hand_over": True, "redirect_port": 5555}).json()
+    assert started["state"] == "waiting"
+    back = browse(world, started["url"])
+    assert back.startswith("http://127.0.0.1:5555/callback?")
+    bad = serve.http.post("/tools/servers/notes/sign-in/answer", json={"url": back.replace("state=", "state=x")})
+    assert bad.status_code == 400 and "isn't the answer" in bad.json()["error"]
+    assert serve.http.post("/tools/servers/notes/sign-in/answer", json={"url": "nothing"}).status_code == 400
+    assert serve.http.post("/tools/servers/notes/sign-in/answer", json={"url": back}).json() == {"state": "answered"}
+    for _ in range(100):
+        row = next(x for x in serve.get("/tools")["servers"] if x["server"] == "notes")
+        if not row["signing_in"]:
+            break
+        _time.sleep(0.05)
+    assert not row["signing_in"] and not row["problem"]
+    assert oauth.store_path(home, "notes").is_file() and CFG["url"] == MCP
+    # The app with no port of its own (a browser): the address is pasted, the same way.
+    assert serve.http.post("/tools/servers/notes/sign-in", json={"hand_over": True, "redirect_port": "x"}).status_code == 400

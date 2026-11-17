@@ -335,3 +335,60 @@ def test_the_callback_ignores_an_answer_for_another_sign_in(monkeypatch):
         assert rec.wait(2) == {"code": "invented-code", "state": "the-right-state"}
     finally:
         rec.close()
+
+
+# -- signing in when the browser is on another computer (Ombro on a server) ------------------
+
+
+def browse(world, url: str) -> str:
+    """The user signing in, in a browser elsewhere: the address it is sent back to."""
+    params = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+    world.codes["invented-code-9"] = {"code_challenge": params["code_challenge"], "redirect_uri": params["redirect_uri"]}
+    answer = urllib.parse.urlencode({"code": "invented-code-9", "state": params["state"], "iss": ISSUER})
+    return f"{params['redirect_uri']}?{answer}"
+
+
+def test_the_answer_can_be_handed_over_from_another_computer(home):
+    world = World()
+    receiver = oauth.HandOver(5555)
+
+    def elsewhere(url):
+        back = browse(world, url)
+        assert back.startswith("http://127.0.0.1:5555/callback?")
+        assert not receiver.give({"code": "x", "state": "not-this-one"})  # a stray answer is refused
+        assert receiver.give(oauth.answer_from(back))
+
+    done = oauth.connect(home, "notes", CFG, open_browser=elsewhere, say=lambda s: None,
+                         transport=world.transport(), receiver=receiver)
+    assert done.issuer == ISSUER and world.registered["redirect_uris"] == ["http://127.0.0.1:5555/callback"]
+    assert oauth.store_path(home, "notes").is_file()
+
+
+def test_an_answer_is_read_from_a_pasted_address():
+    assert oauth.answer_from(" http://127.0.0.1:9/callback?code=a%2Bb&state=s1 ") == {"code": "a+b", "state": "s1"}
+    assert oauth.answer_from("?code=c&state=s2") == {"code": "c", "state": "s2"}
+    assert oauth.answer_from("no answer here") == {}
+    assert oauth.HandOver().redirect_uri.startswith("http://127.0.0.1:")
+
+
+def test_ombro_connect_over_ssh_asks_for_the_address(home, monkeypatch, capsys):
+    from ombro import cli
+
+    from ombro import server_cmd
+
+    world = World()
+    server_cmd.add_server(home, "notes", server_cmd.server_entry(url=MCP))
+    real = oauth.connect
+    monkeypatch.setattr(oauth, "connect", lambda *a, **k: real(*a, transport=world.transport(), **k))
+    monkeypatch.setenv("SSH_CONNECTION", "203.0.113.1 50000 192.0.2.1 22")
+    shown = {}
+
+    def paste(prompt):
+        url = capsys.readouterr().out.split("sign in to notes:")[1].split()[0]
+        shown["url"] = url
+        return browse(world, url)
+
+    monkeypatch.setattr("builtins.input", paste)
+    assert cli.main(["connect", "notes"]) == 0
+    out = capsys.readouterr().out
+    assert "Connected notes" in out and shown["url"].startswith(f"{ISSUER}/authorize?")

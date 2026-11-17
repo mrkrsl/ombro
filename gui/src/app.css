@@ -1621,3 +1621,17 @@ input[type="checkbox"]:not([role="switch"]) {
 .connect-form details.more input {
   margin-top: 8px;
 }
+
+.paste-answer {
+  margin: 4px 0 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.paste-answer summary {
+  cursor: pointer;
+}
+
+.paste-answer .field {
+  margin-top: 10px;
+}

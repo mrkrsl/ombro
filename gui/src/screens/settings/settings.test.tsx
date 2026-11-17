@@ -99,6 +99,7 @@ describe("the settings rules", () => {
     expect(signInText(remote)).toEqual(["Not signed in", true]);
     expect(signInText({ ...remote, sign_in: "signed in (renews itself)" })).toEqual(["Signed in (renews itself)", false]);
     expect(signInText({ ...remote, url: null, command: "uvx x==1" })).toEqual(["On this computer", false]);
+    expect(signInText({ ...remote, url: null, command: "uvx x==1" }, true)).toEqual(["On the server", false]);
     expect(sendKey("header:X-API-Key")).toEqual(["header", "X-API-Key"]);
     expect(approvalTitle("api.podcasts.request", { method: "POST", path: "/playlists", body: { title: "Invented list" } }))
       .toBe("Send to /playlists in Podcasts: “Invented list”");

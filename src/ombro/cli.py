@@ -545,6 +545,34 @@ def cmd_connect(args) -> int:
 
     home = _home()
     cfg = _server_cfg(home, args.server)
+    if args.paste or _no_browser_here():
+        # Signed in to over SSH, say: the browser is on another computer, so the sign-in page sends
+        # it back to that computer, where nothing listens. The address it ends up on carries the
+        # answer; pasting it here finishes the sign-in.
+        receiver = oauth.HandOver()
+
+        def opener(url: str) -> None:
+            print(f"Open this address in a browser on any computer, and sign in to {args.server}:\n\n  {url}\n")
+            print("Afterwards the browser shows a page that can't be reached. That's expected: copy the "
+                  "whole address from its address bar.")
+            while True:
+                text = input("Paste the address here: ").strip()
+                if not text:
+                    raise KeyboardInterrupt
+                answer = oauth.answer_from(text)
+                if answer and receiver.give(answer):
+                    return
+                print("That isn't the address from this sign-in. Copy the whole address after signing in, "
+                      "or press Enter to cancel.")
+
+        try:
+            done = oauth.connect(home, args.server, cfg, open_browser=opener, say=lambda _t: None, receiver=receiver)
+        except oauth.SignInError as e:
+            raise CliError(f"Could not connect {args.server}: {e}") from None
+        except (KeyboardInterrupt, EOFError):
+            print("\nCancelled. Nothing was saved.")
+            return 1
+        return _connected(home, args.server, done)
     opener = (lambda url: None) if args.no_browser else webbrowser.open
     print(f"Waiting up to {oauth.CONNECT_TIMEOUT / 60:.0f} minutes for you to sign in. Ctrl-C cancels.")
     try:
@@ -554,11 +582,27 @@ def cmd_connect(args) -> int:
     except KeyboardInterrupt:
         print("\nCancelled. Nothing was saved.")
         return 1
-    print(f"Connected {args.server}, signed in with {done.issuer}"
+    return _connected(home, args.server, done)
+
+
+def _no_browser_here() -> bool:
+    """In an SSH session, or on Linux with no desktop: no browser can be opened here."""
+    import os
+    import sys
+
+    if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
+        return True
+    return sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _connected(home, server: str, done) -> int:
+    from ombro import oauth
+
+    print(f"Connected {server}, signed in with {done.issuer}"
           + (f" (access: {done.scope})" if done.scope else "") + ".")
     print("It renews itself, so jobs can use it unattended." if done.refreshes else
           "The service gave no renewal token, so you will need to connect again when it expires.")
-    print(f"The sign-in is kept in {oauth.store_path(home, args.server)}, readable only by you.")
+    print(f"The sign-in is kept in {oauth.store_path(home, server)}, readable only by you.")
     return 0
 
 
@@ -1225,6 +1269,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("connect", help="sign in to a remote MCP server in your browser")
     s.add_argument("server", help="the server's name under `servers:` in tools.md")
     s.add_argument("--no-browser", action="store_true", help="print the sign-in address instead of opening it")
+    s.add_argument("--paste", action="store_true", help="sign in with a browser on another computer, then paste "
+                   "the address it ends up on (the default over SSH)")
     s.set_defaults(func=cmd_connect)
 
     s = sub.add_parser("server", help="add or remove an MCP server in tools.md")
