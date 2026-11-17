@@ -139,7 +139,7 @@ describe("the Jobs page", () => {
     expect(within(busy).queryByRole("button", { name: "Clear" })).toBeNull();
     await userEvent.click(within(busy).getByRole("button", { name: "View brief" }));
     const done = screen.getByText("Invented").closest(".item") as HTMLElement;
-    const names = within(done).getAllByRole("button").map((b) => b.textContent);
+    const names = within(done).getAllByRole("button").map((b) => b.getAttribute("aria-label") ?? b.textContent);
     expect(names).toEqual(["View brief", "View report", "Files", "Clear"]);
     await userEvent.click(within(done).getByRole("button", { name: "Clear" }));
     expect(briefs).toEqual(["busy-20261117-0930"]);
