@@ -219,3 +219,24 @@ def _bump(job_dir: str, field: str) -> None:
 
     for i in range(1, 51):
         r.update_job(Path(job_dir), **{field: i})
+
+
+def test_a_job_reaped_after_it_stops_counting_as_active_still_changes_the_counts(home):
+    """A dead job leaves the active jobs a poll before it is marked failed and given its report.
+    That second step must count as a change too, or the menu bar never alerts for it."""
+    from conftest import SPEC
+    from ombro.session import JobWatcher
+    from ombro.settings import load_limits, load_tool_settings
+
+    job_dir = jobs.create_job(home, ["default"], {}, SPEC, load_limits(home, None, load_tool_settings(home)),
+                              source="test")
+    jobs.update_job(job_dir, pid=999_999_9, status="running")  # its process has gone
+    watcher = JobWatcher(home)
+    watcher.active = {job_dir.name}
+    _, changed = watcher.poll(mark_seen=False)
+    assert changed and views.summary(home)["counts"]["unseen_jobs"] == 0  # ended, but no report yet
+    _, changed = watcher.poll(mark_seen=False)
+    assert not changed
+    assert jobs.reap_dead_jobs(home) == [job_dir]  # the scheduler's tick does this
+    _, changed = watcher.poll(mark_seen=False)
+    assert changed and views.summary(home)["counts"]["unseen_jobs"] == 1
