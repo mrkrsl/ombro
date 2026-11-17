@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { inTauri } from "../../api/serve";
 import type { FolderList } from "../../api/types";
+import { useStore } from "../../store/store";
 import { Field, Item, Problem, shortPath, useAction, useView } from "./common";
 
 export const ACCESS: Record<string, string> = { read: "Can read", write: "Can read and write" };
@@ -22,10 +23,13 @@ export function Folders() {
   const [access, setAccess] = useState("read");
   const [asking, setAsking] = useState<string | null>(null);
   const list = folders.data?.folders ?? [];
+  // With a server elsewhere, the folder is one on the server, so the Mac's picker can't choose it.
+  const remote = useStore((s) => s.remote);
+  const picker = inTauri && !remote;
 
   async function start() {
-    if (!inTauri) {
-      setPath(""); // in a browser there's no picker: type the path
+    if (!picker) {
+      setPath(""); // in a browser, or for a server elsewhere, there's no picker: type the path
       return;
     }
     const picked = await pickFolder();
@@ -38,6 +42,7 @@ export function Folders() {
       <p className="lede">
         Ombro's crews can only reach the folders you share here. Each one is open to the Lead and to every crew.
         Ombro's own files are never shared.
+        {remote && " Ombro runs on a server, so these are folders on the server, not on this Mac."}
       </p>
       <Problem text={folders.problem} />
       <div className="rows">
@@ -88,7 +93,7 @@ export function Folders() {
       ) : (
         <div className="inline-form">
           <h3>Share a folder</h3>
-          {inTauri ? (
+          {picker ? (
             <p className="chosen-path">
               {shortPath(path)}{" "}
               <button className="text-button" onClick={() => void start()}>
@@ -96,7 +101,10 @@ export function Folders() {
               </button>
             </p>
           ) : (
-            <Field label="Folder" hint="The full path, such as /Users/you/Projects/work.">
+            <Field
+              label="Folder"
+              hint={remote ? "The folder's full path on the server, such as /home/you/work." : "The full path, such as /Users/you/Projects/work."}
+            >
               <input className="text-input" value={path} onChange={(e) => setPath(e.target.value)} />
             </Field>
           )}

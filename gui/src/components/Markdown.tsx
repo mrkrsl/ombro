@@ -2,7 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { openLink } from "../platform";
+import { useStore } from "../store/store";
 
 export function Markdown({ text, className = "" }: { text: string; className?: string }) {
   return (
@@ -15,7 +15,7 @@ export function Markdown({ text, className = "" }: { text: string; className?: s
               href={href}
               onClick={(e) => {
                 e.preventDefault();
-                if (href) void openLink(href);
+                if (href) void useStore.getState().openHref(href);
               }}
             >
               {children}

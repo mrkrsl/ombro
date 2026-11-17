@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Report } from "../api/types";
+import { useStore } from "../store/store";
 import { ReportCard } from "./ReportCard";
 
 const report = {
@@ -25,5 +26,26 @@ describe("ReportCard", () => {
   it("says what waits for approval", () => {
     render(<ReportCard report={report} />);
     expect(screen.getByText(/2 actions are waiting for approval/)).toBeInTheDocument();
+  });
+
+  describe("with a server elsewhere", () => {
+    afterEach(() => useStore.setState({ remote: false }));
+
+    it("offers to save the job's files to this Mac, and saves a file before opening it", () => {
+      const openFolder = vi.fn(async () => undefined);
+      const openPath = vi.fn(async () => undefined);
+      useStore.setState({ remote: true, openFolder, openPath });
+      render(<ReportCard report={report} />);
+      fireEvent.click(screen.getByRole("button", { name: /Save to this Mac/ }));
+      expect(openFolder).toHaveBeenCalledWith("/x/workspace");
+      fireEvent.click(screen.getByRole("link", { name: "data.csv" }));
+      expect(openPath).toHaveBeenCalledWith("/x/workspace/data.csv", "open");
+    });
+
+    it("keeps Files when the server is here", () => {
+      render(<ReportCard report={report} />);
+      expect(screen.getByRole("button", { name: /Files/ })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Save to this Mac/ })).toBeNull();
+    });
   });
 });

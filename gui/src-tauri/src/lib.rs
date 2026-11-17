@@ -2,6 +2,7 @@
 //! and hand the port and token to the web view. Serve exits when its stdin
 //! closes, so it never outlives the app; we also stop it on the way out.
 
+mod saved;
 mod tray;
 
 use std::sync::Mutex;
@@ -100,7 +101,7 @@ pub fn run() {
                 let _ = window.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![handshake, tray::set_tray])
+        .invoke_handler(tauri::generate_handler![handshake, tray::set_tray, saved::save_download, saved::read_saved])
         .build(tauri::generate_context!())
         .expect("error while building the Ombro app")
         .run(|app, event| match event {

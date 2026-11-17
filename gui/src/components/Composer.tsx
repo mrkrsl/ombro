@@ -7,17 +7,19 @@ import { ArrowUp, CircleDashed, FileText, FolderOpen } from "lucide-react";
 import type { CommandView } from "../api/types";
 import { listAnswers, quickAnswers, usageText, type Conversation } from "../store/conversation";
 import { useStore } from "../store/store";
-import { openFile, revealFile } from "../platform";
 import { modelLabel } from "../store/models";
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-/** Drafts to edit by hand: they open in the app your Mac uses for them; Done hands them back. */
+/** Drafts to edit by hand: they open in the app your Mac uses for them; Done hands them back.
+ * With a server elsewhere, a copy is opened here and Done sends it back. */
 function Editing({ paths, onDone, onProblem }: { paths: string[]; onDone: () => void; onProblem: (p: string) => void }) {
+  const openPath = useStore((s) => s.openPath);
+  const remote = useStore((s) => s.remote);
   const open = (p: string) =>
-    openFile(p).catch(() =>
+    openPath(p, "open").catch(() =>
       onProblem(`No app would open ${fileName(p)}. Show it in Finder and open it with a text editor instead.`),
     );
   const opened = useRef("");
@@ -30,16 +32,23 @@ function Editing({ paths, onDone, onProblem }: { paths: string[]; onDone: () => 
   }, [paths]);
   return (
     <div className="editing">
-      <p>
-        I've opened the draft in your text editor. Make your changes, save the file, then come back and choose Done.
-        To keep it as it was, choose Done without saving.
-      </p>
+      {remote ? (
+        <p>
+          I've opened a copy of the draft from the server in your text editor. Make your changes, save the file, then
+          come back and choose Done: your changes go back to the server. To keep it as it was, choose Done without saving.
+        </p>
+      ) : (
+        <p>
+          I've opened the draft in your text editor. Make your changes, save the file, then come back and choose Done.
+          To keep it as it was, choose Done without saving.
+        </p>
+      )}
       <div className="quick">
         {paths.map((p) => [
           <button key={`open-${p}`} className="secondary" onClick={() => void open(p)}>
             <FileText size={14} aria-hidden="true" /> Open {fileName(p)}
           </button>,
-          <button key={`show-${p}`} className="secondary" onClick={() => void revealFile(p).catch((e) => onProblem(String(e)))}>
+          <button key={`show-${p}`} className="secondary" onClick={() => void openPath(p, "reveal").catch((e) => onProblem(String(e)))}>
             <FolderOpen size={14} aria-hidden="true" /> Show in Finder
           </button>,
         ])}

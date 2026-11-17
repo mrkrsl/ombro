@@ -2,7 +2,7 @@
 // and call its actions; nothing else talks to serve.
 
 import { create } from "zustand";
-import { client, events, handshake, type Client, type ServerMessage } from "../api/serve";
+import { client, events, handshake, inTauri, type Client, type ServerMessage } from "../api/serve";
 import type {
   ApprovalRow,
   ChatRow,
@@ -19,7 +19,8 @@ import type {
   SpecRow,
   Summary,
 } from "../api/types";
-import { isMac, notify, whenVisible } from "../platform";
+import { isMac, notify, openFile, openLink, revealFile, whenVisible } from "../platform";
+import { readCopy, saveCopy, saveFolder } from "../copies";
 import { SHORTCUTS, shortcutText } from "../shortcuts";
 import { addLocal, addReport, apply, newConversation, opening, type Conversation } from "./conversation";
 
@@ -73,6 +74,8 @@ type State = {
   opener: string | null; // after New from a chat you'd used: the Lead's line that it was saved, in place of the home screen
   welcome: boolean; // a fresh install: set-up's first question waits under the home screen
   running: string[]; // the jobs running now, by id: a chat that started one shows the ring in the sidebar
+  remote: boolean; // serve is on another machine: its files come here as copies ("Save to this Mac")
+  copies: Record<string, string>; // a server file: where its copy is kept, under ~/Downloads/Ombro
 };
 
 type Actions = {
@@ -100,6 +103,9 @@ type Actions = {
   decide: (approve: boolean, refs: string[]) => Promise<string[]>;
   stopJob: (jobId: string) => Promise<void>;
   call: <T>(fn: (api: Client) => Promise<T>) => Promise<T | undefined>;
+  openPath: (path: string, how: "open" | "reveal") => Promise<void>;
+  openFolder: (path: string) => Promise<void>;
+  openHref: (href: string) => Promise<void>;
 };
 
 let socket: WebSocket | null = null;
@@ -187,6 +193,8 @@ export const useStore = create<State & Actions>((set, get) => {
     opener: null,
     welcome: false,
     running: [],
+    remote: false,
+    copies: {},
 
     async start() {
       if (started) return; // React runs effects twice in development
@@ -194,7 +202,7 @@ export const useStore = create<State & Actions>((set, get) => {
       try {
         const hs = await handshake();
         const api = client(hs);
-        set({ api });
+        set({ api, remote: Boolean(hs.remote) });
         connect(hs);
         await get().refresh();
         const setup = await api.get<{ needed: string | null }>("/setup").catch(() => ({ needed: null }));
@@ -503,12 +511,68 @@ export const useStore = create<State & Actions>((set, get) => {
       const { api, current, conversations } = get();
       const editing = current ? conversations[current]?.editing : null;
       if (!api || !current || !editing) return;
+      try {
+        if (get().remote) {
+          // The drafts were edited as copies here: send each back before the interview reads it.
+          const copies = get().copies;
+          for (const path of editing.paths) {
+            if (!copies[path]) continue; // never opened, so left as it was
+            if (!inTauri) throw new Error("Editing by hand needs the Ombro app; choose Done without changes.");
+            await api.putBytes(path, await readCopy(copies[path]));
+          }
+        }
+      } catch (e) {
+        set({ notice: `Your changes didn't reach the server: ${e instanceof Error ? e.message : String(e)}` });
+        return;
+      }
       set((s) => ({ conversations: { ...s.conversations, [current]: addLocal(s.conversations[current], "you", "Done editing") } }));
       try {
         await api.post(`/sessions/${current}/answer`, { id: editing.id, value: null });
       } catch (e) {
         set({ notice: e instanceof Error ? e.message : String(e) });
       }
+    },
+
+    async openPath(path, how) {
+      // Here: the file itself. From a server: a copy kept in ~/Downloads/Ombro, opened or shown.
+      const { api, remote } = get();
+      try {
+        if (!remote) {
+          await (how === "open" ? openFile(path) : revealFile(path));
+          return;
+        }
+        if (!api) return;
+        const copy = await saveCopy(api, path);
+        set((s) => ({ copies: { ...s.copies, [path]: copy.saveAs } }));
+        if (copy.local) await (how === "open" ? openFile(copy.local) : revealFile(copy.local));
+      } catch (e) {
+        set({ notice: e instanceof Error ? e.message : String(e) });
+        throw e;
+      }
+    },
+
+    async openFolder(path) {
+      const { api, remote } = get();
+      try {
+        if (!remote) {
+          await openLink("file://" + path.split("/").map(encodeURIComponent).join("/"));
+          return;
+        }
+        if (!api) return;
+        const saved = await saveFolder(api, path);
+        if (saved.count === 0) set({ notice: "That job made no files." });
+        else if (saved.local) await openFile(saved.local);
+      } catch (e) {
+        set({ notice: e instanceof Error ? e.message : String(e) });
+      }
+    },
+
+    async openHref(href) {
+      if (href.startsWith("file:") && get().remote) {
+        await get().openPath(decodeURIComponent(new URL(href).pathname), "open").catch(() => undefined);
+        return;
+      }
+      await openLink(href);
     },
 
     async interrupt() {

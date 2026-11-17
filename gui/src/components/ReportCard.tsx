@@ -6,7 +6,6 @@ import { useState } from "react";
 import { Copy, FolderOpen } from "lucide-react";
 import type { Report } from "../api/types";
 import { splitReport } from "../store/conversation";
-import { openLink } from "../platform";
 import { useStore } from "../store/store";
 import { Markdown, MarkdownFile } from "./Markdown";
 
@@ -18,6 +17,7 @@ export function ReportCard({ report }: { report: Report }) {
   const [record, setRecord] = useState(false);
   const [copied, setCopied] = useState(false);
   const show = useStore((s) => s.show);
+  const { openHref, openFolder, remote } = useStore();
   const [open, setOpen] = useState<string[]>([]); // the Markdown files shown here, by path
   const toggle = (path: string) => setOpen((o) => (o.includes(path) ? o.filter((p) => p !== path) : [...o, path]));
   if (!report.report) {
@@ -38,7 +38,7 @@ export function ReportCard({ report }: { report: Report }) {
             href={fileUrl(report.report_path)}
             onClick={(e) => {
               e.preventDefault();
-              void openLink(fileUrl(report.report_path));
+              void openHref(fileUrl(report.report_path));
             }}
           >
             {report.name}
@@ -47,10 +47,10 @@ export function ReportCard({ report }: { report: Report }) {
         <span className="report-tools">
           <button
             className="text-button"
-            onClick={() => void openLink(fileUrl(report.workspace))}
-            title="Open the job's folder"
+            onClick={() => void openFolder(report.workspace)}
+            title={remote ? "Copy the job's files from the server into Downloads › Ombro" : "Open the job's folder"}
           >
-            <FolderOpen size={16} /> Files
+            <FolderOpen size={16} /> {remote ? "Save to this Mac" : "Files"}
           </button>
           <button
             className="text-button"
@@ -76,7 +76,7 @@ export function ReportCard({ report }: { report: Report }) {
                     href={d.url}
                     onClick={(e) => {
                       e.preventDefault();
-                      void openLink(d.url);
+                      void openHref(d.url);
                     }}
                   >
                     {d.kind === "deliverable" ? d.name : `${d.name} (${d.kind} in a shared folder)`}

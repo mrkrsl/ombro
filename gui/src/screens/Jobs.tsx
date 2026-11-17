@@ -3,7 +3,6 @@
 
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Item } from "./settings/common";
-import { openLink } from "../platform";
 import { useStore } from "../store/store";
 
 export function when(iso: string | null | undefined): string {
@@ -21,7 +20,7 @@ export function statusText(status: string | null, active: boolean, finished: str
 }
 
 export function Jobs() {
-  const { jobs, readReport, stopJob } = useStore();
+  const { jobs, readReport, stopJob, openFolder, remote } = useStore();
   return (
     <div className="page">
       <div className="column wide-page">
@@ -48,8 +47,8 @@ export function Jobs() {
                       <button className="text-button" onClick={() => void readReport(j.job_id, false)}>
                         View report
                       </button>
-                      <button className="text-button" onClick={() => void openLink(`file://${j.path}/workspace`)}>
-                        Files
+                      <button className="text-button" onClick={() => void openFolder(`${j.path}/workspace`)}>
+                        {remote ? "Save to this Mac" : "Files"}
                       </button>
                     </>
                   )

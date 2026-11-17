@@ -721,6 +721,7 @@ def build_app(token: str | None, dev: bool = False, *, home: Home | None = None,
               hosts: list[str] | None = None, tick: bool = False) -> Starlette:
     """For the app: one `token`, made for this launch. For a service: `devices` (pairing.Devices),
     whose paired tokens are accepted, `POST /pair` to pair a new one, and the `hosts` it answers to."""
+    from ombro.serve.files import file_routes
     from ombro.serve.settings_routes import settings_routes
 
     allowed = origins(dev)
@@ -737,12 +738,12 @@ def build_app(token: str | None, dev: bool = False, *, home: Home | None = None,
         Middleware(TrustedHostMiddleware, allowed_hosts=hosts or ([HOST, "localhost"] if dev else [HOST])),
         # Answers the app's preflight; never a wildcard.
         Middleware(CORSMiddleware, allow_origins=allowed, allow_methods=["GET", "POST", "PUT", "DELETE"],
-                   allow_headers=["authorization", "content-type"]),
+                   allow_headers=["authorization", "content-type"], expose_headers=["x-ombro-save-as"]),
         Middleware(Guard, check=check, allowed=allowed, open_paths=open_paths),
     ]
     routes = [Route("/hello", _hello), WebSocketRoute("/events", _socket(s)),
               *([_pair_route(devices)] if devices is not None else []),
-              *_action_routes(s), *settings_routes(s), *_session_routes(s), *_views(s)]
+              *file_routes(s), *_action_routes(s), *settings_routes(s), *_session_routes(s), *_views(s)]
     from contextlib import asynccontextmanager
 
     @asynccontextmanager
