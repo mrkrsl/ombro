@@ -243,7 +243,7 @@ export const useStore = create<State & Actions>((set, get) => {
             const status = (e as { status?: number }).status;
             throw new Error(
               status === 403
-                ? "The server doesn't know this computer any more (it may have been forgotten there). Connect again to pair it."
+                ? "The server has forgotten its connection with this computer. Connect again to pair it."
                 : "The server didn't answer. Check that Ombro is running there.",
             );
           }

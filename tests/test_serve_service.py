@@ -44,10 +44,10 @@ def test_first_code_stands_until_a_device_pairs(home):
     clock = Clock()
     d = Devices(home, clock=clock)
     code = d.first_code()
-    assert code and len(code) == 11 and code.count("-") == 2
+    assert code and len(code) == 4 and "-" not in code
     clock.t += 365 * 24 * 3600  # it doesn't run out
     assert Devices(home, clock=clock).first_code() == code
-    device, token = d.pair(code.lower().replace("-", " "), "Mark's  Mac")  # as typed
+    device, token = d.pair(f" {code[:2].lower()} {code[2:]} ", "Mark's  Mac")  # as typed
     assert device.name == "Mark's Mac"
     assert d.valid(token) and not d.valid("not-a-token") and not d.valid("")
     assert d.first_code() is None  # once paired, codes come only from `ombro pair`
@@ -74,11 +74,26 @@ def test_wrong_codes_lock_pairing_for_a_minute(home):
     code = d.first_code()
     for _ in range(pairing.MAX_WRONG):
         with pytest.raises(PairingError, match="isn't right"):
-            d.pair("AAA-AAA-AAA", "x")
+            d.pair("2222" if code != "2222" else "3333", "x")
     with pytest.raises(PairingError, match="Too many"):
         d.pair(code, "x")  # even the right one, while locked
     clock.t += pairing.LOCKOUT_SECONDS
     assert d.pair(code, "x")[1]
+
+
+def test_a_code_is_thrown_away_after_ten_wrong_tries(home):
+    clock = Clock()
+    d = Devices(home, clock=clock)
+    code = d.first_code()
+    wrong = "2222" if code != "2222" else "3333"
+    for i in range(pairing.MAX_WRONG_PER_CODE):
+        clock.t += pairing.LOCKOUT_SECONDS  # slowly, so the minute lockout never starts
+        with pytest.raises(PairingError):
+            d.pair(wrong, "x")
+    clock.t += pairing.LOCKOUT_SECONDS
+    with pytest.raises(PairingError, match="isn't right"):
+        d.pair(code, "x")  # the right code, too late
+    assert Devices(home, clock=clock).first_code() != code  # a new one at the next start
 
 
 def test_tokens_are_kept_only_as_hashes_owner_only(home):
@@ -176,8 +191,8 @@ def test_service_options_are_not_for_the_app():
 
 
 def test_start_lines_show_the_first_code_and_warn_on_public_addresses():
-    text = "\n".join(service_lines("127.0.0.1", 8765, "ABC-DEF-GHJ"))
-    assert "ABC-DEF-GHJ" in text and "Warning" not in text
+    text = "\n".join(service_lines("127.0.0.1", 8765, "34FA"))
+    assert "34FA" in text and "Warning" not in text
     assert "Warning" not in "\n".join(service_lines("100.64.1.2", 8765, None))
     assert "Warning" in "\n".join(service_lines("8.8.8.8", 8765, None))
 

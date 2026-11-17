@@ -105,7 +105,7 @@ export function ServerForm({ onConnected, onCancel }: { onConnected: () => void;
             <input
               className="text-input short"
               aria-label="Pairing code"
-              placeholder="ABC-DEF-GHJ"
+              placeholder="34FA"
               value={code}
               autoCapitalize="characters"
               autoCorrect="off"

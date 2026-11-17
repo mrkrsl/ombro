@@ -45,9 +45,9 @@ describe("Connect", () => {
     await userEvent.click(screen.getByRole("button", { name: /On a server/ }));
     await userEvent.click(screen.getByRole("button", { name: "By address" }));
     await userEvent.type(screen.getByLabelText("Address"), "100.101.102.103");
-    await userEvent.type(screen.getByLabelText("Pairing code"), "abc-def-ghj");
+    await userEvent.type(screen.getByLabelText("Pairing code"), "34fa");
     await userEvent.click(screen.getByRole("button", { name: "Connect" }));
-    expect(where.pairByAddress).toHaveBeenCalledWith("100.101.102.103", "abc-def-ghj");
+    expect(where.pairByAddress).toHaveBeenCalledWith("100.101.102.103", "34fa");
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("isn't right"));
     expect(onReady).not.toHaveBeenCalled();
   });
@@ -67,7 +67,7 @@ describe("Connect", () => {
 describe("reconnecting", () => {
   it("starts from the server used last", () => {
     useStore.setState({ where: { mode: "direct", host: null, port: null, address: "127.0.0.1:8799", local_home: false, started: true } });
-    render(<Connect problem="The server doesn't know this computer any more." onReady={vi.fn()} />);
+    render(<Connect problem="The server has forgotten its connection with this computer." onReady={vi.fn()} />);
     expect(screen.getByRole("button", { name: "By address", pressed: true })).toBeInTheDocument();
     expect(screen.getByLabelText("Address")).toHaveValue("127.0.0.1:8799");
     useStore.setState({ where: null });

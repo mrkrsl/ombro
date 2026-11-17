@@ -10,6 +10,11 @@ pairing, in one of two ways:
   time serve starts, so there's no rush between installing the server and setting up the app.
   Later codes come from `ombro pair` and last a day.
 
+Codes are short (four characters, such as `34FA`) so they're easy to read off a log and type.
+Guessing is capped instead: after MAX_WRONG_PER_CODE wrong tries a code is thrown away (a new
+first code is made at the next start, or run `ombro pair`), and after MAX_WRONG in a minute
+every code is refused for a minute. Ten guesses among about 810,000 codes is a negligible chance.
+
 Everything is kept in secrets/devices.json (owner-only). Device tokens are kept only as hashes,
 so the file can't be used to connect. The code is kept as it is, since serve prints it at each
 start. Changes take a file lock, so `ombro pair` and a running serve never lose each other's
@@ -35,11 +40,12 @@ from ombro.home import Home
 
 # No 0/O, 1/I/L or U, so a code read aloud or off a log can't be mistyped.
 ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
-CODE_GROUPS = 3
-CODE_GROUP = 3
+CODE_GROUPS = 1
+CODE_GROUP = 4
 LATER_CODE_SECONDS = 24 * 3600
-MAX_WRONG = 5
+MAX_WRONG = 5  # in a minute, then every code is refused for a minute
 LOCKOUT_SECONDS = 60
+MAX_WRONG_PER_CODE = 10  # then the code is thrown away
 NAME_LIMIT = 60
 
 
@@ -224,6 +230,14 @@ class Devices:
             given = normal_code(code).encode()
             if live is None or not secrets.compare_digest(given, normal_code(live["code"]).encode()):
                 self._wrong.append(self.clock())
+                if live is not None:
+                    live["wrong"] = int(live.get("wrong") or 0) + 1
+                    if live["wrong"] >= MAX_WRONG_PER_CODE:
+                        data["code"] = None  # thrown away; the change is written as the error leaves
+                        self._write(data)
+                        raise PairingError("Too many wrong codes, so that code no longer works. "
+                                           "Run `ombro pair` on the server for a new one.")
+                    self._write(data)
                 raise PairingError("That code isn't right, or it has run out. "
                                    "Run `ombro pair` on the server for a new one.")
             data["code"] = None
