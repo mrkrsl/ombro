@@ -134,7 +134,9 @@ def test_refuse_in_tools_md_beats_a_brief_that_allows(home, job, tmp_path):
     job(script(post()), spec_meta=spec_with("auto"))
     assert fake_sent(record) == [] and outbox.actions(job.job_dir) == []
     # A refused tool is not offered at all, so the call never reaches a handler.
-    offered = {t["function"]["name"] for c in job.client.calls for t in (c.get("tools") or [])}
+    from conftest import offered_tools
+
+    offered = {n for c in job.client.calls for n in offered_tools(c.get("tools") or [])}
     assert POST not in offered and ADD in offered
     assert any("not one of your tools" in r.get("error", "") for r in tool_replies(job))
     assert any(e["action"] == "warning" and "permission: refuse" in e["note"] for e in job.events)
@@ -600,3 +602,16 @@ def test_a_job_and_an_approval_work_with_a_2026_07_28_server(home, job, tmp_path
     outbox.approve(home, a)
     assert [(e["tool"], e["protocol"]) for e in fake_sent(record)] == [
         ("add_row", "2026-07-28"), ("post_message", "2026-07-28")]
+
+
+def test_outside_tools_are_listed_by_name_and_sent_in_full_only_once_loaded(record, job):
+    job(script(fake.call("tools__load", {"names": [ADD, "mcp__fake__nothing"]}), add()),
+        spec_meta=spec_with("auto"))
+    role_calls = [c for c in job.client.calls if any(t["function"]["name"] == "tools__load" for t in (c.get("tools") or []))]
+    first, second = ({t["function"]["name"] for t in c["tools"]} for c in role_calls[:2])
+    assert ADD not in first and POST not in first  # only their names, in tools__load
+    assert ADD in second and POST not in second  # the one loaded, from the next call on
+    assert tool_replies(job)[0] == {"loaded": [ADD], "unknown": ["mcp__fake__nothing"],
+                                    "note": "These tools can be called from your next step."}
+    assert [e["tool"] for e in fake_sent(record)] == ["add_row"]
+    assert any(e["action"] == "tools_loaded" and e["note"] == "mcp.fake.add_row" for e in job.events)

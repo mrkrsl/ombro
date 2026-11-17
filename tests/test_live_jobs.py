@@ -169,8 +169,12 @@ def test_chat_looks_things_up_itself_but_changes_nothing(home, tmp_path):
     chat([fake.call(wire_name("mcp.fake.find_rows"), {"query": "invented"}),
           fake.call(wire_name("mcp.fake.add_row"), {"row": "x"}),
           fake.say("Found it.")], ["Is there a row about invented things?", "/quit"])
-    offered = {t["function"]["name"] for t in chat.client.calls[0]["tools"]}
+    from conftest import offered_tools
+
+    sent = {t["function"]["name"] for t in chat.client.calls[0]["tools"]}
+    offered = offered_tools(chat.client.calls[0]["tools"])
     assert wire_name("mcp.fake.find_rows") in offered  # read-only: a lookup
+    assert wire_name("mcp.fake.find_rows") not in sent  # listed in tools__load, not sent in full
     assert wire_name("mcp.fake.add_row") not in offered  # changes things: the crew's work
     replies = chat.tool_replies()
     assert "error" not in replies[0] and "offer_work" in replies[1]["error"]

@@ -94,6 +94,12 @@ SUBMIT_TOOL: dict[str, Any] = {
     },
 }
 
+LAST_CALL_INSTRUCTION = (
+    "This is your last model call for this brief. Call submit_result now with what you have: give the path of "
+    "every file you wrote, say in the summary how complete each one is, and put whatever is unfinished in "
+    "did_not_do. No other tool can be called."
+)
+
 CUT_OFF_INSTRUCTION = (
     "Your last reply was cut off because it reached the output limit for one reply, so none of it was used "
     "(a tool call in it was not run). Write less in one reply: write a long file in parts (workspace.write with "

@@ -21,7 +21,8 @@ from ombro.journal import Journal, utc_now
 from ombro.mcp import McpCallLost
 from ombro.roles import Role, load_lead, load_roles, resolve_role
 from ombro.settings import Limits, ModelSpec, SetupError, ToolSettings, load_models, load_preferences
-from ombro.tools import NotGranted, SharedFolder, Tool, ToolContext, ToolError, ToolRegistry
+from ombro.tools import LOAD_NAME, NotGranted, SharedFolder, Tool, ToolContext, ToolError, ToolRegistry
+from ombro.tools import is_deferred, load_tool_schema, load_tools
 
 TOOL_RESULT_CAP = 20_000
 
@@ -106,6 +107,9 @@ class Engine:
                        for f in meta.get("folders") or []}
         self.folders_left_out = list(meta.get("folders_left_out") or [])
         self._folders_before: dict[str, Any] = {}
+        # Paths in each writable shared folder that changed while one of the job's own tools ran: the rest of
+        # a folder's changes were made by someone else (the user, another program) while the job ran.
+        self._folders_touched: dict[str, set[str]] = {}
         self.code_unavailable: str | None = None
         if registry is None:
             from ombro.native import native_registry
@@ -287,19 +291,42 @@ class Engine:
                 + (f"; {entry['backup_note']}" if f.writable else ""), folder=f.name, **entry)
         jobs.update_job(self.job_dir, folders=recorded)
 
+    WRITING_TOOLS = ("workspace.write", "workspace.set_aside", "workspace.place", "code.run")
+
+    def _folder_manifests(self) -> dict[str, Any]:
+        return {f.name: folders.manifest(f.path) for f in self.shared.values() if f.name in self._folders_before}
+
+    def _note_touched(self, before: dict[str, Any]) -> None:
+        """After one of the job's writing tools: the shared paths that changed while it ran are the job's."""
+        for name, after in self._folder_manifests().items():
+            d = folders.diff(before.get(name), after)
+            self._folders_touched.setdefault(name, set()).update(
+                d["created"] + d["changed"] + d["removed"] if not d.get("too_large") else ["*"])
+
     def _record_folder_changes(self) -> None:
-        """What changed in each writable shared folder, from before and after."""
+        """What the job changed in each writable shared folder, from before and after, and apart from it what
+        changed there while the job ran but not through the job's own tools."""
         for name, before in self._folders_before.items():
             f = self.shared[name]
             d = folders.diff(before, folders.manifest(f.path))
+            touched = self._folders_touched.get(name, set())
+            outside = {k: [] for k in ("created", "changed", "removed")}
+            if not d.get("too_large") and "*" not in touched:
+                for k in outside:
+                    outside[k] = [x for x in d[k] if x not in touched]
+                    d[k] = [x for x in d[k] if x in touched]
             n = folders.count(d)
             cap = folders.CHANGES_LISTED
             note = ("too many files to compare" if d.get("too_large")
                     else f"{len(d['created'])} created, {len(d['changed'])} changed, {len(d['removed'])} removed")
+            n_out = folders.count(outside)
+            if n_out:
+                note += f"; {n_out} changed outside the job while it ran"
             self.journal.write("harness", "folder_changes", f"shared/{name}: {note}", folder=name, path=str(f.path),
                                total=n, too_large=bool(d.get("too_large")),
                                **{k: d[k][:cap] for k in ("created", "changed", "removed")},
-                               counts={k: len(d[k]) for k in ("created", "changed", "removed")})
+                               counts={k: len(d[k]) for k in ("created", "changed", "removed")},
+                               **({"outside": {k: v[:cap] for k, v in outside.items()}} if n_out else {}))
         self._folders_before = {}
 
     def _context(self, role: Role, tool: str) -> ToolContext:
@@ -420,6 +447,7 @@ class Engine:
         if spec.max_output_tokens:
             max_output = min(max_output or spec.max_output_tokens, spec.max_output_tokens)
         max_out, timeout = self.gate.check_model_call(spec.name, est, max_output)
+        began = self.gate.clock()
         try:
             reply = self._client(spec).complete(messages, tools=tools, max_output_tokens=max_out, timeout=timeout)
         except ModelError as e:
@@ -432,16 +460,21 @@ class Engine:
         usage = reply.usage
         in_tokens = usage.input_tokens if usage.input_tokens or not usage.estimated else est
         out_tokens = min(usage.output_tokens, max_out) if usage.estimated else usage.output_tokens
+        thought = min(getattr(usage, "reasoning", 0) or 0, out_tokens)
         self.gate.record_model_call(spec.name, in_tokens, out_tokens, estimated=usage.estimated,
-                                    cached=usage.cached_input)
+                                    cached=usage.cached_input, reasoning=thought)
+        seconds = round(max(0.0, self.gate.clock() - began), 1)
         self.journal.write(
             role.name,
             "model_call",
             f"{spec.name}: {in_tokens:,} in" + (f" ({usage.cached_input:,} cached)" if usage.cached_input else "")
-            + f", {out_tokens:,} out",
+            + f", {out_tokens:,} out" + (f" ({'about ' if getattr(usage, 'reasoning_estimated', False) else ''}{thought:,} thinking)"
+                                         if thought else "") + f", {seconds:g}s",
             model=spec.name,
             input_tokens=in_tokens,
             output_tokens=out_tokens,
+            seconds=seconds,
+            **({"reasoning_tokens": thought} if thought else {}),
             **({"cached_input_tokens": usage.cached_input} if usage.cached_input else {}),
             **({"finish_reason": reply.finish_reason} if reply.finish_reason else {}),
         )
@@ -487,7 +520,8 @@ class Engine:
         ]
         self.gate.begin_scope(self.lead.name, self.lead.max_steps)
         # skills__read is offered only when there is a skill to read, so an empty library costs nothing.
-        lead_tools = prompts.LEAD_TOOLS + ([prompts.SKILLS_READ_TOOL] if skills_mod.library(self.home) else [])
+        lead_tools = prompts.LEAD_TOOLS + prompts.LEAD_READ_TOOLS + (
+            [prompts.SKILLS_READ_TOOL] if skills_mod.library(self.home) else [])
         if self.live:
             from ombro import livejob
 
@@ -519,10 +553,11 @@ class Engine:
                 if tc.name == "brief" and isinstance(out, dict):
                     out = {**out, "job_so_far": self._so_far()}
                 src = None
-                if tc.name in ("brief", "memory__search") and not (isinstance(out, dict) and set(out) == {"error"}):
+                if tc.name in ("brief", "memory__search", "workspace__read") and not (
+                        isinstance(out, dict) and set(out) == {"error"}):
                     who = (tc.arguments or {}).get("role") if isinstance(tc.arguments, dict) else None
                     src = f"the result {who} returned" if tc.name == "brief" and who else material.source(
-                        "memory.search", tc.arguments)
+                        "workspace.read" if tc.name == "workspace__read" else "memory.search", tc.arguments)
                     self._flag("lead", src, out)
                 messages.append(_tool_message(tc.id, out, src))
 
@@ -576,6 +611,8 @@ class Engine:
             return self._search(tc.arguments)
         if reading:
             return self._lead_read_skill(tc.arguments)
+        if tc.name in ("workspace__read", "workspace__list"):
+            return self._lead_workspace(tc.name.replace("__", "."), tc.arguments)
         if tc.name == "brief":
             return self._brief(tc.arguments)
         if tc.name == "ask_you" and self.live:
@@ -589,7 +626,28 @@ class Engine:
             self.finished = True
             return {"ok": True}
         self.journal.write("lead", "tool_refused", f"unknown tool {tc.name!r}")
-        return {"error": f"unknown tool {tc.name!r}; use brief, memory__search, skills__read or finish"}
+        return {"error": f"unknown tool {tc.name!r}; use brief, memory__search, workspace__read, skills__read "
+                "or finish"}
+
+    def _lead_workspace(self, name: str, args: dict) -> dict[str, Any]:
+        """workspace.read or .list for the Lead: this job's own files only, never a shared folder."""
+        path = str(args.get("path") or "").strip().lstrip("/")
+        if path and path.split("/", 1)[0] not in ("workspace", "scratch"):
+            return {"error": "the Lead reads only this job's files, under workspace/ or scratch/"}
+        tool = self.registry.get(name)
+        if tool is None or tool.handler is None:
+            return {"error": f"{name} is not available"}
+        try:
+            out = tool.handler({**args, "path": path} if path else {k: v for k, v in args.items() if k != "path"},
+                               self._context(self.lead, name))
+        except ToolError as e:
+            self.journal.write("lead", "tool_error", f"{name}: {_short(str(e))}", tool=name)
+            return {"error": str(e)}
+        if name == "workspace.list" and not path:
+            out = {**out, "entries": [e for e in out.get("entries", [])
+                                      if str(e.get("path", "")).split("/", 1)[0] in ("workspace", "scratch")]}
+        self.journal.write("lead", "tool_call", f"{name} {path or '(all)'}", tool=name)
+        return out
 
     def _lead_read_skill(self, args: dict) -> dict[str, Any]:
         try:
@@ -665,6 +723,7 @@ class Engine:
             {"role": "user", "content": prompts.role_task(task)},
         ]
         self.gate.begin_scope(role.name, role.max_steps, brief=True)
+        before = self._job_files()
         try:
             return self._role_loop(role, messages, schemas, by_wire)
         except BriefLimit as e:
@@ -672,20 +731,46 @@ class Engine:
             reason = f"stopped by {e.limit}: {e.detail}"
             self.journal.write(role.name, "returned", reason, status="stopped_by_limit", limit=e.limit, reason=reason)
             self._save_usage()
+            after = self._job_files()
+            wrote = [f"{p} ({after[p][1]:,} bytes)" for p in sorted(after) if before.get(p) != after[p]]
             return {
                 "status": "stopped_by_limit",
                 "role": role.name,
                 "limit": e.limit,
                 "reason": e.detail,
-                "note": "The role did not return a result. Files it wrote before it stopped are still in the "
-                "workspace. Brief again more narrowly, or finish.",
+                "files_written": wrote,
+                "note": "The role did not return a result. The files it wrote in this brief are listed and stay in "
+                "the workspace: read them with workspace__read before you decide. Brief it to finish only what is "
+                "missing, or finish.",
             }
+
+    def _job_files(self) -> dict[str, tuple[int, int]]:
+        """This job's own files (workspace/ and scratch/) as path: (mtime_ns, size)."""
+        out: dict[str, tuple[int, int]] = {}
+        for area in ("workspace", "scratch"):
+            top = self.job_dir / area
+            for f in top.rglob("*") if top.is_dir() else []:
+                if f.is_file() and not f.is_symlink():
+                    st = f.stat()
+                    out[f.relative_to(self.job_dir).as_posix()] = (st.st_mtime_ns, st.st_size)
+        return out
 
     def _role_loop(self, role: Role, messages: list[dict], schemas: list[dict], by_wire: dict[str, Tool]) -> dict:
         invalid = 0
         cut = 0
-        tools = (schemas or []) + [contract.SUBMIT_TOOL]
+        # Outside services' tools are listed by name in tools__load and sent in full only once loaded.
+        deferred = {w: t for w, t in by_wire.items() if is_deferred(t)}
+        base = [s for s in (schemas or []) if s["function"]["name"] not in deferred]
+        base += ([load_tool_schema(list(deferred.values()))] if deferred else []) + [contract.SUBMIT_TOOL]
+        loaded: set[str] = set()
         while True:
+            tools = base + [deferred[w].schema() for w in sorted(loaded)]
+            g = self.gate
+            last = g.scope_max is not None and g.scope_max > 1 and g.scope_steps == g.scope_max - 1
+            if last:
+                # The last call the brief has: ask for the result, so work done is reported, not lost.
+                messages.append({"role": "user", "content": contract.LAST_CALL_INSTRUCTION})
+                tools = [contract.SUBMIT_TOOL]
             reply = self._model_call(role, messages, tools)
             messages.append(reply.as_message())
             if getattr(reply, "cut_off", False):
@@ -727,6 +812,13 @@ class Engine:
                 continue
             if reply.tool_calls:
                 for tc in reply.tool_calls:
+                    if last:
+                        messages.append(_tool_message(tc.id, {"error": "not run: that was your last model call, "
+                                                              "and only submit_result could be called"}))
+                        continue
+                    if tc.name == LOAD_NAME and deferred:
+                        messages.append(_tool_message(tc.id, self._load_tools(role, tc, deferred, loaded)))
+                        continue
                     out = self._role_tool(role, tc, by_wire)
                     tool = by_wire.get(tc.name)
                     name = tool.name if tool else tc.name
@@ -754,6 +846,18 @@ class Engine:
                 return {"status": "failed", "role": role.name, "reason": reason}
             messages.append({"role": "user", "content": contract.retry_instruction(errors)})
 
+    def _load_tools(self, role: Role, tc, deferred: dict[str, Tool], loaded: set[str]) -> dict:
+        try:
+            self.gate.check_tool_call(role.name, LOAD_NAME, _canonical(tc.arguments, tc.raw_arguments), brief=True,
+                                      capped=False)
+        finally:
+            self._save_usage()
+        out = load_tools(tc.arguments, deferred, loaded)
+        if out.get("loaded"):
+            self.journal.write(role.name, "tools_loaded", ", ".join(deferred[w].name for w in out["loaded"]),
+                               tool=LOAD_NAME, loaded=[deferred[w].name for w in out["loaded"]])
+        return out
+
     def _role_tool(self, role: Role, tc, by_wire: dict[str, Tool]) -> Any:
         tool = by_wire.get(tc.name)
         name = tool.name if tool else tc.name
@@ -780,6 +884,7 @@ class Engine:
             return self._outward_call(role, tool, tc.arguments)
         ctx = self._context(role, name)
         args_note = _short(_canonical(tc.arguments, ""), 120)
+        watch = self._folder_manifests() if name in self.WRITING_TOOLS and self._folders_before else None
         try:
             out = tool.handler(tc.arguments, ctx) if tool.handler else None
         except NotGranted as e:
@@ -792,8 +897,11 @@ class Engine:
         except Exception as e:
             self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
             return {"error": f"{type(e).__name__}: {e}"}
+        finally:
+            if watch is not None:
+                self._note_touched(watch)
         self.journal.write(role.name, "tool_call", f"{name} {args_note}", tool=name)
-        if name in ("workspace.write", "workspace.set_aside", "workspace.place", "code.run"):
+        if name in self.WRITING_TOOLS:
             self.gate.forget_reads(role.name)  # reading a changed file again is not a loop
         return out if out is not None else {"ok": True}
 

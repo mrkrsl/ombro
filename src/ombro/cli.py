@@ -312,7 +312,7 @@ def cmd_status(args) -> int:
     print(f"Allowance {lim.get('allowance', 'custom')}")
     print()
     print(f"{'':<14}{'used':>16}  {'limit':>14}")
-    print(f"{'Tokens':<14}{sp.get('total_tokens', 0):>16,}  {format_tokens(lim.get('max_tokens')):>14}")
+    print(f"{'Tokens':<14}{sp.get('counted_tokens', sp.get('total_tokens', 0)):>16,}  {format_tokens(lim.get('max_tokens')):>14}")  # as counted against the limit
     print(f"{'Rounds':<14}{sp.get('rounds', 0):>16}  {lim.get('max_rounds', 0):>14}")
     print(
         f"{'Time':<14}{format_duration(sp.get('elapsed_seconds', 0)):>16}  "

@@ -36,7 +36,7 @@ from ombro.ui import UI, ChatCleared, PastTurn, ConsoleUI, Failure, Field, LeadS
 from ombro.journal import utc_now
 from ombro.roles import load_lead
 from ombro.settings import ModelSpec, SetupError, format_tokens, load_limits, load_models, load_preferences, load_tool_settings
-from ombro.tools import ToolContext, ToolError, ToolRegistry
+from ombro.tools import LOAD_NAME, ToolContext, ToolError, ToolRegistry, is_deferred, load_tool_schema, load_tools
 
 QUIT_WORDS = ("/quit", "/q", "/exit", "/end")
 TOOL_RESULT_CAP = 12_000
@@ -73,14 +73,14 @@ class BriefLookups:
             tools = prompts.CHAT_TOOLS + [t.schema() for n in WEB_TOOLS.values() if (t := c.registry.get(n))]
             if not skills.library(c.home):  # nothing to read: no tool for it, as in chat
                 tools = [t for t in tools if t["function"]["name"] != "skills__read"]
-            mine = [t for t in tools if t["function"]["name"] in BRIEF_LOOKUPS]
-            seen: set[str] = set()
-            self._schemas = []
-            for t in mine + [t.schema() for t in c.lookups().values()]:
-                if t["function"]["name"] not in seen:
-                    seen.add(t["function"]["name"])
-                    self._schemas.append(t)
-        return self._schemas
+            self._schemas = [t for t in tools if t["function"]["name"] in BRIEF_LOOKUPS]
+        seen: set[str] = set()
+        out = []
+        for t in self._schemas + self.chat.lookup_schemas():  # the lookups follow what the chat has loaded
+            if t["function"]["name"] not in seen:
+                seen.add(t["function"]["name"])
+                out.append(t)
+        return out
 
     @property
     def names(self) -> set[str]:
@@ -288,7 +288,7 @@ class Chat:
         self._client_factory = client_factory or (lambda spec: make_client(spec, home))
         self._client: ChatClient | None = None
         self.clock = clock
-        self.gate = Gate(self.limits, clock)
+        self.gate = Gate(self.limits, clock, what="chat")
         self.today_date = today or date.today()
         self.today = prompts.format_date(self.today_date)
         if registry is None:
@@ -297,6 +297,7 @@ class Chat:
             registry = native_registry(home, load_tool_settings(home))
         self.registry = registry
         self._lookups: dict[str, Any] | None = None  # wire name: Tool, made on the first model call
+        self._loaded: set[str] = set()  # wire names of the outside services' tools the Lead has loaded
         self._pool = None  # the MCP servers the lookups reach, started then
         self.mode = "Chat"
         self.exchanges: list[list[dict]] = []  # each starts with a user message
@@ -312,7 +313,7 @@ class Chat:
 
     def _fresh(self) -> None:
         """Everything one chat keeps: none of it carries into the next."""
-        self.gate = Gate(self.limits, self.clock)
+        self.gate = Gate(self.limits, self.clock, what="chat")
         self.mode = "Chat"
         self.exchanges = []
         self.user_said = []
@@ -528,9 +529,20 @@ class Chat:
         self._lookups = found
         return found
 
+    def lookup_schemas(self) -> list[dict]:
+        """The lookups' definitions for one model call: outside services' tools (mcp.*) only once the Lead has
+        loaded them with tools__load, which lists them by name; everything else in full."""
+        found = self.lookups()
+        deferred = [t for t in found.values() if is_deferred(t)]
+        out = [t.schema() for t in found.values() if not is_deferred(t)]
+        if deferred:
+            out.append(load_tool_schema(deferred))
+            out += [found[w].schema() for w in sorted(self._loaded) if w in found]
+        return out
+
     def _model_call(self, messages: list[dict]):
         tools = prompts.CHAT_TOOLS + [t.schema() for n in WEB_TOOLS.values() if (t := self.registry.get(n))]
-        tools += [t.schema() for t in self.lookups().values()]
+        tools += self.lookup_schemas()
         if not skills.library(self.home):  # nothing to read: an empty library costs no tool
             tools = [t for t in tools if t["function"]["name"] != "skills__read"]
         est = estimate_tokens(messages, tools)
@@ -547,7 +559,8 @@ class Chat:
         u = reply.usage
         in_tokens = u.input_tokens if u.input_tokens or not u.estimated else est
         out_tokens = min(u.output_tokens, max_out) if u.estimated else u.output_tokens
-        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated, cached=u.cached_input)
+        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated, cached=u.cached_input,
+                                    reasoning=getattr(u, "reasoning", 0))
         return reply
 
     def _crews_text(self) -> str:
@@ -688,7 +701,7 @@ class Chat:
         except LimitReached as e:
             self.ended = f"stopped by the chat limit {e.limit}: {e.detail}"
             self.transcript.note(f"The chat stopped: {e.detail}")
-            self.ui.show(Failure(f"The chat has reached its limit: {e.detail}. It ends here."))
+            self.ui.show(Failure(f"This chat has reached its limit: {e.detail}. Start a new chat to carry on."))
             return False
         except ModelError as e:
             self.exchanges.pop()
@@ -782,6 +795,7 @@ class Chat:
         """One message to the Lead and its answer. Returns (crews, summary) if the
         user accepted an offer to brief."""
         self.gate._seen.clear()  # loop detection counts repeats within one message
+        self.gate.begin_turn()  # the time limit is per message: a chat left open overnight has not used it
         self.exchanges.append([{"role": "user", "content": self.pending_note + text}])
         self.pending_note = ""
         self.user_said.append(text)
@@ -806,7 +820,7 @@ class Chat:
                 else:
                     result, request = self._tool(tc)
                 src = None
-                if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside",
+                if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside", LOAD_NAME,
                                                              "skills__read") and not (
                         isinstance(result, dict) and ("error" in result or "declined" in result)):
                     lookup = (self._lookups or {}).get(tc.name)
@@ -833,6 +847,10 @@ class Chat:
 
     def _tool(self, tc) -> tuple[dict, tuple[list[str], str] | None]:
         name = tc.name
+        if name == LOAD_NAME:
+            deferred = {w: t for w, t in self.lookups().items() if is_deferred(t)}
+            if deferred:
+                return load_tools(tc.arguments, deferred, self._loaded), None
         lookup = (self._lookups or {}).get(name)
         internal = (MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name) or FOLDER_TOOLS.get(name) or SKILL_TOOLS.get(name)
                     or (lookup.name if lookup else None))

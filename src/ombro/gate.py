@@ -58,6 +58,7 @@ class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
     cached_input_tokens: int = 0  # of input_tokens
+    reasoning_tokens: int = 0  # of output_tokens: thinking, where the provider says (or shows it)
     model_calls: int = 0
     tool_calls: dict[str, int] = field(default_factory=dict)
     tool_refused: dict[str, int] = field(default_factory=dict)
@@ -77,9 +78,10 @@ class Usage:
 
 
 class Gate:
-    def __init__(self, limits: Limits, clock: Callable[[], float]):
+    def __init__(self, limits: Limits, clock: Callable[[], float], what: str = "job"):
         self.limits = limits
         self.clock = clock
+        self.what = what  # "job", "chat" or "interview": named in the time-limit message
         self.started = clock()
         self.usage = Usage()
         self.phase = "work"
@@ -100,7 +102,13 @@ class Gate:
         return int(self.limits.max_tokens * (1 - self.limits.report_reserve))
 
     def elapsed(self) -> float:
+        """Time working: since the job started, or since a chat's or interview's current turn began."""
         return self.clock() - self.started
+
+    def begin_turn(self) -> None:
+        """A chat or interview starts one turn of work after waiting on the person. Its time limit
+        bounds each turn: hours left open between messages are not work and never count."""
+        self.started = self.clock()
 
     def timed_out(self) -> bool:
         return self.phase == "work" and self.elapsed() >= self.limits.job_timeout
@@ -131,10 +139,9 @@ class Gate:
         if self._stop:
             raise LimitReached("stopped", self._stop)
         if self.elapsed() >= self.limits.job_timeout:
-            raise LimitReached(
-                "job_timeout",
-                f"the job reached its time limit of {format_duration(self.limits.job_timeout)}",
-            )
+            limit = format_duration(self.limits.job_timeout)
+            raise LimitReached("job_timeout", f"the job reached its time limit of {limit}" if self.what == "job"
+                               else f"this message reached the {self.what}'s time limit of {limit}")
 
     def check_model_call(self, model: str, est_input: int, requested_output: int | None = None) -> tuple[int, float]:
         """Raise LimitReached if this call may not happen. Return (max_output_tokens, timeout)."""
@@ -180,8 +187,9 @@ class Gate:
         return max_out, max(timeout, 0.001)
 
     def record_model_call(self, model: str, input_tokens: int, output_tokens: int, estimated: bool = False,
-                          cached: int = 0) -> None:
+                          cached: int = 0, reasoning: int = 0) -> None:
         self.usage.model_calls += 1
+        self.usage.reasoning_tokens += min(reasoning, output_tokens)
         self.usage.input_tokens += input_tokens
         self.usage.cached_input_tokens += min(cached, input_tokens)
         self.usage.output_tokens += output_tokens

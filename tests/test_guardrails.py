@@ -146,7 +146,7 @@ def test_over_token_limit_stops_and_reserve_pays_for_report(job, short_character
     status = job(
         [
             fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 12400, "output": 200}),
+            fake.result("Read it all.", usage={"input": 11600, "output": 200}),
             LEAD_REPORT,  # no notes call: it would have left too little for the report
         ],
         limits=limits,
@@ -167,7 +167,7 @@ def test_without_a_reserve_the_report_falls_back_to_the_journal(job, short_chara
     status = job(
         [
             fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 17400, "output": 200}),
+            fake.result("Read it all.", usage={"input": 16000, "output": 200}),
             LEAD_REPORT,
         ],
         limits=limits,
@@ -494,3 +494,94 @@ def test_the_client_reads_cached_input_from_deepseek_and_openai():
                                 "prompt_tokens_details": {"cached_tokens": 800}}), None)
     plain = parse(None, reply({"prompt_tokens": 1000, "completion_tokens": 10}), None)
     assert (deepseek.usage.cached_input, openai.usage.cached_input, plain.usage.cached_input) == (900, 800, 0)
+
+
+def test_the_client_reads_thinking_tokens_or_counts_the_thinking_text():
+    import httpx
+
+    from ombro.client import OpenAICompatibleClient
+
+    def reply(usage: dict, **msg) -> httpx.Response:
+        body = {"choices": [{"message": {"content": "OK", **msg}, "finish_reason": "stop"}], "usage": usage}
+        return httpx.Response(200, json=body, request=httpx.Request("POST", "https://invented.example/v1"))
+
+    parse = OpenAICompatibleClient._parse
+    said = parse(None, reply({"prompt_tokens": 10, "completion_tokens": 500,
+                              "completion_tokens_details": {"reasoning_tokens": 420}}), None).usage
+    shown = parse(None, reply({"prompt_tokens": 10, "completion_tokens": 500},
+                              reasoning_content="Invented thoughts. " * 30), None).usage
+    plain = parse(None, reply({"prompt_tokens": 10, "completion_tokens": 500}), None).usage
+    assert (said.reasoning, said.reasoning_estimated) == (420, False)
+    assert shown.reasoning_estimated and 0 < shown.reasoning <= 500
+    assert plain.reasoning == 0
+
+
+def test_a_job_records_thinking_and_time_per_call(job):
+    job([fake.finish(), fake.keep_notes(), LEAD_REPORT])
+    call = next(e for e in job.events if e["action"] == "model_call")
+    assert "seconds" in call and call["note"].endswith("s")
+
+
+def test_a_chat_left_open_overnight_has_not_used_its_time(home):
+    from ombro.gate import Gate, LimitReached
+    from ombro.settings import load_limits
+
+    now = [0.0]
+    gate = Gate(load_limits(home).for_chat(), lambda: now[0], what="chat")
+    now[0] = 10 * 3600.0  # ten hours idle, then a message
+    gate.begin_turn()
+    gate.check_model_call("default", 100)  # no time limit reached
+    now[0] += gate.limits.job_timeout  # one message that runs for the whole limit is stopped
+    with pytest.raises(LimitReached, match="this message reached the chat's time limit"):
+        gate.check_model_call("default", 100)
+
+
+def echo_and_files(home):
+    """The echo tool beside the built-in workspace tools."""
+    from ombro.native import native_registry
+    from ombro.settings import load_tool_settings
+
+    reg = native_registry(home, load_tool_settings(home))
+    reg.register(echo_registry().get("test.echo"))
+    return reg
+
+
+def test_a_brief_s_last_call_asks_for_its_result_and_a_stopped_brief_lists_its_files(job, home):
+    write_role(home, "researcher", max_steps=3, tools=["test.echo", "workspace.write"])
+    status = job(
+        [
+            fake.brief("researcher", "Write it up."),
+            fake.call("workspace__write", {"path": "workspace/notes.md", "content": "# Invented notes\n"}),
+            fake.call("test__echo", {"q": "b"}),
+            fake.result("Wrote workspace/notes.md; it is complete."),
+            fake.finish(),
+            fake.keep_notes(), LEAD_REPORT,
+        ],
+        registry=echo_and_files(home),
+    )
+    assert status == "completed"
+    last = job.client.calls[3]  # the Lead's first call, then the role's three
+    assert [t["function"]["name"] for t in last["tools"]] == ["submit_result"]
+    assert "This is your last model call for this brief" in last["messages"][-1]["content"]
+    assert "1. **researcher** (ok)" in job.report
+
+
+def test_the_lead_reads_the_job_s_own_files_and_nothing_else(job, home):
+    write_role(home, "researcher", max_steps=2, tools=["workspace.write"])
+    job(
+        [
+            fake.brief("researcher", "Write it up."),
+            fake.call("workspace__write", {"path": "workspace/notes.md", "content": "# Invented notes\n"}),
+            fake.call("workspace__write", {"path": "workspace/more.md", "content": "more"}),
+            fake.call("workspace__read", {"path": "workspace/notes.md"}),
+            fake.call("workspace__read", {"path": "shared/x/secret.md"}),
+            fake.finish(),
+            fake.keep_notes(), LEAD_REPORT,
+        ],
+        registry=echo_and_files(home),
+    )
+    replies = [m["content"] for c in job.client.calls for m in c["messages"] if m.get("role") == "tool"]
+    stopped = next(r for r in replies if "stopped_by_limit" in r)
+    assert "workspace/notes.md" in stopped and "files_written" in stopped
+    assert any("# Invented notes" in r for r in replies)
+    assert any("only this job's files" in r for r in replies)

@@ -155,3 +155,71 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
+
+
+# -- deferred tools ----------------------------------------------------------
+# An outside service's tools (mcp.*) are not sent with every model call: their definitions can run to
+# tens of thousands of tokens (Notion's 77 came to about 57,000) and most briefs never use them. The
+# model sees their names in one small tool, tools__load, and gets the full definitions of the ones it
+# asks for from the next call on.
+
+LOAD_NAME = "tools__load"
+LOAD_SHORT_CHARS = 90  # of each tool's description in the listing
+
+
+def is_deferred(tool: "Tool") -> bool:
+    return tool.name.startswith("mcp.")
+
+
+def _first_sentence(text: str) -> str:
+    line = " ".join((text or "").split())
+    for end in (". ", "? ", "! "):
+        if end in line:
+            line = line.split(end, 1)[0] + end.strip()
+            break
+    return line if len(line) <= LOAD_SHORT_CHARS else line[: LOAD_SHORT_CHARS - 1].rstrip() + "…"
+
+
+def load_tool_schema(deferred: list["Tool"]) -> dict[str, Any]:
+    """The one tool that lists the deferred tools and loads the ones asked for."""
+    listing = "\n".join(f"- {t.wire_name}: {_first_sentence(t.description)}" for t in deferred)
+    return {
+        "type": "function",
+        "function": {
+            "name": LOAD_NAME,
+            "description": (
+                "Load the full definitions of tools that reach outside services, so you can call them. They are "
+                "listed here by name only, to keep each call small; load only the ones the task needs, then call "
+                "them from your next step. Tools you can load:\n" + listing
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"names": {"type": "array", "items": {"type": "string"},
+                                         "description": "The tool names to load, as listed."}},
+                "required": ["names"],
+            },
+        },
+    }
+
+
+def load_tools(arguments: dict | None, deferred: dict[str, "Tool"], loaded: set[str]) -> dict[str, Any]:
+    """Handle a tools__load call: add the names asked for to `loaded` (wire names) and say what happened."""
+    names = (arguments or {}).get("names")
+    if isinstance(names, str):
+        names = [names]
+    if not isinstance(names, list) or not names:
+        return {"error": "give `names`: a list of tool names from the listing"}
+    done, unknown = [], []
+    for n in names:
+        key = wire_name(str(n))
+        if key in deferred:
+            loaded.add(key)
+            done.append(key)
+        else:
+            unknown.append(str(n))
+    out: dict[str, Any] = {"loaded": done}
+    if unknown:
+        out["unknown"] = unknown
+    if done:
+        out["note"] = "These tools can be called from your next step."
+    return out

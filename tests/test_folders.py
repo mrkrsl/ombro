@@ -36,6 +36,33 @@ def user(tmp_path, monkeypatch):
     return me.resolve()
 
 
+
+def test_changes_someone_else_makes_while_a_job_runs_are_not_the_job_s(job, home, user):
+    from ombro.settings import load_tool_settings
+    from ombro.tools import Tool
+
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    outside = user / "Pictures" / "Trip" / "plan.md"
+
+    def elsewhere(args, ctx):  # the user saves a file in the folder while the job runs
+        outside.write_text("Mark's own plan")
+        return {"ok": True}
+
+    reg = native_registry(home, load_tool_settings(home))
+    reg.register(Tool(name="test.wait", description="Wait a moment.", handler=elsewhere))
+    write_role(home, "researcher", max_steps=10, tools=["workspace.write", "test.wait"])
+    job([
+        fake.brief("researcher", "Note the colour."),
+        fake.call("test__wait", {}),
+        fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
+        fake.result("Noted the colour."),
+        fake.finish(), fake.keep_notes(), LEAD_REPORT,
+    ], spec_meta={"folders": ["photos"]}, registry=reg)
+    ev = next(e for e in job.events if e["action"] == "folder_changes")
+    assert ev["created"] == ["colour.md"] and ev["outside"]["created"] == ["plan.md"]
+    assert "Changed while the job ran, but not by the job (by you or another program): plan.md." in job.report
+
+
 # ---------------------------------------------------------------------------
 # What can be granted
 

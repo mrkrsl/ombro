@@ -527,12 +527,18 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     cap_tokens = lim.get("max_tokens")
     allowance = lim.get("allowance")
     out.append(
-        f"- Tokens: {sp.get('total_tokens', 0):,} ({sp.get('input_tokens', 0):,} in, "
-        f"{sp.get('output_tokens', 0):,} out) of {format_tokens(cap_tokens)}"
+        f"- Tokens: {sp.get('counted_tokens', sp.get('total_tokens', 0)):,} of {format_tokens(cap_tokens)}"
         + (f" (allowance: {allowance})" if allowance and allowance != "custom" else "")
+        + (f"; {sp.get('total_tokens', 0):,} sent and received ({sp.get('input_tokens', 0):,} in, "
+           f"{sp.get('output_tokens', 0):,} out), with input the model had cached counted at a tenth"
+           if sp.get("cached_input_tokens") else
+           f" ({sp.get('input_tokens', 0):,} in, {sp.get('output_tokens', 0):,} out)")
     )
     if sp.get("estimated_calls"):
         out.append(f"  - {sp['estimated_calls']} model call(s) reported no token counts; estimates were used")
+    if sp.get("reasoning_tokens"):
+        out.append(f"  - of the {sp.get('output_tokens', 0):,} out, {sp['reasoning_tokens']:,} were the models' "
+                   "thinking, where the provider reports it")
     out.append(f"- Model calls: {sp.get('model_calls', 0)}")
     isp = f.get("interview_usage") or {}
     if isp:
@@ -704,6 +710,11 @@ def folder_lines(f: dict[str, Any]) -> list[str]:
             c = ev.get("counts") or {}
             for label, key in (("Created", "created"), ("Changed", "changed"), ("Removed", "removed")):
                 lines += ["  " + x for x in _change_list(label, ev.get(key) or [], int(c.get(key) or 0))]
+        outside = (ev or {}).get("outside") or {}
+        if any(outside.values()):
+            names = [x for k in ("created", "changed", "removed") for x in outside.get(k) or []]
+            lines.append("  - Changed while the job ran, but not by the job (by you or another program): "
+                         + ", ".join(names) + ".")
     if f.get("placed"):
         lines += ["", f"Copied into shared folders with workspace.place ({len(f['placed'])}):"]
         lines += [f"- {ev.get('note')} ({ev.get('role')})" for ev in f["placed"]]

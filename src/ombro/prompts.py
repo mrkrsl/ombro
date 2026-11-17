@@ -53,6 +53,17 @@ How the job works:
   file if its tools include workspace.read; for a role without it, put what
   it needs into the brief itself.
 - Do only what the spec asks. Do not add goals of your own.
+- Keep briefs to what the role needs: the goal, the sources by path, the
+  constraints and what done looks like, without restating the whole spec
+  or prescribing each step.
+- Brief as few times as the work allows. One role can read the sources and
+  write the deliverable in the same brief: do that, rather than one brief to
+  read or take notes and another to write from the notes. Each brief starts
+  afresh and every note a role writes takes as long to write as the final
+  text, so notes, extracts and inventories cost the job time and add
+  nothing the user asked for. Split work only where it truly divides (more
+  than one role, or sources that need different tools), and never brief a
+  role only to proofread, re-check or polish work that is already done.
 - Memory: the standing notes of each crew in this job, and their most
   recent jobs, are below. Follow the notes. For anything older, or more
   detail on a past job, call `memory.search` (passages from past reports of
@@ -64,8 +75,14 @@ How the job works:
   index, the notes and memory.search. Never brief a role to look for them.
 - A brief can come back with status "stopped_by_limit": the role used all its
   model calls, or repeated the same tool call. It returned no result, though
-  files it wrote stay in the workspace. Brief again more narrowly, or finish.
-  Do not re-brief the same task unchanged.
+  files it wrote stay in the workspace: the result lists them. Read them with
+  `workspace__read` first, since a role often stops just after writing its
+  deliverable. If it is complete, use it. If part is missing, brief the role
+  to finish only that part of the named file. Do not re-brief the same task
+  unchanged.
+- `workspace__read` and `workspace__list` show you the files roles wrote in
+  this job. Before you finish, check the deliverable is there and complete,
+  and report on what you saw rather than on a role's word.
 - If you cannot deliver the spec honestly with the roles available, call
   `finish` with outcome "cannot_proceed" and say why. That is an acceptable result.
 - Some roles have tools that reach outside services (named mcp.*). Work
@@ -92,6 +109,17 @@ change them.
 
 - Do the task you are briefed with and nothing more.
 - {tools_line}
+- Write a long deliverable once, in parts: the first sections with
+  workspace.write, the rest with mode "append", at most about 2,000 words
+  per write, so no reply runs into the output limit. Do not rewrite a whole
+  file to fix a few lines, and add no checking, counting or polishing passes
+  the brief does not ask for. Read sources directly; take notes in scratch/
+  only when the task cannot be done in one pass, and never copy sources out
+  at length.
+- Spend your writing on the deliverable. Everything else stays short: what
+  you say between tool calls, notes to yourself, and your result, whose
+  summary is a paragraph of about 150 words at most. Point to files by path
+  rather than repeating what is in them, and do not restate the brief.
 - Never claim to have done something you have not done. Put anything you did
   not do, and why, in `did_not_do`.
 - If you need work done by a helper, do not attempt it yourself: add it to
@@ -262,7 +290,8 @@ def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
             )
         if any(t.startswith("mcp.") for t in tool_names):
             tools_line += (
-                " Tools named mcp.* reach outside services. A call that changes or sends something needs a"
+                " Tools named mcp.* reach outside services. They are listed by name in tools__load: load the"
+                " ones the brief needs before you call them, and leave the rest alone. A call that changes or sends something needs a"
                 " one-sentence reason. Depending on the user's settings it is done at once, or held for the"
                 " user to approve after the job: the result says which. An action waiting for approval has not happened, so"
                 " never stage it twice or report it as done; list it in your summary as waiting for approval. Where a tool"
@@ -364,6 +393,32 @@ LEAD_TOOLS.append(
         },
     }
 )
+
+# The Lead reads what the roles wrote in this job, so it reports on files it has seen, not on a role's word.
+LEAD_READ_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace__list",
+            "description": "List the files the roles have written in this job (workspace/ and scratch/), with sizes.",
+            "parameters": {"type": "object", "properties": {
+                "path": {"type": "string", "description": "Optional: workspace or scratch, or a folder in them."}}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace__read",
+            "description": "Read a file a role wrote in this job, under workspace/ or scratch/: to check a "
+            "deliverable, or to see how far a role got before it stopped, before you brief again or finish.",
+            "parameters": {"type": "object", "properties": {
+                "path": {"type": "string", "description": "e.g. workspace/report.md"},
+                "offset": {"type": "integer", "description": "Optional: the next_offset of a previous read."},
+                "max_chars": {"type": "integer", "description": "Optional: at most this many characters."}},
+                "required": ["path"]},
+        },
+    },
+]
 
 LEAD_NUDGE = "Respond by calling a tool: `brief` to delegate, `memory__search` to look at past work, or `finish`."
 

@@ -321,7 +321,7 @@ def test_chat_usage_has_its_own_cap(chat, job, home):
     # The first call fits (its prompt and largest reply are under the cap); after it, the second cannot.
     mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_max_tokens": 12500}, mdfile.read(home.limits)[1])
     chat([fake.say("Hello.", usage={"input": 7000, "output": 100})] * 5, ["Hi.", "Again.", "And again."])
-    assert "The chat has reached its limit" in chat.output
+    assert "This chat has reached its limit" in chat.output and "Start a new chat" in chat.output
     assert len(chat.client.calls) == 1
     assert "[Chat · 7,100 of 12,500 tokens" in chat.output
     assert mdfile.read(chat.chat.path)[0]["ended"].startswith("stopped by the chat limit max_tokens")

@@ -241,7 +241,7 @@ class Interview:
             model = "default"
         self.spec = self.models[model]
         self._client_factory = client_factory or (lambda spec: make_client(spec, home))
-        self.gate = Gate(self.limits, clock)
+        self.gate = Gate(self.limits, clock, what="interview")
         self.today = prompts.format_date(today or date.today())
         self.lead_soul = lead_soul
         self.instructions = instructions
@@ -278,6 +278,7 @@ class Interview:
             return None
         self.gate.check_round()
         self.gate.record_round()
+        self.gate.begin_turn()  # time spent waiting for the answer is not the interview's work
         self.answers.append(text)
         return text
 
@@ -296,7 +297,8 @@ class Interview:
         u = reply.usage
         in_tokens = u.input_tokens if u.input_tokens or not u.estimated else est
         out_tokens = min(u.output_tokens, max_out) if u.estimated else u.output_tokens
-        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated, cached=u.cached_input)
+        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated, cached=u.cached_input,
+                                    reasoning=getattr(u, "reasoning", 0))
         snap = self.gate.snapshot()
         self.ui.show(Usage("interview", self.purpose.kind, snap.get("counted_tokens", 0), self.limits.max_tokens,
                            sum((snap.get("tool_calls") or {}).values())))

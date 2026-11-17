@@ -34,6 +34,8 @@ class Usage:
     output_tokens: int
     estimated: bool = False
     cached_input: int = 0  # of input_tokens, how many the provider served from its cache
+    reasoning: int = 0  # of output_tokens, how many the model spent thinking before it answered
+    reasoning_estimated: bool = False  # counted from the thinking text, the provider gave no figure
 
 
 @dataclass
@@ -258,6 +260,16 @@ class OpenAICompatibleClient:
                                                               else 0) or 0
             u = Usage(int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0),
                       cached_input=int(cached))
+            # Thinking: OpenAI and DeepSeek say completion_tokens_details.reasoning_tokens; failing that, a
+            # reasoning_content (or reasoning) text is counted roughly, as estimate_tokens counts.
+            out_details = usage.get("completion_tokens_details") or {}
+            thought = out_details.get("reasoning_tokens") if isinstance(out_details, dict) else None
+            if thought:
+                u.reasoning = int(thought)
+            else:
+                text = msg.get("reasoning_content") or msg.get("reasoning")
+                if isinstance(text, str) and text:
+                    u.reasoning, u.reasoning_estimated = min(len(text) // 3 + 1, u.output_tokens), True
         else:
             out_chars = len(content or "") + sum(len(c.raw_arguments) for c in calls)
             u = Usage(0, out_chars // 3 + 1, estimated=True)

@@ -240,3 +240,16 @@ def fake_sent(record: Path) -> list[dict]:
     if not record.is_file():
         return []
     return [json.loads(line) for line in record.read_text().splitlines() if line.strip()]
+
+
+def offered_tools(tools: list[dict]) -> set[str]:
+    """The tool names one model call offered: those sent in full, and those listed in tools__load."""
+    import re
+
+    names = set()
+    for t in tools:
+        f = t["function"]
+        names.add(f["name"])
+        if f["name"] == "tools__load":
+            names.update(re.findall(r"^- ([A-Za-z0-9_-]+):", f["description"], re.M))
+    return names
