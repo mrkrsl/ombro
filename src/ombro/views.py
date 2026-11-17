@@ -461,14 +461,15 @@ def summary(home: Home) -> vt.Summary:
             "active_jobs": sum(1 for r in job_rows if r["active"]),
             "scheduled_jobs": enabled,
             "waiting": sum(r["waiting"] for r in job_rows),
-            "unseen_jobs": len(unseen := [r for r in job_rows if _unseen(r)]),
+            "unseen_jobs": len(unseen := [r for r in job_rows if is_unseen(r)]),
         },
         "unseen": [{"job_id": r["job_id"], "status": r["status"], "brief": r["brief"],
                     "finished_at": r["finished_at"], "waiting": r["waiting"]} for r in unseen],
     }
 
 
-def _unseen(row: vt.JobRow) -> bool:
+def is_unseen(row: vt.JobRow) -> bool:
+    """Finished, with a report, and not yet seen: the Jobs page's "new" and the menu bar's alert."""
     return row["status"] != "running" and not row["seen_at"] and Path(row["path"], "report.md").is_file()
 
 

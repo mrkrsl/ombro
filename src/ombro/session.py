@@ -202,7 +202,10 @@ class JobWatcher:
                     jobs.mark_seen(jobs.find_job(self.home, job_id))
                 except (LookupError, OSError):
                     pass
-        counts = {"active": sorted(active), "waiting": sum(r["waiting"] for r in rows), "jobs": len(rows)}
+        # Unseen too: a job that died is marked failed and given its report a moment after it stops
+        # counting as active, and the menu bar's alert must hear of that.
+        counts = {"active": sorted(active), "waiting": sum(r["waiting"] for r in rows), "jobs": len(rows),
+                  "unseen": sum(1 for r in rows if views.is_unseen(r))}
         changed = counts != self.last_counts or active != self.active
         self.active = active
         self.last_counts = counts
