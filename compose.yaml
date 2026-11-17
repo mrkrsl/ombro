@@ -1,0 +1,29 @@
+# Ombro as a server in Docker. Start it with `docker compose up -d`; the pairing code is in
+# `docker compose logs ombro`. In the app, connect by address to 127.0.0.1:8765 with that code.
+
+services:
+  ombro:
+    build: .
+    image: ombro:local
+    restart: unless-stopped
+    # This machine only. To reach it from another computer, use SSH or Tailscale, not a public port.
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ombro-settings:/home/ombro/.config/ombro   # settings, keys and sign-ins
+      - ombro-files:/home/ombro/Ombro              # jobs and chats
+      # A folder to share with jobs: mount it under /home/ombro/shared, then share
+      # /home/ombro/shared/<name> in Settings › Folders. Add :ro to keep it read-only.
+      # - ~/Documents/Brand:/home/ombro/shared/brand
+    # Code a job writes runs inside bubblewrap, Ombro's sandbox: no internet, and only that job's
+    # files. bubblewrap needs Linux namespaces, which Docker's default filters block, so these
+    # three settings relax them for this container. Ombro still runs as an ordinary user here.
+    # Without them, everything else works and jobs say code can't run.
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
+
+volumes:
+  ombro-settings:
+  ombro-files:

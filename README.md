@@ -283,6 +283,13 @@ address to `127.0.0.1:8765` with the code. To share a folder with jobs, mount it
 under `/home/ombro/shared` (an example is in `compose.yaml`), then share
 `/home/ombro/shared/<name>` in Settings › Folders.
 
+Code a job writes runs in bubblewrap inside the container, as on any Linux
+server: no internet, and only that job's files, never Ombro's keys. bubblewrap
+needs Linux namespaces, which Docker's default filters block, so `compose.yaml`
+relaxes three of them (`security_opt`) for this one container. Ombro still runs
+as an ordinary user inside it. Remove those lines and everything else works,
+but jobs report that code can't run.
+
 ## Interviews
 
 The Lead interviews you in three places: set-up (`ombro init`), adding a role
