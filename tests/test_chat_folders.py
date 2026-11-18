@@ -272,3 +272,20 @@ def test_a_live_job_offered_with_no_folders_writes_where_its_task_saves(chat, us
     (job_dir,) = list(chat.chat.home.jobs_dir.iterdir())
     meta, _ = jobs.read_job(job_dir)
     assert {f["name"]: f["access"] for f in meta["folders"]} == {"niches": "write", "brand": "read"}
+
+
+def test_the_record_says_whether_a_write_created_replaced_or_added_to_a_file(chat, user):
+    path = "shared/niches/sizing.md"
+    chat([
+        fake.call("folders__write", {"path": path, "content": "# Sizing\nFirst.\n"}),
+        fake.call("folders__write", {"path": path, "content": "# Sizing\nSecond.\n"}),
+        fake.call("folders__write", {"path": path, "content": "Third.\n", "mode": "append"}),
+        fake.say("Saved it."),
+    ], ["Write a sizing note, then change it", "y", "y", "y"])
+    record = chat.transcript
+    assert f"Created {path}, with the user's yes." in record
+    assert f"Replaced {path} (the old version is in Archive/), with the user's yes." in record
+    assert f"Added to the end of {path}, with the user's yes." in record
+    assert "(overwrite)" not in record and "(append)" not in record
+    assert (user / "Documents" / "Niches" / "sizing.md").read_text() == "# Sizing\nSecond.\nThird.\n"
+    assert (user / "Documents" / "Niches" / "Archive" / "sizing.md").read_text() == "# Sizing\nFirst.\n"

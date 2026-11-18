@@ -1272,7 +1272,10 @@ class Chat:
             self.transcript.note(f"The user said no to writing {shown}.")
             return {"declined": f"The user said no, so {shown} was not changed. Ask what they would like instead."}
         out = native._write({"path": path, "content": content, "mode": mode}, ctx)
-        self.transcript.note(f"Wrote {shown} ({mode}), with the user's yes.")
+        # Labelled by what was decided before the write: whether the file was there then, not the mode asked.
+        done = {"create": f"Created {shown}", "replace": f"Replaced {shown} (the old version is in Archive/)",
+                "add to the end of": f"Added to the end of {shown}"}[what]
+        self.transcript.note(f"{done}, with the user's yes.")
         self.ui.say(f"Saved {shown}.", level="done")
         return out
 
