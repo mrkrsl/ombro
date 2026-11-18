@@ -17,7 +17,7 @@ import { BriefPage } from "./screens/BriefPage";
 import { ReportPage } from "./screens/ReportPage";
 import { Scheduled } from "./screens/Scheduled";
 import { Settings } from "./screens/settings/Settings";
-import { isMac, onTrayOpen, setTray, startZoom } from "./platform";
+import { isMac, onTrayOpen, quitApp, setTray, startZoom } from "./platform";
 import { shortcutFor } from "./shortcuts";
 import { useStore } from "./store/store";
 
@@ -47,6 +47,12 @@ export default function App() {
   // Keyboard shortcuts (shortcuts.ts): Cmd on macOS, Ctrl elsewhere.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Linux: Ctrl+Q quits, as in other desktop apps (macOS's Cmd+Q comes from its menu).
+      if (!isMac && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "q") {
+        e.preventDefault();
+        void quitApp();
+        return;
+      }
       const action = shortcutFor(e, isMac);
       if (!action) return;
       e.preventDefault();

@@ -8,6 +8,7 @@ import type { CommandView } from "../api/types";
 import { listAnswers, quickAnswers, usageText, type Conversation } from "../store/conversation";
 import { useStore } from "../store/store";
 import { modelLabel } from "../store/models";
+import { fileManager } from "../platform";
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -20,7 +21,7 @@ function Editing({ paths, onDone, onProblem }: { paths: string[]; onDone: () => 
   const remote = useStore((s) => s.remote);
   const open = (p: string) =>
     openPath(p, "open").catch(() =>
-      onProblem(`No app would open ${fileName(p)}. Show it in Finder and open it with a text editor instead.`),
+      onProblem(`No app would open ${fileName(p)}. Show it in ${fileManager} and open it with a text editor instead.`),
     );
   const opened = useRef("");
   useEffect(() => {
@@ -49,7 +50,7 @@ function Editing({ paths, onDone, onProblem }: { paths: string[]; onDone: () => 
             <FileText size={14} aria-hidden="true" /> Open {fileName(p)}
           </button>,
           <button key={`show-${p}`} className="secondary" onClick={() => void openPath(p, "reveal").catch((e) => onProblem(String(e)))}>
-            <FolderOpen size={14} aria-hidden="true" /> Show in Finder
+            <FolderOpen size={14} aria-hidden="true" /> Show in {fileManager}
           </button>,
         ])}
         <button className="primary" onClick={onDone}>

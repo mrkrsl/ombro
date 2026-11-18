@@ -11,8 +11,17 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
+// macOS draws a template icon in the menu bar's own colour. Linux shows the picture as it is, and
+// the top bar there (GNOME, Ubuntu) is dark in light and dark themes alike, so it gets a white one
+// (the same SVGs with fill="white", drawn at 36 px by rsvg-convert).
+#[cfg(target_os = "macos")]
 const IDLE: &[u8] = include_bytes!("../icons/tray/idle@2x.png");
+#[cfg(target_os = "macos")]
 const ALERT: &[u8] = include_bytes!("../icons/tray/alert@2x.png");
+#[cfg(not(target_os = "macos"))]
+const IDLE: &[u8] = include_bytes!("../icons/tray/idle-light@2x.png");
+#[cfg(not(target_os = "macos"))]
+const ALERT: &[u8] = include_bytes!("../icons/tray/alert-light@2x.png");
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct Counts {
@@ -82,6 +91,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .icon(Image::from_bytes(IDLE)?)
         .icon_as_template(true)
         .tooltip("Ombro")
+        // Linux tray icons (AppIndicator) take no clicks of their own: they only open their menu,
+        // which is why "Ombro" heads it.
         .menu(&menu(app, &Counts::default())?)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {

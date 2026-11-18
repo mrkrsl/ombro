@@ -230,15 +230,18 @@ def broken(cur: Installed) -> bool:
     return cur.loaded is False or (cur.python is not None and not Path(cur.python).exists())
 
 
-def may_install_itself(home: Home, executable: str = sys.executable) -> bool:
+def may_install_itself(home: Home, executable: str = sys.executable, platform: str = sys.platform) -> bool:
     """The app installs the service without asking only for the usual home (not a demo or test home,
-    which would take it from the real one) and only from an Applications folder, so it never points
-    at a build folder or a copy macOS has moved aside to run."""
+    which would take it from the real one) and only from where the app is installed, so it never points
+    at a build folder, a copy macOS has moved aside to run, or an AppImage's mount (gone when it quits):
+    an Applications folder on macOS, /usr/bin (the .deb) on Linux."""
     from ombro.home import default_root
 
     if not getattr(sys, "frozen", False) or home.root != default_root() or not home.exists():
         return False
     exe = str(Path(executable).absolute())
+    if platform.startswith("linux"):
+        return exe.startswith("/usr/bin/")
     return "/AppTranslocation/" not in exe and (exe.startswith("/Applications/")
                                                  or exe.startswith(str(Path.home() / "Applications") + "/"))
 

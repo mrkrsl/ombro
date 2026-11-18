@@ -99,7 +99,8 @@ def interpreter() -> tuple[Path, Path]:
     so it sees the standard library only: no site-packages, no PYTHON* settings.
 
     The desktop app is frozen and has no Python of its own, so it carries one for this
-    (gui/scripts/build_sidecar.py): on macOS in Ombro.app/Contents/Resources/python."""
+    (gui/scripts/build_sidecar.py): on macOS in Ombro.app/Contents/Resources/python, on Linux
+    in /usr/lib/Ombro/python (the .deb) or the AppImage's usr/lib/Ombro/python."""
     bundled = bundled_python()
     if bundled is not None:
         return Path(os.path.realpath(bundled)), bundled.parent.parent.resolve()
@@ -112,8 +113,8 @@ def bundled_python() -> Path | None:
     """The app's own Python, when Ombro runs frozen inside the app; else None."""
     if not getattr(sys, "frozen", False):
         return None
-    here = Path(os.path.realpath(sys.executable)).parent  # Contents/MacOS, or the AppImage's bin
-    for root in (here.parent / "Resources" / "python", here.parent / "lib" / "ombro" / "python", here / "python"):
+    here = Path(os.path.realpath(sys.executable)).parent  # Contents/MacOS, /usr/bin, or the AppImage's usr/bin
+    for root in (here.parent / "Resources" / "python", here.parent / "lib" / "Ombro" / "python", here / "python"):
         exe = root / "bin" / "python3"
         if exe.exists():
             return exe

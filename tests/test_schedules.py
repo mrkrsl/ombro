@@ -468,13 +468,18 @@ def test_the_app_installs_it_itself_only_for_the_usual_home_from_applications(ho
 
     monkeypatch.setattr(home_mod, "default_root", lambda: home.root)
     exe = "/Applications/Ombro.app/Contents/MacOS/ombro-serve"
-    assert not scheduler.may_install_itself(home, exe)  # not the packaged app
+    mac = {"platform": "darwin"}
+    assert not scheduler.may_install_itself(home, exe, **mac)  # not the packaged app
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    assert scheduler.may_install_itself(home, exe)
-    assert not scheduler.may_install_itself(home, "/Users/invented/ombro/gui/target/release/ombro-serve")
-    assert not scheduler.may_install_itself(home, "/private/var/folders/x/AppTranslocation/y/Ombro.app/ombro-serve")
+    assert scheduler.may_install_itself(home, exe, **mac)
+    assert not scheduler.may_install_itself(home, "/Users/invented/ombro/gui/target/release/ombro-serve", **mac)
+    assert not scheduler.may_install_itself(home, "/private/var/folders/x/AppTranslocation/y/Ombro.app/ombro-serve", **mac)
+    # Linux: the .deb puts it in /usr/bin; an AppImage runs from a mount that goes when it quits.
+    assert scheduler.may_install_itself(home, "/usr/bin/ombro-serve", platform="linux")
+    assert not scheduler.may_install_itself(home, "/tmp/.mount_OmbroAbc/usr/bin/ombro-serve", platform="linux")
+    assert not scheduler.may_install_itself(home, "/home/invented/ombro/gui/target/release/ombro-serve", platform="linux")
     monkeypatch.setattr(home_mod, "default_root", lambda: home.root / "elsewhere")
-    assert not scheduler.may_install_itself(home, exe)  # a demo or test home
+    assert not scheduler.may_install_itself(home, exe, **mac)  # a demo or test home
 
 
 def test_crontab_line_is_added_once_and_removed(home, no_system_scheduler):

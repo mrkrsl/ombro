@@ -317,3 +317,16 @@ def test_the_frozen_app_uses_the_python_it_carries(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "executable", str(app / "MacOS" / "ombro-serve"))
     exe, prefix = sandbox.interpreter()
     assert exe == (python / "python3.14").resolve() and prefix == (app / "Resources" / "python").resolve()
+
+
+def test_the_linux_package_uses_the_python_it_carries(tmp_path, monkeypatch):
+    """The .deb puts the sidecar in /usr/bin and Tauri's resources in /usr/lib/<productName>."""
+    usr = tmp_path / "usr"
+    (usr / "bin").mkdir(parents=True)
+    (usr / "bin" / "ombro-serve").write_text("")
+    python = usr / "lib" / "Ombro" / "python" / "bin"
+    python.mkdir(parents=True)
+    (python / "python3").write_text("")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(usr / "bin" / "ombro-serve"))
+    assert sandbox.bundled_python() == python / "python3"

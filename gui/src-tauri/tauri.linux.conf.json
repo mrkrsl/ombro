@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "depends": ["bubblewrap", "openssh-client"],
+        "recommends": ["gnome-keyring"]
+      }
+    }
+  }
+}

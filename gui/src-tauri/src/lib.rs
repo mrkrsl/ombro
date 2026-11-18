@@ -4,6 +4,7 @@
 //! exits when its stdin closes, so it never outlives the app; we also stop it on the way out.
 
 mod connection;
+#[cfg(target_os = "macos")]
 mod menu;
 mod saved;
 mod signin;
@@ -210,15 +211,31 @@ fn start_connection(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+/// Quit Ombro: Ctrl+Q on Linux, where there's no app menu to carry it (macOS's Cmd+Q is in the menu).
+#[tauri::command]
+fn quit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Linux: opening Ombro while it runs (from the dock or the app grid, with its window closed to
+    // the tray) shows that window instead of starting a second app. It goes first, so the second
+    // copy hands over and stops before it starts anything.
+    #[cfg(target_os = "linux")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::open(app, "current")));
+    // The menu bar is macOS's. On Linux it would be a row of menus inside the window, which the
+    // design doesn't have; the shortcuts work without it (the web view handles them).
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(|app| menu::build(app))
+        .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()));
+    builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
-        .menu(|app| menu::build(app))
-        .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()))
         .setup(|app| {
             let (tx, rx) = watch::channel::<Ready>(None);
             app.manage(Serve { tx, ready: rx, child: Mutex::new(None), started: Mutex::new(None) });
@@ -228,14 +245,25 @@ pub fn run() {
             if let Some(conn) = connection::at_start(app.handle()) {
                 let _ = begin(app.handle(), conn);
             }
-            tray::create(app.handle())?;
+            // A Linux desktop without a tray (no AppIndicator support) still runs Ombro: the
+            // window closes to nowhere, and opening Ombro again brings it back.
+            if let Err(e) = tray::create(app.handle()) {
+                if cfg!(target_os = "macos") {
+                    return Err(e.into());
+                }
+                eprintln!("no tray icon: {e}");
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window hides it: Ombro stays in the menu bar. Quit from there, or Cmd+Q.
+            // Closing the window hides it: Ombro stays in the menu bar (macOS) or the tray (Linux). Quit
+            // from there, or Cmd+Q (Ctrl+Q on Linux).
+            // Without a tray there would be no way back to a hidden window, so it closes and Ombro quits.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                if window.app_handle().try_state::<tray::Tray>().is_some() {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -255,7 +283,8 @@ pub fn run() {
             start_connection,
             skillfolder::read_skill_folder,
             signin::sign_in_listener,
-            signin::sign_in_answer
+            signin::sign_in_answer,
+            quit
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Ombro app")

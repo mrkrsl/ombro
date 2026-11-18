@@ -6,6 +6,16 @@ import { inTauri } from "./api/serve";
  * Linux: an ordinary title bar, with its buttons on the right (design 17). */
 export const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
 
+/** What the system's file manager is called, for "Show in …": Finder, or Files on Linux (GNOME's). */
+export const fileManager = isMac ? "Finder" : "Files";
+
+/** Quit the app (Ctrl+Q on Linux; macOS has Cmd+Q in its menu). */
+export async function quitApp(): Promise<void> {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("quit");
+}
+
 /** Open a file with the app the system uses for its kind (for a .md file, say TextEdit). */
 export async function openFile(path: string): Promise<void> {
   if (!inTauri) throw new Error("Files open in the desktop app only.");

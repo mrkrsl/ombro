@@ -104,7 +104,9 @@ def bundle_python() -> None:
         raise SystemExit(f"{src} doesn't look like a standalone Python (no bin/); build with a uv-managed Python")
     shutil.rmtree(PYTHON_OUT, ignore_errors=True)
     shutil.copytree(src, PYTHON_OUT, symlinks=True)
-    for pattern in PRUNE:
+    # Linux: the standalone python3 has Python linked into it, so the shared libpython beside it
+    # (33 MB) is never loaded; neither the interpreter nor lib-dynload's modules link to it.
+    for pattern in PRUNE + (["lib/libpython3*.so*"] if sys.platform.startswith("linux") else []):
         for p in PYTHON_OUT.glob(pattern):
             shutil.rmtree(p) if p.is_dir() and not p.is_symlink() else p.unlink()
     for p in list(PYTHON_OUT.rglob("__pycache__")):
