@@ -129,6 +129,12 @@ describe("Settings › General", () => {
     expect(sent("PUT", "/preferences")).toEqual({ name: "Ada L", instructions: "I run an invented bakery." });
   });
 
+  it("names each model's provider in the default model list", async () => {
+    render(<Settings />);
+    const choice = await screen.findByLabelText("Default model");
+    expect(within(choice).getAllByRole("option").map((o) => o.textContent)).toEqual(["invented-chat (Invented)", "local-model (Local)"]);
+  });
+
   it("lists providers and says why one can't go", async () => {
     replies["POST /models/providers/check"] = { blocked: "Your default model comes from this provider.", warnings: [] };
     render(<Settings />);
@@ -270,6 +276,75 @@ describe("Settings › Crews", () => {
     expect(calls.some(([m]) => m === "DELETE")).toBe(false);
     await userEvent.click(within(ask).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(calls.some(([m, p]) => m === "DELETE" && p === "/roles/legal/counsel")).toBe(true));
+  });
+
+  it("lists the same models as General, with providers, and any change wakes Save and Cancel", async () => {
+    const counsel = { name: "counsel", crew: "legal", title: "Legal Researcher", kind: "specialist", model: "default",
+      description: "Researches.", tools: [], skills: [], all_skills: false, soul: "You research.", path: "/x" };
+    replies["GET /roles/legal/counsel"] = counsel;
+    replies["PUT /roles/legal/counsel"] = { ...counsel, model: "local-model" };
+    render(<Settings />);
+    const row = (await screen.findByText("Legal Researcher")).closest(".item") as HTMLElement;
+    await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
+    const model = await screen.findByLabelText("Model");
+    const options = within(model).getAllByRole("option").map((o) => o.textContent);
+    expect(options).toEqual(["The default model", "invented-chat (Invented)", "local-model (Local)"]);
+    const save = screen.getByRole("button", { name: "Save" });
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(save).toBeDisabled();
+    expect(cancel).toBeDisabled();
+    await userEvent.selectOptions(model, "local-model");
+    expect(save).toBeEnabled();
+    expect(cancel).toBeEnabled();
+    await userEvent.click(cancel);
+    expect(model).toHaveValue("default");
+    expect(save).toBeDisabled();
+    await userEvent.selectOptions(screen.getByLabelText("Kind"), "helper");
+    expect(save).toBeEnabled();
+    await userEvent.selectOptions(screen.getByLabelText("Kind"), "specialist");
+    expect(save).toBeDisabled(); // back as it was: nothing to save
+    await userEvent.selectOptions(model, "local-model");
+    await userEvent.click(save);
+    expect(sent("PUT", "/roles/legal/counsel")).toEqual({ model: "local-model" });
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    expect(save).toBeDisabled();
+  });
+
+  it("renames a member and makes them a helper in one save, then follows the new name", async () => {
+    const counsel = { name: "counsel", crew: "legal", title: "Legal Researcher", kind: "specialist", model: "default",
+      description: "Researches.", tools: [], skills: [], all_skills: false, soul: "You research.", path: "/x" };
+    const renamed = { ...counsel, name: "case-reader", title: "Case Reader", kind: "helper" };
+    replies["GET /roles/legal/counsel"] = counsel;
+    replies["PUT /roles/legal/counsel"] = renamed;
+    replies["GET /roles/legal/case-reader"] = renamed;
+    render(<Settings />);
+    const row = (await screen.findByText("Legal Researcher")).closest(".item") as HTMLElement;
+    await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
+    const name = await screen.findByLabelText("Name");
+    await userEvent.clear(name);
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled(); // a member needs a name
+    await userEvent.type(name, "Case Reader");
+    await userEvent.selectOptions(screen.getByLabelText("Kind"), "helper");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(sent("PUT", "/roles/legal/counsel")).toEqual({ title: "Case Reader", kind: "helper" });
+    expect(await screen.findByRole("heading", { name: "Legal Crew – Case Reader" })).toBeInTheDocument();
+    await waitFor(() => expect(calls.some(([m, p]) => m === "GET" && p === "/roles/legal/case-reader")).toBe(true));
+  });
+
+  it("shows a refused rename", async () => {
+    const counsel = { name: "counsel", crew: "legal", title: "Legal Researcher", kind: "specialist", model: "default",
+      description: "Researches.", tools: [], skills: [], all_skills: false, soul: "You research.", path: "/x" };
+    replies["GET /roles/legal/counsel"] = counsel;
+    replies["PUT /roles/legal/counsel"] = new Error("The Legal Crew already has a member called Legal Assistant.");
+    render(<Settings />);
+    const row = (await screen.findByText("Legal Researcher")).closest(".item") as HTMLElement;
+    await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
+    const name = await screen.findByLabelText("Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Legal Assistant");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/already has a member called Legal Assistant/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled(); // the edit is still there
   });
 
   it("starts a new member as a chat", async () => {

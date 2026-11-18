@@ -1,12 +1,13 @@
 // Settings › Crews (designs 10, 11): each crew with its members (kind, model). The Lead is not listed. A new
 // crew, renaming (the title only) and deleting (moved aside: C4); a new member is an interview,
-// so it opens a chat; Edit opens a member's soul and model.
+// so it opens a chat; Edit opens a member's page: name, kind, model and soul.
 
 import { useState } from "react";
 import type { Crews as CrewsView, CrewRow, ModelList, RoleDetail, RoleRow } from "../../api/types";
 import { useStore } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
-import { modelLabel } from "../../store/models";
+import { modelChoices, modelLabel } from "../../store/models";
+import { ModelOptions } from "../../components/ModelOptions";
 
 const KINDS: Record<string, string> = { specialist: "Specialist", helper: "Helper", lead: "Lead" };
 
@@ -23,16 +24,37 @@ export function crewName(title: string): string {
 
 type Editing = { crew: string; role: string };
 
-function SoulEditor({ who, crewTitle, onBack }: { who: Editing; crewTitle: string; onBack: () => void }) {
+type Profile = { title: string; kind: string; model: string; soul: string };
+
+function profileOf(r: RoleDetail): Profile {
+  return { title: r.title, kind: r.kind, model: r.model, soul: r.soul };
+}
+
+/** The member's page: name, kind, model and soul, saved together. Save and Cancel wake up on any
+ * change; a new name renames them (their folder too, so the reply may come under a new name). */
+function MemberEditor({ who, crewTitle, onBack, onRenamed }: {
+  who: Editing;
+  crewTitle: string;
+  onBack: () => void;
+  onRenamed: (role: string) => void;
+}) {
   const path = `/roles/${encodeURIComponent(who.crew)}/${encodeURIComponent(who.role)}`;
   const role = useView<RoleDetail>(path);
   const models = useView<ModelList>("/models");
   const { run, problem, busy } = useAction();
-  const [soul, setSoul] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Partial<Profile>>({});
   const [saved, setSaved] = useState(false);
   const r = role.data;
   if (!r) return <Problem text={role.problem || "Loading…"} />;
-  const all = models.data?.connections.flatMap((c) => c.models) ?? [];
+  const was = profileOf(r);
+  const now: Profile = { ...was, ...draft };
+  const changes = (Object.keys(now) as (keyof Profile)[]).filter((k) => now[k] !== was[k]);
+  const dirty = changes.length > 0;
+  const edit = (k: keyof Profile, v: string) => {
+    setDraft((d) => ({ ...d, [k]: v }));
+    setSaved(false);
+  };
+  const all = modelChoices(models.data);
   return (
     <>
       <button className="text-button back-link" onClick={onBack}>
@@ -40,55 +62,61 @@ function SoulEditor({ who, crewTitle, onBack }: { who: Editing; crewTitle: strin
       </button>
       <h1 className="page-title">{`${crewTitle} – ${r.title}`}</h1>
       <p className="lede">Edit their soul here. Be as detailed as you can about what they do and how they work.</p>
+      <Field label="Name" hint="A name no one else in the crew has. Saved briefs that name them follow the change.">
+        <input aria-label="Name" className="text-input short" value={now.title} onChange={(e) => edit("title", e.target.value)} />
+      </Field>
+      <Field
+        label="Kind"
+        hint="A specialist has a defined scope and the main model; a helper takes narrow, repetitive briefs, often on a cheaper model."
+      >
+        <span className="form-row tight">
+          <select aria-label="Kind" value={now.kind} onChange={(e) => edit("kind", e.target.value)}>
+            <option value="specialist">{KINDS.specialist}</option>
+            <option value="helper">{KINDS.helper}</option>
+          </select>
+        </span>
+      </Field>
       {all.length > 1 && (
         <Field label="Model">
           <span className="form-row tight">
-            <select
-              aria-label="Model"
-              value={r.model}
-              onChange={async (e) => {
-                const next = await run((api) => api.put<RoleDetail>(`${path}/model`, { name: e.target.value }));
-                if (next) role.set(next);
-              }}
-            >
-              {!all.some((m) => m.name === r.model) && <option value={r.model}>{r.model === "cheap" ? "The helpers' model" : "The default model"}</option>}
-              {all.map((m) => (
-                <option key={m.name} value={m.name}>
-                  {m.model}
-                </option>
-              ))}
+            <select aria-label="Model" value={now.model} onChange={(e) => edit("model", e.target.value)}>
+              {!all.some((m) => m.name === now.model) && (
+                <option value={now.model}>{now.model === "cheap" ? "The helpers' model" : "The default model"}</option>
+              )}
+              <ModelOptions models={models.data} />
             </select>
           </span>
         </Field>
       )}
       <Field label="Soul">
-        <textarea
-          className="text-area soul"
-          rows={18}
-          value={soul ?? r.soul}
-          onChange={(e) => {
-            setSoul(e.target.value);
-            setSaved(false);
-          }}
-        />
+        <textarea className="text-area soul" rows={18} value={now.soul} onChange={(e) => edit("soul", e.target.value)} />
       </Field>
       <div className="form-actions">
         <button
           className="primary"
-          disabled={busy || soul === null || soul === r.soul}
+          disabled={busy || !dirty || !now.title.trim() || !now.soul.trim()}
           onClick={async () => {
-            const next = await run((api) => api.put<RoleDetail>(`${path}/soul`, { text: soul }));
+            const body = Object.fromEntries(changes.map((k) => [k, now[k]]));
+            const next = await run((api) => api.put<RoleDetail>(path, body));
             if (next) {
               role.set(next);
-              setSoul(null);
+              setDraft({});
               setSaved(true);
+              if (next.name !== who.role) onRenamed(next.name);
             }
           }}
         >
           Save
         </button>
-        <button className="secondary" onClick={onBack}>
-          Back
+        <button
+          className="secondary"
+          disabled={busy || !dirty}
+          onClick={() => {
+            setDraft({});
+            setSaved(false);
+          }}
+        >
+          Cancel
         </button>
         {saved && <span className="saved">Saved</span>}
       </div>
@@ -270,13 +298,14 @@ export function Crews() {
   if (editing) {
     const crewTitle = v?.crews.find((c) => c.name === editing.crew)?.title ?? "";
     return (
-      <SoulEditor
+      <MemberEditor
         who={editing}
         crewTitle={crewTitle}
         onBack={() => {
           setEditing(null);
           void crews.reload();
         }}
+        onRenamed={(role) => setEditing({ ...editing, role })}
       />
     );
   }

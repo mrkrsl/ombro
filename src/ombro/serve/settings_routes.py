@@ -214,6 +214,23 @@ def settings_routes(s: Serve) -> list[Route]:
         models.set_role_model(home, "lead" if role == "lead" else f"{crew}/{role}", _need(data, "name"))
         return views.role(home, crew, role)
 
+    def edit_role(r: Request, data: dict[str, Any]) -> Any:
+        """The crew member edit page's Save: any of title (a rename), kind, model and soul at once.
+        The reply is the member as they are now, under their new name after a rename."""
+        from ombro.role_edit import edit_role as edit
+
+        crew, role = r.path_params["crew"], r.path_params["role"]
+        given: dict[str, str] = {}
+        for key in ("title", "kind", "model", "soul"):
+            if key in data and data[key] is not None:
+                if not isinstance(data[key], str):
+                    raise HttpError(400, f"`{key}` must be text")
+                given[key] = data[key]
+        if not given:
+            raise HttpError(400, "nothing to change: give title, kind, model or soul")
+        done = edit(home, crew, role, **given)
+        return views.role(home, crew, done.name)
+
     # -- tools: the built-in providers, and MCP servers --------------------------------
 
     def tools_view() -> Any:
@@ -594,6 +611,7 @@ def settings_routes(s: Serve) -> list[Route]:
         Route("/crews/{name}", _handler(delete_crew, after=after), methods=["DELETE"]),
         Route("/roles/{crew}/{role}/check", _handler(check_role), methods=["GET"]),
         Route("/roles/{crew}/{role}", _handler(delete_role, after=after), methods=["DELETE"]),
+        Route("/roles/{crew}/{role}", _handler(edit_role, with_body=True), methods=["PUT"]),
         Route("/roles/{crew}/{role}/model", _handler(role_model, with_body=True), methods=["PUT"]),
         Route("/tools/servers", _handler(add_server, status=201, with_body=True), methods=["POST"]),
         Route("/tools/servers/{name}", _handler(edit_server, with_body=True), methods=["PUT"]),
