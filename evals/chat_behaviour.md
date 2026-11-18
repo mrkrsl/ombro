@@ -145,8 +145,8 @@ Lead calling `offer_work` itself is better.
 - Setup: a saved spec `stall-digest`.
 - Say: "Can you run my saved stall-digest brief every weekday at 7.15am?"
 - Answer "Shall I set it up?": yes.
-- Expect: `offer_schedule` with cron `15 7 * * 1-5`; Ombro's offer names the time zone and the next
-  runs; the schedule is saved (spec `specs/stall-digest.md`, that cron). The Lead never tells you
+- Expect: `offer_schedule` with cron `15 7 * * 1-5`; the offer says "every weekday at 7:15am" and the
+  next runs in words, with no cron and no time zone shown; the schedule is saved (spec `specs/stall-digest.md`, that cron). The Lead never tells you
   to add it yourself (on the Scheduled page or with `ombro schedule add`) and never says it can't
   see the time zone. Pointing at Install now, when the scheduler service isn't installed, is fine.
   No offer of work, no job.

@@ -17,9 +17,10 @@ def test_the_lead_offers_a_schedule_and_a_yes_sets_it_up(home, monkeypatch):
     saved(home)
     s = ChatSession(home)
     s([fake.call("offer_schedule", OFFER), fake.say("Done.")], ["Run the teapot task every morning at 8.30", "y"])
-    assert "I can put 'teapot-makers' on a schedule, every morning at 8.30. That's cron `30 8 * * *`: it runs " \
-           "every day at 8:30am, Europe/Invented" in s.output
-    assert "The next runs would be" in s.output
+    assert "I can schedule 'teapot-makers' to run every day at 8:30am. The next runs would be" in s.output
+    assert " at 8:30am and " in s.output
+    # Plain words only: no cron and no time zone (schedules run in the machine's own time).
+    assert "30 8 * * *" not in s.output and "Europe/Invented" not in s.output and "UTC" not in s.output
     assert any("Shall I set it up? [Y/n]" in a for a in s.answers.asked)
     sch = schedules.find_schedule(home, "teapot-makers")
     assert sch.enabled and sch.cron_text == "30 8 * * *" and sch.spec == "specs/teapot-makers.md"
@@ -45,7 +46,7 @@ def test_once_the_service_works_no_warning_is_given(home, monkeypatch):
     s = ChatSession(home)
     s([fake.call("offer_schedule", OFFER), fake.say("Done.")], ["Schedule it", "y"])
     assert "not installed" not in s.output and "scheduler" not in s.tool_replies()[0]
-    assert "Scheduled as 'teapot-makers': every morning at 8.30." in s.output
+    assert "Scheduled: 'teapot-makers' runs every day at 8:30am." in s.output
 
 
 def test_the_app_installs_the_service_itself_when_it_may(home, monkeypatch):
@@ -124,3 +125,21 @@ def test_the_zone_name_is_read_from_the_link_on_macos(monkeypatch):
     assert cronmod.zone_name() == "America/Invented"
     monkeypatch.setenv("TZ", "Asia/Invented")
     assert cronmod.zone_name() == "Asia/Invented"
+
+
+def test_times_are_put_in_words_and_the_lead_s_words_cover_the_rest(home):
+    from datetime import datetime
+
+    assert cronmod.in_words(cronmod.parse("0 9 * * 1-5")) == "every weekday at 9am"
+    assert cronmod.in_words(cronmod.parse("0 7 * * 1,3,5")) == "every Monday, Wednesday and Friday at 7am"
+    assert cronmod.in_words(cronmod.parse("0 12 1 * *")) == "on the 1st of each month at noon"
+    assert cronmod.in_words(cronmod.parse("*/15 * * * *")) == ""
+    assert cronmod.next_in_words(cronmod.parse("0 9 * * 1-5"), datetime(2026, 11, 20, 10, 0), 1) == \
+        ["Mon 23 Nov at 9am"]
+    saved(home)
+    s = ChatSession(home)
+    s([fake.call("offer_schedule", {**OFFER, "cron": "*/15 9-17 * * 1-5",
+                                    "when": "every quarter of an hour in working hours"}), fake.say("OK.")],
+      ["Schedule it", "n"])
+    assert "I can schedule 'teapot-makers' to run every quarter of an hour in working hours." in s.output
+    assert "*/15" not in s.output

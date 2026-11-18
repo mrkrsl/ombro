@@ -275,3 +275,27 @@ def local_zone(now: datetime | None = None) -> str:
     if name:
         return f"{name} ({abbr + ', ' if abbr and abbr != name else ''}{offset})"
     return f"{abbr} ({offset})" if abbr else offset
+
+
+def in_words(cron: Cron) -> str:
+    """When a schedule runs, as words that follow "runs": "every weekday at 9am", "every Monday at
+    7:30am", "on the 1st of each month at noon". "" when it isn't one time a day (the caller then uses
+    its own words)."""
+    text = describe(cron)
+    if text == f"Runs at {cron.text}":
+        return ""
+    words = text.removeprefix("Runs ")
+    for plural, single in (("weekdays", "every weekday"), ("weekends", "every weekend"),
+                           *((d, "every " + d[:-1]) for d in DAY_NAMES)):
+        if words.startswith(plural + " ") or words.startswith(plural + ","):
+            words = single + words[len(plural):]
+            break
+    for d in DAY_NAMES:  # "every Monday, Wednesdays and Fridays" -> "every Monday, Wednesday and Friday"
+        words = words.replace(d, d[:-1]) if words.startswith("every ") else words
+    return words
+
+
+def next_in_words(cron: Cron, now: datetime, n: int = 3) -> list[str]:
+    """The next runs, as "Thu 19 Nov at 9am"."""
+    return [f"{w.strftime('%a')} {w.day} {w.strftime('%b')} at {_clock(w.hour, w.minute)}"
+            for w in next_slots(cron, now, n)]

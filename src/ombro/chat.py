@@ -1678,8 +1678,9 @@ class Chat:
         from ombro import cron as cronmod
         from ombro import schedules
 
-        lines = [f"Schedules run in this machine's local time: {cronmod.local_zone()}. Give cron in that time, "
-                 "and say the zone when you offer one."]
+        lines = [f"Schedules run in this machine's local time: {cronmod.local_zone()}. Give cron in that time. "
+                 "With the user, say times in plain words (every weekday at 9am), never as cron, and don't name "
+                 "the zone unless they ask or speak of another one."]
         try:
             every = schedules.all_schedules(self.home)
         except (OSError, SetupError, mdfile.FrontMatterError):
@@ -1726,13 +1727,15 @@ class Chat:
                                                             cron=cron, spec=f"specs/{spec}.md", enabled=True))
         except (SetupError, mdfile.FrontMatterError) as e:
             return {"error": f"a scheduled job of this spec could not start: {e}"}
-        when = " ".join(str(args.get("when") or "").split()).rstrip(".") or cronmod.describe(cron)
-        words = cronmod.describe(cron)
-        words = words[0].lower() + words[1:]
+        # Ombro's own words for the times when it has them (so they can't differ from the cron); the
+        # Lead's for anything more involved. No cron and no zone: schedules run in the machine's own time.
+        when = cronmod.in_words(cron) or " ".join(str(args.get("when") or "").split()).rstrip(".") \
+            or cronmod.describe(cron)
         zone = cronmod.local_zone()
-        nxt = cronmod.describe_next(cron, datetime.now(), 3)
-        self._lead_says(f"I can put '{spec}' on a schedule, {when}. That's cron `{cron.text}`: it {words}, "
-                        f"{zone} time. The next runs would be {'; '.join(nxt)}.")
+        nxt = cronmod.next_in_words(cron, datetime.now(), 3)
+        self._lead_says(f"I can schedule '{spec}' to run {when}. The next runs would be "
+                        f"{', '.join(nxt[:-1])} and {nxt[-1]}." if len(nxt) > 1 else
+                        f"I can schedule '{spec}' to run {when}.")
         answer = self.ui.ask(Field("schedule", "Shall I set it up?", "yesno", default=True, mode="Chat",
                                    aside=True))
         if not answer:
@@ -1748,7 +1751,7 @@ class Chat:
             state = scheduler.schedule_turned_on(self.home)
         except OSError as e:
             state = {"ok": False, "message": f"Ombro couldn't check the scheduler service: {e}."}
-        line = f"Scheduled as '{name}': {when}. It's on the Scheduled page, where you can change or pause it."
+        line = f"Scheduled: '{spec}' runs {when}. It's on the Scheduled page, where you can change or pause it."
         if not state.get("ok"):
             line += f" {state.get('message') or ''} Install now on the Scheduled page puts that right."
         self.ui.say(" ".join(line.split()), level="done")
@@ -1758,7 +1761,8 @@ class Chat:
             out["scheduler"] = (f"{state.get('message')} Tell the user, in a sentence, that scheduled jobs won't "
                                 "run until it's put right with Install now on the Scheduled page.")
         else:
-            out["note"] = "Ombro has told the user it is set up; say nothing more than a short line, if anything."
+            out["note"] = ("Ombro has told the user it is set up; say nothing more than a short line, if anything, "
+                           "with no cron and no time zone.")
         return out
 
     # -- remember ----------------------------------------------------------

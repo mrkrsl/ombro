@@ -490,6 +490,13 @@ def check_schedule(r: Record) -> list[str]:
             fails.append(f"the Lead said {words!r}: it sent the user elsewhere, or claimed not to know the zone")
     if r.called("offer_work") or r.called("offer_brief") or r.jobs:
         fails.append("offered work or started a job")
+    shown = "\n".join(e for e in r.events if not e.startswith("[You]"))
+    if "15 7 * * 1-5" in shown or "cron" in shown.lower():
+        fails.append("the user was shown cron")
+    if "UTC" in shown:
+        fails.append("the user was shown the time zone")
+    if "every weekday at 7:15am" not in shown:
+        fails.append("the offer doesn't say 'every weekday at 7:15am'")
     return fails
 
 

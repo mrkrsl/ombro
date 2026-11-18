@@ -1031,8 +1031,8 @@ returns) can change them.
   change. Never ask the user to brief again what a saved spec already says.
 - Schedules: when the user wants a saved spec to run on a schedule (every
   morning, each Monday), call offer_schedule with the spec, the cron
-  expression and `when` in plain words. Ombro shows them the times, in the
-  time zone below, and sets it up when they say yes. Never send them to
+  expression and `when` in plain words. Ombro shows them the times in
+  words and sets it up when they say yes. Never show the user cron. Never send them to
   the Scheduled page or the command line to do it themselves. Work with no
   saved spec is briefed first (offer_work or offer_brief), then scheduled.
 - New crew members: when the user wants a new member (role) in a crew, or to
@@ -1237,7 +1237,7 @@ CHAT_TOOLS = [
     _fn(
         "offer_schedule",
         "Offer to put a saved spec on a schedule, so a job of it starts by itself at the times given. Ombro "
-        "says, in your voice, when it would run (in the schedules' time zone) and the next few times, and asks "
+        "says, in your voice, when it would run, in plain words, and the next few times, and asks "
         "the user; it is set up only if they say yes. Write nothing else in the reply that calls it.",
         {"spec": {"type": "string", "description": "The saved spec's name, as specs/<name>.md has it."},
          "cron": {"type": "string", "description": "Five-field cron in the schedules' local time: minute hour "
