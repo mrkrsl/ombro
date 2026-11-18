@@ -394,14 +394,14 @@ class BriefPurpose(Purpose):
     kind = "brief"
     title = "Task brief: the Lead will ask about one task and write a spec for it."
     intro = ("Task brief: I'll ask you about this one piece of work, then write a spec the crew can work from "
-             "without needing to ask you anything. It's usually 5 to 8 questions. Type /quit to stop; nothing is "
-             "written unless you accept it.")
+             "without needing to ask you anything. It's usually a few questions, fewer when a skill already says "
+             "how. Type /quit to stop; nothing is written unless you accept it.")
     stopped = "I've stopped the interview. Nothing was written, and we're back in Chat mode."
     proposal_intro = ("Here's the spec I've written for this task. Have a read through. You can then choose one "
                       "of the options at the end to save it, ask me to change it, or edit it yourself.")
     rules = prompts.BRIEF_INTERVIEW
     can_report_gaps = True
-    typical = "usually 5 to 8 questions"
+    typical = "usually a few questions"
     topics = [("task", "the task"), ("done", "what done looks like"), ("users", "who uses it"),
               ("constraint", "binding constraint"),
               ("waste", "what would be a waste"), ("non_goals", "non-goals")]
@@ -486,6 +486,8 @@ class BriefPurpose(Purpose):
         ]
         out.append(("Shared folders (outside a job, only folders the user has shared can be reached)",
                     self.folders_context()))
+        out.append(("Skills in the library (the user's methods; a role follows one its skills line names)",
+                    self.skills_context()))
         tools = self.outward_tools()
         if tools:
             from ombro import outward
@@ -502,6 +504,23 @@ class BriefPurpose(Purpose):
                         + f"\nThe user's default permission is {default}. If the task's crews have any of them, "
                         "ask what may happen without them."))
         return out
+
+    def skills_context(self) -> str:
+        from ombro import skills
+
+        lib = skills.library(self.home)
+        if not lib:
+            return "None yet."
+        named, every = skills.users(self.home)
+        text, _ = skills.listing(list(lib.values()))
+        lines = [text]
+        for name in lib:
+            who = sorted(set(named.get(name, [])) | set(every))
+            lines.append(f"{name} is used by: {', '.join(who) or 'no role yet'}")
+        lines.append("When one of these says how to do the task, the spec names it (\"Follow the skill <name>.\") "
+                     "and holds only what this task needs beyond it. Read it with skills__read if you need to know "
+                     "what it covers; never copy or restate it in the spec.")
+        return "\n".join(lines)
 
     def folders_context(self) -> str:
         from ombro import folders
@@ -550,11 +569,13 @@ class BriefPurpose(Purpose):
                       "description": "Optional: the roles the user wants to do the work, as crew/role or the "
                       "role's name. The job's Lead briefs them for the work."},
             "title": {"type": "string", "description": "One line saying what the task is."},
-            "details": {"type": "string", "description": "Anything else the crew needs: scope, sources, where "
+            "details": {"type": "string", "description": "What the crew needs beyond the title, in as few "
+                        "lines as the task allows: the skill to follow, if one fits, then scope, sources and where "
                         "the result goes. Optional."},
         }
         for key, label in SPEC_FIELDS:
-            props[key] = {"type": "string", "description": label}
+            props[key] = {"type": "string", "description": f"{label}. Optional: only when it says something the "
+                          "title, details or a skill named there do not."}
         if self.outward_tools():
             props["outward_preset"] = {"type": "string", "enum": ["manual", "balanced", "auto"],
                                        "description": "What may happen without the user, from their answer."}
@@ -563,10 +584,9 @@ class BriefPurpose(Purpose):
                               "description": f"Optional: mcp.* tools or api.<name>.request (a web API) the "
                                              f"user said may {what}."}
         return prompts.propose_tool(
-            "Propose the spec. The harness refuses it if any of the five required answers is empty, shows it, "
-            "and saves it only if the user accepts.",
+            "Propose the spec. The harness shows it, and saves it only if the user accepts.",
             props,
-            ["name", "crews", "title", *[k for k, _ in SPEC_FIELDS]],
+            ["name", "crews", "title"],
         )
 
     def path(self, name: str) -> Path:
@@ -576,18 +596,14 @@ class BriefPurpose(Purpose):
         name = _text(args, "name").lower()
         if not NAME.match(name):
             raise ProposalError("the name must use lower-case letters, digits, - and _")
-        missing = [label for key, label in SPEC_FIELDS if not _text(args, key)]
         if not _text(args, "title"):
-            missing.insert(0, "title")
-        if missing:
-            raise ProposalError(
-                "these are empty: " + ", ".join(missing) + ". Ask the user, or call `insufficient` if they cannot say"
-            )
+            raise ProposalError("the title is empty: say in one line what the task is")
         lines = [f"# {_text(args, 'title')}", ""]
         if _text(args, "details"):
             lines += [_text(args, "details"), ""]
-        for key, label in SPEC_FIELDS:
-            lines += [f"{label}: {_text(args, key)}", ""]
+        for key, label in SPEC_FIELDS:  # only those with something to say
+            if _text(args, key):
+                lines += [f"{label}: {_text(args, key)}", ""]
         crews = self._crews(args.get("crews"))
         meta: dict[str, Any] = {"name": name, "crews": crews}
         roles = self._roles(args.get("roles"), crews)

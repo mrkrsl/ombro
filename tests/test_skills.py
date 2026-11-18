@@ -127,6 +127,10 @@ def test_a_role_sees_names_and_descriptions_and_reads_a_skill_when_it_needs_it(j
     # The Lead sees the whole library and the role's skills.
     lead = job.client.calls[0]["messages"][0]["content"]
     assert "researcher (specialist; skills: kettle-survey)" in lead and "- teapot-check:" in lead
+    # A brief names a fitting skill and leaves its method out, at no set length (testing log T4).
+    flat = " ".join(lead.split())
+    assert "Never restate a skill's method, format or lists in a brief" in flat
+    assert "there is no set length or structure" in flat and "leave its method out of the brief" in flat
     assert "## Skills" in job.report and "researcher: kettle-survey" in job.report
 
 

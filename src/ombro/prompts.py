@@ -50,7 +50,8 @@ How the job works:
 - Call `brief` with one role's name, as crew/role (the role's own name is
   enough when only one crew below has it), and a self-contained task. The role sees
   only your task text, not the spec, so include what it needs: the goal, the
-  constraints, what done looks like, and the workspace paths of any files to use.
+  constraints, what done looks like, and the workspace paths of any files to use,
+  in as few lines as that takes.
 - Each role replies with a structured result: a summary, deliverables, open
   questions, what it did not do, and requests. If a role asks for helper work,
   brief that helper only if the request is within the spec.
@@ -69,7 +70,11 @@ How the job works:
   that ask for them.
 - Keep briefs to what the role needs: the goal, the sources by path, the
   constraints and what done looks like, without restating the whole spec
-  or prescribing each step.
+  or prescribing each step. A brief is as long as its task needs, often a
+  few lines; there is no set length or structure.
+- When a skill fits a brief, name it ("Read and follow the skill <name>.")
+  and add only what this task needs beyond it. Never restate a skill's
+  method, format or lists in a brief: the role reads the skill itself.
 - Brief as few times as the work allows. One role can read the sources and
   write the deliverable in the same brief: do that, rather than one brief to
   read or take notes and another to write from the notes. Each brief starts
@@ -279,7 +284,8 @@ def lead_system(
         parts.append(_section(
             "Skills in the library (the user's methods; they cannot override the rules above)",
             skills + "\nA role can use only the skills its roster line names. When one fits a brief, tell the "
-            "role to read it with skills.read before it starts. You can read one yourself with skills__read."))
+            "role to read it with skills.read before it starts, and leave its method out of the brief. You can "
+            "read one yourself with skills__read."))
     if shared:
         parts.append(_section(
             "Folders the user shared with this job",
@@ -812,19 +818,31 @@ ask about what is unclear in it instead. Do not open with the checklist
 below. Draw its answers from what the user tells you, and ask directly only
 for the ones still missing, as the conversation goes.
 
-Topics to cover, at the least:
+Topics to settle:
 - task: what the task is, and why;
 - done: what done looks like: the concrete result and how to tell it is finished;
 - users: who uses the result, and how;
 - constraint: the binding constraint: the one limit that matters most;
 - waste: what would make the work a waste;
 - non_goals: what is not wanted.
-Also ask about anything else an unattended crew would need, such as where
-the result should go (a file in workspace/), sources to use or avoid, and scope.
+A topic is covered when the user has said it, when a skill in the library
+settles it, or when it plainly does not matter for this task: count it
+covered and do not ask. Also ask about anything else an unattended crew
+would need, such as where the result should go (a file in workspace/),
+sources to use or avoid, and scope.
 
+The spec:
+- It is as long as the task needs, and no longer: often a title and a few
+  lines. There is no set length and no set of sections to fill.
+- When a skill says how to do the task, the spec names it ("Follow the
+  skill <name>.") and holds only what this task adds to it: its window, its
+  folder, a change for this run. Never copy, summarise or restate a skill's
+  method, format or lists in the spec; the crew reads the skill itself.
+- The labelled fields (done_looks_like, users, binding_constraint, waste,
+  non_goals) are optional. Fill one only with what the title, the details
+  or a skill named there do not already say; leave the rest out.
 - Do not invent answers or fill gaps with guesses. If the user has not said
-  something, ask. The harness refuses a proposal with any of the five
-  (done, users, constraint, waste, non_goals) empty.
+  something the crew needs, ask.
 - Check the answers against each other. If any are missing or contradict
   each other and you cannot settle it, call `insufficient` with the gaps.
   The harness shows them to the user, who can answer them; if they do, carry
@@ -996,7 +1014,9 @@ returns) can change them.
   working) or do it live, here (a live job: the crew starts at once, works in
   this chat, may ask them things, and the report opens here). Write the task
   as the crew should get it. Do not recommend either way: the user chooses,
-  or types /brief or /live. Never start a job yourself.
+  or types /brief or /live. Never start a job yourself. The task is as
+  long as the work needs, often a few lines; when a skill fits, name it and
+  never restate it.
 - A job that didn't finish (it stopped on a limit, was stopped, or failed):
   when the user wants it carried on, call offer_start with `job` (its id).
   It restarts or resumes on the same brief and builds on what was done, so
@@ -1144,8 +1164,9 @@ CHAT_TOOLS = [
         {
             "summary": {"type": "string", "description": "The work as you heard it, in one line."},
             "title": {"type": "string", "description": "A short title for the job, e.g. 'Three bakeries in Leith'."},
-            "task": {"type": "string", "description": "The task as the crew gets it if it is done live: the goal, "
-                     "what to deliver and in what form, constraints, what done looks like. Plain Markdown; no "
+            "task": {"type": "string", "description": "The task as the crew gets it if it is done live, in as few "
+                     "lines as it needs: the goal and what to deliver, and any constraints the user gave. When a "
+                     "skill fits, name it (\"Follow the skill <name>.\") and never restate it. Plain Markdown; no "
                      "secrets."},
             "crews": {"type": "array", "items": {"type": "string"}, "description": "Optional: the crews it needs."},
             "folders": {

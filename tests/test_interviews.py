@@ -234,21 +234,43 @@ SPEC = {
 }
 
 
-def test_brief_refuses_a_spec_with_a_required_answer_missing(talk, home):
+def test_brief_writes_only_the_fields_that_say_something(talk, home):
+    """No set structure (testing log T4): only a title is required, and empty fields are left out."""
     out = talk(
         BriefPurpose(home, "default", load_limits(home), "Find invented teapot makers."),
-        [fake.call("propose", {**SPEC, "waste": "", "non_goals": " "}), fake.call("propose", SPEC)],
+        [fake.call("propose", {**SPEC, "title": " "}), fake.call("propose", {**SPEC, "waste": "", "non_goals": " "})],
         ["a"],
     )
-    reply = talk.tool_replies()[0]
-    assert "A waste would be" in reply and "Not wanted" in reply
+    assert "the title is empty" in talk.tool_replies()[0]
     assert out.status == "confirmed"
     meta, body = mdfile.read(home.specs_dir / "teapot-survey.md")
     assert meta["crews"] == ["default"]
-    for line in ("Done looks like: workspace/makers.md", "Who uses it and how:", "Binding constraint: every fact",
-                 "A waste would be: makers outside", "Not wanted: prices"):
+    for line in ("Done looks like: workspace/makers.md", "Who uses it and how:", "Binding constraint: every fact"):
         assert line in body
+    assert "A waste would be" not in body and "Not wanted" not in body
     assert "Find invented teapot makers." in talk.client.calls[0]["messages"][1]["content"]
+
+
+def test_a_brief_that_follows_a_skill_names_it_and_needs_nothing_else(talk, home):
+    folder = home.skills_dir / "teapot-survey"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: teapot-survey\ndescription: How to survey invented teapot "
+                                     "makers.\n---\n1. Search the invented directory.\n")
+    out = talk(
+        BriefPurpose(home, "default", load_limits(home), "Run the teapot survey for Lowtown."),
+        [fake.call("propose", {"name": "lowtown-teapots", "title": "Teapot makers in Lowtown",
+                               "details": "Follow the skill teapot-survey, for Lowtown."})],
+        ["a"],
+    )
+    assert out.status == "confirmed"
+    _, body = mdfile.read(home.specs_dir / "lowtown-teapots.md")
+    assert body.strip() == "# Teapot makers in Lowtown\n\nFollow the skill teapot-survey, for Lowtown."
+    system = talk.client.calls[0]["messages"][0]["content"]
+    assert "- teapot-survey: How to survey invented teapot makers." in system
+    assert "never copy or restate it in the spec" in system
+    assert "There is no set length and no set of sections to fill." in system
+    tool = next(t for t in talk.client.calls[0]["tools"] if t["function"]["name"] == "propose")
+    assert tool["function"]["parameters"]["required"] == ["name", "crews", "title"]
 
 
 def test_insufficient_brief_goes_back_to_the_user_first(talk, home):
@@ -438,7 +460,7 @@ def test_ask_shows_how_far_through_the_interview_is(talk, home):
     # Two questions come as separate paragraphs after "Two questions:".
     assert "Lead: Two questions:\n\nWhat would be a waste?\n\nWhat is not wanted?" in talk.output
     assert '"answer": "Anything outside Lowtown; prices."' in talk.tool_replies()[1]
-    assert "usually 5 to 8 questions" in talk.output
+    assert "usually a few questions" in talk.output
     assert "save it as 'teapot-survey'" in talk.answers.asked[-1]
     assert "about halfway" in out.transcript.read_text()
 
