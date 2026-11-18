@@ -140,6 +140,29 @@ Lead calling `offer_work` itself is better.
   PYTHONPATH=/path/to/main-checkout/src uv run python evals/run_chat_evals.py --case set-aside
   ```
 
+### 11. Putting a saved spec on a schedule (`schedule-offer`; testing log T5)
+
+- Setup: a saved spec `stall-digest`.
+- Say: "Can you run my saved stall-digest brief every weekday at 7.15am?"
+- Answer "Shall I set it up?": yes.
+- Expect: `offer_schedule` with cron `15 7 * * 1-5`; Ombro's offer names the time zone and the next
+  runs; the schedule is saved (spec `specs/stall-digest.md`, that cron). The Lead never tells you
+  to add it yourself (on the Scheduled page or with `ombro schedule add`) and never says it can't
+  see the time zone. Pointing at Install now, when the scheduler service isn't installed, is fine.
+  No offer of work, no job.
+
+### 12. A brief for work a skill covers names it (`brief-names-skill`; testing log T4)
+
+- Setup: a skill `lantern-stall-digest` whose method has distinctive headings ("Colour board",
+  "Quiet shelf", "Sky line"); `notes` (read and write) with `week-1.md`.
+- Say: "Brief a job for the crew: use the lantern-stall-digest skill on this week's notes in
+  shared/notes and save the digest there as digest.md. Report back, don't do it live."
+- Answer: start the brief, yes; any interview question, "That's all it needs: follow the skill as
+  it is. Use your judgement."; the proposed spec, accept.
+- Expect: a saved spec that names `lantern-stall-digest`, restates none of its headings or steps,
+  and is short (under 1,500 characters); at most four questions. (On code before this fix the
+  spec copied the skill's headings and ran to about 1,800 characters.)
+
 ## Adding a case
 
 Add it here (setup, what to say, how to answer, what to expect), then to `cases()` in
