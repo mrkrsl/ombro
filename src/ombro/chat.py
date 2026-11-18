@@ -141,6 +141,24 @@ def _short(text: str, n: int = 120) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+def _offered_folders(raw: Any) -> dict[str, str]:
+    """offer_work's `folders` as {shared folder name: read or write}, for a live job's spec. What
+    is not a shared folder's name is kept, so the job notes it as left out."""
+    out: dict[str, str] = {}
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, str):
+            name, access = item.strip(), "read"
+        elif isinstance(item, dict):
+            name = str(item.get("folder") or item.get("name") or "").strip()
+            access = "write" if item.get("access") == "write" else "read"
+        else:
+            continue
+        name = name.removeprefix("shared/").strip("/")
+        if name and "/" not in name:
+            out[name] = "write" if "write" in (access, out.get(name)) else "read"
+    return out
+
+
 def _tool_msg(call_id: str, payload: Any, src: str | None = None) -> dict:
     content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     if len(content) > TOOL_RESULT_CAP:
@@ -1460,6 +1478,7 @@ class Chat:
         raw = args.get("crews") or args.get("crew") or []
         crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
                  if str(c) in self.home.crews()]
+        folder_access = _offered_folders(args.get("folders"))
         which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
         self._lead_says(f"This sounds like work{which}: {summary}.", level="lead")
         # Reporting back is Ombro's main way of working; live is the other choice, never pushed.
@@ -1470,7 +1489,7 @@ class Chat:
         if answer == "live" and task:
             self.transcript.note(f"The Lead offered work ({summary}); you chose to do it live.")
             return ({"status": "the user chose a live job; it starts now and its steps show in the chat, so do "
-                               "not reply"}, ("live", crews, title, task))
+                               "not reply"}, ("live", crews, title, task, folder_access))
         if answer in ("report", "live"):
             self.transcript.note(f"The Lead offered work ({summary}); you chose to have it reported back.")
             return ({"status": "the user chose a brief; the task interview starts now, so do not reply"},
@@ -1478,7 +1497,7 @@ class Chat:
         self.transcript.note(f"The Lead offered work ({summary}); you said not now.")
         return {"status": "the user said not now; carry on the conversation and do not offer again for this"}, None
 
-    def _live(self, crews: list[str], title: str, task: str) -> None:
+    def _live(self, crews: list[str], title: str, task: str, folder_access: dict[str, str] | None = None) -> None:
         """Do the work live: start the job, follow it here, then offer to keep it as a brief."""
         from ombro import livejob
         from ombro.session import StartError
@@ -1491,7 +1510,8 @@ class Chat:
 
             if connected_model(self.home) is None:
                 raise StartError("no model is connected; set Ombro up first")
-            job_dir = livejob.start(self.home, crews, title, task, chat=self.id, inputs=self.attached)
+            job_dir = livejob.start(self.home, crews, title, task, chat=self.id, inputs=self.attached,
+                                    folders=folder_access)
         except (StartError, SetupError, mdfile.FrontMatterError, OSError) as e:
             self.ui.show(Failure(f"The live job could not start: {e}."))
             return

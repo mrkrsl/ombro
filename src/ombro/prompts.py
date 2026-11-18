@@ -1112,6 +1112,21 @@ CHAT_TOOLS = [
                      "what to deliver and in what form, constraints, what done looks like. Plain Markdown; no "
                      "secrets."},
             "crews": {"type": "array", "items": {"type": "string"}, "description": "Optional: the crews it needs."},
+            "folders": {
+                "type": "array",
+                "description": "The shared folders the work needs, if it is done live, by name (as listed under "
+                "Shared folders). Without this, the job may read every shared folder and change none. With it, the "
+                "job gets only the folders named, so name every one it needs: write where it saves or changes "
+                "files, read where it only reads.",
+                "items": {
+                    "type": "object",
+                    "required": ["folder", "access"],
+                    "properties": {
+                        "folder": {"type": "string", "description": "A shared folder's name."},
+                        "access": {"type": "string", "enum": ["read", "write"]},
+                    },
+                },
+            },
         },
         ["summary", "title", "task"],
     ),

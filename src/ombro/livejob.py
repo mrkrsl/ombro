@@ -122,11 +122,14 @@ def spec_text(title: str, task: str) -> str:
 
 
 def start(home: Home, crews: list[str], title: str, task: str, *, chat: str | None = None,
-          inputs: list[str] | None = None) -> Path:
-    """Create a live job from what the Lead wrote in the chat, and start it in the background."""
+          inputs: list[str] | None = None, folders: dict[str, str] | None = None) -> Path:
+    """Create a live job from what the Lead wrote in the chat, and start it in the background.
+    `folders` are the shared folders the Lead named, as {name: read or write}: the job then gets
+    only those. With none it may read every shared folder and change none."""
     from ombro.settings import load_limits, load_tool_settings
 
-    spec_meta: dict[str, Any] = {"crews": crews, "live": True, **({"inputs": list(inputs)} if inputs else {})}
+    spec_meta: dict[str, Any] = {"crews": crews, "live": True, **({"inputs": list(inputs)} if inputs else {}),
+                                 **({"folders": dict(folders)} if folders else {})}
     body = spec_text(title, task)
     tools = load_tool_settings(home)
     limits = load_limits(home, None, tools)

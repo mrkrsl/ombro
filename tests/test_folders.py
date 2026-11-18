@@ -155,38 +155,65 @@ def test_the_start_folder_is_offered_once_and_a_no_is_remembered(home, user):
 # A job's folders
 
 
-def test_a_spec_may_lower_write_to_read_and_names_what_is_not_shared(home, user):
+def test_a_spec_names_grants_and_may_lower_write_to_read(home, user):
     folders.add(home, user / "Documents" / "Brand", "brand", "read")
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
     got, left = folders.for_job(home, {"folders": {"brand": "write", "photos": "read", "secret": None}})
+    # brand is read-only in Settings, so naming it for writing keeps it read-only
     assert [(f["name"], f["access"]) for f in got] == [("brand", "read"), ("photos", "read")]
     assert "not shared" in left[0] and "secret" in left[0]
-    got, _ = folders.for_job(home, {"folders": ["photos"]})
-    by_name = {f["name"]: f for f in got}
-    assert by_name["photos"]["access"] == "write" and by_name["photos"]["path"] == str(user / "Pictures" / "Trip")
-    assert by_name["brand"]["access"] == "read"  # named or not, every shared folder comes with the job
 
 
-def test_every_job_gets_every_shared_folder_however_it_starts(home, user, monkeypatch):
+def test_a_spec_that_names_folders_gets_only_those(home, user):
+    folders.add(home, user / "Documents" / "Brand", "brand", "write")
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    got, left = folders.for_job(home, {"folders": ["photos"]})
+    assert [(f["name"], f["access"], f["path"]) for f in got] == [("photos", "write", str(user / "Pictures" / "Trip"))]
+    assert left == []
+
+
+def test_a_spec_that_names_none_reads_every_folder_and_writes_none(home, user, monkeypatch):
     """17 Nov: a live job from a chat said "no folders are shared with this job" because its spec
-    named none. A job gets all the shared folders, with their own access, whatever its spec says."""
+    named none. Such a job may read every shared folder, but change none of them (finding M4)."""
     from ombro import livejob
 
     folders.add(home, user / "Documents" / "Brand", "brand", "write")
     folders.add(home, user / "Pictures" / "Trip", "photos", "read")
-    want = [("brand", "write", str(user / "Documents" / "Brand")), ("photos", "read", str(user / "Pictures" / "Trip"))]
-    assert folders.for_job(home, {}) == folders.for_job(home, None) == folders.for_chat(home)
+    want = [("brand", "read", str(user / "Documents" / "Brand")), ("photos", "read", str(user / "Pictures" / "Trip"))]
+    assert folders.for_job(home, {}) == folders.for_job(home, None)
     assert sorted((f["name"], f["access"], f["path"]) for f in folders.for_job(home, {})[0]) == want
 
-    started = []
-    monkeypatch.setattr(jobs, "start_detached", lambda h, d: started.append(d))
-    live = livejob.start(home, ["default"], "Round two", "Revise shared/brand/copy.md.", chat="c1")
+    monkeypatch.setattr(jobs, "start_detached", lambda h, d: None)
+    live = livejob.start(home, ["default"], "Round two", "Read shared/brand/guide.md.", chat="c1")
     plain = jobs.create_job(home, ["default"], {}, "# A follow-up", load_limits(home), source="test")
     for job_dir in (live, plain):
         meta, _ = jobs.read_job(job_dir)
         assert sorted((f["name"], f["access"], f["path"]) for f in meta["folders"]) == want
         assert "folders_left_out" not in meta
-    assert started == [live]
+
+
+def test_a_live_job_that_names_a_folder_may_write_there_and_reads_only_what_it_names(home, user, monkeypatch):
+    from ombro import livejob
+
+    folders.add(home, user / "Documents" / "Brand", "brand", "write")
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    monkeypatch.setattr(jobs, "start_detached", lambda h, d: None)
+    job_dir = livejob.start(home, ["default"], "Round two", "Write shared/brand/copy.md.", folders={"brand": "write"})
+    smeta, _ = mdfile.read(job_dir / "spec.md")
+    assert smeta["folders"] == {"brand": "write"}
+    meta, _ = jobs.read_job(job_dir)
+    assert [(f["name"], f["access"]) for f in meta["folders"]] == [("brand", "write")]
+
+
+def test_only_folders_a_job_can_write_to_are_backed_up(job, home, user):
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    folders.add(home, user / "Documents" / "Brand", "brand", "write")
+    status = job([fake.brief("researcher", "Look."), fake.result("Looked."), fake.finish(), fake.keep_notes(),
+                  LEAD_REPORT])
+    assert status == "completed"
+    assert {f["name"]: f["access"] for f in job.meta["folders"]} == {"photos": "read", "brand": "read"}
+    assert not (job.job_dir / "backup").exists()
+    assert all("backup" not in f for f in job.meta["folders"])
 
 
 def test_with_no_folders_shared_a_job_gets_none_and_no_warning(home, user):
