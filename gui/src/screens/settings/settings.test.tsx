@@ -150,10 +150,17 @@ describe("Settings › General", () => {
 });
 
 describe("Settings › General: the ChatGPT plan", () => {
-  it("signs in with ChatGPT in the browser, apart from an API key", async () => {
+  it("is a provider to choose, next to an OpenAI API key, and signs in in the browser", async () => {
+    replies["/models"] = { ...models, presets: [
+      { label: "OpenAI API (key)", endpoint: "https://api.openai.com/v1", key: "OPENAI_API_KEY", model: null }, ...models.presets] };
     replies["POST /models/chatgpt/sign-in"] = { url: "https://auth.openai.com/api/accounts/authorize?x=1", state: "waiting" };
     render(<Settings />);
-    expect(await screen.findByText("Use your ChatGPT plan")).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Add provider" }));
+    const picker = screen.getByLabelText("Provider");
+    const options = [...(picker as HTMLSelectElement).options].map((o) => o.text);
+    expect(options.slice(0, 2)).toEqual(["OpenAI API (key)", "ChatGPT plan (sign in, no key)"]);
+    await userEvent.selectOptions(picker, "chatgpt");
+    expect(screen.queryByLabelText(/^API key/)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Continue with ChatGPT" }));
     expect(sent("POST", "/models/chatgpt/sign-in")).toEqual({});
   });
@@ -174,6 +181,9 @@ describe("Settings › General: the ChatGPT plan", () => {
     expect(calls.some(([m, p]) => m === "POST" && p === "/models/chatgpt/welcomed")).toBe(true);
     expect(screen.queryByText("You're using your ChatGPT plan")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Manage usage" })).toBeInTheDocument();
+    expect(screen.getByText("ChatGPT plan")).toBeInTheDocument(); // in the providers list
+    await userEvent.click(screen.getByRole("button", { name: "Add provider" }));
+    expect(screen.queryByRole("option", { name: "ChatGPT plan (sign in, no key)" })).not.toBeInTheDocument(); // already there
   });
 });
 
