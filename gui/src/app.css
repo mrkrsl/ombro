@@ -699,13 +699,14 @@ a:visited {
 
 /* -- home ------------------------------------------------------------------------- */
 
-/* A little above the middle, where a block looks centred: 20px less at the top, more below. */
+/* A little above the middle, where a block looks centred: more space below than above. The top
+   keeps 40px, the logo's overhang (below), so a short window never cuts the logo off. */
 .home {
   min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px 32px 72px;
+  padding: 40px 32px 92px;
 }
 
 /* The wordmark sits level with "Working with …": its middle on that line's middle. */
