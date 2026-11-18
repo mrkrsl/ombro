@@ -64,7 +64,12 @@ export function gist(args: unknown, n = 80): string {
 const METHODS: Record<string, string> = { GET: "Look up", POST: "Send to", PUT: "Replace", PATCH: "Change", DELETE: "Delete" };
 
 /** The row's title: what it will do, and its gist. */
-type StagedForm = { url?: string; fields?: { field?: string; selector?: string; value?: string }[]; button?: { label?: string } };
+type StagedForm = {
+  url?: string;
+  fields?: { field?: string; selector?: string; value?: string }[];
+  button?: { label?: string };
+  _why?: string;
+};
 
 function host(url: string | undefined): string {
   try {
@@ -100,6 +105,7 @@ export function argumentLines(args: unknown, tool = ""): [string, string][] {
       ["Page", a.url ?? ""],
       ...(a.fields ?? []).map((f): [string, string] => [f.field || f.selector || "Field", f.value ?? ""]),
       ["Button", a.button?.label ?? ""],
+      ...(a._why ? [["Why it waits", a._why] as [string, string]] : []),
     ];
   }
   if (typeof args !== "object" || Array.isArray(args)) return [["Value", plain(args)]];

@@ -145,6 +145,7 @@ class Engine:
         self.roles = load_roles(self.home, self.crews, self.limits)
         self.instructions = load_preferences(self.home).instructions
         self._expand_all_tools()
+        self._with_browser()
         self._load_mcp()
         self._load_apis()
         self._load_composio()
@@ -212,6 +213,16 @@ class Engine:
         for role in self.roles.values():
             if role.all_tools:
                 role.tools.extend(n for n in names if n not in role.tools)
+
+    BROWSER_TOOLS = ("browser.open", "browser.click", "browser.type", "browser.screenshot", "browser.submit")
+
+    def _with_browser(self) -> None:
+        """Web pages are read in the browser, so a role that reads them (web.fetch) gets the browser's
+        other tools too, though its config.md lists tools by name. Sending still waits for approval."""
+        here = [n for n in self.BROWSER_TOOLS if self.registry.get(n) is not None]
+        for role in self.roles.values():
+            if "web.fetch" in role.tools:
+                role.tools.extend(n for n in here if n not in role.tools)
 
     def _load_mcp(self) -> None:
         """Start the MCP servers whose tools the roles name, and offer those tools."""
@@ -984,9 +995,21 @@ class Engine:
         name = tool.name
         args = dict(arguments)
         reason = str(args.pop(tool.reason_key, "") or "").strip() if tool.reason_key else ""
-        decision = outward.decide(self.outward, name, tool.effect or "external", self.tool_settings)
+        if tool.prepare is not None:  # e.g. browser.submit: the page's refs become its address and selectors
+            try:
+                args = tool.prepare(args, self._context(role, name))
+            except ToolError as e:
+                self.journal.write(role.name, "tool_refused", f"{name}: {_short(str(e), 200)}", tool=name)
+                return {"error": str(e)}
+            except Exception as e:  # noqa: BLE001: shown to the role, never a crash
+                self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
+                return {"error": f"{type(e).__name__}: {e}"}
+        # A tool may say what this one call is (browser.submit: a form of filters is internal, one with the
+        # user's details external); otherwise its class.
+        effect = str(args.pop("_effect", "") or tool.effect or "external")
+        decision = outward.decide(self.outward, name, effect, self.tool_settings)
         tainted_stage = False
-        if (decision == "allow" and (tool.effect or "external") == "external" and getattr(self, "tainted", False)
+        if (decision == "allow" and effect == "external" and getattr(self, "tainted", False)
                 and name not in ((self.outward or {}).get("allow") or [])):
             # Material taints a brief: after reading it, an external call waits for the user, even
             # under auto, unless the spec allows this tool by name (7.1).
@@ -999,15 +1022,6 @@ class Engine:
         if not reason:
             self.journal.write(role.name, "tool_refused", f"{name}: no reason given", tool=name)
             return {"error": f"give `{tool.reason_key}`: one sentence on why this action is needed"}
-        if tool.prepare is not None:  # e.g. browser.submit: the page's refs become its address and selectors
-            try:
-                args = tool.prepare(args, self._context(role, name))
-            except ToolError as e:
-                self.journal.write(role.name, "tool_refused", f"{name}: {_short(str(e), 200)}", tool=name)
-                return {"error": str(e)}
-            except Exception as e:  # noqa: BLE001: shown to the role, never a crash
-                self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
-                return {"error": f"{type(e).__name__}: {e}"}
         problem = outward.validation_error(tool.input_schema, args)
         if problem:
             self.journal.write(role.name, "tool_refused", f"{name}: {problem}", tool=name)
@@ -1015,7 +1029,7 @@ class Engine:
         args_note = _short(_canonical(args, ""), 120)
         if decision == "stage":
             try:
-                action, duplicate = outbox.stage(self.job_dir, tool=name, effect=tool.effect or "external",
+                action, duplicate = outbox.stage(self.job_dir, tool=name, effect=effect,
                                                  arguments=args, reason=reason, role=role.name,
                                                  input_schema=tool.input_schema)
             except outbox.OutboxBusy as e:
@@ -1029,7 +1043,7 @@ class Engine:
                 return {"status": "already_staged", "outbox": rel,
                         "note": "An identical action is already staged. Do not stage it again."}
             self.journal.write(role.name, "staged", f"{action.ref} {name} {args_note}", tool=name, ref=action.ref,
-                               path=rel, effect=tool.effect, reason=reason, arguments=args,
+                               path=rel, effect=effect, reason=reason, arguments=args,
                                **({"tainted": True} if tainted_stage else {}))
             return {"status": "staged", "outbox": rel,
                     "note": "Not done yet. It waits for the user's decision. Do not stage it "
@@ -1048,7 +1062,7 @@ class Engine:
             self.journal.write(role.name, "outward_error", f"{name} {args_note}: {_short(str(e))}", tool=name,
                                reason=reason, arguments=args)
             return _error(tool, e)
-        self.journal.write(role.name, "outward_done", f"{name} {args_note}", tool=name, effect=tool.effect,
+        self.journal.write(role.name, "outward_done", f"{name} {args_note}", tool=name, effect=effect,
                            reason=reason, arguments=args)
         return {"status": "done", **(out if isinstance(out, dict) else {"result": out})}
 

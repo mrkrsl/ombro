@@ -42,6 +42,11 @@ def page(port: int) -> str:
   <label>Password <input type="password" name="pw"></label>
   <button type="submit">Place order</button>
 </form>
+<form method="post" action="/availability">
+  <label>Day <select name="day"><option>Monday</option><option>Friday</option></select></label>
+  <label>How many <input type="number" name="n" value="1"></label>
+  <button type="submit">Check availability</button>
+</form>
 </body></html>"""
 
 
@@ -75,6 +80,10 @@ class Site:
             def do_POST(self):
                 body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
                 site.requests.append(("POST", self.path, body))
+                if self.path == "/availability":
+                    q = parse_qs(body)
+                    self._send(f"<html><body><p>{q['n'][0]} invented loaves on {q['day'][0]}: in stock.</p></body></html>")
+                    return
                 name = parse_qs(body).get("name", ["?"])[0]
                 self._send(f"<html><body><p>Thank you {name}, your invented order is placed.</p></body></html>")
 
@@ -167,6 +176,30 @@ def test_a_search_form_is_reading_and_keeps_to_the_address_limit(tools, site):
     t["browser.type"].handler({"ref": ref(out, '"Search loaves"'), "text": "rye"}, ctx)
     with pytest.raises(ToolInputError, match="after '\\?'"):
         t["browser.click"].handler({"ref": ref(out, '"Search"')}, ctx)
+
+
+def test_a_form_without_your_details_is_sent_in_the_job(tools, site):
+    t, ctx = tools
+    out = t["browser.open"].handler({"url": site.url}, ctx)
+    t["browser.type"].handler({"ref": ref(out, '"Day"'), "text": "Friday"}, ctx)
+    t["browser.type"].handler({"ref": ref(out, '"How many"'), "text": "3"}, ctx)
+    found = t["browser.click"].handler({"ref": ref(out, '"Check availability"')}, ctx)
+    assert "3 invented loaves on Friday: in stock." in found["text"]
+    # The order form: its button commits, and a name is the user's details.
+    out = t["browser.open"].handler({"url": site.url}, ctx)
+    t["browser.type"].handler({"ref": ref(out, '"Your name"'), "text": "Ada"}, ctx)
+    with pytest.raises(ToolInputError, match="approval"):
+        t["browser.click"].handler({"ref": ref(out, '"Place order"')}, ctx)
+    staged = t["browser.submit"].prepare({"button": ref(out, '"Place order"')}, ctx)
+    assert staged["_effect"] == "external" and "Your name" in staged["_why"]
+    assert staged["fields"][0]["value"] == "Ada"  # typed earlier, so it goes with the form
+    filters = t["browser.submit"].prepare({"button": ref(out, '"Check availability"'),
+                                           "fields": {ref(out, '"How many"'): "2"}}, ctx)
+    assert filters["_effect"] == "internal"
+    email = t["browser.submit"].prepare({"button": ref(out, '"Check availability"'),
+                                         "fields": {ref(out, '"How many"'): "ada@example.invalid"}}, ctx)
+    assert email["_effect"] == "external" and "email" in email["_why"]
+    assert len([r for r in site.requests if r[0] == "POST"]) == 1
 
 
 def test_typing_is_short_and_never_a_password(tools, site):
@@ -299,3 +332,31 @@ def test_the_lead_reads_with_the_browser_in_chat_and_a_form_asks_first(home, sit
     else:
         assert "declined" in sent and posts == []
     assert "submit the form on shop.test" in session.output
+
+
+def test_a_role_that_reads_the_web_gets_the_browser(job, home, site, monkeypatch):
+    from conftest import write_role
+
+    monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}},
+                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    write_role(home, "researcher", max_steps=8, tools=["web.fetch"])
+    job([fake.brief("researcher", "Read the bakery's page."), fake.call("browser__open", {"url": site.url}),
+         fake.result("Read it."), fake.finish("Done."), fake.keep_notes(), fake.say("## Summary\nDone.")])
+    assert any(e["action"] == "tool_call" and e.get("tool") == "browser.open" for e in job.events)
+
+
+def test_in_a_job_a_form_of_choices_is_sent_without_approval(job, home, site, monkeypatch):
+    from conftest import write_role
+
+    monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}},
+                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    write_role(home, "researcher", max_steps=8, tools=["browser.open", "browser.submit"])
+    job([fake.brief("researcher", "Check Friday's loaves."), fake.call("browser__open", {"url": site.url}),
+         fake.call("browser__submit", {"button": "e10", "fields": {"e8": "Friday", "e9": "2"},
+                                       "reason": "To see what's in stock."}),
+         fake.result("In stock."), fake.finish("Done."), fake.keep_notes(), fake.say("## Summary\nDone.")])
+    assert outbox.actions(job.job_dir) == []
+    [post] = [r for r in site.requests if r[0] == "POST"]
+    assert post[1] == "/availability" and parse_qs(post[2]) == {"day": ["Friday"], "n": ["2"]}
