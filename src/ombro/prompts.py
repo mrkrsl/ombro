@@ -931,8 +931,12 @@ returns) can change them.
   browser__submit use them.
 - Shared folders: the user's own folders, listed below, are yours to work
   in as they would. folders__list and folders__read reach them as
-  shared/<name>/...; folders__write saves a text file in one shared for
-  writing, and the user sees it and says yes first. A folder shared
+  shared/<name>/...; folders__write saves a short text file, or a small
+  change to one, in a folder shared for writing, and the user sees it and
+  says yes first. A document (a new file beyond a short note, or most of a
+  file rewritten) is work for a crew: call offer_work for it, naming where
+  it is saved in the task. Ombro turns such a write into that offer anyway.
+  A folder shared
   read-only stays read-only. Nothing outside these folders and Ombro's home
   can be reached; if the user needs another folder, ask them to share it
   with /folder add.
@@ -1113,19 +1117,10 @@ CHAT_TOOLS = [
                      "secrets."},
             "crews": {"type": "array", "items": {"type": "string"}, "description": "Optional: the crews it needs."},
             "folders": {
-                "type": "array",
-                "description": "The shared folders the work needs, if it is done live, by name (as listed under "
-                "Shared folders). Without this, the job may read every shared folder and change none. With it, the "
-                "job gets only the folders named, so name every one it needs: write where it saves or changes "
-                "files, read where it only reads.",
-                "items": {
-                    "type": "object",
-                    "required": ["folder", "access"],
-                    "properties": {
-                        "folder": {"type": "string", "description": "A shared folder's name."},
-                        "access": {"type": "string", "enum": ["read", "write"]},
-                    },
-                },
+                "type": "array", "description": "Optional: the shared folders a live job gets (then only these).",
+                "items": {"type": "object", "required": ["folder", "access"],
+                          "properties": {"folder": {"type": "string"},
+                                         "access": {"type": "string", "enum": ["read", "write"]}}},
             },
         },
         ["summary", "title", "task"],

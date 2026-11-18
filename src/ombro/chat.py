@@ -141,6 +141,39 @@ def _short(text: str, n: int = 120) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+DOCUMENT_LINES = 15  # beyond this (or DOCUMENT_CHARS), a new file or a rewrite is a document: work for a crew
+DOCUMENT_CHARS = 1_000
+
+
+def is_document_write(content: str, old: str | None, *, exists: bool) -> bool:
+    """Whether a chat write makes a document rather than a small edit: a new file (or text added
+    to one) beyond about 15 lines or 1,000 characters, or a rewrite that changes most of a file."""
+    import difflib
+
+    lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+    if lines <= DOCUMENT_LINES and len(content) <= DOCUMENT_CHARS:
+        return False
+    if old is None:
+        return True  # a new file, an append, or a file that can't be read as text
+    a, b = old.splitlines(), content.splitlines()
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    kept = sum(m.size for m in sm.get_matching_blocks())
+    changed = max(len(a), len(b)) - kept
+    return changed > DOCUMENT_LINES and changed * 2 > max(len(a), len(b))
+
+
+def _folder_of(ctx: ToolContext, target: Path) -> str | None:
+    """The shared folder a path is in: the innermost, when one is inside another."""
+    best: tuple[int, str] | None = None
+    real = target.resolve()
+    for name, f in ctx.shared.items():
+        root = Path(f.path)
+        if real == root or real.is_relative_to(root):
+            if best is None or len(root.parts) > best[0]:
+                best = (len(root.parts), name)
+    return best[1] if best else None
+
+
 def _offered_folders(raw: Any) -> dict[str, str]:
     """offer_work's `folders` as {shared folder name: read or write}, for a live job's spec. What
     is not a shared folder's name is kept, so the job notes it as left out."""
@@ -1095,6 +1128,10 @@ class Chat:
             if internal == "skills.read":
                 return skills.read(self.home, None, args.get("name"), args.get("file"),
                                    self.base_limits.skill_read_chars), None
+            if internal == "folders.write":
+                offered = self._write_as_work(args)
+                if offered is not None:
+                    return offered
             if internal in FOLDER_TOOLS.values():
                 return self._folder_tool(internal, args), None
             if internal == "memory.list":
@@ -1470,15 +1507,54 @@ class Chat:
         self._save()
         role_added(self.home, self.ui, crew, outcome)
 
-    def _offer_work(self, args: dict) -> tuple[dict, tuple | None]:
-        """Report back, or do it live: the one question that says how Ombro works."""
+    def _write_as_work(self, args: dict) -> tuple[dict, tuple | None] | None:
+        """folders.write that makes a document (a new file, or most of one rewritten, beyond a short note)
+        is work for a crew: it becomes the report-back-or-live offer, never a direct write. None for a
+        small edit, which goes ahead as before with the user's yes."""
+        from ombro import native
+
+        content = args.get("content")
+        if not isinstance(content, str):
+            return None
+        try:
+            ctx, _ = self._shared()
+            self._chat_path(ctx, str(args.get("path") or "").strip())
+            target = native.resolve_path(ctx, str(args.get("path") or "").strip(), write=True)
+        except ToolError:
+            return None  # refused as before, with the reason, by the folder tool
+        old = None
+        if target.is_file() and args.get("mode") != "append":
+            try:
+                old = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                old = None
+        if not is_document_write(content, old, exists=target.exists()):
+            return None
+        shown = native._display(ctx, target.resolve())
+        folder = _folder_of(ctx, target)
+        asked = self.user_said[-1] if self.user_said else ""
+        title = _short(target.stem.replace("-", " ").replace("_", " ").strip() or "New document", 70)
+        task = (f"{asked.strip()}\n\n## Where it goes\n\nSave the result as {shown}"
+                + (f" (shared/{folder}/{target.relative_to(ctx.shared[folder].path).as_posix()})" if folder else "")
+                + ". Overwrite nothing else.\n\n## A draft from the chat\n\nThe Lead wrote this draft in the chat. "
+                "Build on it, or start again where it falls short:\n\n" + _short(content, 20_000) + "\n")
+        self.transcript.note(f"The Lead's write to {shown} ({len(content):,} characters) was offered as work.")
+        result, request = self._offer_work({"summary": f"write {title} and save it as {shown}", "title": title,
+                                            "task": task}, write_to=folder)
+        result = {**result, "note": f"folders.write was not run: writing a document and saving it ({shown}) is "
+                  "work for the crew, so Ombro offered it as work instead. Do not call folders.write for it again."}
+        return result, request
+
+    def _offer_work(self, args: dict, write_to: str | None = None) -> tuple[dict, tuple | None]:
+        """Report back, or do it live: the one question that says how Ombro works. `write_to` is
+        the shared folder the work saves into, when known (from a write turned into this offer)."""
         summary = _short(args.get("summary") or "", 300).rstrip(".")
         title = _short(args.get("title") or summary or "Live job", 70)
         task, _ = keys.scrub(self.home, str(args.get("task") or "").strip())
         raw = args.get("crews") or args.get("crew") or []
         crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
                  if str(c) in self.home.crews()]
-        folder_access = _offered_folders(args.get("folders"))
+        folder_access = _offered_folders(args.get("folders")) or self._live_folders(task, write_to)
         which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
         self._lead_says(f"This sounds like work{which}: {summary}.", level="lead")
         # Reporting back is Ombro's main way of working; live is the other choice, never pushed.
@@ -1496,6 +1572,20 @@ class Chat:
                     (crews, summary, None))
         self.transcript.note(f"The Lead offered work ({summary}); you said not now.")
         return {"status": "the user said not now; carry on the conversation and do not offer again for this"}, None
+
+    def _live_folders(self, task: str, write_to: str | None) -> dict[str, str]:
+        """A live job whose folders the Lead didn't name: it reads every shared folder, and may write only
+        to the one the task saves into (the intercepted write's, or the one the task names). Every folder
+        is named in the spec, so the spec's list is the whole of what the job gets (M4)."""
+        from ombro import folders
+
+        target = write_to or folders.save_target(self.home, task)
+        if not target:
+            return {}
+        names = folders.granted_names(self.home)
+        if target not in names:
+            return {}
+        return {**{n: "read" for n in names}, target: "write"}
 
     def _live(self, crews: list[str], title: str, task: str, folder_access: dict[str, str] | None = None) -> None:
         """Do the work live: start the job, follow it here, then offer to keep it as a brief."""

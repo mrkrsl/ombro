@@ -393,6 +393,46 @@ def for_chat(home: Home) -> tuple[list[dict[str, str]], list[str]]:
     return for_job(home, {"folders": {name: g.access for name, g in grants.items()}})
 
 
+SAVE_WORDS = re.compile(r"\b(save|saved|saving|write|writing|put|create|store|into|keep a copy)\b", re.I)
+
+
+def save_target(home: Home, text: str) -> str | None:
+    """The shared folder a task saves into, by name, or None. Folders are found by shared/<name>/ or by
+    a path under one (~/..., or in full; the innermost when one is inside another), in the sentences
+    that speak of saving or writing. A folder only read from is never the target; with more than one
+    named for saving, there is no telling which, so None."""
+    try:
+        grants, _ = load(home)
+    except SetupError:
+        return None
+    if not grants or not text:
+        return None
+    places = []  # (path parts, name, as written)
+    for name, g in grants.items():
+        try:
+            real = expand(g.path).resolve()
+        except OSError:
+            continue
+        for written in {str(real), display_path(real), str(g.path)}:
+            places.append((len(real.parts), name, written.rstrip("/")))
+    places.sort(reverse=True)
+
+    def named_in(chunk: str) -> set[str]:
+        found = set(re.findall(r"shared/([A-Za-z0-9](?:[\w.-]*[\w-])?)", chunk)) & set(grants)
+        rest = chunk
+        for _, name, written in places:  # innermost first, so ~/A/B is not also counted as ~/A
+            if written and written in rest:
+                found.add(name)
+                rest = rest.replace(written, " ")
+        return found
+
+    saving = set()
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+        if SAVE_WORDS.search(sentence):
+            saving |= named_in(sentence)
+    return next(iter(saving)) if len(saving) == 1 else None
+
+
 def granted_names(home: Home) -> list[str]:
     try:
         return sorted(load(home)[0])
