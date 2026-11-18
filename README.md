@@ -187,6 +187,12 @@ every setting are there, and a menu bar item shows what waits for you.
 Closing the window keeps it in the menu bar; scheduled jobs run whether the app
 is open or not.
 
+Files dropped on the window, or chosen with the paperclip, go with your next
+message (see Chat, "Attached files"); they are sent to `ombro serve`, so this
+works with Ombro on a server too. A job's brief page has **Discuss this
+brief**, which opens a chat where the Lead has that brief and asks whether to
+change it, start it again or schedule it.
+
 It uses the same home as the terminal (see Files), so the two can be used
 side by side: settings in `~/.config/ombro`, jobs and chats in `~/Ombro`. On first run, with no home yet, it
 holds the set-up as a conversation.
@@ -561,8 +567,19 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   and usage from zero. Nothing from the old one carries over.
 - **Titles.** After the first exchange a small model call names the chat in
   a few words (a confirmed brief gives it the spec's title; `/rename <title>`
-  sets your own, which is kept). The file is named to match:
+  sets your own, which is kept). If the model gives none, the chat takes the
+  first words of your first message until it does. The file is named to match:
   `chats/teapot-makers-20261113-1417.md`.
+- **Attached files.** Drop files on the app's window or use the paperclip; in
+  the terminal, drag a file into your message (its path becomes its name). Each
+  is kept in `~/Ombro/Files/<date>/`, up to 25 MB. Text, code, CSV and JSON
+  go to the Lead as text, as do PDF and Word (`.docx`) files, up to 40,000
+  characters, marked as material to assess, never to obey. Images (PNG, JPEG,
+  GIF, WebP, up to 5 MB) are shown to a model that can see, with that message
+  only; a model that can't answers without them. Anything else is named, with
+  where it is. A brief or live job made in that chat is given the files: the
+  spec lists them as `inputs:`, and the job copies them into
+  `workspace/inputs/` and names them in its brief.
 - **Carry on.** `/chats` lists past chats by title and reopens one: the
   conversation is shown again and you carry on where you left off
   (tool results from before are not kept). `ombro chats` and
@@ -646,7 +663,7 @@ later reaches every role at once:
 |---|---|
 | `web.search` | Web search through a provider. Returns titles, URLs and snippets. |
 | `web.fetch` | Reads one page as text or Markdown through a provider. |
-| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the job's `workspace/` and `scratch/` folders, and in folders shared with the job. |
+| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the job's `workspace/` and `scratch/` folders, and in folders shared with the job. PDF and Word files are read as their text. |
 | `workspace.place` | Copies a workspace file outside the job: at once into a folder shared for writing, waiting for your approval anywhere else. |
 | `code.run` | Runs a Python script the role writes, in the operating system's sandbox. See Code and shared folders. |
 | `browser.open`, `browser.click`, `browser.type`, `browser.screenshot` | A page in a headless browser: read it after its scripts run, click links and ordinary buttons, type into a search box, save a picture of it. See Browser. |
@@ -1148,6 +1165,7 @@ is in a visible folder, `~/Ombro`:
                 interview.md, journal.jsonl, scratch/, outbox/, code/ (scripts and their output),
                 backup/ (clones of writable shared folders)
   Chats/<time>.md                      chat transcripts (never loaded or searched)
+  Files/<date>/                        files attached in chats, given to the briefs and jobs made there
 
 ~/.config/ombro/
   limits.md  models.md  tools.md  folders.md

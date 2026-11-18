@@ -3,8 +3,9 @@
 // here, as in the terminal; a secret switches the input to hidden.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, CircleDashed, FileText, FolderOpen } from "lucide-react";
+import { ArrowUp, CircleDashed, FileText, FolderOpen, Paperclip, X } from "lucide-react";
 import type { CommandView } from "../api/types";
+import type { Attachment } from "../api/serve";
 import { listAnswers, quickAnswers, usageText, type Conversation } from "../store/conversation";
 import { useStore } from "../store/store";
 import { modelLabel } from "../store/models";
@@ -68,8 +69,25 @@ export function matching(commands: CommandView[], text: string): CommandView[] {
   return commands.filter((c) => c.name.startsWith(word));
 }
 
+/** What happens to each kind of attached file, on its chip. */
+const CHIP_HELP: Record<Attachment["kind"], string> = {
+  text: "Its text goes to the Lead with your message",
+  pdf: "Its text goes to the Lead with your message",
+  word: "Its text goes to the Lead with your message",
+  image: "Shown to the Lead if its model can see images; a brief or live job from this chat gets the file",
+  other: "The Lead can't read this here; a brief or live job from this chat gets the file",
+};
+
+/** A file being dragged over the window (not text, or a link). */
+function hasFiles(e: DragEvent): boolean {
+  return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+}
+
 export function Composer({ conversation }: { conversation: Conversation | null }) {
   const { send, answer, interrupt, setMode, commands, summary, models, doneEditing, say } = useStore();
+  const { attached, attaching, attachFiles, unattach } = useStore();
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement | null>(null);
   const editing = conversation?.editing ?? null;
   const [text, setText] = useState("");
   const [pick, setPick] = useState(0);
@@ -97,6 +115,44 @@ export function Composer({ conversation }: { conversation: Conversation | null }
     setPick(0);
   }, [text]);
 
+  // Files dropped anywhere on the window are attached to the next message.
+  useEffect(() => {
+    let depth = 0;
+    function enter(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      setDragging(true);
+    }
+    function over(e: DragEvent) {
+      if (hasFiles(e)) e.preventDefault();
+    }
+    function leave(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    }
+    function drop(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length) void attachFiles(files);
+      area.current?.focus();
+    }
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [attachFiles]);
+
   // Cmd / (App.tsx): open the / menu with every command.
   useEffect(() => {
     function open() {
@@ -123,7 +179,11 @@ export function Composer({ conversation }: { conversation: Conversation | null }
     if (question && (secret || !value.trim().startsWith("/"))) {
       void answer(value);
     } else {
-      if (!value.trim()) return;
+      if (!value.trim() && !attached.length) return;
+      if (attaching) {
+        say("Wait a moment: a file is still being attached.");
+        return;
+      }
       void send(value);
     }
     setText("");
@@ -215,7 +275,21 @@ export function Composer({ conversation }: { conversation: Conversation | null }
             ))}
           </div>
         )}
-        <div className="composer">
+        <div className={dragging ? "composer dropping" : "composer"}>
+          {dragging && <div className="drop-hint">Drop to attach to your next message</div>}
+          {(attached.length > 0 || attaching > 0) && (
+            <ul className="attached" aria-label="Attached files">
+              {attached.map((a) => (
+                <li key={a.path} className="chip" title={CHIP_HELP[a.kind]}>
+                  <Paperclip size={13} aria-hidden="true" /> {a.name}
+                  <button className="icon-button" aria-label={`Remove ${a.name}`} onClick={() => unattach(a.path)}>
+                    <X size={13} />
+                  </button>
+                </li>
+              ))}
+              {attaching > 0 && <li className="chip muted">Attaching…</li>}
+            </ul>
+          )}
           {menu.length > 0 && (
             <ul ref={list} className="slash" role="listbox" aria-label="Commands">
               {menu.map((c, i) => (
@@ -235,6 +309,30 @@ export function Composer({ conversation }: { conversation: Conversation | null }
             </ul>
           )}
           <div className="input-box">
+            {!secret && (
+              <>
+                <button
+                  className="icon-button attach"
+                  aria-label="Attach files"
+                  title="Attach files (or drop them on the window)"
+                  onClick={() => picker.current?.click()}
+                >
+                  <Paperclip size={18} />
+                </button>
+                <input
+                  ref={picker}
+                  type="file"
+                  multiple
+                  hidden
+                  data-testid="attach-input"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    e.target.value = "";
+                    if (files.length) void attachFiles(files);
+                  }}
+                />
+              </>
+            )}
             {secret ? (
               <input
                 ref={(el) => {

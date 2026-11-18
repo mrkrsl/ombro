@@ -10,6 +10,7 @@ import json
 import socket
 import threading
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -472,3 +473,59 @@ def test_a_jobs_brief_and_clearing_finished_jobs(serve, home):
     assert serve.get("/summary")["counts"]["unseen_jobs"] == 0
     assert serve.post(f"/jobs/{done}/restore")["restored"] is True
     assert {r["job_id"] for r in serve.get("/jobs") if not r["cleared_at"]} == {done, busy}
+
+
+def test_discussing_a_jobs_brief_starts_a_chat_where_the_lead_has_it(serve, home):
+    """Discuss this brief, on a job's brief page: a new chat, the Lead's question first, and the brief
+    (with how to start, change or schedule its saved spec) sent with the user's answer."""
+    from ombro import jobs, mdfile
+    from ombro.settings import load_limits
+
+    spec = home.specs_dir / "invented-teapots.md"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    mdfile.write(spec, {"crews": ["default"]}, "# Invented teapots\n\nCount the invented teapots.")
+    d = jobs.create_job(home, ["default"], {"crews": ["default"]}, "# Invented teapots\n\nCount the invented teapots.",
+                        load_limits(home), source=f"spec file {spec}")
+    jobs.update_job(d, status="completed", brief="Invented teapots")
+
+    _script(serve.client, [fake.say("Let's change it.")])
+    ws = serve.socket()
+    ws.send({"type": "subscribe", "all": True})
+    sid = serve.post("/sessions", {"discuss": d.name}, status=201)["session"]["id"]
+    said = ws.until(lambda m: event("note", sid)(m) and m["event"].get("level") == "lead")
+    assert said["event"]["text"].startswith("I've got the brief 'Invented teapots'. What would you like to do")
+    ws.until(state("idle", sid))
+    serve.post(f"/sessions/{sid}/input", {"text": "Make it count kettles too"})
+    ws.until(state("idle", sid))
+    sent = serve.client.calls[-1]["messages"]
+    asked = [m["content"] for m in sent if m["role"] == "user"][-1]
+    assert "Count the invented teapots." in asked and "offer_brief with revise `invented-teapots`" in asked
+    assert asked.endswith("Make it count kettles too")
+    name = serve.get(f"/sessions/{sid}")["chat"]
+    assert serve.get(f"/chats/{name}")["title"] == "Brief: Invented teapots"
+    assert serve.http.post("/sessions", json={"discuss": "no-such-job"}).status_code == 404
+    ws.close()
+
+
+def test_a_file_attached_in_the_app_goes_to_the_lead_with_the_message(serve, home):
+    from ombro import attachments
+
+    r = serve.http.post("/attachments", params={"name": "../Invented notes.md"}, content=b"# Three invented teapots")
+    assert r.status_code == 201, r.text
+    got = r.json()
+    assert got["name"] == "Invented notes.md" and got["kind"] == "text" and got["size"] == 24
+    assert Path(got["path"]).parent.parent == attachments.files_dir(home)
+
+    _script(serve.client, [fake.say("Three teapots.")])
+    ws = serve.socket()
+    ws.send({"type": "subscribe", "all": True})
+    sid = serve.post("/sessions", status=201)["session"]["id"]
+    serve.post(f"/sessions/{sid}/input", {"text": "What's in it?", "attachments": [got["path"]]})
+    ws.until(state("idle", sid))
+    asked = [m["content"] for m in serve.client.calls[-1]["messages"] if m["role"] == "user"][-1]
+    assert "Three invented teapots" in asked and asked.endswith("What's in it?")
+    # Only a file attached here is taken: a path elsewhere on the machine is refused.
+    outside = serve.http.post(f"/sessions/{sid}/input", json={"text": "Hi", "attachments": [str(home.root / "keys.md")]})
+    assert outside.status_code == 400 and "attach it again" in outside.json()["error"]
+    assert serve.http.post("/attachments", content=b"x").status_code == 400  # no name
+    ws.close()

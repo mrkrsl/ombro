@@ -429,9 +429,12 @@ class Session:
         self.chat.job_ended(e.job_id, e.text, e.status, e.again_text, e.again)
         return True
 
-    def chat_turn(self, text: str) -> bool:
-        """One message or chat command. Starts what the user said yes to. False when the chat has ended."""
+    def chat_turn(self, text: str, attached: list[Path] | None = None) -> bool:
+        """One message or chat command, with any files attached. Starts what the user said yes to.
+        False when the chat has ended."""
         chat = self.ensure_chat()
+        for path in attached or []:
+            chat.attach(path)
         specs_before = len(chat.specs)
         go_on = chat.handle(text)
         if not go_on:
@@ -446,6 +449,15 @@ class Session:
                 name, roles = offer
                 self.offer_start(name, roles=roles, ask=False)
         return True
+
+    def attach_to_answer(self, value: str, attached: list[Path]) -> str:
+        """Files attached with an answer in a brief: the chat's (so the job gets them), named in the answer."""
+        chat = self.ensure_chat()
+        for path in attached:
+            if str(path) not in chat.attached:
+                chat.attached.append(str(path))
+        names = ", ".join(f"workspace/inputs/{p.name}" for p in attached)
+        return f"{value.strip()}\n\n(Attached: {names}. The job is given {'it' if len(attached) == 1 else 'them'}.)"
 
     def carry_on(self, job_id: str, *, more: bool = False) -> str | None:
         """Restart or resume a job that didn't finish, after the user's yes (a button, a command, or the

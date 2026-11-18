@@ -31,13 +31,15 @@ from typing import Any, Callable
 from ombro import keys, material, mdfile, memory, prompts, jobs, skills
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
-from ombro.home import Home, crew_title, find_crew
+from ombro.home import Home, crew_title, find_crew, words_title
 from ombro.ui import UI, ChatCleared, PastTurn, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option, Usage
 from ombro.journal import utc_now
 from ombro.roles import load_lead
 from ombro.settings import ModelSpec, SetupError, format_tokens, load_limits, load_models, load_preferences, load_tool_settings
 from ombro.tools import LOAD_NAME, ToolContext, ToolError, ToolRegistry, is_deferred, load_tool_schema, load_tools
 
+IMAGE_TOKENS = 1_600  # a generous estimate for one image in a message
+TITLE_MAX_OUTPUT = 600  # tokens for the title call, thinking included
 QUIT_WORDS = ("/quit", "/q", "/exit", "/end")
 TOOL_RESULT_CAP = 12_000
 BRIEF_CONTEXT_CHARS = 4_000
@@ -284,6 +286,7 @@ class Chat:
         titles: bool = True,
     ):
         self.home = home
+        self.take_paths = False  # the terminal: a file path dragged into a message attaches the file
         self.titles = titles  # name a chat after its first exchange, with one small model call
         prefs = load_preferences(home)
         self.instructions = prefs.instructions
@@ -335,6 +338,8 @@ class Chat:
         self.remembered = []
         self.specs = []
         self.saved_briefs: list[str] = []  # live jobs kept as briefs (not offered to start again)
+        self.attached: list[str] = []  # files attached in this chat (under Files/): given to its briefs and jobs
+        self.turn_images: list[Path] = []  # images attached to the message being answered: shown to a model that sees
         self.ended = "you ended the chat"
         # When the chat was last used, and how many turns (yours and the Lead's) it had then:
         # saving it with no new turn keeps that time, so opening or closing a chat, or Ombro's
@@ -399,18 +404,23 @@ class Chat:
         text = "\n".join(f"{'You' if m['role'] == 'user' else 'Lead'}: {_short(m['content'], 600)}" for m in said[:4])
         messages = [{"role": "user", "content": "Give this conversation a title of two to five words, in title "
                      "case, saying what it is about. Reply with the title only, no quotes.\n\n" + text}]
+        first = next((m["content"] for m in said if m["role"] == "user"), "")
         try:
             spec = self.models.get("cheap") or self.spec
             est = estimate_tokens(messages, None)
-            max_out, timeout = self.gate.check_model_call(spec.name, est, 30)
+            # Room for a thinking model to think first: with 30 tokens DeepSeek's spent them all
+            # thinking and the title came back empty, so most chats stayed "New chat" (18 Nov).
+            max_out, timeout = self.gate.check_model_call(spec.name, est, TITLE_MAX_OUTPUT)
             reply = self._client_factory(spec).complete(messages, tools=None, max_output_tokens=max_out,
                                                          timeout=min(timeout, 30))
             u = reply.usage
             self.gate.record_model_call(spec.name, u.input_tokens or est, min(u.output_tokens, max_out),
                                         estimated=u.estimated)
+            title = (reply.content or "").strip().splitlines()[0] if (reply.content or "").strip() else ""
         except (ModelError, LimitReached, OSError):
-            return
-        self.set_title(reply.content or "", "model")
+            title = ""
+        if not self.set_title(title, "model") and not self.title:
+            self.set_title(words_title(first), "first words")  # the model is tried again after the next exchange
 
     # -- past chats --------------------------------------------------------
 
@@ -439,6 +449,7 @@ class Chat:
         self.specs = list(meta.get("specs_saved") or [])
         self.id = str(meta.get("id") or self.id)
         self.jobs = [str(j) for j in meta.get("jobs") or []]
+        self.attached = [str(a) for a in meta.get("attached") or []]
         # Everything said in it comes back, for the Lead too: its turns, the interviews held in it
         # (your answers and its questions), and Ombro's notices of what came back.
         notes = ""
@@ -460,6 +471,86 @@ class Chat:
                 self.ui.show(Note(text, level="done"))
             else:
                 self.ui.show(PastTurn("you" if who == "user" else "lead", text))
+        self._save()
+
+    def attach(self, path: Path) -> None:
+        """A file you attached (kept under Files/ already): its text goes to the Lead with your next
+        message, as material; a file with no text to read is named, and where it is. Briefs and live
+        jobs made in this chat are given it, in their workspace/inputs/."""
+        from ombro import attachments
+
+        path = Path(path)
+        got = attachments.read(path)
+        size = attachments.size_text(path.stat().st_size) if path.is_file() else "gone"
+        kinds = {"pdf": "PDF", "word": "Word document", "image": "image", "text": "text", "other": "file"}
+        where = self._shown_path(path)
+        if str(path) not in self.attached:
+            self.attached.append(str(path))
+        self.transcript.note(f"You attached {path.name} ({kinds[got.kind]}, {size}), kept at {where}.")
+        given = ("If this becomes a brief or a live job, Ombro gives the job this file as "
+                 f"workspace/inputs/{path.name}.")
+        if got.kind == "image" and attachments.seeable(path):
+            self.turn_images.append(path)
+            self.pending_note += (f"[Ombro note: the user attached the image {path.name} ({size}), shown to you with "
+                                  f"this message if your model can see images. {given}]\n")
+        elif got.text is not None:
+            cut = f" It is cut at {len(got.text):,} characters; the whole file goes to a job." if got.cut else ""
+            self.pending_note += (f"[Ombro note: the user attached {path.name} ({kinds[got.kind]}, {size}). Its "
+                                  f"text follows, as material from the user's file.{cut} {given}]\n"
+                                  + material.fence(got.text, f"the file {path.name}, attached by the user") + "\n")
+        else:
+            why = f" ({got.problem})" if got.problem else ""
+            self.pending_note += (f"[Ombro note: the user attached {path.name} ({kinds[got.kind]}, {size}), kept "
+                                  f"at {where}. You can't read it in the chat{why}. {given}]\n")
+
+    def _take_dragged(self, text: str) -> str:
+        """In the terminal, files dragged into a message are attached (copied into Files/ first)."""
+        from ombro import attachments
+
+        rest, paths = attachments.dragged_paths(text)
+        names = []
+        for p in paths:
+            try:
+                kept = attachments.save_path(self.home, p)
+            except (attachments.AttachError, OSError) as e:
+                self.ui.say(f"{p.name} wasn't attached: {e}.")
+                continue
+            self.attach(kept)
+            names.append(kept.name)
+        if not names:
+            return text
+        self.ui.say(f"Attached {', '.join(names)}.", level="done")
+        return f"I've attached {', '.join(names)}." if rest in (p.name for p in paths) or not rest else rest
+
+    def _shown_path(self, path: Path) -> str:
+        try:
+            return "~/" + path.resolve().relative_to(Path.home()).as_posix()
+        except ValueError:
+            return str(path)
+
+    def discuss_brief(self, job_dir: Path) -> None:
+        """A new chat about the brief a job ran from (Discuss this brief, on its brief page): the Lead
+        says it has it and asks what to do with it; the brief goes to the Lead with your answer."""
+        meta = jobs.read_job(job_dir)[0]
+        name = _short(meta.get("brief") or jobs.job_name(job_dir.name), 80)
+        source = str(meta.get("source") or "")
+        spec = Path(source.removeprefix("spec file ")).stem if source.startswith("spec file ") else ""
+        if spec and not (self.home.specs_dir / f"{spec}.md").is_file():
+            spec = ""
+        text = jobs.brief_text(job_dir) or name
+        self.set_title(f"Brief: {name}", "ombro")
+        self._lead_says(f"I've got the brief '{name}'. What would you like to do with it? I can change it, "
+                        "start it again (as it is, or changed), or you can put it on a schedule.")
+        how = (f"It is saved as the spec `{spec}`: to start it again use offer_start with spec `{spec}`; to "
+               f"change it, offer_brief with revise `{spec}`; it can be put on a schedule on the Scheduled page "
+               f"(or `ombro schedule add {spec} --spec {spec} --cron \"…\"`)."
+               if spec else
+               "It has no saved spec (it was a live job, or its spec was removed): to run it again or change it, "
+               "use offer_brief with the brief as the starting point; once saved it can be scheduled.")
+        self.pending_note += (f"[Ombro note: the user opened this chat from the Jobs page to discuss the brief of "
+                              f"job {job_dir.name}, and you have asked what they would like to do with it. {how} "
+                              f"The brief, as the job ran it, follows.]\n\n{text[:BRIEF_FOUND_CHARS]}\n\n"
+                              "[Ombro note: end of the brief.]\n")
         self._save()
 
     def _lead_says(self, text: str, **kw: Any) -> None:
@@ -570,16 +661,27 @@ class Chat:
         tools += self.lookup_schemas()
         if not skills.library(self.home):  # nothing to read: an empty library costs no tool
             tools = [t for t in tools if t["function"]["name"] != "skills__read"]
-        est = estimate_tokens(messages, tools)
+        est = estimate_tokens(messages, tools) + IMAGE_TOKENS * len(self.turn_images)
         max_out, timeout = self.gate.check_model_call(self.spec.name, est, None)
         if self._client is None:
             self._client = self._client_factory(self.spec)
+        from ombro import attachments
+
+        sent = attachments.with_images(messages, self.turn_images) if self.turn_images else messages
         try:
-            reply = self._client.complete(messages, tools=tools, max_output_tokens=max_out,
+            reply = self._client.complete(sent, tools=tools, max_output_tokens=max_out,
                                           timeout=min(timeout, 300))
         except ModelError as e:
             self.gate.record_lost_calls(self.spec.name, e.lost_attempts, est, max_out)
-            raise
+            if not self.turn_images:
+                raise
+            # Most likely the model can't see images: carry on without them, and say so.
+            names = ", ".join(p.name for p in self.turn_images)
+            self.turn_images = []
+            self.transcript.note(f"The model couldn't take {names} as an image ({_short(str(e), 200)}).")
+            self.ui.say(f"This model couldn't take {names} as an image, so the Lead answers without seeing it. A "
+                        "brief or live job from this chat still gets the file.")
+            return self._model_call(messages)
         self.gate.record_lost_calls(self.spec.name, reply.lost_attempts, est, max_out)
         u = reply.usage
         in_tokens = u.input_tokens if u.input_tokens or not u.estimated else est
@@ -716,6 +818,8 @@ class Chat:
         text = self._scrub(raw)
         if not text:
             return True
+        if self.take_paths and not text.startswith("/"):
+            text = self._take_dragged(text)
         if not self._command(text):
             if text.lower() in QUIT_WORDS:
                 return False
@@ -734,7 +838,8 @@ class Chat:
             self.ui.show(Failure(f"I couldn't reach the model just now ({e}). Try again in a moment."))
             return True
         self._usage_line()
-        if self.titles and not self.title and self.exchanges and self.mode == "Chat":
+        if self.titles and (not self.title or self.titled_by == "first words") and self.exchanges \
+                and self.mode == "Chat":
             self._auto_title()
         if request and request[0] == "live":
             self._live(*request[1:])
@@ -825,6 +930,12 @@ class Chat:
         self.gate.begin_turn()  # the time limit is per message: a chat left open overnight has not used it
         self.exchanges.append([{"role": "user", "content": self.pending_note + text}])
         self.pending_note = ""
+        try:
+            return self._answer_turn(text)
+        finally:
+            self.turn_images = []  # shown with the message they came with; the Lead's answer carries them on
+
+    def _answer_turn(self, text: str) -> tuple[list[str], str] | None:
         self.user_said.append(text)
         self.transcript.user(text, self.mode)
         for _ in range(self.limits.chat_calls_per_message):
@@ -1278,7 +1389,7 @@ class Chat:
 
             if connected_model(self.home) is None:
                 raise StartError("no model is connected; set Ombro up first")
-            job_dir = livejob.start(self.home, crews, title, task, chat=self.id)
+            job_dir = livejob.start(self.home, crews, title, task, chat=self.id, inputs=self.attached)
         except (StartError, SetupError, mdfile.FrontMatterError, OSError) as e:
             self.ui.show(Failure(f"The live job could not start: {e}."))
             return
@@ -1475,6 +1586,10 @@ class Chat:
             parts.append("What you (the Lead) said and read in the chat before this brief, oldest first. You "
                          "already know this: use it, and don't ask the user for what is here (a file's name, "
                          "what a report said):\n\n" + found)
+        if self.attached:
+            parts.append("Files the user attached in the chat. The job is given them, in workspace/inputs/, so "
+                         "the brief can name them there and needn't ask for them again:\n"
+                         + "\n".join(f"- workspace/inputs/{Path(a).name}" for a in self.attached))
         if summary:
             parts.append(f"The Lead's one-line summary in the chat, which the user accepted: {summary}")
         return "\n\n".join(parts)
@@ -1532,6 +1647,10 @@ class Chat:
             name = outcome.proposal.data["name"]
             self.specs.append(name)
             spec_path = self.home.specs_dir / f"{name}.md"
+            if self.attached and spec_path.is_file():  # the brief is given the files attached in this chat
+                meta, body = mdfile.read(spec_path)
+                meta["inputs"] = list(dict.fromkeys([*(meta.get("inputs") or []), *self.attached]))
+                mdfile.write(spec_path, meta, body)
             if spec_path.is_file():  # the chat takes the spec's title, unless you named it
                 self.set_title(jobs.first_line(mdfile.read(spec_path)[1], 70) or name, "spec")
             self.ui.say(f"Spec saved as {name!r}. Start it with:  ombro start --spec {name}", spaced=True, level="done")
@@ -1618,6 +1737,7 @@ class Chat:
             "specs_saved": self.specs,
             "id": self.id,
             "jobs": self.jobs,
+            **({"attached": self.attached} if self.attached else {}),
             "refused_tools": sorted(set(self.refused)),
             "limits": {"max_tokens": self.limits.max_tokens, "tool_max_calls": self.limits.tool_max_calls},
             "usage": _add_usage(self.prior_usage, {k: s.get(k) for k in ("total_tokens", "input_tokens",

@@ -7,6 +7,7 @@ import { approvalTitle, argumentLines } from "../store/approvals";
 import { splitReport } from "../store/conversation";
 import { useStore } from "../store/store";
 import { Approvals } from "./Approvals";
+import { BriefPage } from "./BriefPage";
 import { Jobs, statusText } from "./Jobs";
 import { cronFor } from "./Scheduled";
 
@@ -152,6 +153,17 @@ describe("the Jobs page", () => {
     await userEvent.click(within(done).getByRole("button", { name: "Clear" }));
     expect(briefs).toEqual(["busy-20261117-0930"]);
     expect(cleared).toEqual(["invented-20261117-0900"]);
+  });
+
+  it("offers to discuss a brief in a new chat", async () => {
+    const discussed: string[] = [];
+    useStore.setState({
+      brief: { ...job, spec: "# Invented\n\nCount the invented teapots." },
+      discussBrief: async (id: string) => { discussed.push(id); },
+    });
+    render(<BriefPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Discuss this brief" }));
+    expect(discussed).toEqual(["invented-20261117-0900"]);
   });
 
   it("asks before clearing all finished jobs", async () => {

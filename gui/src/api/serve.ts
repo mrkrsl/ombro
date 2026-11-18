@@ -72,9 +72,21 @@ export function client(hs: Handshake) {
       throw new ApiError(r.status, (body && body.error) || `${r.status}`);
     }
   }
+  /** POST /attachments: a file attached in the app, kept on the machine Ombro runs on. */
+  async function attach(name: string, data: Blob): Promise<Attachment> {
+    const r = await fetch(`${base}/attachments?name=${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${hs.token}`, "Content-Type": "application/octet-stream" },
+      body: data,
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new ApiError(r.status, (body && body.error) || `${r.status}`);
+    return body as Attachment;
+  }
   return {
     bytes,
     putBytes,
+    attach,
     get: <T>(path: string) => call<T>("GET", path),
     post: <T>(path: string, body: unknown = {}) => call<T>("POST", path, body),
     put: <T>(path: string, body: unknown) => call<T>("PUT", path, body),
@@ -83,3 +95,6 @@ export function client(hs: Handshake) {
 }
 
 export type Client = ReturnType<typeof client>;
+
+/** A file attached to a message: where Ombro keeps it, and what it is. */
+export type Attachment = { path: string; name: string; size: number; kind: "text" | "pdf" | "word" | "image" | "other" };

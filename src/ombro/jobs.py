@@ -151,6 +151,13 @@ def create_job(
             continue
     for sub in ("workspace", "scratch", "outbox"):
         (job_dir / sub).mkdir()
+    if spec_meta.get("inputs"):  # files attached to the brief: copied in, and named in the brief
+        from ombro import attachments
+
+        given = attachments.give_to_job(job_dir, [str(i) for i in spec_meta["inputs"]])
+        spec_body = attachments.without_inputs_section(spec_body)
+        if given:
+            spec_body = spec_body.rstrip() + attachments.inputs_section(given)
     mdfile.write(job_dir / "spec.md", spec_meta, spec_body)
     (job_dir / "journal.jsonl").touch()
     meta = {

@@ -563,10 +563,18 @@ def read_file(home: Home, path: Any, offset: int = 0, max_chars: int = READ_DEFA
     real = resolve_readable(home, path)
     if not real.is_file():
         raise ReadRefused(f"{path} does not exist")
-    data = real.read_bytes()
-    if b"\x00" in data[:4096]:
-        raise ReadRefused(f"{path} is not a text file")
-    text = data.decode("utf-8", errors="replace")
+    from ombro import attachments
+
+    if attachments.kind_of(real) in ("pdf", "word"):  # a job's PDF or Word file, read as its text
+        got = attachments.read(real, limit=attachments.MAX_BYTES)
+        if got.text is None:
+            raise ReadRefused(f"{path} can't be read as text" + (f": {got.problem}" if got.problem else ""))
+        text = got.text
+    else:
+        data = real.read_bytes()
+        if b"\x00" in data[:4096]:
+            raise ReadRefused(f"{path} is not a text file")
+        text = data.decode("utf-8", errors="replace")
     max_chars = max(1, min(int(max_chars or READ_DEFAULT_CHARS), READ_MAX_CHARS))
     offset = max(0, int(offset or 0))
     chunk = text[offset : offset + max_chars]

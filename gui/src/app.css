@@ -450,6 +450,63 @@ a:visited {
   color: var(--text);
 }
 
+/* Attaching files: the paperclip, the chips above the input, and the hint while a file is dragged in. */
+.input-box .attach {
+  flex: none;
+  color: var(--muted);
+  margin-left: -10px;
+  align-self: flex-end;
+}
+
+.input-box .attach:hover {
+  color: var(--text);
+}
+
+.attached {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.attached .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  background: var(--you-bg);
+  color: var(--you-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.attached .chip.muted {
+  padding-right: 10px;
+  opacity: 0.7;
+}
+
+.attached .chip .icon-button {
+  padding: 2px;
+  color: inherit;
+}
+
+.composer.dropping .input-box {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.drop-hint {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .footer {
   display: flex;
   align-items: center;

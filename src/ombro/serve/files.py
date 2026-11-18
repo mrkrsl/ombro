@@ -19,7 +19,7 @@ import asyncio
 import os
 import urllib.parse
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from ombro.serve.app import Serve
 
 MAX_LIST = 500
+MAX_ATTACH_BYTES = 25 * 1024 * 1024  # as attachments.MAX_BYTES
 MAX_PUT_BYTES = 20 * 1024 * 1024
 
 
@@ -126,6 +127,32 @@ def _put(s: "Serve", raw: str | None, data: bytes) -> dict:
     return {"path": str(path), "size": len(data)}
 
 
+def _attach(s: "Serve", name: str | None, data: bytes) -> dict:
+    """A file attached in the app (dragged in, or the paperclip): kept under Files/ on this machine,
+    where the chat and its jobs can use it, wherever the app is."""
+    from ombro import attachments
+
+    if not name:
+        raise Refused(400, "`name` is needed")
+    try:
+        path = attachments.save(s.home, name, data)
+    except attachments.AttachError as e:
+        raise Refused(413, str(e)) from e
+    got = attachments.kind_of(path)
+    return {"path": str(path), "name": path.name, "size": len(data), "kind": got}
+
+
+def attached_path(s: "Serve", raw: Any) -> Path:
+    """A path sent with a message: only a file attached here (under Files/) is taken."""
+    from ombro import attachments
+
+    path = Path(str(raw or "")).expanduser().resolve()
+    root = attachments.files_dir(s.home).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise Refused(400, f"{path.name or 'that'} isn't a file attached here; attach it again")
+    return path
+
+
 def file_routes(s: "Serve") -> list[Route]:
     async def get_file(r: Request) -> Response:
         try:
@@ -148,5 +175,15 @@ def file_routes(s: "Serve") -> list[Route]:
         except Refused as e:
             return JSONResponse({"error": str(e)}, status_code=e.status)
 
+    async def attach(r: Request) -> Response:
+        data = await r.body()
+        if len(data) > MAX_ATTACH_BYTES:
+            return JSONResponse({"error": "that file is over 25 MB, too large to attach"}, status_code=413)
+        try:
+            return JSONResponse(await asyncio.to_thread(_attach, s, r.query_params.get("name"), data), status_code=201)
+        except Refused as e:
+            return JSONResponse({"error": str(e)}, status_code=e.status)
+
     return [Route("/files", get_file, methods=["GET"]), Route("/files", put_file, methods=["PUT"]),
+            Route("/attachments", attach, methods=["POST"]),
             Route("/files/list", list_files, methods=["GET"])]

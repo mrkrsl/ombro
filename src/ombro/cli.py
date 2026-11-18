@@ -818,6 +818,7 @@ def cmd_chat(args) -> int:
     _reap(home)
     _require_model(home)
     chat = Chat(home, crew=_crew(home, args.crew))
+    chat.take_paths = True  # a file dragged into the terminal is attached
     if args.resume is not None:
         from ombro import views
 

@@ -64,8 +64,37 @@ def test_old_untitled_chats_are_listed_by_their_date(home):
     folder = home.chats_dir
     folder.mkdir(parents=True, exist_ok=True)
     mdfile.write(folder / "20261112-090000.md", {"kind": "chat", "started_at": "2026-11-12T09:00:00Z"},
-                 "# Chat\n\n**You (Chat):** Hello\n\n**Lead:** Hi.\n")
+                 "# Chat\n\n**Lead:** Hi.\n")
     assert views.chat_list(home)[0]["title"] == "Chat of 12/11/2026"
+
+
+def test_an_untitled_chat_is_listed_by_what_you_first_said(home):
+    folder = home.chats_dir
+    folder.mkdir(parents=True, exist_ok=True)
+    mdfile.write(folder / "new-chat-20261118-1109.md", {"kind": "chat", "title": ""},
+                 "# New chat\n\n**You (Chat):** Can you connect to my invented mailbox and summarise the "
+                 "top three emails?\n\n**Lead:** Done.\n")
+    assert views.chat_list(home)[0]["title"] == "Connect to my invented mailbox"
+
+
+def test_a_chat_the_model_gives_no_title_is_named_from_its_first_words(home):
+    s = ChatSession(home, titles=True)
+    s([fake.say("Happy to help."), fake.say("")], ["Could you please find me invented teapot makers in Lowtown?"])
+    assert s.chat.title == "Find me invented teapot makers" and s.chat.titled_by == "first words"
+    assert s.chat.path.name.startswith("find-me-invented-teapot-makers-")
+
+
+def test_a_first_words_title_gives_way_to_the_models_next_time(home):
+    s = ChatSession(home, titles=True)
+    s([fake.say("Happy to help."), fake.say(""), fake.say("More."), fake.say("Lowtown Teapot Makers")],
+      ["Find me teapot makers", "In Lowtown"])
+    assert s.chat.title == "Lowtown Teapot Makers" and s.chat.titled_by == "model"
+
+
+def test_the_title_call_leaves_room_for_a_thinking_model(home):
+    s = ChatSession(home, titles=True)
+    s([fake.say("Happy to help."), fake.say("Invented Teapot Makers")], ["Find me teapot makers"])
+    assert s.client.calls[-1]["max_output_tokens"] >= 400
 
 
 def test_an_interview_transcript_is_named_for_what_it_made(home):
