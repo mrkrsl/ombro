@@ -223,6 +223,14 @@ def _today(today: str) -> str:
     )
 
 
+def _shared_one(folder: tuple[str, ...]) -> str:
+    """One shared folder for a prompt: `shared/<name> (access)`, and where it is on disk when known,
+    so a path the user gave (~/Documents/...) can be found under shared/<name>/."""
+    name, access, *rest = folder
+    how = "read and write" if access == "write" else "read only"
+    return f"shared/{name} ({how}" + (f"; on disk {rest[0]}" if rest and rest[0] else "") + ")"
+
+
 def lead_system(
     lead: Role,
     instructions: str,
@@ -271,9 +279,10 @@ def lead_system(
     if shared:
         parts.append(_section(
             "Folders the user shared with this job",
-            "\n".join(f"- shared/{n} ({'read and write' if a == 'write' else 'read only'})" for n, a in shared)
-            + "\nRoles with workspace tools or code.run reach them by these paths; name them in briefs. Nothing "
-            "else outside the job can be reached."))
+            "\n".join(f"- {_shared_one(f)}" for f in shared)
+            + "\nRoles with workspace tools or code.run reach them by these paths; name them in briefs. A path in "
+            "the spec under one of these folders on disk is the same file under shared/<name>/. Nothing else "
+            "outside the job can be reached."))
     parts.append(
         _section(
             "Limits for this job",
@@ -288,7 +297,7 @@ def lead_system(
 def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
                 shared: list[tuple[str, str]] | None = None) -> str:
     """`skills` lists the skills this role may use, by name and description; `shared` the
-    folders shared with this job as (name, access)."""
+    folders shared with this job as (name, access) or (name, access, path on disk)."""
     if tool_names:
         tools_line = "You may use only these tools: " + ", ".join(tool_names) + "."
         files = any(t.startswith("workspace.") or t == "code.run" for t in tool_names)
@@ -296,7 +305,7 @@ def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
             tools_line += (
                 " File paths start with workspace/ (deliverables), scratch/ (working notes), or shared/<name>/"
                 " for a folder the user has shared with this job: "
-                + ", ".join(f"shared/{n} ({'read and write' if a == 'write' else 'read only'})" for n, a in shared)
+                + ", ".join(_shared_one(f) for f in shared)
                 + ". Work in a shared folder as the user would, with care: changes there are real and are"
                 " listed in the report. Nothing else on the machine can be read or written."
             )

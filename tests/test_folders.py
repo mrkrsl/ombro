@@ -155,14 +155,41 @@ def test_the_start_folder_is_offered_once_and_a_no_is_remembered(home, user):
 # A job's folders
 
 
-def test_a_spec_names_grants_and_may_lower_write_to_read(home, user):
+def test_a_spec_may_lower_write_to_read_and_names_what_is_not_shared(home, user):
     folders.add(home, user / "Documents" / "Brand", "brand", "read")
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
     got, left = folders.for_job(home, {"folders": {"brand": "write", "photos": "read", "secret": None}})
     assert [(f["name"], f["access"]) for f in got] == [("brand", "read"), ("photos", "read")]
     assert "not shared" in left[0] and "secret" in left[0]
     got, _ = folders.for_job(home, {"folders": ["photos"]})
-    assert got[0]["access"] == "write" and got[0]["path"] == str(user / "Pictures" / "Trip")
+    by_name = {f["name"]: f for f in got}
+    assert by_name["photos"]["access"] == "write" and by_name["photos"]["path"] == str(user / "Pictures" / "Trip")
+    assert by_name["brand"]["access"] == "read"  # named or not, every shared folder comes with the job
+
+
+def test_every_job_gets_every_shared_folder_however_it_starts(home, user, monkeypatch):
+    """17 Nov: a live job from a chat said "no folders are shared with this job" because its spec
+    named none. A job gets all the shared folders, with their own access, whatever its spec says."""
+    from ombro import livejob
+
+    folders.add(home, user / "Documents" / "Brand", "brand", "write")
+    folders.add(home, user / "Pictures" / "Trip", "photos", "read")
+    want = [("brand", "write", str(user / "Documents" / "Brand")), ("photos", "read", str(user / "Pictures" / "Trip"))]
+    assert folders.for_job(home, {}) == folders.for_job(home, None) == folders.for_chat(home)
+    assert sorted((f["name"], f["access"], f["path"]) for f in folders.for_job(home, {})[0]) == want
+
+    started = []
+    monkeypatch.setattr(jobs, "start_detached", lambda h, d: started.append(d))
+    live = livejob.start(home, ["default"], "Round two", "Revise shared/brand/copy.md.", chat="c1")
+    plain = jobs.create_job(home, ["default"], {}, "# A follow-up", load_limits(home), source="test")
+    for job_dir in (live, plain):
+        meta, _ = jobs.read_job(job_dir)
+        assert sorted((f["name"], f["access"], f["path"]) for f in meta["folders"]) == want
+        assert "folders_left_out" not in meta
+    assert started == [live]
+
+
+def test_with_no_folders_shared_a_job_gets_none_and_no_warning(home, user):
     assert folders.for_job(home, {}) == ([], [])
 
 
@@ -234,9 +261,10 @@ def test_a_job_backs_up_and_lists_changes_in_a_writable_folder(job, home, user):
     assert "missing" in report and "not shared" in report
     assert str(user / "Library" / "Mail" / "x") in report.split("Refused because")[1]
     system = job.client.calls[1]["messages"][0]["content"]
-    assert "shared/photos (read and write)" in system and "shared/brand (read only)" in system
+    assert "shared/photos (read and write; on disk " in system and "shared/brand (read only; on disk " in system
     lead = job.client.calls[0]["messages"][0]["content"]
-    assert "Folders the user shared with this job" in lead and "shared/photos (read and write)" in lead
+    assert "Folders the user shared with this job" in lead
+    assert "shared/photos (read and write; on disk ~/Pictures/Trip)" in lead
 
 
 # ---------------------------------------------------------------------------

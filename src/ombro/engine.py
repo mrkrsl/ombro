@@ -327,6 +327,9 @@ class Engine:
                 + (f"; {entry['backup_note']}" if f.writable else ""), folder=f.name, **entry)
         jobs.update_job(self.job_dir, folders=recorded)
 
+    def _shared_for_prompts(self) -> list[tuple[str, str, str]]:
+        return [(f.name, f.access, folders.display_path(Path(f.path))) for f in self.shared.values()]
+
     WRITING_TOOLS = ("workspace.write", "workspace.set_aside", "workspace.place", "code.run")
 
     def _folder_manifests(self) -> dict[str, Any]:
@@ -550,7 +553,7 @@ class Engine:
                 "content": prompts.lead_system(
                     self.lead, self.instructions, self.roles, self.limits, self.today,
                     memory=memory.lead_context(self.home, self.crews, self.limits),
-                    shared=[(f.name, f.access) for f in self.shared.values()],
+                    shared=self._shared_for_prompts(),
                     spec_roles=getattr(self, "spec_roles", []),
                     skills=self._skill_listing(None)[0],
                 ),
@@ -798,7 +801,7 @@ class Engine:
         skills, _ = self._skill_listing(skills_mod.names_for(self.home, role)[0])
         messages: list[dict] = [
             {"role": "system", "content": prompts.role_system(role, skills, [t.name for t in by_wire.values()], self.today,
-                                                              shared=[(f.name, f.access) for f in self.shared.values()])},
+                                                              shared=self._shared_for_prompts())},
             {"role": "user", "content": prompts.role_task(task)},
         ]
         self.gate.begin_scope(role.name, role.max_steps, brief=True)

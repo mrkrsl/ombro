@@ -56,9 +56,9 @@ def _list(home: Home) -> int:
     grants, declined = folders.load(home)
     if not grants:
         print("No folders are shared. Jobs reach only their own workspace.")
-        print("Share one with `ombro folder add <path>`; a spec then names it with `folders: [<name>]`.")
+        print("Share one with `ombro folder add <path>`; every job then gets it.")
     else:
-        print("Shared folders. A spec names the ones its job uses (`folders: [name]`).\n")
+        print("Shared folders. Every job gets them; a spec may lower one to read (`folders: {name: read}`).\n")
         for g in grants.values():
             try:
                 folders.check_place(g.path, home)

@@ -3,7 +3,7 @@
 A job's own workspace/ and scratch/ need no grant. Everything else on the
 machine does. Grants live in folders.md, are made only by the user (a model
 can suggest a folder, but the harness asks and writes), and apply to every
-crew; a spec names the ones its job uses and may lower write to read.
+crew: every job gets all of them, and a spec may lower write to read.
 
 What can be granted is a fixed rule: a folder inside the user's home folder,
 or on a mounted drive or server share, never the root, system folders, the
@@ -41,8 +41,8 @@ CHANGES_LISTED = 200
 FOLDERS_BODY = """\
 Folders on this machine that jobs may use, by name. A job's own workspace/
 and scratch/ need no grant; everything else does. Grants apply to every
-crew, and a spec names the ones its job uses (`folders: [brand, photos]`),
-and may lower write to read (`folders: {photos: read}`).
+crew and to every job, however it starts. A spec may lower write to read
+for its job (`folders: {photos: read}`).
 
 - access: read (roles can read and list it) or write (they can also change,
   add and remove files, as you could). Changes are listed in the report.
@@ -340,22 +340,24 @@ def parse_spec(value: Any) -> dict[str, str | None]:
 
 
 def for_job(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str, str]], list[str]]:
-    """The folders a job gets, fixed at its start, and why any it named were left out."""
+    """The folders a job gets, fixed at its start, and why any were left out.
+
+    Every job gets every shared folder, with its own access, however it started (a brief, a
+    live job from a chat, a follow-up, a schedule): the user shares a folder with Ombro, not
+    with one spec. A spec's `folders:` may lower a folder to read, and a name it gives that is
+    not shared is noted as left out."""
     wanted = parse_spec((spec_meta or {}).get("folders"))
-    if not wanted:
-        return [], []
     try:
         grants, _ = load(home)
     except SetupError as e:
         return [], [f"folders.md could not be read, so no shared folder was given: {e}"]
     out: list[dict[str, str]] = []
     left: list[str] = []
-    for name, access in wanted.items():
-        g = grants.get(name)
-        if g is None:
+    for name in wanted:
+        if name not in grants:
             left.append(f"the spec names folder {name!r}, which is not shared (`ombro folder add`), so it was "
                         "left out")
-            continue
+    for name, g in grants.items():
         try:
             real = check_place(g.path, home)
         except FolderError as e:
@@ -367,7 +369,7 @@ def for_job(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
             left.append(f"folder {name!r} was left out: {g.path} now leads to {display_path(real)} through a "
                         "symlink. Check it, then share the folder again with `ombro folder add`")
             continue
-        final = "read" if "read" in (access, g.access) else "write"
+        final = "read" if "read" in (wanted.get(name), g.access) else "write"
         out.append({"name": name, "path": str(real), "access": final})
     return out, left
 
@@ -375,11 +377,7 @@ def for_job(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
 def for_chat(home: Home) -> tuple[list[dict[str, str]], list[str]]:
     """Every granted folder, with its own access, checked as a job's are: the Lead in
     chat works across all of them, as the user would."""
-    try:
-        grants, _ = load(home)
-    except SetupError as e:
-        return [], [f"folders.md could not be read: {e}"]
-    return for_job(home, {"folders": {name: g.access for name, g in grants.items()}})
+    return for_job(home, None)
 
 
 def granted_names(home: Home) -> list[str]:
