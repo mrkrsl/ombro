@@ -57,6 +57,14 @@ describe("approvals", () => {
     expect(argumentLines({ channel: "news", to_address: ["a", "b"] })).toEqual([["Channel", "news"], ["To address", "a, b"]]);
   });
 
+  it("shows a staged form as its page, fields and button", () => {
+    const form = { url: "https://bakery.example/order", form: "form", button: { label: "Place order", selector: "button" },
+      fields: [{ field: "Your name", selector: 'input[name="name"]', value: "Ada" }] };
+    expect(approvalTitle("browser.submit", form)).toBe("Submit a form on bakery.example: “Place order”");
+    expect(argumentLines(form, "browser.submit")).toEqual([
+      ["Page", "https://bakery.example/order"], ["Your name", "Ada"], ["Button", "Place order"]]);
+  });
+
   it("approves only what is ticked", async () => {
     const seen: string[][] = [];
     useStore.setState({ decide: async (_approve: boolean, refs: string[]) => { seen.push(refs); return []; } });

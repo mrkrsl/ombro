@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 from jsonschema import Draft202012Validator
 
+from ombro import browser as browser_mod
 from ombro import keys
 from ombro.home import Home
 from ombro.providers import FetchProvider, SearchProvider
@@ -589,7 +590,25 @@ def web_fetch_tool(provider: FetchProvider) -> Tool:
 
 
 def _validated(tool: Tool) -> Tool:
-    """Check arguments against the tool's schema before its handler runs."""
+    """Check arguments against the tool's schema before its handler runs. An outward tool with a
+    `prepare` step is checked there instead: its handler gets what prepare made (and the engine
+    checks that against input_schema)."""
+    if tool.prepare is not None:
+        schema = dict(tool.parameters)
+        if tool.reason_key:  # the engine takes the reason out before prepare sees the arguments
+            schema["properties"] = {k: v for k, v in schema.get("properties", {}).items() if k != tool.reason_key}
+            schema["required"] = [k for k in schema.get("required", []) if k != tool.reason_key]
+        check, prepare = Draft202012Validator(schema), tool.prepare
+
+        def prepared(args: dict, ctx: ToolContext) -> dict:
+            errors = sorted(check.iter_errors(args), key=lambda e: list(e.path))
+            if errors:
+                where = ".".join(str(p) for p in errors[0].path) or "arguments"
+                raise ToolInputError(f"invalid {where}: {errors[0].message}")
+            return prepare(args, ctx)
+
+        tool.prepare = prepared
+        return tool
     validator = Draft202012Validator(tool.parameters)
     inner = tool.handler
 
@@ -613,6 +632,7 @@ def make_provider(
     transport: httpx.BaseTransport | None = None,
     resolver: Resolver | None = None,
     fake: FakeProvider | None = None,
+    browser: "browser_mod.Browser | None" = None,
 ) -> Any:
     if name == "fake":
         return fake or FakeProvider()
@@ -624,6 +644,9 @@ def make_provider(
         return DuckDuckGoProvider(transport=transport)
     if name == "direct":
         return DirectProvider(transport=transport, resolver=resolver or system_resolver)
+    if name == "browser":
+        return browser_mod.BrowserFetch(browser or browser_mod.Browser(settings.providers.get("browser"),
+                                                                       resolver=resolver))
     raise ValueError(f"unknown provider {name!r}")
 
 
@@ -634,6 +657,7 @@ def native_registry(
     transport: httpx.BaseTransport | None = None,
     resolver: Resolver | None = None,
     fake: FakeProvider | None = None,
+    with_browser: bool = True,
 ) -> ToolRegistry:
     """Every native tool, backed by the providers that `settings` names.
 
@@ -641,16 +665,23 @@ def native_registry(
     settings = settings or ToolSettings()
     fake = fake or FakeProvider()
     shared: dict[str, Any] = {}
+    # One browser for the job, started only when a role first uses it (ombro.browser).
+    browser = browser_mod.Browser(settings.providers.get("browser"), resolver=resolver)
 
     def provider(tool: str) -> Any:
         name = settings.provider_for(tool)
         if name not in shared:
-            shared[name] = make_provider(name, home, settings, transport=transport, resolver=resolver, fake=fake)
+            shared[name] = make_provider(name, home, settings, transport=transport, resolver=resolver, fake=fake,
+                                         browser=browser)
         return shared[name]
 
     from ombro.coderun import code_tool
 
     tools = [*workspace_tools(), web_search_tool(provider("web.search")), web_fetch_tool(provider("web.fetch")),
              code_tool()]
-    return ToolRegistry([_validated(t) for t in tools])
+    if with_browser and browser_mod.find_browser(settings.providers.get("browser")):
+        tools += browser_mod.browser_tools(browser)
+    registry = ToolRegistry([_validated(t) for t in tools])
+    registry.on_close(browser.close)
+    return registry
 

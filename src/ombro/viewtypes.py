@@ -297,6 +297,7 @@ class ToolList(TypedDict):
     composio: ComposioAccount | None
     sandbox: str | None  # why code.run can't work here, or None
     folders: list[str]
+    browser: str | None  # the browser jobs use ("Google Chrome", or an address), or None when none is found
 
 
 class ModelEntry(TypedDict):

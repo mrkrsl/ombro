@@ -309,6 +309,11 @@ relaxes three of them (`security_opt`) for this one container. Ombro still runs
 as an ordinary user inside it. Remove those lines and everything else works,
 but jobs report that code can't run.
 
+Ombro's image has no browser. For one, uncomment the `browser` service in
+`compose.yaml` (a headless Chromium in its own container) and the
+`OMBRO_BROWSER_ENDPOINT` line under `ombro`; jobs then reach it by its address,
+with a new, empty profile each, as on the desktop.
+
 If the machine running Docker restricts bubblewrap (Ubuntu 24.04 does), run one more command
 there, once, so jobs can run code: `docker compose exec ombro ombro sandbox`
 says whether it's needed and gives it. Without it, everything else works. A
@@ -644,6 +649,8 @@ later reaches every role at once:
 | `workspace.read`, `workspace.write`, `workspace.list` | Text files in the job's `workspace/` and `scratch/` folders, and in folders shared with the job. |
 | `workspace.place` | Copies a workspace file outside the job: at once into a folder shared for writing, waiting for your approval anywhere else. |
 | `code.run` | Runs a Python script the role writes, in the operating system's sandbox. See Code and shared folders. |
+| `browser.open`, `browser.click`, `browser.type`, `browser.screenshot` | A page in a headless browser: read it after its scripts run, click links and ordinary buttons, type into a search box, save a picture of it. See Browser. |
+| `browser.submit` | Submits a form on the page. It waits for your approval. |
 | `memory.search` | The Lead only: passages from past reports of jobs that used the spec's crews. |
 
 Workspace paths start with `workspace/` (deliverables) or `scratch/` (working
@@ -662,6 +669,7 @@ provider backs each one:
 | `firecrawl` | search, fetch | Needs `FIRECRAWL_API_KEY`. |
 | `duckduckgo` | search | No key. Unofficial and rate-limited, so best effort. |
 | `direct` | fetch | No key. A plain download. Local and private network addresses are refused. |
+| `browser` | fetch | No key. Opens the page in the headless browser (see Browser), for pages that need JavaScript. |
 | `fake` | search, fetch | Invented results. Records every request in the job's `fake-calls.jsonl`. |
 
 ```yaml
@@ -682,6 +690,48 @@ direct fetches, which are free. `/tools web.search` changes either.
 `max_calls` caps a tool's calls per job, which is also how a service that
 bills in its own units, such as Firecrawl credits, is kept in bounds. Like
 limits, tool settings are fixed when a job starts and recorded in `job.md`.
+
+### Browser
+
+Roles can use a browser, headless (no window), for pages that need JavaScript
+or that `web.fetch` can't read, and for simple interaction. Ombro drives a
+Chrome, Chromium, Edge or Brave already on the computer; nothing is bundled or
+downloaded. Settings › Tools says which it found, or that there's none. To use
+another, set `providers: browser: {path: /path/to/chrome}` in `tools.md` (or
+`$OMBRO_BROWSER`); for one elsewhere, such as a container next to Ombro's,
+`providers: browser: {endpoint: http://browser:9222}` (or
+`$OMBRO_BROWSER_ENDPOINT`). Without one, the browser tools aren't offered and
+roles use `web.fetch`.
+
+- **Its own profile.** Each job gets a new, empty browser profile, removed when
+  it ends: none of your sign-ins, cookies or saved passwords, and nothing kept
+  from one job to the next. A local browser ends with the job, even if the job
+  is killed.
+- **Public addresses only.** Every request a page makes, not only the ones the
+  role asks for, is checked as `web.fetch` checks its address, so a page can't
+  reach this computer or your network. Downloads are refused, pop-up dialogs
+  are dismissed, and an address a role opens may carry no more than
+  `fetch_max_query` characters after `?`.
+- **Reading is reading.** Only text a person could see is read (text hidden on
+  the page isn't), and it is material, like any page (see Untrusted material).
+  Clicking links and ordinary buttons (a tab, "show more", a cookie banner)
+  and typing up to 200 characters into a field (a search box, a filter) are
+  part of reading.
+- **Sending waits for you.** Submitting a form, or pressing a button that says
+  it buys, pays, sends, posts, books, subscribes, signs up or deletes, is
+  `browser.submit`: an external action, so it waits in Approvals (after
+  reading a page, even under `auto`), showing the page's address, each field
+  and its value, and the button. On approval, Ombro opens that address again
+  in a new browser, fills the form in as you saw it and presses the button,
+  and Approvals shows the page it led to. A form must therefore work from its
+  own address: a basket or a sign-in isn't carried over. A spec can allow it
+  by name (`outward: {allow: [browser.submit]}`), and then it's sent in the job.
+- **No passwords, no payment details.** Password, card, bank and one-time-code
+  fields are never filled in, by a role or on approval. Ombro can't sign in or
+  pay for you, by design.
+
+A job may open 60 pages, make 100 clicks, type 60 times, save 20 pictures and
+stage 10 forms, unless `tools.md` sets `max_calls` for them.
 
 ### Web APIs
 
@@ -832,8 +882,10 @@ noticing:
 - Once a role has read material in a brief, its external calls in that brief
   wait for your approval even under `auto`, unless the spec allows that tool
   by name. The report says which waited for this reason.
-- `web.fetch` refuses an address with more than `fetch_max_query` (200)
-  characters after `?`, so a page cannot have a role send data out in a link.
+- `web.fetch` and `browser.open` refuse an address with more than
+  `fetch_max_query` (200) characters after `?`, so a page cannot have a role
+  send data out in a link. The browser reads only visible text, keeps pages
+  off this computer and your network, and sends a form only with your approval.
 - Secrets never enter a prompt, code has no network, and nothing is deleted.
 - Common signs of injected instructions ("ignore previous instructions",
   text addressed to an AI, hidden characters, requests to send or delete

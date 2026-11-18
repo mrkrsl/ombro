@@ -63,7 +63,8 @@ def cut_off(reply: ModelReply, max_out: int) -> bool:
 
 # Tools whose results carry nothing from outside: the harness's own confirmations.
 # skills.read returns the user's own library, which is not material either (4.4).
-NOT_MATERIAL = {"workspace.write", "workspace.set_aside", "workspace.place", "skills.read"}
+NOT_MATERIAL = {"workspace.write", "workspace.set_aside", "workspace.place", "skills.read", "browser.type",
+                "browser.screenshot"}
 
 
 def _error(tool: Tool, e: Exception) -> dict[str, Any]:
@@ -385,6 +386,9 @@ class Engine:
         if self.pool is not None:
             self.pool.close()
             self.pool = None
+        close = getattr(self.registry, "close", None)
+        if close is not None:
+            close()  # the browser, if a role used it
 
     def _warn_missing_keys(self, role: Role) -> None:
         from ombro import keys
@@ -995,6 +999,15 @@ class Engine:
         if not reason:
             self.journal.write(role.name, "tool_refused", f"{name}: no reason given", tool=name)
             return {"error": f"give `{tool.reason_key}`: one sentence on why this action is needed"}
+        if tool.prepare is not None:  # e.g. browser.submit: the page's refs become its address and selectors
+            try:
+                args = tool.prepare(args, self._context(role, name))
+            except ToolError as e:
+                self.journal.write(role.name, "tool_refused", f"{name}: {_short(str(e), 200)}", tool=name)
+                return {"error": str(e)}
+            except Exception as e:  # noqa: BLE001: shown to the role, never a crash
+                self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
+                return {"error": f"{type(e).__name__}: {e}"}
         problem = outward.validation_error(tool.input_schema, args)
         if problem:
             self.journal.write(role.name, "tool_refused", f"{name}: {problem}", tool=name)

@@ -3280,6 +3280,16 @@
           },
           "type": "array"
         },
+        "browser": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "composio": {
           "anyOf": [
             {
@@ -3325,7 +3335,8 @@
         "apis",
         "composio",
         "sandbox",
-        "folders"
+        "folders",
+        "browser"
       ],
       "title": "ToolList",
       "type": "object"

@@ -57,7 +57,7 @@ const remote: ServerRow = { server: "notion", url: "https://mcp.invented.invalid
 const tools: ToolList = {
   native: [{ tool: "web.search", provider: "duckduckgo", max_calls: null, calls: 60 },
     { tool: "web.fetch", provider: "direct", max_calls: null, calls: 100 }],
-  servers: [remote], sandbox: null, folders: [], composio: null,
+  servers: [remote], sandbox: null, folders: [], composio: null, browser: "Google Chrome",
   apis: [{ name: "podcasts", url: "https://api.podcasts.invalid/v2", about: "Invented list.", how_to: "",
     access: "read-only", send_key: "bearer", key: "PODCASTS_API_KEY", key_set: true, calls: 30 }],
 };

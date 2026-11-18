@@ -27,10 +27,22 @@ services:
     # Without them, everything else works and jobs say code can't run. On some Ubuntu hosts (24.04;
     # Colima's VM is one), also load Ombro's AppArmor profile there once:
     # `docker compose exec ombro ombro sandbox` says how.
+    # With the browser service below: jobs reach it by its address.
+    # environment:
+    #   OMBRO_BROWSER_ENDPOINT: http://browser:9222
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
       - systempaths=unconfined
+
+  # A browser for jobs (optional). Ombro's own image has none; this is a headless Chromium in a
+  # container of its own, which keeps nothing between jobs (each job gets a new, empty profile).
+  # To use it, uncomment this service and the `environment:` line under ombro above it.
+  # browser:
+  #   image: chromedp/headless-shell:latest
+  #   restart: unless-stopped
+  #   shm_size: 1gb
+  #   # No ports: only Ombro, on this compose network, reaches it.
 
 volumes:
   ombro-settings:

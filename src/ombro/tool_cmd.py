@@ -10,11 +10,14 @@ from ombro.settings import PROVIDER_KEYS, PROVIDER_TOOLS, SetupError, load_tool_
 from ombro.ui import UI, Field, Option
 
 NATIVE = ("web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list", "workspace.place",
-          "workspace.set_aside", "code.run")
+          "workspace.set_aside", "code.run", "browser.open", "browser.click", "browser.type", "browser.screenshot",
+          "browser.submit")
 ABOUT = {
     "firecrawl": "Firecrawl: a paid service, needs a key; good results, billed in credits",
     "duckduckgo": "DuckDuckGo: free, no key; unofficial and rate-limited, so best effort",
     "direct": "direct: free, no key; downloads the page itself (refuses local and private addresses)",
+    "browser": "browser: free, no key; opens the page in a headless browser on this machine, for pages that need "
+               "JavaScript (refuses local and private addresses)",
 }
 
 
@@ -31,6 +34,10 @@ def describe(home: Home, tool: str) -> list[str]:
         key = PROVIDER_KEYS.get(p)
         if key:
             lines.append(f"key {key}: {'set' if keys.get_key(home, key) else 'NOT SET'}")
+    if tool.startswith("browser."):
+        from ombro import browser
+
+        lines.append(f"browser: {browser.describe(settings.providers.get('browser'))}")
     from ombro.settings import load_limits
 
     lines.append(f"max calls in a job: {load_limits(home, None, settings).max_calls_for(tool)}")

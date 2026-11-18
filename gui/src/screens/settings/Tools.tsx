@@ -15,9 +15,13 @@ export const NATIVE: Record<string, string> = { "web.search": "Web search", "web
 export const PROVIDERS: Record<string, string> = {
   duckduckgo: "DuckDuckGo (free)",
   direct: "Directly (free)",
+  browser: "In the browser (free, for pages that need JavaScript)",
   firecrawl: "Firecrawl (paid, needs a key)",
 };
-const CHOICES: Record<string, string[]> = { "web.search": ["duckduckgo", "firecrawl"], "web.fetch": ["direct", "firecrawl"] };
+const CHOICES: Record<string, string[]> = {
+  "web.search": ["duckduckgo", "firecrawl"],
+  "web.fetch": ["direct", "browser", "firecrawl"],
+};
 const NEEDS_KEY: Record<string, string> = { firecrawl: "FIRECRAWL_API_KEY" };
 
 type Kind = "remote" | "local" | "api" | "builtin";
@@ -472,6 +476,17 @@ export function Tools() {
                 )}
               </div>
             ))}
+          <div className="row-block">
+            <Item
+              name="Browser"
+              details={
+                t.browser
+                  ? [`Built in, using ${t.browser} without a window`, "A new, empty profile each job", "Forms wait for your approval"]
+                  : [<span className="problem-inline">No browser found</span>, "Install Chrome, Chromium, Edge or Brave and crews can use it"]
+              }
+              actions={null}
+            />
+          </div>
           {t.apis.map((a) => (
             <div className="row-block" key={`api:${a.name}`}>
               <Item

@@ -29,6 +29,7 @@ export function toolPlace(tool: string): string {
 /** What a tool does, readably: `mcp.sheets.post_message` → "Post message in Sheets". */
 export function toolAction(tool: string): string {
   if (tool === SKILL_TOOL) return "Add or change a skill";
+  if (tool === "browser.submit") return "Submit a form on a website";
   const last = tool.split(".").slice(-1)[0] || tool;
   // Composio's tool names are in capitals: GOOGLEDOCS_CREATE_DOCUMENT reads as "Create document".
   const action = capital(tool.startsWith("composio.") ? words(last).toLowerCase() : words(last));
@@ -63,7 +64,22 @@ export function gist(args: unknown, n = 80): string {
 const METHODS: Record<string, string> = { GET: "Look up", POST: "Send to", PUT: "Replace", PATCH: "Change", DELETE: "Delete" };
 
 /** The row's title: what it will do, and its gist. */
+type StagedForm = { url?: string; fields?: { field?: string; selector?: string; value?: string }[]; button?: { label?: string } };
+
+function host(url: string | undefined): string {
+  try {
+    return new URL(url ?? "").host;
+  } catch {
+    return url ?? "";
+  }
+}
+
 export function approvalTitle(tool: string, args: unknown): string {
+  if (tool === "browser.submit" && args && typeof args === "object") {
+    const a = args as StagedForm;
+    const button = (a.button?.label ?? "").trim();
+    return `Submit a form on ${host(a.url)}${button ? `: “${button}”` : ""}`;
+  }
   if (tool.startsWith("api.") && args && typeof args === "object") {
     const a = args as Record<string, unknown>;
     const method = String(a.method ?? (tool.endsWith(".get") ? "GET" : "POST")).toUpperCase();
@@ -76,8 +92,16 @@ export function approvalTitle(tool: string, args: unknown): string {
 }
 
 /** The arguments as labelled lines: [["Channel", "news"], ["Text", "…"]]. */
-export function argumentLines(args: unknown): [string, string][] {
+export function argumentLines(args: unknown, tool = ""): [string, string][] {
   if (args === null || args === undefined) return [];
+  if (tool === "browser.submit" && typeof args === "object" && !Array.isArray(args)) {
+    const a = args as StagedForm;
+    return [
+      ["Page", a.url ?? ""],
+      ...(a.fields ?? []).map((f): [string, string] => [f.field || f.selector || "Field", f.value ?? ""]),
+      ["Button", a.button?.label ?? ""],
+    ];
+  }
   if (typeof args !== "object" || Array.isArray(args)) return [["Value", plain(args)]];
   return Object.entries(args as Record<string, unknown>).map(([k, v]) => [capital(words(k)), plain(v)]);
 }

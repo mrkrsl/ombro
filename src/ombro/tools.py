@@ -118,6 +118,9 @@ class Tool:
     effect: str | None = None  # for outward tools: read, change or send
     input_schema: dict[str, Any] | None = None  # the arguments the service takes, without `reason`
     reason_key: str | None = None  # the argument the harness adds for the role's reason, if any
+    # For outward tools: turn the role's arguments into what is staged and run (browser.submit's refs
+    # become the page's address and selectors). Raises ToolError to refuse the call.
+    prepare: Callable[[dict, "ToolContext"], dict] | None = None
 
     @property
     def wire_name(self) -> str:
@@ -140,8 +143,20 @@ def wire_name(name: str) -> str:
 class ToolRegistry:
     def __init__(self, tools: list[Tool] | None = None):
         self._tools: dict[str, Tool] = {}
+        self._closers: list[Callable[[], None]] = []
         for t in tools or []:
             self.register(t)
+
+    def on_close(self, fn: Callable[[], None]) -> None:
+        self._closers.append(fn)
+
+    def close(self) -> None:
+        """End what the tools started (a browser). Safe to call more than once."""
+        for fn in self._closers:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001: closing one thing must not stop the rest
+                pass
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool

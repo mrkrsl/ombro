@@ -127,7 +127,7 @@ function person(role: string): string {
 }
 
 function Detail({ d }: { d: ApprovalDetail }) {
-  const lines = argumentLines(d.arguments);
+  const lines = argumentLines(d.arguments, d.tool);
   const skill = d.skill as { diff?: string; text?: string } | null;
   const [changes, setChanges] = useState(false);
   return (

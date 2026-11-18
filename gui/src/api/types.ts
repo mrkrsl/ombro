@@ -981,6 +981,7 @@ export interface Counts {
  */
 export interface ToolList {
   apis: ApiRow[];
+  browser: string | null;
   composio: ComposioAccount | null;
   folders: string[];
   native: NativeTool[];

@@ -340,6 +340,9 @@ def load_limits(
             * (TOOL_SCALE.get(level, 1) if provider in FREE_PROVIDERS else 1)
     if level in CODE_CALLS and "code.run" not in (meta.get("tool_max_calls") or {}):
         per_tool["tool_max_calls"]["code.run"] = CODE_CALLS[level]
+    for name, n in BROWSER_CALLS.items():
+        if name not in (meta.get("tool_max_calls") or {}):
+            per_tool["tool_max_calls"][name] = n
     for name in WORKSPACE_TOOLS:
         if level in WORKSPACE_CALLS and name not in (meta.get("tool_max_calls") or {}):
             per_tool["tool_max_calls"][name] = WORKSPACE_CALLS[level]
@@ -365,13 +368,16 @@ def load_limits(
 # The native tools that use a provider, the providers each may use, and the default.
 PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
     "web.search": (("firecrawl", "duckduckgo", "fake"), "duckduckgo"),
-    "web.fetch": (("firecrawl", "direct", "fake"), "direct"),
+    "web.fetch": (("firecrawl", "direct", "browser", "fake"), "direct"),
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
 # Calls a job may make, by tool and provider, unless tools.md says: fewer where each call is billed.
 PROVIDER_CALLS = {("web.search", "firecrawl"): 20, ("web.fetch", "firecrawl"): 30,
                   ("web.search", "duckduckgo"): 60, ("web.fetch", "direct"): 100,
-                  ("web.search", "fake"): 20, ("web.fetch", "fake"): 30}
+                  ("web.search", "fake"): 20, ("web.fetch", "fake"): 30, ("web.fetch", "browser"): 60}
+# The browser's tools (ombro.browser): calls a job may make, unless limits.md or tools.md says.
+BROWSER_CALLS = {"browser.open": 60, "browser.click": 100, "browser.type": 60, "browser.screenshot": 20,
+                 "browser.submit": 10}
 _TOOL_FIELDS = {"provider", "max_calls", "class", "permission"}
 # Accepted in tools.md from earlier versions, and ignored.
 _RETIRED_TOOL_FIELDS = {"cost_per_call"}
@@ -432,7 +438,7 @@ class ToolSettings:
                 if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
                     raise SetupError(f"{where}: max_calls for {name} must be a positive whole number")
                 out["max_calls"] = v
-            if "class" in cfg or "permission" in cfg:
+            if "class" in cfg or ("permission" in cfg and name != "browser.submit"):
                 if not name.startswith(("mcp.", "composio.")):
                     raise SetupError(f"{where}: class and permission apply only to MCP tools (mcp.<server>.<tool>) "
                                      f"and Composio's (composio.<toolkit>.<tool>), not {name}")

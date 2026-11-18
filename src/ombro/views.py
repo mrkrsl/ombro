@@ -355,7 +355,16 @@ def tool_list(home: Home, settings=None, signing: dict | None = None, fresh: boo
     account: vt.ComposioAccount | None = composio.view(home, settings.composio, fresh)  # type: ignore[assignment]
     return {"native": native, "servers": servers, "apis": apis, "composio": account,
             "sandbox": sandbox.unavailable_reason(),
-            "folders": folders.granted_names(home)}
+            "folders": folders.granted_names(home), "browser": _browser_name(settings)}
+
+
+def _browser_name(settings: Any) -> str | None:
+    from ombro import browser
+
+    found = browser.find_browser(settings.providers.get("browser"))
+    if not found:
+        return None
+    return found.get("endpoint") or Path(found["path"]).name
 
 
 def model_list(home: Home) -> vt.ModelList:

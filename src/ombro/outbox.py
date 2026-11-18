@@ -624,6 +624,8 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
             return _approve_api(home, a)
         if a.tool.startswith("composio."):
             return _approve_api(home, a, composio=True)
+        if a.tool == "browser.submit":
+            return _approve_api(home, a, browser=True)
         parts = split_name(a.tool)
         if parts is None:
             raise OutboxError(f"{a.ref} names {a.tool!r}, which is not an MCP tool")
@@ -670,7 +672,7 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
         return a
 
 
-def _approve_api(home: Home, a: Action, composio: bool = False) -> Action:
+def _approve_api(home: Home, a: Action, composio: bool = False, browser: bool = False) -> Action:
     """Run an approved web API request (or Composio tool), under the lock approve() holds, at most once."""
     from ombro import apitool
     from ombro import composio as composio_mod
@@ -680,17 +682,20 @@ def _approve_api(home: Home, a: Action, composio: bool = False) -> Action:
     meta, _ = jobs.read_job(job_dir)
     _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
     _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
-    run = composio_mod.run_approved if composio else apitool.run_approved
-    what = "Composio" if composio else "the API"
+    from ombro import browser as browser_mod
+
+    run = (composio_mod.run_approved if composio else
+           (lambda h, t, _tool, args: browser_mod.run_approved(h, t, args)) if browser else apitool.run_approved)
+    what = "Composio" if composio else "the website" if browser else "the API"
     try:
         text = run(home, meta.get("tools"), a.tool, a.arguments)
-    except (apitool.ApiNotReached, composio_mod.ComposioNotReached) as e:
+    except (apitool.ApiNotReached, composio_mod.ComposioNotReached, browser_mod.BrowserUnavailable) as e:
         _save(a, status="pending", last_error=str(e), executing_at=None, executing_pid=None)
         _journal(job_dir, "outbox_not_reached", a, f"not sent: {e}")
         _record(job_dir)
         raise OutboxError(f"{a.ref} was not sent, because {what} could not be reached: {e}. "
                           "It is still waiting; try again later") from None
-    except (apitool.ApiCallLost, composio_mod.ComposioCallLost) as e:
+    except (apitool.ApiCallLost, composio_mod.ComposioCallLost, browser_mod.SubmitUncertain) as e:
         _save(a, status="uncertain", note=f"{e}; it may or may not have happened. It is never retried.",
               decided_at=utc_now())
         _journal(job_dir, "outbox_uncertain", a, str(e))
