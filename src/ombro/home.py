@@ -645,9 +645,12 @@ def ensure_home(home: Home) -> list[Path]:
 
 def tidy_layout(home: Home) -> list[str]:
     """Bring an older home up to date: runs/ becomes jobs/, then jobs/ and chats/ move to the
-    visible folder. Returns a line for each thing done."""
+    visible folder, and Anthropic models move to Anthropic's own API. Returns a line for each
+    thing done."""
+    from ombro.models import move_to_anthropic_api
+
     out = []
-    for step in (migrate_jobs, migrate_to_files):
+    for step in (migrate_jobs, migrate_to_files, move_to_anthropic_api):
         try:
             moved = step(home)
         except OSError as e:

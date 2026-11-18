@@ -1,4 +1,5 @@
-"""Model clients. An OpenAI-compatible chat client with tool calling."""
+"""Model clients. An OpenAI-compatible chat client with tool calling; Anthropic's own API is in
+anthropic_client.py. Messages are kept in the OpenAI shape everywhere else in Ombro."""
 
 from __future__ import annotations
 
@@ -46,9 +47,14 @@ class ModelReply:
     finish_reason: str | None = None
     lost_attempts: int = 0  # earlier attempts at this call that timed out and were tried again
     cut_off: bool = False  # it reached the output limit, so its text or a tool call is incomplete
+    # The reply as the provider sent it, for a provider that needs it back exactly (Anthropic's thinking
+    # blocks). Kept on the message under "_blocks"; other providers never see keys that start with "_".
+    blocks: list[dict[str, Any]] | None = None
 
     def as_message(self) -> dict[str, Any]:
         msg: dict[str, Any] = {"role": "assistant", "content": self.content if self.content is not None else ""}
+        if self.blocks:
+            msg["_blocks"] = self.blocks
         if self.tool_calls:
             msg["content"] = self.content
             msg["tool_calls"] = [
@@ -75,7 +81,7 @@ class ChatClient(Protocol):
 
 def estimate_tokens(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> int:
     """A deliberately generous estimate of input tokens, used before a call."""
-    chars = len(json.dumps(messages, ensure_ascii=False))
+    chars = len(json.dumps(public(messages), ensure_ascii=False))  # kept blocks repeat what's there, signed
     if tools:
         chars += len(json.dumps(tools, ensure_ascii=False))
     return chars // 3 + 16
@@ -91,10 +97,16 @@ def parse_tool_arguments(raw: Any) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
-RETRYABLE = {408, 409, 429, 500, 502, 503, 504}
+RETRYABLE = {408, 409, 429, 500, 502, 503, 504, 529}  # 529: Anthropic is overloaded
 
 
-_RANGE = re.compile(r"\[\s*\d+\s*,\s*(\d{3,7})\s*\]")
+def public(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Messages without Ombro's own keys (those that start with "_"), for a provider."""
+    return [{k: v for k, v in m.items() if not k.startswith("_")} if any(k.startswith("_") for k in m) else m
+            for m in messages]
+
+
+_RANGE = re.compile(r"\[\s*\d+\s*,\s*(\d{3,7})\s*\]|max_tokens:\s*\d+\s*>\s*(\d{3,7})")
 _AT_MOST = re.compile(r"(?:<=|less than or equal to|at most|no more than|maximum(?: value)?(?: of| is)?|up to|"
                       r"must not exceed|cannot exceed|exceeds?(?: the)?(?: maximum| limit)?(?: of)?)"
                       r"\s*:?\s*`?(\d{3,7})")
@@ -106,7 +118,7 @@ def allowed_max_tokens(text: str) -> int | None:
     if not re.search(r"max_(?:completion_)?tokens|output tokens|max tokens|completion tokens", low):
         return None
     m = _RANGE.search(low) or _AT_MOST.search(low)
-    n = int(m.group(1)) if m else 0
+    n = int(next(g for g in m.groups() if g)) if m else 0
     return n if n >= 256 else None
 
 
@@ -144,7 +156,7 @@ class OpenAICompatibleClient:
             raise ModelError("no API key is set for this model; run `ombro init` or set it with `ombro keys set`")
         if self.learned_max:
             max_output_tokens = min(int(max_output_tokens), self.learned_max)
-        body: dict[str, Any] = {"model": self.model, "messages": messages, "max_tokens": int(max_output_tokens)}
+        body: dict[str, Any] = {"model": self.model, "messages": public(messages), "max_tokens": int(max_output_tokens)}
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
@@ -287,6 +299,19 @@ class OpenAICompatibleClient:
         return ModelReply(content=content, tool_calls=calls, usage=u, finish_reason=choice.get("finish_reason"))
 
 
+ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1"
+
+
+def is_anthropic(endpoint: str | None) -> bool:
+    """Anthropic's own address: its models go through its own API, not the OpenAI-compatible one."""
+    return (urlparse(endpoint or "").hostname or "").lower() == "api.anthropic.com"
+
+
+def api_for(endpoint: str | None) -> str:
+    """The `api:` a new models.md entry for this address gets."""
+    return "anthropic" if is_anthropic(endpoint) else "openai"
+
+
 def make_client(spec, home) -> ChatClient:
     """Build the client for a ModelSpec from models.md."""
     from ombro import keys
@@ -295,6 +320,15 @@ def make_client(spec, home) -> ChatClient:
     if spec.api == "fake":
         return ScriptedClient.shared(spec.script, base=home.root)
     key_name = spec.key
+    if spec.api == "anthropic" or (spec.api == "openai" and is_anthropic(spec.endpoint)):
+        from ombro.anthropic_client import AnthropicClient
+
+        return AnthropicClient(
+            spec.endpoint or ANTHROPIC_ENDPOINT,
+            spec.model,
+            (lambda: keys.get_key(home, key_name)) if key_name else (lambda: None),
+            effort=getattr(spec, "reasoning_effort", None),
+        )
     return OpenAICompatibleClient(
         spec.endpoint,
         spec.model,

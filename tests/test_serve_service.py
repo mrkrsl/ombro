@@ -135,7 +135,7 @@ def test_pairing_over_http_gives_a_token_that_works(home):
     body = r.json()
     assert body["device"]["name"] == "Mac" and body["protocol"] == PROTOCOL
     auth = {"Authorization": f"Bearer {body['token']}", "Origin": APP}
-    assert c.get("/hello", headers=auth).json() == {"version": __version__, "protocol": PROTOCOL}
+    assert c.get("/hello", headers=auth).json() == {"version": __version__, "protocol": PROTOCOL, "notes": []}
     with c.websocket_connect("ws://127.0.0.1/events", subprotocols=["ombro", body["token"]],
                              headers={"Origin": APP}) as ws:
         assert ws.receive_json()["type"] == "event"

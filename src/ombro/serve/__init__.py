@@ -61,7 +61,7 @@ def run(port: int = 0, handshake: bool = False, dev: bool = False) -> int:
     """For the desktop app (--handshake) or Vite (--dev): a fresh token, a free port, 127.0.0.1."""
     import uvicorn
 
-    from ombro.serve.app import build_app
+    from ombro.serve.app import NOTES, build_app
 
     from ombro.home import Home, tidy_layout
 
@@ -69,6 +69,7 @@ def run(port: int = 0, handshake: bool = False, dev: bool = False) -> int:
     if home.exists():
         for line in tidy_layout(home):
             print(line, file=sys.stderr, flush=True)
+            NOTES.append(line)
     token = secrets.token_urlsafe(32)
     sock = bind(port)
     port = sock.getsockname()[1]
@@ -143,12 +144,13 @@ def run_service(port: int = SERVICE_PORT, host: str = HOST, allow: list[str] | N
 
     from ombro.home import Home, tidy_layout
     from ombro.pairing import Devices
-    from ombro.serve.app import build_app
+    from ombro.serve.app import NOTES, build_app
 
     home = Home()
     if home.exists():
         for line in tidy_layout(home):
             print(line, file=sys.stderr, flush=True)
+            NOTES.append(line)
     devices = Devices(home)
     socks = listen(port, host)
     port = socks[0].getsockname()[1]

@@ -271,11 +271,11 @@ export const useStore = create<State & Actions>((set, get) => {
       try {
         const hs = await handshake();
         const api = client(hs);
+        let hello: { version?: string; protocol?: number; notes?: string[] } = {};
         if (hs.remote) {
           // A server: check it's one this app can work with, and that it still knows this computer.
-          let hello: { version?: string; protocol?: number };
           try {
-            hello = await api.get<{ version?: string; protocol?: number }>("/hello");
+            hello = await api.get<{ version?: string; protocol?: number; notes?: string[] }>("/hello");
           } catch (e) {
             const status = (e as { status?: number }).status;
             throw new Error(
@@ -285,8 +285,16 @@ export const useStore = create<State & Actions>((set, get) => {
             );
           }
           if (hello.protocol !== PROTOCOL) throw new Error(tooOld(hello.version));
+        } else {
+          hello = await api.get<{ notes?: string[] }>("/hello").catch(() => ({}));
         }
         set({ api, remote: Boolean(hs.remote) });
+        // What Ombro did to bring this home up to date as it started (models moved to a provider's own API).
+        for (const [i, text] of (hello.notes ?? []).entries()) {
+          if (shownNotes.has(text)) continue; // once, not again on each reconnect
+          shownNotes.add(text);
+          get().toast({ id: `start-note-${i}`, text, dismissable: true });
+        }
         connect(hs);
         await get().refresh();
         const setup = await api.get<{ needed: string | null }>("/setup").catch(() => ({ needed: null }));
@@ -789,6 +797,7 @@ export const useStore = create<State & Actions>((set, get) => {
 });
 
 const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const shownNotes = new Set<string>();
 
 // Which saved chat each session shows, so picking it again in the sidebar returns to it.
 const chatNames: Record<string, string> = {};

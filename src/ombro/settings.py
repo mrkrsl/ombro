@@ -558,8 +558,10 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
         if not isinstance(entry, dict):
             raise SetupError(f"{home.models}: model {name!r} must be a mapping or another model's name")
         api = str(entry.get("api", "openai"))
-        if api not in ("openai", "fake"):
-            raise SetupError(f"{home.models}: model {name!r} has unknown api {api!r} (use openai or fake)")
+        if api not in ("openai", "anthropic", "fake"):
+            raise SetupError(f"{home.models}: model {name!r} has unknown api {api!r} (use openai, anthropic or fake)")
+        if api == "anthropic" and not entry.get("endpoint"):
+            entry = {**entry, "endpoint": "https://api.anthropic.com/v1"}
         if api == "openai" and not entry.get("endpoint"):
             raise SetupError(f"{home.models}: model {name!r} has no endpoint")
         if api == "fake" and not entry.get("script"):

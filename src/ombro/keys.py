@@ -152,7 +152,7 @@ def key_uses(home: Home) -> dict[str, list[str]]:
     uses: dict[str, list[str]] = {}
     try:
         for spec in load_models(home).values():
-            if spec.api == "openai" and spec.key:
+            if spec.api in ("openai", "anthropic") and spec.key:
                 uses.setdefault(spec.key, []).append(f"model {spec.name}")
     except (SetupError, mdfile.FrontMatterError):
         pass

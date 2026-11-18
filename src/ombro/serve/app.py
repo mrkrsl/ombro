@@ -647,8 +647,13 @@ def _action_routes(s: Serve) -> list[Route]:
     ]
 
 
+# Lines from bringing the home up to date as the server started (home.tidy_layout), which the app
+# shows once, as notices.
+NOTES: list[str] = []
+
+
 async def _hello(request: Request) -> JSONResponse:
-    return JSONResponse({"version": __version__, "protocol": PROTOCOL})
+    return JSONResponse({"version": __version__, "protocol": PROTOCOL, "notes": NOTES})
 
 
 def _pair_route(devices) -> Route:

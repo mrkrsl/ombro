@@ -42,8 +42,16 @@ def test_http_needs_the_token():
     assert c.get("/hello").status_code == 403
     assert c.get("/hello", headers={"Authorization": "Bearer wrong"}).status_code == 403
     r = c.get("/hello", headers={"Authorization": f"Bearer {TOKEN}", "Origin": APP})
-    assert r.status_code == 200 and r.json() == {"version": __version__, "protocol": PROTOCOL}
+    assert r.status_code == 200 and r.json() == {"version": __version__, "protocol": PROTOCOL, "notes": []}
     assert r.headers["access-control-allow-origin"] == APP
+
+
+def test_hello_carries_what_was_done_to_bring_the_home_up_to_date(monkeypatch):
+    from ombro.serve import app as serve_app
+
+    monkeypatch.setattr(serve_app, "NOTES", ["Your Anthropic models now use Anthropic's own API."])
+    r = client().get("/hello", headers={"Authorization": f"Bearer {TOKEN}", "Origin": APP})
+    assert r.json()["notes"] == ["Your Anthropic models now use Anthropic's own API."]
 
 
 def test_http_refuses_other_origins_and_hosts():

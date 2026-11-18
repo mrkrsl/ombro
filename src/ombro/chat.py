@@ -124,7 +124,9 @@ def rest_named(text: str) -> bool:
 
 
 def _size(exchanges: list[list[dict]]) -> int:
-    return len(json.dumps(exchanges, ensure_ascii=False))
+    from ombro.client import public
+
+    return len(json.dumps([public(ex) for ex in exchanges], ensure_ascii=False))  # kept "_blocks" don't count
 
 
 def _short(text: str, n: int = 120) -> str:

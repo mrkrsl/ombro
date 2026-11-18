@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Callable
 
 from ombro import keys, mdfile
-from ombro.client import ModelError, make_client
+from ombro.client import ModelError, api_for, make_client
 from ombro.home import Home, ensure_home
 from ombro.models import PRESETS, chat_models
 from ombro.settings import ModelSpec, SetupError, load_models, load_tool_settings
@@ -45,7 +45,7 @@ def connected_model(home: Home) -> ModelSpec | None:
         return None
     if spec is None:
         return None
-    if spec.api == "openai" and spec.key and not keys.get_key(home, spec.key):
+    if spec.api in ("openai", "anthropic") and spec.key and not keys.get_key(home, spec.key):
         return None
     return spec
 
@@ -184,7 +184,7 @@ class KeyRefused(SetupError):
 def offered_models(home: Home, endpoint: str, key_name: str | None, client_factory=make_client) -> list[str]:
     """The models an endpoint lists for this key, or [] if it does not say. Raises KeyRefused
     when the endpoint refuses the key (HTTP 401 or 403), which is never a guess's cue."""
-    spec = ModelSpec(name="default", api="openai", model="", endpoint=endpoint, key=key_name or None)
+    spec = ModelSpec(name="default", api=api_for(endpoint), model="", endpoint=endpoint, key=key_name or None)
     try:
         client = client_factory(spec, home)
         lister = getattr(client, "list_models", None)
@@ -274,7 +274,7 @@ def connect_model(home: Home, ui: UI, client_factory=make_client) -> tuple[str, 
         if name in names:
             model_list.set_default(home, name)
         else:
-            entry: dict = {"api": "openai", "endpoint": endpoint, "model": model}
+            entry: dict = {"api": api_for(endpoint), "endpoint": endpoint, "model": model}
             if key_name:
                 entry["key"] = key_name
             _write_default_model(home, entry)

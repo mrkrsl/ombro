@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ombro import mdfile
+from ombro.client import ANTHROPIC_ENDPOINT, api_for, is_anthropic
 from ombro.home import Home
 from ombro.settings import SetupError, load_models
 from ombro.ui import Field, Option
@@ -57,7 +58,7 @@ def add_models(home: Home, endpoint: str, key: str | None, ids: list[str]) -> li
         have = models.get(name)
         if isinstance(have, dict) and (have.get("endpoint") != endpoint or have.get("model") != mid):
             continue
-        entry: dict[str, Any] = {"api": "openai", "endpoint": endpoint, "model": mid}
+        entry: dict[str, Any] = {"api": api_for(endpoint), "endpoint": endpoint, "model": mid}
         if key:
             entry["key"] = key
         models.setdefault(name, entry)
@@ -65,6 +66,27 @@ def add_models(home: Home, endpoint: str, key: str | None, ids: list[str]) -> li
     models.setdefault("cheap", "default")
     _write(home, meta, body, models)
     return names
+
+
+def move_to_anthropic_api(home: Home) -> str | None:
+    """Anthropic models set up through its OpenAI-compatible endpoint (api: openai) move to
+    Anthropic's own API (api: anthropic), which caches prompts. Nothing else in models.md
+    changes. Returns a line saying so, or None if there was nothing to move."""
+    if not home.models.is_file():
+        return None
+    try:
+        meta, body, models = _read(home)
+    except mdfile.FrontMatterError:
+        return None
+    moved = [n for n, e in models.items()
+             if isinstance(e, dict) and str(e.get("api", "openai")) == "openai" and is_anthropic(e.get("endpoint"))]
+    if not moved:
+        return None
+    for n in moved:
+        models[n] = {**models[n], "api": "anthropic", "endpoint": ANTHROPIC_ENDPOINT}
+    _write(home, meta, body, models)
+    return ("Your Anthropic models now use Anthropic's own API instead of its OpenAI-compatible one, so "
+            "Ombro can cache prompts and keep Claude's thinking between steps. Nothing else changed.")
 
 
 def set_default(home: Home, name: str) -> None:
@@ -142,7 +164,8 @@ KNOWN_PROVIDERS = {"deepseek": "DeepSeek", "anthropic": "Anthropic", "openai": "
                    "fireworks": "Fireworks", "perplexity": "Perplexity", "cohere": "Cohere"}
 
 
-# Providers people often use, all through their OpenAI-compatible API. Set-up offers them in the
+# Providers people often use, all through their OpenAI-compatible API except Anthropic, which has
+# its own (anthropic_client.py: prompt caching, thinking, the full model list). Set-up offers them in the
 # terminal, and Settings › General fills the form from them. `key` is the name the key is kept
 # under in keys.env; "" means the provider needs none (it runs on this computer). `model` is the
 # one suggested as the default when the provider lists several.
@@ -327,9 +350,9 @@ def refresh_flow(home: Home, ui, client_factory=None) -> int:
 
     factory = client_factory or make_client
     for c in connections(home):
-        if c["api"] != "openai":
+        if c["api"] not in ("openai", "anthropic"):
             continue
-        spec = ModelSpec(name="default", api="openai", model="", endpoint=c["endpoint"], key=c["key"])
+        spec = ModelSpec(name="default", api=c["api"], model="", endpoint=c["endpoint"], key=c["key"])
         try:
             ids = factory(spec, home).list_models()
         except (ModelError, AttributeError) as e:
