@@ -109,6 +109,9 @@ def _show_skill(a: outbox.Action, home: Home) -> None:
         return
     print(f"  Skill     {v['name']} ({'a new version' if v['live'] else 'new'})")
     print(f"  For       {', '.join(v['for']) or 'no role named'}; approving adds it to their skills: lines")
+    if v.get("adds"):
+        print(f"  Adds      {v['adds']}")
+    print("  Declining it means the Lead won't suggest it again.")
     if v["flags"]:
         print(f"  Warning   signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")
     if v["changed_since"] and a.status == "pending":

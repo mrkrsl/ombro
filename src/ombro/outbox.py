@@ -389,8 +389,9 @@ def skill_text(a: Action) -> str:
 
 
 def stage_skill(job_dir: Path, *, name: str, text: str, for_roles: list[str], reason: str, base_sha: str,
-                flags: list[str]) -> tuple[Action, bool]:
-    """Stage a skill the Lead proposes, keeping its SKILL.md beside the action."""
+                flags: list[str], adds: str = "") -> tuple[Action, bool]:
+    """Stage a skill the Lead proposes, keeping its SKILL.md beside the action. `reason` says why it
+    is suggested (what in the job showed it); `adds`, what it gives later jobs that a brief would not."""
     job_dir = Path(job_dir)
     with lock(job_dir, wait=STAGE_WAIT):
         for a in actions(job_dir):
@@ -401,7 +402,7 @@ def stage_skill(job_dir: Path, *, name: str, text: str, for_roles: list[str], re
         keep = a.path.with_suffix("") / "SKILL.md"
         mdfile.write_atomic(keep, text)
         _save(a, file=keep.relative_to(job_dir).as_posix(), file_sha256=_text_sha(text), base_sha256=base_sha,
-              change="update" if base_sha else "new", flags=list(flags))
+              change="update" if base_sha else "new", flags=list(flags), **({"adds": adds} if adds else {}))
     return a, False
 
 
@@ -416,7 +417,8 @@ def skill_view(home: Home, a: Action) -> dict[str, Any]:
     live = skills.load(home, name)
     now = live.text if live else ""
     out: dict[str, Any] = {"name": name, "for": list(args.get("for") or []), "text": text,
-                           "flags": list(a.meta.get("flags") or []), "live": bool(live)}
+                           "flags": list(a.meta.get("flags") or []), "live": bool(live),
+                           "why": str(a.meta.get("reason") or ""), "adds": str(a.meta.get("adds") or "")}
     if live:
         out["diff"] = skills.diff(now, text, name)
     out["changed_since"] = (skills.sha(now) if now else "") != str(a.meta.get("base_sha256") or "")
@@ -488,7 +490,22 @@ def edit_skill(home: Home, a: Action, text: str) -> Action:
 
 
 def skills_waiting(home: Home) -> int:
-    return sum(1 for a in waiting(home) if a.tool == SKILL_TOOL and a.status == "pending")
+    return len(skill_proposals_waiting(home))
+
+
+def skill_proposals_waiting(home: Home) -> list[tuple[str, str, str]]:
+    """(name, description, ref) of each skill proposal waiting for the user."""
+    out = []
+    for a in waiting(home):
+        if a.tool != SKILL_TOOL or a.status != "pending":
+            continue
+        name = str((a.arguments or {}).get("name") or "") if isinstance(a.arguments, dict) else ""
+        try:
+            desc = " ".join(str(mdfile.parse(skill_text(a))[0].get("description") or "").split())
+        except (OutboxError, mdfile.FrontMatterError):
+            desc = ""
+        out.append((name, desc, a.ref))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -723,7 +740,30 @@ def decline(home: Home, a: Action) -> Action:
         _save(a, status="declined", decided_at=utc_now())
         _journal(job_dir, "outbox_declined", a, "declined")
         _record(job_dir, a, "declined; it will never run")
-        return a
+    if a.tool == SKILL_TOOL:
+        _remember_declined_skill(home, a)
+    return a
+
+
+def _remember_declined_skill(home: Home, a: Action) -> None:
+    """So the Lead never proposes it again (skills.declined)."""
+    from datetime import date
+
+    from ombro import skills
+
+    args = a.arguments if isinstance(a.arguments, dict) else {}
+    name = str(args.get("name") or "")
+    try:
+        meta, _ = mdfile.parse(skill_text(a))
+    except (OutboxError, mdfile.FrontMatterError):
+        meta = {}
+    try:
+        skills.record_declined(home, name=name, description=str(meta.get("description") or ""),
+                               change=str(a.meta.get("change") or "new"),
+                               base_sha=str(a.meta.get("base_sha256") or ""), job=a.job_id,
+                               date=date.today().isoformat())
+    except (OSError, mdfile.FrontMatterError):
+        pass  # the decline stands; only the reminder to the Lead is lost
 
 
 def edit(home: Home, a: Action, arguments: Any) -> Action:

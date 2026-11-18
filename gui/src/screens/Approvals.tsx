@@ -128,7 +128,7 @@ function person(role: string): string {
 
 function Detail({ d }: { d: ApprovalDetail }) {
   const lines = argumentLines(d.arguments, d.tool);
-  const skill = d.skill as { diff?: string; text?: string } | null;
+  const skill = d.skill as { diff?: string; text?: string; adds?: string } | null;
   const [changes, setChanges] = useState(false);
   return (
     <>
@@ -136,6 +136,16 @@ function Detail({ d }: { d: ApprovalDetail }) {
         {person(d.role)} asks to {toolAction(d.tool).replace(/^./, (c) => c.toLowerCase())}
         {d.reason ? `: ${d.reason.replace(/\.$/, "")}.` : "."}
       </p>
+      {skill && (
+        <p>
+          {skill.adds ? (
+            <>
+              <b>What it adds over a brief:</b> {skill.adds.replace(/\.$/, "")}.{" "}
+            </>
+          ) : null}
+          <span className="muted">If you decline it, the Lead won't suggest it again.</span>
+        </p>
+      )}
       <div className="what-it-does">
         <b>Approving it will {toolAction(d.tool).replace(/^./, (c) => c.toLowerCase())}, with:</b>
         {lines.length > 0 ? (

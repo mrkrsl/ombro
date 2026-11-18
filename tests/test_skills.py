@@ -440,3 +440,87 @@ def test_ombro_skills_add_asks_first_and_defaults_to_no(home, tmp_path):
     r = subprocess.run(cmd, input="y\n", capture_output=True, text=True, env=env, timeout=60)
     assert r.returncode == 0 and "Added kettle-survey" in r.stdout
     assert skills.load(home, "kettle-survey") is not None
+
+
+# -- what a proposal says, and what never comes back (testing log T3) ------------------------------
+
+
+def test_a_proposal_says_why_and_what_it_adds_over_a_brief(job, home):
+    job(a_job(propose(reason="Three invented surveys repeated the same steps.",
+                      adds="Every survey follows it without its brief repeating the steps.")))
+    (a,) = outbox.waiting(home)
+    view = outbox.skill_view(home, a)
+    assert view["why"] == "Three invented surveys repeated the same steps."
+    assert view["adds"] == "Every survey follows it without its brief repeating the steps."
+    assert "What it adds: Every survey follows it" in job.report
+
+
+def test_a_proposal_that_does_not_say_what_it_adds_is_refused(job, home):
+    job(a_job(propose(adds=None), fake.no_skill("It adds nothing over a brief.")))
+    refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
+    assert "give `adds`" in refusal["content"] and "call no_skill" in refusal["content"]
+    assert not outbox.waiting(home)
+
+
+def test_the_lead_is_told_what_waits_and_what_was_declined(job, home):
+    job(a_job(propose(name="kettle-survey")))
+    job(a_job(propose(name="teapot-survey")))
+    outbox.decline(home, [a for a in outbox.waiting(home) if a.arguments["name"] == "teapot-survey"][0])
+    job(a_job(fake.no_skill("Nothing new.")))
+    prompt = skill_calls(job)[-1]["messages"][1]["content"]
+    waiting = prompt.split("Proposals already waiting")[1].split("=== end")[0]
+    declined = prompt.split("Proposals the user declined")[1].split("=== end")[0]
+    assert "kettle-survey" in waiting and "teapot-survey" not in waiting
+    assert "teapot-survey (new, declined" in declined
+    assert "never propose what the user has declined" in skill_calls(job)[-1]["messages"][0]["content"].lower()
+
+
+def test_a_declined_new_skill_is_never_proposed_again(job, home):
+    job(a_job(propose()))
+    outbox.decline(home, outbox.waiting(home)[0])
+    entry, = skills.declined(home)
+    assert entry["name"] == "kettle-survey" and entry["change"] == "new"
+    job(a_job(propose(), fake.no_skill("Declined before.")))
+    refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
+    assert "declined a new skill called kettle-survey" in refusal["content"]
+    assert not outbox.waiting(home)
+    # Taking it out of skills/declined.md lets it be proposed again.
+    skills.declined_path(home).unlink()
+    job(a_job(propose()))
+    assert len(outbox.waiting(home)) == 1
+
+
+def test_a_declined_change_is_not_proposed_again_until_the_skill_changes(job, home):
+    add_skill(home, "kettle-survey")
+    job(a_job(propose(body="1. A changed invented step.")))
+    outbox.decline(home, outbox.waiting(home)[0])
+    job(a_job(propose(body="1. Another changed invented step."), fake.no_skill("Declined before.")))
+    refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
+    assert "declined a change to kettle-survey" in refusal["content"]
+    assert not outbox.waiting(home)
+    # The user changes the skill: a change to the new version may be proposed.
+    (home.skills_dir / "kettle-survey" / "SKILL.md").write_text(KETTLE + "4. A step the user added.\n")
+    job(a_job(propose(body="1. A third changed invented step.")))
+    assert len(outbox.waiting(home)) == 1
+
+
+def test_a_second_proposal_for_a_skill_already_waiting_is_refused(job, home):
+    """A scheduled job proposing a change to the same skill on every run: one waits at a time."""
+    add_skill(home, "kettle-survey")
+    job(a_job(propose(body="1. Monday's invented change.")))
+    job(a_job(propose(body="1. Tuesday's invented change."), fake.no_skill("One waits.")))
+    refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
+    assert "already waits for the user" in refusal["content"]
+    (a,) = outbox.waiting(home)
+    assert "Monday" in outbox.skill_text(a)
+
+
+def test_the_cli_says_what_a_proposal_adds_and_that_declining_is_final(job, home, capsys):
+    from ombro import cli
+
+    job(a_job(propose(adds="Every survey follows it without its brief repeating the steps.")))
+    (a,) = outbox.waiting(home)
+    capsys.readouterr()
+    cli.main(["approvals", "show", a.ref])
+    out = capsys.readouterr().out
+    assert "Adds      Every survey follows it" in out and "won't suggest it again" in out

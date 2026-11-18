@@ -287,6 +287,69 @@ def diff(old: str, new: str, name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Proposals the user declined. The Lead is shown them and never makes them again: a new skill
+# under a declined name, or another change to a version of a skill whose change was declined.
+# skills/declined.md is the user's to edit; taking an entry out lets it be proposed again.
+
+DECLINED_FILE = "declined.md"
+DECLINED_BODY = """\
+Skill proposals you declined in Approvals. The Lead is shown this list after
+each job and does not propose these again: not a new skill under a name here,
+and not another change to the same version of a skill. Remove an entry to let
+it be proposed again.
+"""
+
+
+def declined_path(home: Home) -> Path:
+    return home.skills_dir / DECLINED_FILE
+
+
+def declined(home: Home) -> list[dict[str, Any]]:
+    try:
+        meta, _ = mdfile.read(declined_path(home))
+    except (OSError, mdfile.FrontMatterError):
+        return []
+    items = meta.get("declined")
+    return [x for x in items if isinstance(x, dict) and x.get("name")] if isinstance(items, list) else []
+
+
+def record_declined(home: Home, *, name: str, description: str, change: str, base_sha: str, job: str,
+                    date: str) -> None:
+    items = declined(home)
+    entry = {"name": name, "description": " ".join(description.split())[:SHORT_DESCRIPTION], "change": change,
+             "declined": date, "job": job}
+    if change == "update":
+        entry["base_sha256"] = base_sha
+    if any(x.get("name") == name and x.get("change") == change and x.get("base_sha256", "") == entry.get(
+            "base_sha256", "") for x in items):
+        return
+    home.skills_dir.mkdir(parents=True, exist_ok=True)
+    mdfile.write(declined_path(home), {"declined": [*items, entry]}, DECLINED_BODY)
+
+
+def declined_block(home: Home, name: str) -> str:
+    """Why a proposal for `name` would only repeat one the user declined, or "" if it would not.
+    A new skill under a declined name is refused while no skill of that name is live; a change
+    to a live skill is refused while the live version is the one a declined change was made to."""
+    live = live_sha(home, name)
+    for x in declined(home):
+        if x.get("name") != name:
+            continue
+        if not live and x.get("change") != "update":
+            return f"the user declined a new skill called {name} on {x.get('declined')}; do not propose it again"
+        if live and x.get("change") == "update" and x.get("base_sha256") == live:
+            return (f"the user declined a change to {name} on {x.get('declined')} and the skill has not changed "
+                    "since; do not propose another change to it")
+    return ""
+
+
+def declined_listing(home: Home) -> str:
+    return "\n".join(f"- {x['name']} ({'a change to it' if x.get('change') == 'update' else 'new'}, declined "
+                     f"{x.get('declined', '')}): {x.get('description') or '(no description)'}"
+                     for x in declined(home) if declined_block(home, str(x["name"])))
+
+
+# ---------------------------------------------------------------------------
 # Importing a skill found elsewhere. It is someone else's instructions, which roles
 # would follow unfenced, so the user sees it all, and any signs of injected text,
 # before it is copied in, and it is recorded as imported, not as theirs.

@@ -1188,8 +1188,11 @@ class Engine:
         cap = self.limits.skill_max_chars
         messages: list[dict] = [
             {"role": "system", "content": prompts.skill_system(self.lead, self.today)},
-            {"role": "user", "content": prompts.skill_input(self._skill_listing(None)[0], list(self.roles), cap,
-                                                            report.narrative_input(facts))},
+            {"role": "user", "content": prompts.skill_input(
+                self._skill_listing(None)[0], list(self.roles), cap, report.narrative_input(facts),
+                waiting="\n".join(f"- {n}: {d or '(no description)'}"
+                                   for n, d, _ in outbox.skill_proposals_waiting(self.home)),
+                declined=skills_mod.declined_listing(self.home))},
         ]
         report_worst = estimate_tokens([{"role": "user", "content": report.narrative_input(facts)}]) + 2_000 \
             + self.limits.report_max_output_tokens
@@ -1245,8 +1248,21 @@ class Engine:
         except skills_mod.SkillError as e:
             self.journal.write("lead", "skills_refused", _short(str(e), 300))
             return {"error": str(e)}
+        adds = " ".join(str(args.get("adds") or "").split())
         if not reason:
             return {"error": "give `reason`: one sentence on what in this job shows the skill helps"}
+        if not adds:
+            return {"error": "give `adds`: one sentence on what the skill gives later jobs that writing it in "
+                             "their brief would not. If it adds nothing, call no_skill"}
+        blocked = skills_mod.declined_block(self.home, name)
+        if blocked:
+            self.journal.write("harness", "skills_refused", blocked)
+            return {"error": blocked + ". Call no_skill, unless this job shows a different method"}
+        if any(n == name for n, _, _ in outbox.skill_proposals_waiting(self.home)):
+            msg = (f"a proposal for {name} already waits for the user; another is not made until they decide it. "
+                   "Call no_skill")
+            self.journal.write("harness", "skills_refused", msg)
+            return {"error": msg}
         raw_for = args.get("for") or []
         for_roles, unknown = [], []
         for who in raw_for if isinstance(raw_for, list) else [raw_for]:
@@ -1259,14 +1275,14 @@ class Engine:
         base = skills_mod.live_sha(self.home, name)
         try:
             action, duplicate = outbox.stage_skill(self.job_dir, name=name, text=text, for_roles=for_roles,
-                                                   reason=reason, base_sha=base, flags=signs)
+                                                   reason=reason, base_sha=base, flags=signs, adds=adds)
         except outbox.OutboxError as e:
             self.journal.write("harness", "skills", f"the proposal could not be staged: {e}", outcome="skipped")
             return {"ok": True, "note": "it could not be staged"}
         change = "a new version of" if base else "a new skill,"
         self.journal.write(
             "lead", "skills", f"proposed {change} {name}, waiting for you as {action.ref}", outcome="proposed",
-            ref=action.ref, skill=name, change="update" if base else "new", reason=reason, flags=signs,
+            ref=action.ref, skill=name, change="update" if base else "new", reason=reason, adds=adds, flags=signs,
             **({"for": for_roles} if for_roles else {}), **({"unknown_roles": unknown} if unknown else {}))
         if signs:
             self.journal.write("harness", "material_flag", f"the proposed skill {name}: {', '.join(signs)}",

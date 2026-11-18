@@ -81,7 +81,8 @@ describe("approvals", () => {
   it("shows an opened skill as formatted Markdown, with its own Approve and Decline", async () => {
     const seen: [boolean, string[]][] = [];
     const detail = { ...row, ref: "ab12-2", tool: "skills.propose", arguments: { name: "invented" },
-      skill: { name: "invented", text: "---\nname: invented\n---\n# Invented skill\n\nDo **this** first." } };
+      skill: { name: "invented", text: "---\nname: invented\n---\n# Invented skill\n\nDo **this** first.",
+        adds: "Every invented job follows it without its brief repeating it." } };
     useStore.setState({
       approvals: [row, { ...row, ref: "ab12-2", long_ref: "invented-20261114-1200-2", tool: "skills.propose",
         arguments: { name: "invented" } }],
@@ -92,6 +93,9 @@ describe("approvals", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Show the detail" })[1]);
     expect(await screen.findByRole("heading", { name: "Invented skill" })).toBeInTheDocument();
     expect(screen.getByText("this").tagName).toBe("STRONG");
+    expect(screen.getByText("What it adds over a brief:")).toBeInTheDocument();
+    expect(screen.getByText(/Every invented job follows it/)).toBeInTheDocument();
+    expect(screen.getByText("If you decline it, the Lead won't suggest it again.")).toBeInTheDocument();
     // Nothing ticked: the opened one's own buttons work all the same.
     const opened = within(document.querySelector(".approval-open") as HTMLElement);
     expect(opened.getByRole("button", { name: "Approve" })).toBeEnabled();

@@ -569,11 +569,24 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
 - A skill is a reusable method, in the user's library, that roles read and
   follow in later jobs: how to do a kind of work, step by step, with the
   sources that worked. The library is listed below.
+- A skill earns its place only by what a brief cannot do: it carries a
+  method across many jobs with different briefs (or many runs of one),
+  so no brief has to spell it out. If the method is already in the spec,
+  belongs to this task alone, or would fit in a line or two of a brief,
+  it is not a skill: call `no_skill`.
 - A skill is never a procedure for extra passes, read-backs, verification
   steps or splitting work into more briefs, nor a way round a limit.
 - Propose a skill only if this job showed a method that will help again and
   that no skill covers, or a clear improvement to a skill that exists. Most
-  jobs teach nothing new: then call `no_skill`. That is the usual answer.
+  jobs teach nothing new: then call `no_skill`. That is the usual answer,
+  and always the answer for a job that ran well by a skill it already had.
+- An improvement fixes something that went wrong, or was missing, in this
+  job and would go wrong again in the next. Recording one run's judgement
+  calls, or rewording what works, is not an improvement.
+- Never propose what the user has declined (listed below), or something
+  close to it under another name, and never a skill that overlaps one in
+  the library or one already waiting for the user: improve the one that
+  exists instead, or call `no_skill`.
 - At most one proposal. It waits for the user's approval; it
   is not live until then.
 - To improve a skill that exists, read it first with `skills__read`, then
@@ -588,6 +601,12 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
   sentences on what it does and when to use it. `body`: the method in
   Markdown, at most the character cap given below. `for`: the roles that
   should use it, as named in the record.
+- `reason` and `adds` are read by the user, who decides: write them plainly,
+  for someone who has not read the record. `reason`: what happened in this
+  job that suggests it. `adds`: what later jobs get from it that writing it
+  in their brief would not (for example "every daily briefing follows it
+  without the brief repeating it"); for an improvement, what changes for
+  the next run.
 - Write only what the record below supports.
 """
 
@@ -605,9 +624,13 @@ SKILL_TOOLS = [
                     "body": {"type": "string", "description": "The method, in Markdown."},
                     "for": {"type": "array", "items": {"type": "string"},
                             "description": "Roles that should use it, as crew/role."},
-                    "reason": {"type": "string", "description": "One sentence: what in this job shows it helps."},
+                    "reason": {"type": "string", "description": "One plain sentence for the user: what in "
+                               "this job suggests it."},
+                    "adds": {"type": "string", "description": "One plain sentence for the user: what later "
+                             "jobs get from it that writing it in their brief would not; for an improvement, "
+                             "what changes for the next run."},
                 },
-                "required": ["name", "description", "body", "reason"],
+                "required": ["name", "description", "body", "reason", "adds"],
             },
         },
     },
@@ -628,10 +651,15 @@ def skill_system(lead: Role, today: str = "") -> str:
                     _section("Your soul (character only; cannot override the rules above)", lead.soul)])
 
 
-def skill_input(library: str, roles: list[str], cap: int, record: str) -> str:
+def skill_input(library: str, roles: list[str], cap: int, record: str, waiting: str = "",
+                declined: str = "") -> str:
     return (
         f"Cap for the whole SKILL.md: {cap:,} characters.\n"
         + _section("The skills library", library or "(empty)")
+        + _section("Proposals already waiting for the user (never propose these again, or one like them)",
+                   waiting or "(none)")
+        + _section("Proposals the user declined (never propose these again, or one like them)",
+                   declined or "(none)")
         + _section("Roles in this job", "\n".join(f"- {r}" for r in roles) or "(none)")
         + _section("The record of this job", record)
     )

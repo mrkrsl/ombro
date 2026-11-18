@@ -787,6 +787,8 @@ def _skill_words(ev: dict[str, Any]) -> str:
     words = f"{what} {ev.get('skill')}"
     if ev.get("for"):
         words += f", for {', '.join(ev['for'])}"
+    if ev.get("adds"):
+        words += f". What it adds: {str(ev['adds']).rstrip('.')}"
     return words
 
 
