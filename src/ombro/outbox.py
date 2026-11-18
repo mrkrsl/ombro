@@ -172,14 +172,17 @@ def describe_counts(c: dict[str, int]) -> str:
 
 
 def waiting(home: Home, crew: str | None = None) -> list[Action]:
-    """Every action waiting for a decision, oldest job first."""
+    """Every action waiting for a decision, newest first: by when it was staged, then by job and number
+    (staging times are to the second, so a job's later action still comes before its earlier one)."""
     out = []
-    for job_dir in jobs.all_jobs(home, crew):
+    for i, job_dir in enumerate(jobs.all_jobs(home, crew)):
         if not outbox_dir(job_dir).is_dir():
             continue
         settle(job_dir)
-        out += [a for a in actions(job_dir) if a.status in (*WAITING, "executing")]
-    return out
+        out += [(str(a.meta.get("staged_at") or ""), i, a.number, a)
+                for a in actions(job_dir) if a.status in (*WAITING, "executing")]
+    out.sort(key=lambda t: t[:3], reverse=True)
+    return [t[3] for t in out]
 
 
 _REF = re.compile(r"^(?P<run>[0-9A-Za-z][0-9A-Za-z-]*?)-(?P<n>\d+)$")

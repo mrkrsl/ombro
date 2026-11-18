@@ -81,10 +81,11 @@
   flex: none;
 }
 
+/* More room below than above, so a long list of chats stands clear of Jobs. */
 .chats {
   flex: 1;
   overflow-y: auto;
-  margin: 12px 0;
+  margin: 12px 0 32px;
   padding: 0;
   list-style: none;
 }
