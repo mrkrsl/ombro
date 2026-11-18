@@ -267,3 +267,35 @@ def test_a_spec_that_allows_submit_by_name_sends_it_in_the_job(job, home, site, 
     [post] = [r for r in site.requests if r[0] == "POST"]
     assert parse_qs(post[2]) == {"name": ["Ada"]}
     assert any(e["action"] == "outward_done" and e.get("tool") == "browser.submit" for e in job.events)
+
+
+# -- the Lead in chat ---------------------------------------------------------------
+
+
+def _chat_with_site(home, site, monkeypatch, script, answers):
+    from test_chat import ChatSession
+
+    monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}},
+                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    session = ChatSession(home)
+    session(script, answers)
+    return session
+
+
+@pytest.mark.parametrize("yes", [True, False])
+def test_the_lead_reads_with_the_browser_in_chat_and_a_form_asks_first(home, site, monkeypatch, yes):
+    session = _chat_with_site(home, site, monkeypatch, [
+        fake.call("browser__open", {"url": site.url}),
+        fake.call("browser__submit", {"button": "e7", "fields": {"e5": "Ada"}, "reason": "You asked for a loaf."}),
+        fake.say("Done." if yes else "Not sent."),
+    ], ["Order a loaf for Ada.", "y" if yes else "n"])
+    read, sent = session.tool_replies()
+    assert "Made by script" in read["text"]
+    posts = [r for r in site.requests if r[0] == "POST"]
+    if yes:
+        assert sent["status"] == "done" and "Thank you Ada" in sent["text"]
+        assert parse_qs(posts[0][2]) == {"name": ["Ada"]}
+    else:
+        assert "declined" in sent and posts == []
+    assert "submit the form on shop.test" in session.output

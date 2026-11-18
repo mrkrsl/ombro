@@ -78,7 +78,7 @@ class BriefLookups:
             self._schemas = [t for t in tools if t["function"]["name"] in BRIEF_LOOKUPS]
         seen: set[str] = set()
         out = []
-        for t in self._schemas + self.chat.lookup_schemas():  # the lookups follow what the chat has loaded
+        for t in self._schemas + self.chat.lookup_schemas(read_only=True):  # as the chat has loaded them
             if t["function"]["name"] not in seen:
                 seen.add(t["function"]["name"])
                 out.append(t)
@@ -97,6 +97,11 @@ WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
 FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write",
                 "folders__set_aside": "folders.set_aside"}
 SKILL_TOOLS = {"skills__read": "skills.read"}
+# The crew's own tools the Lead uses in chat too, from the registry: the browser and code.run. They work
+# in a folder of the chat's own (Files/chats/<id>/workspace), next to the shared folders.
+NATIVE_TOOLS = {"browser__open": "browser.open", "browser__click": "browser.click", "browser__type": "browser.type",
+                "browser__screenshot": "browser.screenshot", "browser__submit": "browser.submit",
+                "code__run": "code.run"}
 OFFERS = ("offer_brief", "offer_work", "offer_remember", "offer_start", "offer_skill", "offer_role")
 
 HELP = """\
@@ -599,9 +604,10 @@ class Chat:
         return text
 
     def lookups(self) -> dict[str, Any]:
-        """Quick lookups the Lead may make itself in chat: each web API's GET (or the one tool of a
-        read-only API), and every read-only tool of the MCP servers in tools.md. Nothing that
-        changes anything; a tool set to `permission: refuse` is left out. Made once per chat."""
+        """The outside services' tools the Lead may use itself in chat: every web API's, Composio's
+        and MCP server's in tools.md, those that change things too (each asks the user first when a
+        job's would wait for approval: see _act). A tool set to `permission: refuse` is left out.
+        Made once per chat."""
         if self._lookups is not None:
             return self._lookups
         from ombro import outward
@@ -614,7 +620,7 @@ class Chat:
             self._lookups = found
             return found
         for t in api_tools(self.home, settings.apis):
-            if t.effect == "read-only" and not outward.refused(t.name, settings):
+            if not outward.refused(t.name, settings):
                 found[t.wire_name] = t
         if settings.composio:  # Composio's lookups, listed by name in tools__load like an MCP server's
             from ombro import composio
@@ -622,8 +628,7 @@ class Chat:
             listed, problems = composio.tools(self.home, settings)
             for p in problems:
                 self.transcript.note(p)
-            found.update({t.wire_name: t for t in listed
-                          if t.effect == "read-only" and not outward.refused(t.name, settings)})
+            found.update({t.wire_name: t for t in listed if not outward.refused(t.name, settings)})
         if settings.servers:
             from ombro.mcp import McpError
 
@@ -637,18 +642,20 @@ class Chat:
                     continue
                 for t in listed:
                     name = f"mcp.{server}.{t.name}"
-                    if outward.tool_class(settings, name, t.annotations)[0] == "read-only" \
-                            and not outward.refused(name, settings):
+                    if not outward.refused(name, settings):
                         names.append(name)
             tools, _ = self._pool.tools(names) if names else ([], [])
-            found.update({t.wire_name: t for t in tools if t.effect == "read-only"})
+            found.update({t.wire_name: t for t in tools})
         self._lookups = found
         return found
 
-    def lookup_schemas(self) -> list[dict]:
+    def lookup_schemas(self, read_only: bool = False) -> list[dict]:
         """The lookups' definitions for one model call: outside services' tools (mcp.*) only once the Lead has
-        loaded them with tools__load, which lists them by name; everything else in full."""
+        loaded them with tools__load, which lists them by name; everything else in full. read_only: only
+        those that change nothing (a brief held in the chat)."""
         found = self.lookups()
+        if read_only:
+            found = {w: t for w, t in found.items() if t.effect == "read-only"}
         deferred = [t for t in found.values() if is_deferred(t)]
         out = [t.schema() for t in found.values() if not is_deferred(t)]
         if deferred:
@@ -658,6 +665,8 @@ class Chat:
 
     def _model_call(self, messages: list[dict]):
         tools = prompts.CHAT_TOOLS + [t.schema() for n in WEB_TOOLS.values() if (t := self.registry.get(n))]
+        tools += [t.schema() for n in NATIVE_TOOLS.values() if (t := self.registry.get(n))
+                  and not (n == "code.run" and self._no_code())]
         tools += self.lookup_schemas()
         if not skills.library(self.home):  # nothing to read: an empty library costs no tool
             tools = [t for t in tools if t["function"]["name"] != "skills__read"]
@@ -856,6 +865,9 @@ class Chat:
         if self._pool is not None:
             self._pool.close()
             self._pool = None
+        close = getattr(self.registry, "close", None)
+        if close is not None:
+            close()  # the browser, if the Lead used it
         if self.path.exists():
             self.ui.say(f"Chat saved: {self.path}" + (f" ('{self.title}')" if self.title else ""))
 
@@ -959,11 +971,13 @@ class Chat:
                     result, request = self._tool(tc)
                 src = None
                 if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside", LOAD_NAME,
-                                                             "skills__read") and not (
+                                                             "skills__read", "browser__type",
+                                                             "browser__screenshot") and not (
                         isinstance(result, dict) and ("error" in result or "declined" in result)):
                     lookup = (self._lookups or {}).get(tc.name)
                     src = material.source(MEMORY_TOOLS.get(tc.name) or WEB_TOOLS.get(tc.name)
-                                          or FOLDER_TOOLS.get(tc.name) or (lookup.name if lookup else tc.name),
+                                          or FOLDER_TOOLS.get(tc.name) or NATIVE_TOOLS.get(tc.name)
+                                          or (lookup.name if lookup else tc.name),
                                           tc.arguments)
                     signs = material.flags(result)
                     if signs:
@@ -991,13 +1005,14 @@ class Chat:
                 return load_tools(tc.arguments, deferred, self._loaded), None
         lookup = (self._lookups or {}).get(name)
         internal = (MEMORY_TOOLS.get(name) or WEB_TOOLS.get(name) or FOLDER_TOOLS.get(name) or SKILL_TOOLS.get(name)
-                    or (lookup.name if lookup else None))
-        if name not in OFFERS and (internal is None or (name in WEB_TOOLS and self.registry.get(internal) is None)):
+                    or NATIVE_TOOLS.get(name) or (lookup.name if lookup else None))
+        if name not in OFFERS and (internal is None or ((name in WEB_TOOLS or name in NATIVE_TOOLS)
+                                                        and self.registry.get(internal) is None)):
             self.refused.append(name)
             self.transcript.note(f"Refused {name}: not available in chat.")
-            return {"error": f"{name} is not available in chat. Chat cannot brief roles, start jobs, approve the "
-                             "waiting actions or change anything in outside services; files are written only in "
-                             "shared folders, with folders__write. To give this to the crew, call offer_work."}, None
+            return {"error": f"{name} is not available in chat. Chat cannot brief roles, start jobs or approve the "
+                             "waiting actions; files are written only in shared folders, with folders__write. "
+                             "To give this to the crew, call offer_work."}, None
         key = tc.raw_arguments if tc.arguments is None else json.dumps(tc.arguments, sort_keys=True)
         try:
             self.gate.check_tool_call("lead", internal or name, key, brief=True, capped=internal is not None)
@@ -1047,14 +1062,80 @@ class Chat:
                 return memory.listing(self.home, str(args.get("crew") or "") or None,
                                       str(args.get("job_id") or "") or None), None
             tool = lookup or self.registry.get(internal)
-            ctx = ToolContext(self.home.chats_dir, "lead", timeout=60.0)
-            return tool.handler(args, ctx), None
+            if tool.outward and tool.effect != "read-only":
+                return self._act(tool, dict(args)), None
+            return tool.handler(args, self._work_context(internal)), None
         except (memory.ReadRefused, skills.SkillError) as e:
             return {"error": str(e)}, None
         except ToolError as e:
             return {"error": str(e)}, None
         except Exception as e:
             return {"error": f"{type(e).__name__}: {e}"}, None
+
+    def _no_code(self) -> bool:
+        if not hasattr(self, "_code_reason"):
+            from ombro import sandbox
+
+            self._code_reason = sandbox.unavailable_reason()
+        return bool(self._code_reason)
+
+    def _work_context(self, tool: str = "") -> ToolContext:
+        """Where the Lead's own work in chat goes: a folder of the chat's own (its workspace/ and
+        scratch/, for screenshots and scripts), with the shared folders, under the chat's limits."""
+        from ombro import attachments
+
+        folder = attachments.files_dir(self.home) / "chats" / self.id
+        for area in ("workspace", "scratch"):
+            (folder / area).mkdir(parents=True, exist_ok=True)
+        shared, _ = self._shared()
+        timeout = self.limits.code_timeout if tool == "code.run" else 60.0
+        return ToolContext(folder, "lead", timeout=timeout, shared=shared.shared, limits=self.limits)
+
+    def _act(self, tool, args: dict) -> dict[str, Any]:
+        """A tool that changes or sends something, used by the Lead in chat. The job's rules, with you
+        here: what a job would stage for approval (and anything external) asks you first, in the chat."""
+        from ombro import outward
+
+        settings = load_tool_settings(self.home)
+        reason = str(args.pop(tool.reason_key, "") or "").strip() if tool.reason_key else ""
+        ctx = self._work_context(tool.name)
+        if tool.prepare is not None:  # browser.submit: the page's refs become its address and fields
+            args = tool.prepare(args, ctx)
+        effect = str(args.pop("_effect", "") or tool.effect or "external")
+        setting = outward.resolve(self.home, None)
+        decision = outward.decide(setting, tool.name, effect, settings)
+        if decision == "refuse":
+            return {"error": f"{tool.name} is refused by the user's settings."}
+        if effect == "external" and tool.name not in (setting.get("allow") or []):
+            decision = "stage"  # reaches people outside, or spends: never without the user's yes in chat
+        problem = outward.validation_error(tool.input_schema, args)
+        if problem:
+            return {"error": problem}
+        if decision == "stage":
+            self._lead_says(f"I'd like to {self._act_words(tool.name, args)}" + (f": {reason}" if reason else "."),
+                            level="lead", items=self._act_items(tool.name, args))
+            if not self.ui.yes("tool_act", "Go ahead?", False):
+                self.transcript.note(f"The user said no to {tool.name}.")
+                return {"declined": "The user said no, so nothing was done. Ask what they would like instead."}
+        out = tool.handler(args, ctx) if tool.handler else {"ok": True}
+        self.transcript.note(f"Used {tool.name}" + (" with the user's yes." if decision == "stage" else "."))
+        return {"status": "done", **(out if isinstance(out, dict) else {"result": out})}
+
+    @staticmethod
+    def _act_words(name: str, args: dict) -> str:
+        if name == "browser.submit":
+            from urllib.parse import urlsplit
+
+            button = (args.get("button") or {}).get("label") or "its button"
+            return f"submit the form on {urlsplit(str(args.get('url'))).netloc} (\"{button}\")"
+        return f"use {name}"
+
+    @staticmethod
+    def _act_items(name: str, args: dict) -> list[str]:
+        if name == "browser.submit":
+            return [f"Page: {args.get('url')}", *[f"{f.get('field') or f.get('selector')}: {f.get('value')}"
+                                                  for f in args.get("fields") or []]]
+        return [_short(json.dumps(args, ensure_ascii=False), 400)] if args else []
 
     # -- shared folders ------------------------------------------------------
 
