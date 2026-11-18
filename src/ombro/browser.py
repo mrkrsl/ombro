@@ -371,10 +371,14 @@ def _close_all() -> None:
 class Browser:
     """One browser for a job (or an approval), with a new, empty profile, started on first use."""
 
-    def __init__(self, settings: dict[str, Any] | None = None, *, resolver: Any = None):
+    def __init__(self, settings: dict[str, Any] | None = None, *, resolver: Any = None,
+                 profiles: Path | None = None):
         from ombro.providers.addresses import system_resolver
 
         self.settings = dict(settings or {})
+        # Where each new profile is made: under Ombro's visible folder (~/Ombro/.browser), not /tmp,
+        # which a snap browser (Ubuntu's chromium) has its own copy of and can't see.
+        self.profiles = profiles
         self.resolver = resolver or system_resolver
         self.cdp: Cdp | None = None
         self.profile: str | None = None
@@ -393,7 +397,9 @@ class Browser:
             if "endpoint" in found:
                 transport: Any = _Socket(found["endpoint"], min(timeout, START_TIMEOUT))
             else:
-                self.profile = tempfile.mkdtemp(prefix="ombro-browser-")
+                if self.profiles is not None:
+                    self.profiles.mkdir(parents=True, exist_ok=True)
+                self.profile = tempfile.mkdtemp(prefix="ombro-browser-", dir=self.profiles)
                 args = [*FLAGS, f"--user-data-dir={self.profile}", "--remote-debugging-pipe",
                         *[str(a) for a in self.settings.get("args") or []], "about:blank"]
                 transport = _Pipe(found["path"], args)
@@ -1044,6 +1050,10 @@ def _submit(p: Page, args: dict, timeout: float, reopen: bool = True) -> dict[st
     return out
 
 
+def profiles_dir(home: Any) -> Path:
+    return Path(home.files) / ".browser"
+
+
 class BrowserFetch:
     """web.fetch through the browser (tools.md `web.fetch: provider: browser`): the page as a person
     sees it, after its scripts have run. Standard fetch results, as ombro.providers describes."""
@@ -1069,7 +1079,7 @@ def run_approved(home: Any, tools_meta: dict | None, arguments: dict, *, timeout
     from ombro.settings import ToolSettings
 
     settings = ToolSettings.from_dict(tools_meta, "job.md tools").providers.get("browser") or {}
-    b = Browser(settings)
+    b = Browser(settings, profiles=profiles_dir(home) if home is not None else None)
     try:
         url = str(arguments.get("url") or "")
         if not url.startswith(("http://", "https://")):

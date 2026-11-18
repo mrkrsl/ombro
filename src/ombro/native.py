@@ -674,7 +674,8 @@ def native_registry(
     fake = fake or FakeProvider()
     shared: dict[str, Any] = {}
     # One browser for the job, started only when a role first uses it (ombro.browser).
-    browser = browser_mod.Browser(settings.providers.get("browser"), resolver=resolver)
+    browser = browser_mod.Browser(settings.providers.get("browser"), resolver=resolver,
+                                  profiles=browser_mod.profiles_dir(home) if home is not None else None)
 
     def provider(tool: str) -> Any:
         name = settings.provider_for(tool)
