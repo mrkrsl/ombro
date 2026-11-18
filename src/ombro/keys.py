@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import contextmanager
+from typing import Iterable, Iterator
 
 from ombro import mdfile
 from ombro.home import Home
@@ -103,6 +105,46 @@ def remove_key(home: Home, name: str) -> bool:
     return True
 
 
+@contextmanager
+def setting(home: Home, pairs: dict[str, str]) -> Iterator[None]:
+    """Write keys for an add or edit; if what follows fails, put back what was there before, so a
+    form abandoned part-way leaves no key of its own behind."""
+    before = {name: read_env(home).get(name) for name in pairs}
+    for name, value in pairs.items():
+        set_key(home, name, value)
+    try:
+        yield
+    except BaseException:
+        for name, old in before.items():
+            if old is None:
+                remove_key(home, name)
+            else:
+                set_key(home, name, old)
+        raise
+
+
+def forget_unused(home: Home, names: Iterable[str]) -> list[str]:
+    """Remove the keys named from secrets/keys.env, except those a model or tool still uses.
+    Returns the ones removed."""
+    uses = key_uses(home)
+    return [n for n in dict.fromkeys(names) if n and n not in uses and remove_key(home, n)]
+
+
+def still_used(home: Home, names: Iterable[str], leaving: str) -> tuple[list[str], list[str]]:
+    """Of the keys named, (those that would go with `leaving`, those something else uses too),
+    counting only keys that are set. `leaving` is how key_uses names the thing being removed."""
+    uses = key_uses(home)
+    env = read_env(home)
+    going, kept = [], []
+    for n in dict.fromkeys(names):
+        if not n or n not in env:
+            continue
+        others = [u for u in uses.get(n, []) if u != leaving]
+        reserved = n in uses and not uses[n]  # named in tools.md's providers:, such as Firecrawl's
+        (kept if others or reserved else going).append(n)
+    return going, kept
+
+
 def key_uses(home: Home) -> dict[str, list[str]]:
     """Key names the settings files refer to, and what uses each."""
     from ombro.settings import PROVIDER_TOOLS, SetupError, load_models, load_tool_settings
@@ -132,6 +174,9 @@ def key_uses(home: Home) -> dict[str, list[str]]:
         for server, cfg in tools.servers.items():
             for name in ServerConfig.from_dict(server, cfg).key_refs():
                 uses.setdefault(name, []).append(f"MCP server {server}")
+        for api, cfg in tools.apis.items():
+            if cfg.get("key"):
+                uses.setdefault(str(cfg["key"]), []).append(f"API {api}")
     return uses
 
 

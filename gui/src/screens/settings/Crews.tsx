@@ -193,6 +193,22 @@ function Crew({ crew, models, onEdit, onChange }: {
         )}
         {renaming === null && (
           <span className="row-actions">
+            {crew.default ? (
+              <span className="muted small" title="Briefs go to this crew unless you say otherwise">
+                Default crew
+              </span>
+            ) : (
+              <button
+                className="text-button strong"
+                title="Briefs go to the default crew unless you say otherwise"
+                onClick={async () => {
+                  const v = await run((api) => api.put<CrewsView>(`/crews/${crew.name}/default`, {}));
+                  if (v) onChange(v);
+                }}
+              >
+                Make default
+              </button>
+            )}
             <button className="text-button strong" onClick={() => setRenaming(crew.title)}>
               Rename
             </button>

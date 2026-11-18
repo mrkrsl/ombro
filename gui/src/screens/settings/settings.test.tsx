@@ -12,6 +12,9 @@ import { approvalTitle } from "../../store/approvals";
 import { sendKey, signInText } from "./Tools";
 import { shortPath } from "./common";
 
+const readSkillFolder = vi.hoisted(() => vi.fn());
+vi.mock("../../platform", async (original) => ({ ...(await original<typeof import("../../platform")>()), readSkillFolder }));
+
 type Call = [string, string, unknown?];
 
 const prefs: Preferences = {
@@ -280,5 +283,64 @@ describe("Settings › Folders, Tools and Skills", () => {
     await userEvent.type(screen.getByLabelText(/^Instructions/), "Read it aloud.");
     await userEvent.click(screen.getByRole("button", { name: "Add skill" }));
     expect(sent("POST", "/skills")).toEqual({ title: "Tone check", description: "Checks the tone.", body: "Read it aloud." });
+  });
+
+  it("takes a whole SKILL.md pasted into the instructions", async () => {
+    useStore.setState({ settingsPage: "skills" });
+    replies["POST /skills"] = library;
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "New skill" }));
+    const add = screen.getByRole("button", { name: "Add skill" });
+    expect(add).toBeDisabled();
+    const pasted = "---\nname: tone-check\ndescription: Checks the tone.\n---\nRead it aloud.";
+    await userEvent.click(screen.getByLabelText(/^Instructions/));
+    await userEvent.paste(pasted);
+    expect(add).toBeEnabled(); // the name and description come from its front matter
+    await userEvent.click(add);
+    expect(sent("POST", "/skills")).toEqual({ title: "", description: "", body: pasted });
+  });
+
+  it("adds a skill from a folder, then gives it to the members with a list", async () => {
+    useStore.setState({ settingsPage: "skills" });
+    const folder = { folder: "kettle-survey", path: "/Users/ada/Skills/kettle-survey",
+      files: { "SKILL.md": "---\nname: kettle-survey\ndescription: Surveys kettles.\n---\nBoil one." }, skipped: ["scripts/boil.sh"] };
+    readSkillFolder.mockResolvedValue(folder);
+    const view = { name: "kettle-survey", replaces: false, flags: [], references: [], skipped: ["scripts/boil.sh"],
+      text: folder.files["SKILL.md"], diff: null };
+    replies["POST /skills/import"] = view;
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add from a folder" }));
+    expect(await screen.findByText("Kettle survey: new to your library")).toBeInTheDocument();
+    expect(screen.getByText(/Not copied .*scripts\/boil\.sh/)).toBeInTheDocument();
+    expect(sent("POST", "/skills/import")).toEqual({ ...folder, add: false });
+    replies["POST /skills/import"] = { ...view, ...library, added: "kettle-survey", kept: null, not_given: ["legal/counsel"] };
+    await userEvent.click(screen.getByRole("button", { name: "Add skill" }));
+    expect(await screen.findByText(/doesn't get it yet: Legal Researcher \(Legal Crew\)/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Give it to them" }));
+    await waitFor(() => expect(sent("POST", "/skills/kettle-survey/give")).toEqual({ role: "legal/counsel" }));
+    expect(await screen.findByText("Every crew member uses it now.")).toBeInTheDocument();
+  });
+
+  it("says when a folder can't be read", async () => {
+    useStore.setState({ settingsPage: "skills" });
+    readSkillFolder.mockRejectedValue("There's no SKILL.md in /Users/ada/Downloads. Choose the folder that holds it.");
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add from a folder" }));
+    expect(await screen.findByText(/There's no SKILL.md/)).toBeInTheDocument();
+  });
+});
+
+describe("Settings › Crews: the default", () => {
+  it("makes another crew the default", async () => {
+    useStore.setState({ settingsPage: "crews" });
+    const two = { ...crews, crews: [...crews.crews, { name: "default", title: "Default Crew", description: "", default: true, roles: [] }] };
+    replies["/crews"] = two;
+    replies["PUT /crews/legal/default"] = { ...two, default_crew: "legal",
+      crews: two.crews.map((c) => ({ ...c, default: c.name === "legal" })) };
+    render(<Settings />);
+    expect(await screen.findByText("Default crew")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Make default" }));
+    expect(sent("PUT", "/crews/legal/default")).toEqual({});
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Make default" })).toHaveLength(1));
   });
 });

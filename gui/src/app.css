@@ -1075,7 +1075,8 @@ input[type="checkbox"]:not([role="switch"]) {
   font-size: 14px;
 }
 
-.approval-open pre {
+.approval-open pre,
+.import-diff {
   background: var(--hover);
   border-radius: 8px;
   padding: 10px 12px;

@@ -143,3 +143,15 @@ export async function appVersion(): Promise<string> {
     return "";
   }
 }
+
+/** A skill folder chosen with the system's picker, read on this computer (app only): its SKILL.md
+ * and references, to send to serve, which may run elsewhere. null when the picker was closed. */
+export type SkillFolder = { folder: string; path: string; files: Record<string, string>; skipped: string[] };
+export async function readSkillFolder(): Promise<SkillFolder | null> {
+  if (!inTauri) throw new Error("Adding a skill from a folder works in the desktop app.");
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const picked = await open({ directory: true, multiple: false, title: "Choose a skill's folder (the one with its SKILL.md)" });
+  if (typeof picked !== "string") return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<SkillFolder>("read_skill_folder", { path: picked });
+}

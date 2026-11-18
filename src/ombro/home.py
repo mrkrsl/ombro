@@ -312,17 +312,8 @@ Code (the code.run tool), for each script a role runs:
 Limits and usage are in tokens. Ombro reports no costs.
 """
 
-MODELS_META = {
-    "models": {
-        "default": {
-            "api": "openai",
-            "endpoint": "https://api.deepseek.com",
-            "model": "deepseek-chat",
-            "key": "DEEPSEEK_API_KEY",
-        },
-        "cheap": "default",
-    }
-}
+# Empty until set-up connects a model whose key works: `default` and `cheap` are written then.
+MODELS_META: dict = {"models": {}}
 
 MODELS_BODY = """\
 Model names used by roles (`model:` in a role's config.md), with their

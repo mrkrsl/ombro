@@ -1066,6 +1066,16 @@ def cmd_skills(args) -> int:
 def cmd_tools(args) -> int:
     from ombro import tool_cmd
 
+    if args.server in ("add", "edit"):
+        from ombro.ui import ConsoleUI
+
+        given = {"url": args.url, "about": args.about, "how_to": args.how_to, "access": args.api_class,
+                 "send_key": args.send_key, "max_calls": args.max_calls, "no_key": args.no_key or None}
+        try:
+            return tool_cmd.api_flow(_home(), ConsoleUI(), args.server, args.name, given, yes=args.yes)
+        except SetupError as e:
+            raise CliError(str(e)) from None
+
     if args.server and tool_cmd.is_native(args.server):
         from ombro.ui import ConsoleUI
 
@@ -1387,11 +1397,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="for list and show: print JSON, for interfaces")
     s.set_defaults(func=cmd_skills)
 
-    s = sub.add_parser("tools", help="native tools and MCP servers; with a server, its tools, class and permission")
+    s = sub.add_parser("tools", help="native tools, MCP servers and web APIs; with a server, its tools, class and "
+                       "permission; add <name> or edit <name> for a web API")
     s.add_argument("server", nargs="?", help="an MCP server named in tools.md, or a built-in tool such as "
-                   "web.search to see or change it")
+                   "web.search to see or change it; or add or edit, for a web API")
+    s.add_argument("name", nargs="?", help="for add and edit: the web API's name, e.g. podcasts")
     s.add_argument("--provider", help="for a built-in tool: the provider to use (e.g. duckduckgo, firecrawl)")
-    s.add_argument("--max-calls", type=int, help="for a built-in tool: the most calls one job may make")
+    s.add_argument("--max-calls", type=int, help="for a built-in tool or an API: the most calls one job may make")
+    s.add_argument("--url", help="for an API: its address, e.g. https://api.example.com/v2")
+    s.add_argument("--about", help="for an API: what it's for, in a line")
+    s.add_argument("--how-to", help="for an API: its paths, from its docs")
+    s.add_argument("--class", dest="api_class", choices=["read-only", "internal", "external"],
+                   help="for an API: what it can do (external, the default, waits for your approval to change "
+                   "things)")
+    s.add_argument("--send-key", help="for an API: bearer (the default), header:<Name> or query:<param>")
+    s.add_argument("--no-key", action="store_true", help="for edit: the API needs no key; its key is removed")
+    s.add_argument("--yes", action="store_true", help="for add and edit: do not ask before saving")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_tools)
 

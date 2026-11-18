@@ -212,6 +212,19 @@ def compose(name: str, description: str, body: str, metadata: dict[str, Any] | N
     return mdfile.dump(meta, body.strip() + "\n")
 
 
+def pasted(body: str) -> tuple[dict[str, Any], str]:
+    """A method typed or pasted into a form, which may be a whole SKILL.md: (its front matter, the
+    method without it). Text with no front matter comes back as it is."""
+    try:
+        meta, rest = mdfile.parse(str(body or "").lstrip())
+    except mdfile.FrontMatterError as e:
+        raise SkillError(f"The instructions start with front matter (the lines between ---) that can't be read: "
+                         f"{str(e).removeprefix('invalid front matter: ')}. Fix it, or take it out.") from None
+    if not meta:
+        return {}, str(body or "")
+    return meta, rest
+
+
 def check(text: str, name: str, max_chars: int | None = MAX_CHARS) -> tuple[dict, str]:
     """A SKILL.md a model wrote, or the user edited, before it is staged or made live."""
     if not NAME.match(name or "") or len(name) > NAME_MAX:
@@ -330,9 +343,10 @@ def inspect_import(home: Home, path: str | Path) -> Import:
     return Import(name, text, folder, references, skipped, flags, load(home, name))
 
 
-def add(home: Home, imp: Import, accepted: str) -> Path | None:
-    """Copy a checked import into the library. Returns where the old version was kept, if any."""
-    kept = write(home, imp.name, imp.text, source=f"imported from {imp.source}", accepted=accepted)
+def add(home: Home, imp: Import, accepted: str, label: str | None = None) -> Path | None:
+    """Copy a checked import into the library. Returns where the old version was kept, if any.
+    `label` says where it came from when the folder it was checked in is a copy (an upload)."""
+    kept = write(home, imp.name, imp.text, source=f"imported from {label or imp.source}", accepted=accepted)
     old_refs = home.skills_dir / imp.name / "references"
     if kept is not None and old_refs.is_dir() and not old_refs.is_symlink():
         shutil.rmtree(old_refs)  # the old version's references are in the archive; the import brings its own
@@ -396,3 +410,23 @@ def users(home: Home) -> tuple[dict[str, list[str]], list[str]]:
                 for x in s:
                     named.setdefault(str(x), []).append(who)
     return named, every
+
+
+def without(home: Home, name: str) -> list[str]:
+    """crew/role for every role that doesn't get a skill: those with a list of skills (or none)
+    that leaves it out. Roles with `skills: all` get every skill."""
+    out = []
+    for crew in home.crews():
+        rdir = home.roles_dir(crew)
+        if not rdir.is_dir():
+            continue
+        for folder in sorted(p for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")):
+            try:
+                meta, _ = mdfile.read(folder / "config.md")
+            except (OSError, mdfile.FrontMatterError):
+                continue
+            have = meta.get("skills")
+            if have == "all" or (isinstance(have, list) and name in [str(x) for x in have]):
+                continue
+            out.append(f"{crew}/{folder.name}")
+    return out

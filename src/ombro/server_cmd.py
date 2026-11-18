@@ -112,6 +112,8 @@ def add_server(home: Home, name: str, entry: dict[str, Any]) -> None:
     servers = dict(meta.get("servers") or {})
     if name in servers:
         raise ServerError(f"there is already a server named {name!r} in tools.md")
+    if name in (meta.get("apis") or {}):
+        raise ServerError(f"there is already an API named {name!r} in tools.md")
     servers[name] = entry
     new = {**meta, "servers": servers}
     ToolSettings.from_dict(new, str(home.tools))  # raises SetupError if anything is wrong
@@ -267,10 +269,9 @@ def add_flow(home: Home, args, ui: UI) -> int:
     if not args.yes and not ui.yes("add", "Add it?"):
         ui.say("Nothing added.")
         return 1
-    for key, value in to_set.items():
-        keys.set_key(home, key, value)
     try:
-        add_server(home, name, entry)
+        with keys.setting(home, to_set):  # if it can't be added, its keys don't stay
+            add_server(home, name, entry)
     except SetupError as e:
         raise cli.CliError(str(e)) from None
     ui.say(f"Added {name} to {home.tools}.")
@@ -298,16 +299,18 @@ def remove_flow(home: Home, args, ui: UI) -> int:
     users = roles_using(home, name)
     if users:
         ui.say(f"These roles name its tools and will no longer be offered them: {', '.join(users)}.")
-    if not args.yes and not ui.yes("remove", f"Remove {name} and its tool settings from tools.md?"):
+    refs = sorted(set(_REF.findall(str(servers[name]))))
+    going, kept = keys.still_used(home, refs, f"MCP server {name}")
+    also = f" and its key{'s' if len(going) > 1 else ''} ({', '.join(going)})" if going else ""
+    if not args.yes and not ui.yes("remove", f"Remove {name} and its tool settings from tools.md{also}?"):
         ui.say("Nothing changed.")
         return 1
     dropped = remove_server(home, name)
+    gone = keys.forget_unused(home, refs)
     ui.say(f"Removed {name}" + (f" and the settings for {len(dropped)} of its tools" if dropped else "")
-          + f" from {home.tools}.")
-    refs = sorted(set(_REF.findall(str(servers[name]))))
-    if refs:
-        ui.say(f"Its keys are still in secrets/keys.env ({', '.join(refs)}); remove any you no longer need with "
-              "`ombro keys remove NAME`.")
+          + f" from {home.tools}" + (f", and {', '.join(gone)} from secrets/keys.env" if gone else "") + ".")
+    if kept:
+        ui.say(f"Kept {', '.join(kept)} in secrets/keys.env: something else uses {'it' if len(kept) == 1 else 'them'}.")
     from ombro import oauth
 
     if servers[name].get("url") and oauth.status(home, name) != "not signed in":

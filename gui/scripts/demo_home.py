@@ -11,7 +11,7 @@ What is in it: a live job to try (the first message in a new chat is offered as 
 Do it live), four crews with roles, two skills, three model providers (only the canned one is
 used), built-in tools with providers, a web API,
 two MCP servers (one local, one remote), two keys (dummy values), a shared folder,
-saved specs, three chats, four finished jobs (one that made a file and proposes a skill, one with
+saved specs, a skill folder to add (next to the home, in <path>-skill), three chats, four finished jobs (one that made a file and proposes a skill, one with
 two actions waiting for approval, one that failed), and two schedules.
 
 The model is Ombro's fake one: it answers chat with canned replies and never
@@ -182,6 +182,23 @@ def demo_api(home) -> None:
     keys.set_key(home, "PODCASTS_API_KEY", "demo-not-a-real-key")
 
 
+def demo_skill_folder(root: Path) -> Path:
+    """A skill folder outside the home, to try Settings › Skills › Add from a folder (and
+    `ombro skills add`): its SKILL.md, a reference that is copied, and a script that isn't."""
+    folder = root.parent / f"{root.name}-skill" / "meeting-notes"
+    (folder / "references").mkdir(parents=True, exist_ok=True)
+    (folder / "scripts").mkdir(exist_ok=True)
+    (folder / "SKILL.md").write_text(
+        "---\nname: meeting-notes\ndescription: Write up an invented meeting as short notes, with decisions and "
+        "actions first. Use after any meeting you're given notes or a transcript for.\n---\n# Meeting notes\n\n"
+        "1. Read the whole transcript before writing anything.\n2. Put decisions first, then actions with an owner "
+        "and a date.\n3. Keep the rest to five bullet points.\n4. Follow the layout in references/template.md.\n")
+    (folder / "references" / "template.md").write_text("# <Meeting>, <date>\n\n## Decisions\n\n## Actions\n\n"
+                                                       "## Notes\n")
+    (folder / "scripts" / "tidy.sh").write_text("#!/bin/sh\necho tidy\n")
+    return folder
+
+
 def build(root: Path) -> None:
     os.environ["OMBRO_HOME"] = str(root)
     from ombro import fake, folders, keys, mdfile, schedules, skills
@@ -318,6 +335,7 @@ def main(argv: list[str]) -> int:
         demo_skill_proposal(Home(root))
     else:
         build(root)
+    print(f"a skill folder to add: {demo_skill_folder(root)}")
     if "--open" in argv:
         if not APP.exists():
             print(f"No built app at {APP}; build it with `npx tauri build --bundles app` in gui/.")

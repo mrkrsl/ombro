@@ -82,9 +82,7 @@ def test_default_install_loads(tmp_path):
     lead, roles = load_lead(h, limits), crew_roles(h, "default", limits)
     assert lead.kind == "lead" and list(roles) == ["general-assistant"]
     assert lead.path == h.lead_dir and not (h.roles_dir("default") / "lead").exists()
-    models = load_models(h)
-    assert models["cheap"].model == models["default"].model
-    assert models["cheap"].name == "cheap"
+    assert load_models(h) == {}  # no guessed model: set-up writes default and cheap once a key works
 
 
 def test_role_loading_and_kind_defaults(home):

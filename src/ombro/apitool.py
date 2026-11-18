@@ -126,6 +126,59 @@ def key_name(api: str) -> str:
 # Changing tools.md (an interface's add, edit and remove)
 
 
+def clean_name(text: str) -> str:
+    """A name for a new API from what was typed: podcasts, my-weather."""
+    name = re.sub(r"[^a-z0-9_-]+", "-", str(text or "").strip().lower()).strip("-")[:31]
+    if not name:
+        raise SetupError("Give it a name, such as podcasts.")
+    return name
+
+
+def entry_from(name: str, form: dict[str, Any], old: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The tools.md entry from the app's form or the terminal's answers: url, send_key (bearer,
+    header or query) with key_param, about, how_to, access (the class), max_calls, and key (its
+    value, if one was typed). A key left empty in an edit keeps the one there; `no_key` removes it."""
+    how = str(form.get("send_key") or "bearer")
+    param = str(form.get("key_param") or "").strip()
+    if how in ("header", "query"):
+        if not param:
+            raise SetupError("Say what the header or address value is called, as the API's docs do.")
+        how = f"{how}:{param}"
+    access = str(form.get("access") or "external")
+    max_calls = form.get("max_calls")
+    if max_calls is not None and (isinstance(max_calls, bool) or not isinstance(max_calls, int)):
+        raise SetupError("`max_calls` is a whole number")
+    url = str(form.get("url") or "").strip()
+    if not url:
+        raise SetupError("Give the API's address, such as https://api.example.com/v2.")
+    entry: dict[str, Any] = {"url": url, "send_key": how, "about": str(form.get("about") or ""), "class": access}
+    if str(form.get("how_to") or "").strip():
+        entry["how_to"] = str(form["how_to"]).strip()
+    if max_calls:
+        entry["max_calls"] = max_calls
+    if str(form.get("key") or "").strip():
+        entry["key"] = (old or {}).get("key") or key_name(name)
+    elif old and old.get("key") and form.get("no_key") is not True:
+        entry["key"] = old["key"]
+    check_apis({name: entry}, "the API")
+    return entry
+
+
+def save(home: Home, name: str, entry: dict[str, Any], key_value: str = "", old: dict[str, Any] | None = None) -> None:
+    """Add (no `old`) or change an API, and keep its key, typed as `key_value`. A key that can't be
+    saved with it isn't kept; one the change took out is removed, unless something else uses it."""
+    from ombro import keys
+
+    key_value = key_value.strip()
+    with keys.setting(home, {entry["key"]: key_value} if key_value and entry.get("key") else {}):
+        if old is None:
+            add_api(home, name, entry)
+        else:
+            update_api(home, name, entry)
+    if old and old.get("key"):
+        keys.forget_unused(home, [old["key"]])
+
+
 def _read_tools(home: Home) -> tuple[dict[str, Any], str]:
     from ombro import mdfile
 
@@ -162,7 +215,7 @@ def update_api(home: Home, name: str, entry: dict[str, Any]) -> None:
 
 
 def remove_api(home: Home, name: str) -> None:
-    """Remove an API and its per-tool settings. Its key stays in keys.env."""
+    """Remove an API and its per-tool settings. Its key is the caller's (keys.forget_unused)."""
     meta, body = _read_tools(home)
     apis = dict(meta.get("apis") or {})
     if name not in apis:

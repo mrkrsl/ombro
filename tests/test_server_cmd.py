@@ -134,7 +134,8 @@ def test_remove_takes_its_tool_settings_and_says_what_is_left(home, typed, capsy
     assert "default/scribe" in out and "NOTES_TOKEN" in out
     meta = mdfile.read(home.tools)[0]
     assert "notes" not in (meta.get("servers") or {}) and "mcp.notes.write_page" not in meta["tools"]
-    assert keys.get_key(home, "NOTES_TOKEN") == SECRET  # keys are never removed behind your back
+    assert "and NOTES_TOKEN from secrets/keys.env" in out
+    assert keys.get_key(home, "NOTES_TOKEN") is None
 
 
 def test_pin_warning_and_entries():

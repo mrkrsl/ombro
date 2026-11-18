@@ -7,6 +7,7 @@ mod connection;
 mod menu;
 mod saved;
 mod signin;
+mod skillfolder;
 mod tray;
 
 use std::sync::Mutex;
@@ -252,6 +253,7 @@ pub fn run() {
             reach_address,
             keep_address,
             start_connection,
+            skillfolder::read_skill_folder,
             signin::sign_in_listener,
             signin::sign_in_answer
         ])

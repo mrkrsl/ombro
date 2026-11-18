@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import json
 import subprocess
-from typing import Any
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path, PurePosixPath
+from typing import Any, Iterator
 
 from ombro import outbox, skills
 from ombro.home import Home
@@ -171,8 +174,12 @@ def _add(home: Home, args) -> int:
     kept = skills.add(home, imp, date.today().isoformat())
     print(f"Added {imp.name} to {home.skills_dir / imp.name}." + (f" The old version is kept in {kept}." if kept
                                                                   else ""))
-    print(f"No role uses it yet, unless it has skills: all. Give it with `ombro skills give {imp.name} "
-          "<crew/role>`.")
+    missing = skills.without(home, imp.name)
+    if missing:
+        print(f"Roles with skills: all use it now. These have a list of skills, so they don't: {', '.join(missing)}. "
+              f"Give it with `ombro skills give {imp.name} <crew/role>`.")
+    else:
+        print("Every role uses it now (they all have skills: all).")
     return 0
 
 
@@ -183,3 +190,56 @@ def _give(home: Home, args) -> int:
     for who in args.roles:
         print(skills.give(home, args.name, who).capitalize() + ".")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# An import from files sent by an interface (the app on another computer): the files are written
+# to a folder of their own, then checked and copied by the same code as `ombro skills add`.
+
+UPLOAD_MAX_FILES = 200
+UPLOAD_MAX_CHARS = 5_000_000
+
+
+@contextmanager
+def uploaded(folder: str, files: dict[str, str]) -> Iterator[Path]:
+    """A temporary folder, named as the one chosen, holding the files sent (relative paths)."""
+    name = "".join(c for c in str(folder or "").strip() if c.isalnum() or c in "-_.").strip(".") or "skill"
+    if not files:
+        raise skills.SkillError("the folder sent had no files in it")
+    if len(files) > UPLOAD_MAX_FILES or sum(len(t) for t in files.values()) > UPLOAD_MAX_CHARS:
+        raise skills.SkillError("that folder is too big to be a skill; a skill is a SKILL.md and a few references")
+    with tempfile.TemporaryDirectory(prefix="ombro-skill-") as tmp:
+        root = Path(tmp) / name
+        root.mkdir()
+        for rel, text in files.items():
+            p = PurePosixPath(str(rel))
+            if p.is_absolute() or not p.parts or any(x in ("", ".", "..") for x in p.parts) or "\\" in str(rel):
+                raise skills.SkillError(f"{rel!r} isn't a file inside the folder")
+            dest = root.joinpath(*p.parts)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(str(text), encoding="utf-8")
+        yield root
+
+
+def import_view(imp: skills.Import, skipped: list[str] | None = None) -> dict[str, Any]:
+    """What an interface shows before the user says yes: as `describe_import`, as data."""
+    not_copied = sorted({*imp.skipped, *(skipped or [])})
+    return {"name": imp.name, "replaces": imp.live is not None, "flags": list(imp.flags),
+            "references": list(imp.references), "skipped": not_copied, "text": imp.text,
+            "diff": skills.diff(imp.live.text, imp.text, imp.name) if imp.live else None}
+
+
+def import_files(home: Home, folder: str, files: dict[str, str], *, skipped: list[str] | None = None,
+                 label: str | None = None, add: bool = False) -> dict[str, Any]:
+    """Check (and, with `add`, import) a skill from files an interface sent. Returns the import's
+    view and, once added, the library and the roles that don't get it."""
+    from datetime import date
+
+    with uploaded(folder, files) as root:
+        imp = skills.inspect_import(home, root)
+        view = import_view(imp, skipped)
+        if not add:
+            return view
+        kept = skills.add(home, imp, date.today().isoformat(), label=label or f"the folder {root.name}")
+    return {**view, "added": imp.name, "kept": str(kept) if kept else None,
+            "not_given": skills.without(home, imp.name), **library_view(home)}

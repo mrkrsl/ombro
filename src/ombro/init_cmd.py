@@ -113,6 +113,7 @@ def run_init(
 
     ui.say(CONNECT, spaced=True, level="lead")
     while True:
+        before = Saved(home)  # nothing is kept until a model answers
         endpoint, model, key_name = connect_model(home, ui, client_factory)
         spec = load_models(home)["default"]
         ui.show(Progress(f"Testing {model} at {endpoint} …"))
@@ -120,7 +121,8 @@ def run_init(
         if ok:
             ui.say(f"Perfect. We're connected: {detail}.", level="done")
             break
-        ui.show(Failure(f"The test call failed: {detail}"))
+        before.restore()
+        ui.show(Failure(f"The test call failed: {detail}. Nothing was saved."))
         ui.say("Let's try again.", level="lead")
 
     _offer_search_key(home, ui)
@@ -172,15 +174,42 @@ def model_name_field(default: str | None) -> Field:
                  required=True, invalid="A model name is needed.")
 
 
+REFUSED = (401, 403)
+
+
+class KeyRefused(SetupError):
+    """The provider said no to the key: nothing is saved until one works."""
+
+
 def offered_models(home: Home, endpoint: str, key_name: str | None, client_factory=make_client) -> list[str]:
-    """The models an endpoint lists for this key, or [] if it does not say."""
+    """The models an endpoint lists for this key, or [] if it does not say. Raises KeyRefused
+    when the endpoint refuses the key (HTTP 401 or 403), which is never a guess's cue."""
     spec = ModelSpec(name="default", api="openai", model="", endpoint=endpoint, key=key_name or None)
     try:
         client = client_factory(spec, home)
         lister = getattr(client, "list_models", None)
         return chat_models(list(lister())) if lister else []
-    except ModelError:
+    except ModelError as e:
+        if getattr(e, "status", None) in REFUSED:
+            from ombro.models import provider_label
+
+            raise KeyRefused(f"{provider_label(endpoint)} refused the key: {e}") from None
         return []
+
+
+class Saved:
+    """models.md and keys.env as they were, to put back when a connection didn't work."""
+
+    def __init__(self, home: Home):
+        self.home = home
+        self.files = {p: (p.read_text(encoding="utf-8") if p.is_file() else None) for p in (home.models, home.env)}
+
+    def restore(self) -> None:
+        for path, text in self.files.items():
+            if text is None:
+                path.unlink(missing_ok=True)
+            else:
+                mdfile.write_atomic(path, text, mode=0o600 if path == self.home.env else None)
 
 
 def choose_model(ui: UI, offered: list[str], suggested: str | None) -> str:
@@ -225,7 +254,17 @@ def connect_model(home: Home, ui: UI, client_factory=make_client) -> tuple[str, 
             elif not existing:
                 ui.say("A key is needed for this endpoint.", level="lead")
                 continue
-        offered = offered_models(home, endpoint, key_name, client_factory)
+        try:
+            offered = offered_models(home, endpoint, key_name, client_factory)
+        except KeyRefused as e:
+            if value:  # the refused key isn't kept
+                if existing:
+                    keys.set_key(home, key_name, existing)
+                else:
+                    keys.remove_key(home, key_name)
+            ui.show(Failure(f"{e}. Nothing was saved."))
+            ui.say("Check the key, or choose another provider.", level="lead")
+            continue
         model = choose_model(ui, offered, preset["model"])
         if not model:
             ui.say("A model name is needed.", level="lead")

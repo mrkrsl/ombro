@@ -346,13 +346,18 @@ def add_flow(home: Home, ui, client_factory=None) -> int:
     from ombro.client import make_client
     from ombro.init_cmd import connect_model, test_connection
 
+    from ombro.init_cmd import Saved
+
     factory = client_factory or make_client
     old_default = default_name(home)
+    before = Saved(home)
     endpoint, model, _ = connect_model(home, ui, factory)
     specs = load_models(home)
     ok, detail = test_connection(home, specs.get(entry_name(model)) or specs["default"], factory)
     if not ok:
-        ui.say(f"The test call to {model} failed: {detail}")
+        before.restore()
+        ui.say(f"The test call to {model} failed: {detail}. Nothing was saved.")
+        return 1
     if old_default and old_default != entry_name(model) and not ui.yes(
             "make_default", f"Make {model} your default model, in place of {old_default}?"):
         set_default(home, old_default)
