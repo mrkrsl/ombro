@@ -40,6 +40,12 @@ SPEC = "# Survey of invented teapot makers\n\nList three fictional teapot makers
 
 
 @pytest.fixture(autouse=True)
+def no_browser(monkeypatch):
+    """No browser unless a test asks for one (tests/test_browser.py), whatever this machine has."""
+    monkeypatch.setenv("OMBRO_BROWSER", "off")
+
+
+@pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     """Any attempt to resolve a name or open a connection fails the test."""
 

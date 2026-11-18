@@ -20,7 +20,7 @@ from ombro import browser as browser_mod
 from ombro import keys
 from ombro.home import Home
 from ombro.providers import FetchProvider, SearchProvider
-from ombro.providers.direct import DirectProvider, Resolver, system_resolver
+from ombro.providers.addresses import Resolver
 from ombro.providers.duckduckgo import DuckDuckGoProvider
 from ombro.providers.fake import FakeProvider
 from ombro.providers.firecrawl import DEFAULT_ENDPOINT, FirecrawlProvider
@@ -651,8 +651,6 @@ def make_provider(
         return FirecrawlProvider(lambda: keys.get_key(home, key_name), key_name, endpoint=endpoint, transport=transport)
     if name == "duckduckgo":
         return DuckDuckGoProvider(transport=transport)
-    if name == "direct":
-        return DirectProvider(transport=transport, resolver=resolver or system_resolver)
     if name == "browser":
         return browser_mod.BrowserFetch(browser or browser_mod.Browser(settings.providers.get("browser"),
                                                                        resolver=resolver))
@@ -667,6 +665,7 @@ def native_registry(
     resolver: Resolver | None = None,
     fake: FakeProvider | None = None,
     with_browser: bool = True,
+    catalogue: bool = False,
 ) -> ToolRegistry:
     """Every native tool, backed by the providers that `settings` names.
 
@@ -686,9 +685,14 @@ def native_registry(
 
     from ombro.coderun import code_tool
 
-    tools = [*workspace_tools(), web_search_tool(provider("web.search")), web_fetch_tool(provider("web.fetch")),
-             code_tool()]
-    if with_browser and browser_mod.find_browser(settings.providers.get("browser")):
+    # Web pages are read in the browser: with none (not installed, turned off, or its container not
+    # running), web.fetch is offered only through a provider that needs none (Firecrawl).
+    # catalogue: every tool a role may name (the role interview), whether or not a browser is here now.
+    have_browser = catalogue or (with_browser and browser_mod.available(settings.providers.get("browser")) is not None)
+    tools = [*workspace_tools(), web_search_tool(provider("web.search")), code_tool()]
+    if settings.provider_for("web.fetch") != "browser" or have_browser:
+        tools.append(web_fetch_tool(provider("web.fetch")))
+    if have_browser:
         tools += browser_mod.browser_tools(browser)
     registry = ToolRegistry([_validated(t) for t in tools])
     registry.on_close(browser.close)

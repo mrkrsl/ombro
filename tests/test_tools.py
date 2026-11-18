@@ -171,7 +171,7 @@ def test_fake_provider_records_what_it_was_asked(home, ctx):
 def test_fresh_tools_md_defaults(home):
     s = load_tool_settings(home)
     assert s.provider_for("web.search") == "duckduckgo"
-    assert s.provider_for("web.fetch") == "direct"
+    assert s.provider_for("web.fetch") == "browser"
     assert s.key_name("firecrawl") == "FIRECRAWL_API_KEY"
     lim = load_limits(home)
     assert lim.max_calls_for("web.search") == 120 and lim.max_calls_for("web.fetch") == 200  # free, doubled on generous

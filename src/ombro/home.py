@@ -336,7 +336,7 @@ endpoints. Any OpenAI-compatible chat endpoint with tool calling works.
 TOOLS_META = {
     "tools": {
         "web.search": {"provider": "duckduckgo"},
-        "web.fetch": {"provider": "direct"},
+        "web.fetch": {"provider": "browser"},
         "workspace.write": {"max_calls": 40},
     },
     "providers": {"firecrawl": {"key": "FIRECRAWL_API_KEY"}},
@@ -351,11 +351,14 @@ recorded in its job.md.
 Tools:
 - web.search: providers `firecrawl` (needs a key), `duckduckgo` (no key;
   unofficial and rate-limited, so best effort) or `fake`.
-- web.fetch: providers `firecrawl` (needs a key), `direct` (no key; a plain
-  page download that refuses local and private network addresses) or `fake`.
+- web.fetch: providers `browser` (no key; the page in a headless browser on
+  this machine, after its scripts run, refusing local and private network
+  addresses), `firecrawl` (needs a key) or `fake`.
 - Calls a job may make, unless max_calls says otherwise: web.search 20 with
   firecrawl (each call is billed) or 60 with duckduckgo; web.fetch 30 with
-  firecrawl or 100 with direct.
+  firecrawl or 100 with the browser.
+- providers: browser: which browser (see Settings › General): `path:` for one
+  on this machine, `endpoint:` for one elsewhere, or `off: true` for none.
 - workspace.read, workspace.write, workspace.list: files in the job's
   workspace/ and scratch/ folders, and in shared folders the job was given
   (folders.md). No provider.

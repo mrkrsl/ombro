@@ -87,7 +87,7 @@ CODE_DEFAULT_CALLS = 10  # code.job's max_calls when neither limits.md nor tools
 # A bigger allowance gives more calls to the tools a research job leans on (decided 16 Nov 2026:
 # a generous job ran out of searches, fetches and code runs). Values set by hand still win.
 TOOL_SCALE = {"generous": 2, "unlimited": 3}  # web.search and web.fetch, times their provider's default
-FREE_PROVIDERS = {"duckduckgo", "direct"}  # only these are scaled: one that bills per call is not
+FREE_PROVIDERS = {"duckduckgo", "browser"}  # only these are scaled: one that bills per call is not
 CODE_CALLS = {"generous": 100, "unlimited": 200}  # code.run (30 and 50 until 17 Nov 2026)
 # The job's own files cost nothing but tokens, which the token limit bounds: a call cap only stopped real work
 # (17 Nov 2026: a job's 20 reads ran out halfway through writing one document). Values set by hand still win.
@@ -368,13 +368,13 @@ def load_limits(
 # The native tools that use a provider, the providers each may use, and the default.
 PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
     "web.search": (("firecrawl", "duckduckgo", "fake"), "duckduckgo"),
-    "web.fetch": (("firecrawl", "direct", "browser", "fake"), "direct"),
+    "web.fetch": (("firecrawl", "browser", "fake"), "browser"),
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
 # Calls a job may make, by tool and provider, unless tools.md says: fewer where each call is billed.
 PROVIDER_CALLS = {("web.search", "firecrawl"): 20, ("web.fetch", "firecrawl"): 30,
-                  ("web.search", "duckduckgo"): 60, ("web.fetch", "direct"): 100,
-                  ("web.search", "fake"): 20, ("web.fetch", "fake"): 30, ("web.fetch", "browser"): 60}
+                  ("web.search", "duckduckgo"): 60, ("web.fetch", "browser"): 100,
+                  ("web.search", "fake"): 20, ("web.fetch", "fake"): 30}
 # The browser's tools (ombro.browser): calls a job may make, unless limits.md or tools.md says.
 BROWSER_CALLS = {"browser.open": 60, "browser.click": 100, "browser.type": 60, "browser.screenshot": 20,
                  "browser.submit": 10}
@@ -428,6 +428,8 @@ class ToolSettings:
             out: dict[str, Any] = {}
             if "provider" in cfg:
                 provider = str(cfg["provider"])
+                if name == "web.fetch" and provider == "direct":
+                    provider = "browser"  # the plain download was retired on 18 Nov 2026: pages are read in the browser
                 allowed = PROVIDER_TOOLS.get(name, ((), ""))[0]
                 if provider not in allowed:
                     choices = ", ".join(allowed) if allowed else "none (this tool has no providers)"

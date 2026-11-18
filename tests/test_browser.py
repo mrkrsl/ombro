@@ -17,7 +17,12 @@ from ombro import browser as browser_mod
 from ombro import fake, jobs, journal, mdfile, outbox
 from ombro.tools import ToolContext, ToolInputError
 
-pytestmark = pytest.mark.skipif(browser_mod.find_browser() is None, reason="no browser installed")
+pytestmark = pytest.mark.skipif(not browser_mod.installed(), reason="no browser installed")
+
+
+@pytest.fixture(autouse=True)
+def a_browser(monkeypatch):
+    monkeypatch.delenv("OMBRO_BROWSER", raising=False)
 
 PUBLIC = "93.184.215.14"  # what the address check is told shop.test resolves to
 
@@ -205,7 +210,7 @@ def test_web_fetch_can_use_the_browser(site):
 def test_a_job_stages_a_form_and_approval_submits_it(job, home, site, monkeypatch):
     from conftest import write_role
 
-    monkeypatch.setattr("ombro.providers.direct.system_resolver", resolver)
+    monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
     mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}},
                               "providers": {"browser": site.settings}}, "Test tool settings.")
     write_role(home, "researcher", max_steps=8, tools=["browser.open", "browser.submit"])
@@ -235,7 +240,7 @@ def test_a_job_stages_a_form_and_approval_submits_it(job, home, site, monkeypatc
 def _order_job(job, home, site, monkeypatch, outward):
     from conftest import write_role
 
-    monkeypatch.setattr("ombro.providers.direct.system_resolver", resolver)
+    monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
     mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}},
                               "providers": {"browser": site.settings}}, "Test tool settings.")
     write_role(home, "researcher", max_steps=8, tools=["browser.open", "browser.submit"])

@@ -101,8 +101,11 @@ class SubmitUncertain(BrowserError):
 
 
 def find_browser(settings: dict[str, Any] | None = None) -> dict[str, str] | None:
-    """{"endpoint": url} for a browser elsewhere, {"path": p} for one on this machine, or None."""
+    """{"endpoint": url} for a browser elsewhere, {"path": p} for one on this machine, or None
+    (none found, or turned off in Settings › General)."""
     cfg = settings or {}
+    if cfg.get("off") or os.environ.get("OMBRO_BROWSER") == "off":
+        return None
     if cfg.get("endpoint"):
         return {"endpoint": str(cfg["endpoint"])}
     if os.environ.get("OMBRO_BROWSER_ENDPOINT"):
@@ -116,13 +119,66 @@ def find_browser(settings: dict[str, Any] | None = None) -> dict[str, str] | Non
     return None
 
 
+def installed() -> list[dict[str, str]]:
+    """Every browser found on this machine, for the choice in Settings › General: name and path."""
+    out, seen = [], set()
+    for p in CANDIDATES:
+        found = p if os.path.isabs(p) else shutil.which(p)
+        if found and os.path.isfile(found) and os.access(found, os.X_OK):
+            real = os.path.realpath(found)
+            if real not in seen:
+                seen.add(real)
+                out.append({"name": _name(found), "path": found})
+    return out
+
+
+def _name(path: str) -> str:
+    """"Google Chrome" for /Applications/Google Chrome.app/..., "chromium" for /usr/bin/chromium."""
+    m = re.search(r"/([^/]+)\.app/", path)
+    return m.group(1) if m else Path(path).name
+
+
+_answered: dict[str, tuple[float, bool]] = {}
+
+
+def answers(endpoint: str, timeout: float = 1.5) -> bool:
+    """Whether a browser elsewhere answers at its address (remembered for 30 seconds)."""
+    import httpx
+
+    now = time.monotonic()
+    if endpoint in _answered and now - _answered[endpoint][0] < 30:
+        return _answered[endpoint][1]
+    parts = urlsplit(endpoint)
+    try:
+        ip = socket.gethostbyname(parts.hostname or "")
+        netloc = f"{ip}:{parts.port}" if parts.port else ip
+        ok = httpx.get(f"{parts.scheme or 'http'}://{netloc}/json/version", timeout=timeout).status_code == 200
+    except (OSError, httpx.HTTPError):
+        ok = False
+    _answered[endpoint] = (now, ok)
+    return ok
+
+
+def available(settings: dict[str, Any] | None = None) -> dict[str, str] | None:
+    """The browser jobs and chat would use now: as find_browser, but a browser elsewhere only
+    when it answers (a compose file names one whether or not its container is running)."""
+    found = find_browser(settings)
+    if found and "endpoint" in found and not answers(found["endpoint"]):
+        return None
+    return found
+
+
 def describe(settings: dict[str, Any] | None = None) -> str:
     """One line for status: which browser jobs would use."""
+    if (settings or {}).get("off"):
+        return "turned off in Settings › General: web pages can't be read"
     found = find_browser(settings)
+    if found and "endpoint" in found and not answers(found["endpoint"]):
+        return f"no browser answers at {found['endpoint']}"
     if not found:
         return ("no browser found: install Chrome, Chromium, Edge or Brave, or set providers: browser: path: in "
                 "tools.md (or endpoint: for one elsewhere)")
-    return f"headless, at {found['endpoint']}" if "endpoint" in found else f"headless {Path(found['path']).name}"
+    return f"headless, at {found['endpoint']}" if "endpoint" in found else f"headless {_name(found['path'])}"
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +364,7 @@ class Browser:
     """One browser for a job (or an approval), with a new, empty profile, started on first use."""
 
     def __init__(self, settings: dict[str, Any] | None = None, *, resolver: Any = None):
-        from ombro.providers.direct import system_resolver
+        from ombro.providers.addresses import system_resolver
 
         self.settings = dict(settings or {})
         self.resolver = resolver or system_resolver
@@ -432,7 +488,7 @@ class Page:
 
     def _refusal(self, url: str) -> str | None:
         from ombro.providers import NotCalled
-        from ombro.providers.direct import check_url
+        from ombro.providers.addresses import check_url
 
         parts = urlsplit(url)
         if parts.scheme in ("data", "blob", "about"):
@@ -888,11 +944,13 @@ class BrowserFetch:
 
     def __init__(self, browser: Browser):
         self.browser = browser
+        self._lock = threading.Lock()  # one page for every web.fetch: one at a time
 
     def fetch(self, url: str, max_chars: int, timeout: float) -> dict[str, Any]:
-        p = self.browser.page("web.fetch", timeout)
-        p.open(url, timeout)
-        out = p.snapshot(max_chars, elements=False)
+        with self._lock:
+            p = self.browser.page("web.fetch", timeout)
+            p.open(url, timeout)
+            out = p.snapshot(max_chars, elements=False)
         return {"url": out["url"], "title": out["title"], "content": out["text"],
                 "truncated": bool(out.get("truncated"))}
 

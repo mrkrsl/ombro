@@ -38,7 +38,7 @@ def available_tools(home: Home) -> dict[str, str]:
     from ombro.native import native_registry
 
     settings = load_tool_settings(home)
-    reg = native_registry(home, settings)
+    reg = native_registry(home, settings, catalogue=True)
     out = {name: _first_sentence(reg.get(name).description) for name in reg.names()}
     # MCP tools: each server in tools.md is asked for its tools. A server that
     # cannot be reached is left out; `ombro tools <server>` says why.

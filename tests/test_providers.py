@@ -10,10 +10,9 @@ import pytest
 from ombro import keys
 from ombro.native import native_registry
 from ombro.providers import NotCalled, ProviderError
-from ombro.providers.direct import DirectProvider
+from ombro.providers.addresses import check_url
 from ombro.providers.duckduckgo import DuckDuckGoProvider, parse_results
 from ombro.providers.firecrawl import FirecrawlProvider
-from ombro.providers.html import html_to_text
 from ombro.settings import ToolSettings
 
 PUBLIC_IP = "151.101.1.1"  # a public address string; never contacted, the transport is mocked
@@ -171,37 +170,7 @@ def test_duckduckgo_refusals_are_reported_not_bypassed(response):
         p.search("q", 5, 10)
 
 
-# -- direct fetch ----------------------------------------------------------------------
-
-
-def direct(handler, resolver=public):
-    return DirectProvider(transport=httpx.MockTransport(handler), resolver=resolver)
-
-
-def test_direct_fetch_turns_html_into_text():
-    html = ("<html><head><title>Ada Pots</title><style>p{}</style></head><body><nav>Menu</nav>"
-            "<h1>Ada Pots</h1><p>Invented <b>teapots</b>.</p><script>alert(1)</script><ul><li>One</li></ul></body></html>")
-    p = direct(lambda r: httpx.Response(200, html=html))
-    page = p.fetch("https://ada-pots.invalid/", 5000, 10)
-    assert page["title"] == "Ada Pots"
-    assert "# Ada Pots" in page["content"] and "Invented teapots." in page["content"] and "- One" in page["content"]
-    assert "alert" not in page["content"] and "Menu" not in page["content"] and "p{}" not in page["content"]
-
-
-def test_direct_fetch_follows_redirects_and_checks_each_hop():
-    def handler(request):
-        if request.url.host == "start.invalid":
-            return httpx.Response(302, headers={"location": "https://next.invalid/page"})
-        return httpx.Response(200, text="plain text", headers={"content-type": "text/plain"})
-
-    page = direct(handler).fetch("https://start.invalid/", 5000, 10)
-    assert page["url"] == "https://next.invalid/page" and page["content"] == "plain text"
-
-    def resolver(host, port):
-        return ["10.0.0.5"] if host == "next.invalid" else [PUBLIC_IP]
-
-    with pytest.raises(ProviderError, match="private network"):
-        direct(handler, resolver).fetch("https://start.invalid/", 5000, 10)
+# -- which addresses may be reached -----------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -219,23 +188,11 @@ def test_direct_fetch_follows_redirects_and_checks_each_hop():
         ("ftp://ada.invalid/", [PUBLIC_IP]),
     ],
 )
-def test_direct_fetch_refuses_local_and_private_addresses(url, addresses):
-    hits = []
-    p = direct(lambda r: hits.append(r) or httpx.Response(200, text="x"), lambda h, port: addresses)
+def test_local_and_private_addresses_are_refused(url, addresses):
+    # The browser checks every request a page makes with this (ombro.browser).
     with pytest.raises(NotCalled):
-        p.fetch(url, 1000, 10)
-    assert hits == []
+        check_url(url, lambda h, port: addresses)
 
 
-def test_direct_fetch_refuses_binary_and_errors():
-    p = direct(lambda r: httpx.Response(200, content=b"%PDF", headers={"content-type": "application/pdf"}))
-    with pytest.raises(ProviderError, match="application/pdf"):
-        p.fetch("https://ada.invalid/a.pdf", 1000, 10)
-    p = direct(lambda r: httpx.Response(404, text="gone"))
-    with pytest.raises(ProviderError, match="404"):
-        p.fetch("https://ada.invalid/gone", 1000, 10)
-
-
-def test_html_to_text_survives_bad_markup():
-    title, text = html_to_text("<p>Unclosed <b>bold <i>and <div>more")
-    assert "Unclosed bold and" in text and "more" in text
+def test_a_public_address_is_allowed():
+    check_url("https://ada-pots.invalid/", public)

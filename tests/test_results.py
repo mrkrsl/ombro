@@ -128,7 +128,7 @@ def test_free_providers_get_more_calls_than_billed_ones(home):
     def calls(tool):
         return load_limits(home, None, load_tool_settings(home)).max_calls_for(tool)
 
-    assert (calls("web.search"), calls("web.fetch")) == (120, 200)  # DuckDuckGo and direct: free, doubled on generous
+    assert (calls("web.search"), calls("web.fetch")) == (120, 200)  # DuckDuckGo and the browser: free, doubled on generous
     tool_cmd.set_tool(home, "web.search", provider="firecrawl")
     assert calls("web.search") == 20  # billed per call
     tool_cmd.set_tool(home, "web.search", max_calls=45)
