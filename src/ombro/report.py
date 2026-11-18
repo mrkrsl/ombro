@@ -846,26 +846,28 @@ NOTES_LISTED = 5
 
 
 def _lesson_changes(added: list[str], removed: list[str]) -> tuple[list[str], int, list[str]]:
-    """Added and removed lessons, with a rewording (an added lesson much like a removed one)
-    counted rather than listed twice: (new, number reworded, removed)."""
-    from difflib import SequenceMatcher
+    """Added and removed lessons, with a rewording (an added lesson sharing most of its words
+    with a removed one) counted rather than listed twice: (new, number reworded, removed)."""
 
-    def norm(x: str) -> str:
-        return " ".join(str(x).lstrip("-* ").lower().split())
+    def words(x: str) -> set[str]:
+        return {w for w in re.findall(r"[a-z0-9]+", str(x).lower()) if len(w) > 2}
 
-    left = [norm(r) for r in removed]
+    def overlap(a: set[str], b: set[str]) -> float:
+        return len(a & b) / max(1, min(len(a), len(b)))
+
+    left = list(removed)
     new: list[str] = []
     reworded = 0
     for a in added:
-        na = norm(a)
-        best = max(range(len(left)), key=lambda i: SequenceMatcher(None, na, left[i]).ratio(), default=None)
-        if best is not None and SequenceMatcher(None, na, left[best]).ratio() >= 0.4:
+        wa = words(a)
+        scores = [overlap(wa, words(r)) for r in left]
+        best = max(range(len(left)), key=scores.__getitem__, default=None)
+        if best is not None and scores[best] >= 0.5:
             reworded += 1
             left.pop(best)
-            removed = removed[:best] + removed[best + 1:]
         else:
             new.append(a)
-    return new, reworded, list(removed)
+    return new, reworded, left
 
 
 def notes_lines(ev: dict[str, Any] | None) -> list[str]:
