@@ -159,7 +159,8 @@ def test_one_fake_script_serves_a_chat_and_the_job_it_starts():
 # -- quick lookups in chat ------------------------------------------------------------
 
 
-def test_chat_looks_things_up_itself_but_changes_nothing(home, tmp_path):
+@pytest.mark.parametrize("yes", [True, False])
+def test_chat_looks_things_up_itself_and_asks_before_it_changes_anything(home, tmp_path, yes):
     from conftest import fake_sent, use_fake_mcp
     from ombro.tools import wire_name
 
@@ -167,18 +168,25 @@ def test_chat_looks_things_up_itself_but_changes_nothing(home, tmp_path):
     use_fake_mcp(home, record)
     chat = ChatSession(home)
     chat([fake.call(wire_name("mcp.fake.find_rows"), {"query": "invented"}),
-          fake.call(wire_name("mcp.fake.add_row"), {"row": "x"}),
-          fake.say("Found it.")], ["Is there a row about invented things?", "/quit"])
+          fake.call(wire_name("mcp.fake.add_row"), {"sheet": "invented", "values": ["x"], "reason": "You asked."}),
+          fake.call(wire_name("mcp.fake.post_message"), {"channel": "news", "text": "Added.", "reason": "To say so."}),
+          fake.say("Done.")], ["Add a row about invented things and tell the channel.", "y" if yes else "n", "/quit"])
     from conftest import offered_tools
 
     sent = {t["function"]["name"] for t in chat.client.calls[0]["tools"]}
     offered = offered_tools(chat.client.calls[0]["tools"])
     assert wire_name("mcp.fake.find_rows") in offered  # read-only: a lookup
     assert wire_name("mcp.fake.find_rows") not in sent  # listed in tools__load, not sent in full
-    assert wire_name("mcp.fake.add_row") not in offered  # changes things: the crew's work
-    replies = chat.tool_replies()
-    assert "error" not in replies[0] and "offer_work" in replies[1]["error"]
-    assert [s["tool"] for s in fake_sent(record)] == ["find_rows"]
+    assert wire_name("mcp.fake.add_row") in offered and wire_name("mcp.fake.post_message") in offered
+    looked, added, posted = chat.tool_replies()
+    assert "error" not in looked
+    assert added["status"] == "done"  # internal, under the balanced mode: done, as in a job
+    if yes:  # external: only with the user's yes
+        assert posted["status"] == "done"
+        assert [s["tool"] for s in fake_sent(record)] == ["find_rows", "add_row", "post_message"]
+    else:
+        assert "declined" in posted
+        assert [s["tool"] for s in fake_sent(record)] == ["find_rows", "add_row"]
     chat.chat.close()
 
 
@@ -190,6 +198,6 @@ def test_chat_uses_a_web_apis_get(home, request):
     chat([fake.call(wire_name("api.podcasts.get"), {"path": "/episodes", "query": {"q": "reservoir"}}),
           fake.say("One episode.")], ["Any episodes about the reservoir?", "/quit"])
     offered = {t["function"]["name"] for t in chat.client.calls[0]["tools"]}
-    assert wire_name("api.podcasts.get") in offered and wire_name("api.podcasts.request") not in offered
+    assert wire_name("api.podcasts.get") in offered and wire_name("api.podcasts.request") in offered
     assert [r.method for r in fake_api.seen] == ["GET"]
     assert "pk-INVENTED" not in json.dumps(chat.tool_replies())  # the key is wiped from what comes back
