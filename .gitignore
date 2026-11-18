@@ -42,3 +42,4 @@ htmlcov/
 .idea/
 .vscode/
 *.swp
+evals/results/
