@@ -109,6 +109,8 @@ It changes a file only after you say yes.
   /chats                    your past chats, newest first; reopen one and carry on
   /rename title             give this chat a title of your own
   /remember [@crew] text    add a dated lesson to a crew's notes.md, after you confirm the wording
+  /restart <job> [more]     restart a job that ran out of tokens, building on what it did (more: twice the tokens)
+  /resume <job> [more]      resume a job that stopped or failed, from where it got to (more: twice the time)
   /skills                   list the skills library
   /help                     this list
   /quit                     end the chat (it is saved in chats/)
@@ -465,13 +467,19 @@ class Chat:
         self.ui.say(text, level="lead", **kw)
         self.transcript.lead(text)
 
-    def job_ended(self, job_id: str, text: str, status: str) -> None:
-        """A job started from this chat has ended: set down in the chat, for you and the Lead."""
+    def job_ended(self, job_id: str, text: str, status: str, again_text: str = "", again: str = "") -> None:
+        """A job started from this chat has ended: set down in the chat, for you and the Lead. One
+        that didn't finish comes with the Lead's offer to restart or resume it (the interface shows
+        the buttons), which the Lead is told of, so it can make it again if asked."""
         if job_id not in self.jobs:
             return
         line = f"{text} ('{jobs.job_name(job_id)}', job {job_id}; its report is jobs/{job_id}/report.md.)"
         self.transcript.ombro(line)
         self.pending_note += f"[Ombro note: {line}]\n"
+        if again_text:
+            self.transcript.lead(again_text)
+            self.pending_note += (f"[Ombro note: it did not finish, and you offered to {again} it: \"{again_text}\" "
+                                  f"If the user wants that, call offer_start with job {job_id!r}.]\n")
         self._save()
 
     def note_job(self, job_id: str) -> None:
@@ -768,6 +776,8 @@ class Chat:
                 self.ui.say("Say what to do, for example: /live find three bakeries in Leith that deliver")
             elif crew:
                 self._live([crew], _short(rest, 70), rest.strip())
+        elif word in ("/restart", "/resume"):
+            self._again_command(word[1:], rest)
         elif word == "/skills":
             lib = skills.library(self.home)
             self.ui.say("\n".join(f"- {s.name}: {s.description}" for s in lib.values())
@@ -1006,6 +1016,8 @@ class Chat:
         """The Lead offers to start a saved spec again, in its own voice: yes starts it (the
         interface does), "change it" opens the spec for changing, and no leaves it. Roles
         given here apply to this job only; the saved spec is unchanged (10.4)."""
+        if args.get("job") and not args.get("spec"):
+            return self._offer_again(str(args["job"]), " ".join(str(args.get("note") or "").split()))
         path = self._saved_spec(args.get("spec"))
         if path is None:
             from ombro.cli import saved_specs
@@ -1055,9 +1067,89 @@ class Chat:
         return {"status": "the user said no, so it was not started. Carry on the conversation; do not offer it "
                           "again unless they ask."}, None
 
+    def _unfinished_job(self, given: str) -> tuple[Path | None, str]:
+        """The job to carry on: the one named, else this chat's latest that didn't finish. (dir, why not)."""
+        from ombro.session import again_plan
+
+        if given:
+            try:
+                job_dir = jobs.find_job(self.home, given)
+            except (jobs.JobNotFound, LookupError):
+                return None, f"There's no job matching {given!r}."
+            return job_dir, ""
+        for job_id in reversed(self.jobs):
+            try:
+                job_dir = jobs.find_job(self.home, job_id)
+                if again_plan(jobs.read_job(job_dir)[0]):
+                    return job_dir, ""
+            except (jobs.JobNotFound, LookupError, OSError, mdfile.FrontMatterError):
+                continue
+        return None, "Say which job, for example: /resume " + (self.jobs[-1] if self.jobs else "<job>")
+
+    def _again_command(self, kind: str, rest: str) -> None:
+        """/restart or /resume <job> [more]: typed, or sent by a button under a job that didn't finish.
+        It is the user's yes, so the job starts (the interface starts it)."""
+        from ombro.session import again_plan
+
+        words = rest.split()
+        more = bool(words) and words[-1].lower() == "more"
+        job_dir, why = self._unfinished_job(" ".join(words[:-1] if more else words))
+        if job_dir is None:
+            self.ui.say(why)
+            return
+        plan = again_plan(jobs.read_job(job_dir)[0])
+        if plan is None:
+            self.ui.say(f"Job {job_dir.name} finished, so there's nothing to {kind}. To run its brief again from "
+                        "the start, use /start.")
+            return
+        self.start_offers.append({"job": job_dir.name, "more": more and bool(plan.get("raise"))})
+        self.transcript.note(f"You chose to {kind} job {job_dir.name}" + (" with more room" if more else "") + ".")
+        self.pending_note += (f"[Ombro note: the user chose to {kind} job {job_dir.name}; Ombro starts it as a new "
+                              "job, on the same brief, building on what was done.]\n")
+
+    def _offer_again(self, given: str, note: str) -> tuple[dict[str, Any], tuple | None]:
+        """The Lead offers to restart or resume a job that didn't finish (offer_start with `job`)."""
+        from ombro.session import AGAIN_DONE, again_offer, again_plan
+
+        job_dir, why = self._unfinished_job(given)
+        if job_dir is None:
+            return {"error": why}, None
+        plan = again_plan(jobs.read_job(job_dir)[0])
+        if plan is None:
+            return {"error": f"job {job_dir.name} finished or is still running; offer a saved spec instead"}, None
+        text, offers = again_offer(job_dir.name, plan)
+        kind, name = plan["kind"], jobs.job_name(job_dir.name)
+        self._lead_says(f"I found it: the job '{name}'. " + (f"{note} " if note else "") + text, level="lead")
+        options = [Option("more", o.label, ("m", "more room")) if o.command.endswith(" more") else
+                   Option("yes", o.label, ("y", "ok", kind, f"{kind} it")) for o in offers]
+        answer = self.ui.ask(Field("again", f"Shall I {kind} it?", "choice", default=options[0].key, mode="Chat",
+                                   other="not now", options=options))
+        if answer in ("yes", "more"):
+            self.start_offers.append({"job": job_dir.name, "more": answer == "more"})
+            self.transcript.note(f"You said yes: job {job_dir.name} is {AGAIN_DONE[kind]}"
+                                 + (" with more room." if answer == "more" else "."))
+            return {"status": f"the user said yes; Ombro starts it again now in the background, building on what "
+                              "was done. Say in one short sentence that it is starting; do not describe the work "
+                              "again."}, None
+        self.transcript.note(f"You said no: job {job_dir.name} was not started again.")
+        return {"status": "the user said not now, so it was not started. Carry on the conversation; do not offer it "
+                          "again unless they ask."}, None
+
     def _start_offered(self, offer) -> None:
         """The command line starts a job the user said yes to in chat."""
         from ombro.cli import main
+
+        if isinstance(offer, dict):  # carry on a job that didn't finish
+            from ombro.session import StartError, start_again
+
+            try:
+                new_id = start_again(self.home, offer["job"], more=bool(offer.get("more")), chat=self.id)
+            except StartError as e:
+                self.ui.say(f"The job could not start again: {e}.")
+                return
+            self.note_job(new_id)
+            self.ui.say(f"Started '{jobs.job_name(new_id)}' ({new_id}), building on what the last run did.")
+            return
 
         spec, roles = offer if isinstance(offer, tuple) else (offer, [])
         main(["start", "--spec", spec, "--detach", *[a for r in roles for a in ("--role", r)]])

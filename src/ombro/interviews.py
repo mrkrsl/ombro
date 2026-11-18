@@ -446,7 +446,8 @@ class BriefPurpose(Purpose):
 
     def outward_tools(self, crews: list[str] | None = None) -> list[str]:
         """External tools (reaching people outside the organisation, or the public) in the given crews, or in
-        every crew: the ones a brief must ask about. Reading and work need no answer."""
+        every crew, MCP tools and web APIs alike: the ones a brief must ask about. Reading and work need no
+        answer."""
         key = tuple(crews) if crews is not None else None
         cache = self.__dict__.setdefault("_external", {})
         if key not in cache:
@@ -467,7 +468,9 @@ class BriefPurpose(Purpose):
             except (SetupError, mdfile.FrontMatterError):
                 cache[key] = names  # cannot tell: ask
             else:
-                cache[key] = outward.external_tools(self.home, settings, names) if names else []
+                # Web APIs too: every crew member is offered each one, so they count in any crew.
+                cache[key] = (outward.external_tools(self.home, settings, names) if names else []) \
+                    + outward.external_apis(settings)
         return cache[key]
 
     def context(self) -> list[tuple[str, str]]:
@@ -492,8 +495,10 @@ class BriefPurpose(Purpose):
             except SetupError:
                 default = outward.DEFAULT_PRESET
             out.append(("External tools in the crews (they reach people outside the organisation, or the "
-                        "public, or spend money)",
-                        "\n".join(f"- {t}" for t in tools)
+                        "public, or spend money): MCP tools (mcp.*) and web APIs (api.*)",
+                        "\n".join(f"- {t}" + (f" (the {t.split('.')[1]} API: its calls that change things; "
+                                              "lookups always run)" if t.startswith("api.") else "")
+                                  for t in tools)
                         + f"\nThe user's default permission is {default}. If the task's crews have any of them, "
                         "ask what may happen without them."))
         return out
@@ -553,7 +558,8 @@ class BriefPurpose(Purpose):
                                        "description": "What may happen without the user, from their answer."}
             for key, what in (("outward_allow", "run without asking"), ("outward_stage", "always wait for the user")):
                 props[key] = {"type": "array", "items": {"type": "string"},
-                              "description": f"Optional: mcp.* tools the user said may {what}."}
+                              "description": f"Optional: mcp.* tools or api.<name>.request (a web API) the "
+                                             f"user said may {what}."}
         return prompts.propose_tool(
             "Propose the spec. The harness refuses it if any of the five required answers is empty, shows it, "
             "and saves it only if the user accepts.",

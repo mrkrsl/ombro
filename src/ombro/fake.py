@@ -113,7 +113,7 @@ class ScriptedClient:
             # and the job it starts, each taking its own replies.
             names = {(t.get("function") or {}).get("name") for t in tools or []}
             system = str((messages[0] or {}).get("content") or "") if messages else ""
-            i = next((n for n, e in enumerate(self._queue) if _fits(e, names, system)), None)
+            i = next((n for n, e in enumerate(self._queue) if _fits(e, names, system, messages)), None)
             if i is None:
                 raise ModelError("the fake model's script has no reply for this call")
             entry = self._queue.pop(i)
@@ -156,13 +156,16 @@ class ScriptedClient:
                           finish_reason=entry.get("finish_reason", "stop"))
 
 
-def _fits(entry, names: set, system: str = "") -> bool:
-    """`needs`: a tool the call offers, "no_tools", or "prompt:<words>" found in its system prompt."""
+def _fits(entry, names: set, system: str = "", messages: list | None = None) -> bool:
+    """`needs`: a tool the call offers, "no_tools", "prompt:<words>" found in its system prompt, or
+    "text:<words>" found anywhere in what it sends (a job's spec, its report's record)."""
     need = entry.get("needs") if isinstance(entry, dict) else None
     if not need:
         return True
     if need.startswith("prompt:"):
         return need[len("prompt:"):] in system
+    if need.startswith("text:"):
+        return any(need[len("text:"):] in str(m.get("content") or "") for m in messages or [] if isinstance(m, dict))
     return (need == "no_tools" and not names) or need in names
 
 

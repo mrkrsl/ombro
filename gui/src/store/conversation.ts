@@ -5,6 +5,7 @@ import type {
   CoreEvent,
   EditFilesMessage,
   FileView,
+  JobOffer,
   QuestionMessage,
   Report,
   ServerMessage,
@@ -20,6 +21,7 @@ export type Line =
   | { key: string; kind: "job"; text: string; jobId: string; live: boolean }
   | { key: string; kind: "livereport"; jobId: string; live: boolean }
   | { key: string; kind: "page"; screen: string; args: string; text: string }
+  | { key: string; kind: "again"; text: string; offers: JobOffer[] }
   | { key: string; kind: "report"; report: Report };
 
 export type Mode = "Chat" | "Brief";
@@ -63,6 +65,14 @@ export function splitReport(text: string): { head: string; record: string } {
   return { head: text.trimEnd(), record: "" };
 }
 
+/** A report's Summary: the Lead's short paragraph, what the chat shows when a job ends. "" if it has none. */
+export function reportSummary(head: string): string {
+  const m = /^## Summary[ \t]*\n([\s\S]*?)(?=^## |^# |(?![\s\S]))/m.exec(head);
+  if (!m) return "";
+  // Ombro's note that it wrote the report itself stays in the report, not in the chat's summary.
+  return m[1].split("\n").filter((l) => !l.startsWith("_This report was written by the harness")).join("\n").trim();
+}
+
 /** Labels that only say "your turn": the question's prompt isn't shown as a line for them. */
 const PLAIN_LABELS = new Set(["You", "answer", ""]);
 
@@ -97,9 +107,14 @@ function eventLines(e: CoreEvent, key: string): Line[] {
     case "job_ended": {
       // Every job ends the same way: how it went, then its report, here in the chat.
       const waiting = e.waiting ? ` ${e.waiting} ${e.waiting === 1 ? "action waits" : "actions wait"} for your approval.` : "";
+      // One that didn't finish: the Lead offers to restart or resume it, with a button for each way.
+      const again: Line[] = e.offers?.length
+        ? [{ key: `${key}-again`, kind: "again", text: e.again_text ?? "", offers: e.offers }]
+        : [];
       return [
         { key, kind: "note", text: e.text + waiting, items: [], level: e.status === "completed" ? "done" : "info" },
         { key: `${key}-report`, kind: "livereport", jobId: e.job_id, live: !!e.live },
+        ...again,
       ];
     }
     case "open_page":

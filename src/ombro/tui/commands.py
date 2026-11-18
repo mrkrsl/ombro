@@ -203,6 +203,8 @@ def render_notice(e: JobEnded, app: "OmbroApp") -> Text:
         return Text(e.text, style=p.text)
     out.append(e.text, style=f"bold {p.text}")
     out.append(f"\n{e.brief}\n", style=p.muted)
+    if e.summary:  # the Lead's short paragraph
+        out.append(" ".join(e.summary.split()) + "\n", style=p.text)
     if e.files:
         out.append("Here's what it made:\n", style=p.text)
     for f in e.files:
@@ -215,4 +217,11 @@ def render_notice(e: JobEnded, app: "OmbroApp") -> Text:
     out.append("Read the report", Style(color=p.text, underline=True, bold=True,
                                          meta={"@click": f"app.run_command({'/report ' + e.job_id!r})"}))
     out.append(f"  (or type /report {e.job_id})", style=p.muted)
+    if e.offers:  # one that didn't finish: the Lead's offer, and a click for each way to carry on
+        out.append(f"\n{e.again_text}\n", style=p.text)
+        for i, o in enumerate(e.offers):
+            out.append("  " if i else "", style=p.muted)
+            out.append(o.label, Style(color=p.text, underline=True, bold=True,
+                                      meta={"@click": f"app.run_command({o.command!r})"}))
+        out.append(f"  (or type {e.offers[0].command})", style=p.muted)
     return out

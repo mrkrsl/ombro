@@ -1,11 +1,12 @@
 // A job's report (design 19): where it is, a copy button, the part you read as Markdown, what the
 // job made (a Markdown file can open here too), what waits for approval, and Ombro's record of
-// how it went, shown on request.
+// how it went, shown on request. In the chat (`brief`), only the Lead's short summary shows at
+// first, with what the job made under it; "Read the full report" opens the rest here.
 
 import { useState } from "react";
 import { Copy, FolderOpen } from "lucide-react";
 import type { Report } from "../api/types";
-import { splitReport } from "../store/conversation";
+import { reportSummary, splitReport } from "../store/conversation";
 import { useStore } from "../store/store";
 import { Markdown, MarkdownFile } from "./Markdown";
 
@@ -13,8 +14,9 @@ function fileUrl(path: string): string {
   return "file://" + path.split("/").map(encodeURIComponent).join("/");
 }
 
-export function ReportCard({ report }: { report: Report }) {
+export function ReportCard({ report, brief = false }: { report: Report; brief?: boolean }) {
   const [record, setRecord] = useState(false);
+  const [full, setFull] = useState(false);
   const [copied, setCopied] = useState(false);
   const show = useStore((s) => s.show);
   const { openHref, openFolder, remote } = useStore();
@@ -29,6 +31,8 @@ export function ReportCard({ report }: { report: Report }) {
   }
   const { head, record: rec } = splitReport(report.report);
   const made = report.deliverables.filter((d) => d.kind !== "other");
+  const summary = brief ? reportSummary(head) : "";
+  const short = !!summary && !full; // the chat's view: the summary alone, until you ask for the rest
   return (
     <div className="report-card">
       <div className="report-head">
@@ -65,7 +69,7 @@ export function ReportCard({ report }: { report: Report }) {
         </span>
       </div>
       <div className="report-body">
-        <Markdown text={head} />
+        <Markdown text={short ? summary : head} />
         {made.length > 0 && (
           <>
             <h4>What the job made</h4>
@@ -108,14 +112,21 @@ export function ReportCard({ report }: { report: Report }) {
             </button>
           </p>
         )}
-        {rec && (
+        {summary && (
+          <p>
+            <button className="link-button" onClick={() => setFull((f) => !f)} aria-expanded={full}>
+              {full ? "Show the summary only" : "Read the full report"}
+            </button>
+          </p>
+        )}
+        {rec && !short && (
           <p>
             <button className="link-button" onClick={() => setRecord((r) => !r)}>
               {record ? "Hide Ombro's record" : "Show Ombro's record"}
             </button>
           </p>
         )}
-        {record && <Markdown className="record" text={rec} />}
+        {record && !short && <Markdown className="record" text={rec} />}
       </div>
     </div>
   );

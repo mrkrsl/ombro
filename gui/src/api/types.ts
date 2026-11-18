@@ -715,13 +715,17 @@ export interface JobProgress {
  * via the `definition` "JobEnded".
  */
 export interface JobEnded {
+  again?: string;
+  again_text?: string;
   brief?: string;
   files?: JobFile[];
   job_id: string;
   limit_hit?: string | null;
   live?: boolean;
   name: string;
+  offers?: JobOffer[];
   status: string;
+  summary?: string;
   text: string;
   type: "job_ended";
   waiting?: number;
@@ -735,6 +739,16 @@ export interface JobFile {
   name: string;
   path: string;
   url: string;
+}
+/**
+ * A way to carry on with a job that didn't finish: a button's words and the chat command it sends.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "JobOffer".
+ */
+export interface JobOffer {
+  command: string;
+  label: string;
 }
 /**
  * Ombro suggests a page of the app, such as Scheduled with a brief picked. A terminal shows the text.

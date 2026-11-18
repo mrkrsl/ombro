@@ -11,8 +11,10 @@ What is in it: a live job to try (the first message in a new chat is offered as 
 Do it live), four crews with roles, two skills, three model providers (only the canned one is
 used), built-in tools with providers, a web API,
 two MCP servers (one local, one remote), two keys (dummy values), a shared folder,
-saved specs, a skill folder to add (next to the home, in <path>-skill), three chats, four finished jobs (one that made a file and proposes a skill, one with
-two actions waiting for approval, one that failed), and two schedules.
+saved specs, a skill folder to add (next to the home, in <path>-skill), three chats, four finished jobs
+(one that made a file and proposes a skill, one with two actions waiting for approval, one that failed), two
+schedules, and two saved specs that don't finish (token-limit-demo and timeout-demo), to try the restart and
+resume offers.
 
 The model is Ombro's fake one: it answers chat with canned replies and never
 reaches the internet. Jobs it runs come from the scripts below. A brief interview
@@ -68,6 +70,45 @@ def live_demo() -> list[dict]:
         {**fake.finish("Three invented sourdough bakeries listed."), "needs": "finish"},
         {**fake.keep_notes(), "needs": "keep_notes"},
         {**fake.say(report), "needs": "prompt:writing the parts of the final report"},
+    ]
+
+
+TOKEN_DEMO_TOKENS = 4_000  # under what the Lead's first call needs (about 4k), and over half of it: "more" gets it going
+
+
+def demo_unfinished_specs(home) -> None:
+    """Two saved specs that don't finish, to try the restart and resume offers: /start one in a chat."""
+    from ombro import mdfile
+
+    home.specs_dir.mkdir(parents=True, exist_ok=True)
+    mdfile.write(home.specs_dir / "token-limit-demo.md",
+                 {"name": "token-limit-demo", "crews": ["ops"], "outward": "balanced",
+                  "limits": {"max_tokens": TOKEN_DEMO_TOKENS}},
+                 "# Count the invented biscuits\n\nCount the invented biscuits in the tin. Its token limit is "
+                 "far too small on purpose, so it stops before it starts.\n")
+    mdfile.write(home.specs_dir / "timeout-demo.md",
+                 {"name": "timeout-demo", "crews": ["ops"], "outward": "balanced", "limits": {"job_timeout": "5s"}},
+                 "# Sort the invented receipts\n\nSort the invented receipts by date. This invented task is slow on "
+                 "purpose: its time limit is five seconds, so it runs out of time.\n")
+
+
+def unfinished_demo() -> list[dict]:
+    """Replies for the two specs that don't finish, and for the jobs that carry them on. Each needs words
+    only its own calls have, so the rest of the demo never takes them; the first that fits is used."""
+    from ombro import fake
+
+    return [
+        {**fake.say("## Summary\nThe task is finished, building on the earlier run.\n\n## What was done\nI "
+                    "picked up where the earlier run stopped and finished it.\n\n## What was not done and why\n"
+                    "Nothing."), "needs": "text:carried on from the earlier job"},
+        {**fake.finish("Finished, building on the earlier run."), "needs": "text:Carrying on from an earlier run"},
+        {"needs": "text:slow on purpose", "sleep": 8, "error": "the model took too long", "timed_out": True},
+        {**fake.say("## Summary\nThe biscuits weren't counted: the job hit its token limit first.\n\n## What was "
+                    "done\nNothing yet.\n\n## What was not done and why\nThe counting, because its tokens ran "
+                    "out."), "needs": "text:Stopped by limit `max_tokens`"},
+        {**fake.say("## Summary\nThe receipts weren't sorted: the job ran out of time first.\n\n## What was done\n"
+                    "Nothing yet.\n\n## What was not done and why\nThe sorting, because its five seconds ran "
+                    "out."), "needs": "text:Stopped by limit `job_timeout`"},
     ]
 
 
@@ -270,6 +311,7 @@ def build(root: Path) -> None:
     }
     for name, (body, crews) in specs.items():
         mdfile.write(home.specs_dir / f"{name}.md", {"name": name, "crews": crews, "outward": "balanced"}, body + "\n")
+    demo_unfinished_specs(home)
 
     report = lambda title, summary: fake.say(  # noqa: E731
         f"# {title}\n\n## Summary\n{summary}\n\n- One invented point.\n- Another invented point.\n\n"
@@ -315,7 +357,7 @@ def build(root: Path) -> None:
     schedules.write_schedule(home, "monthly-figures", "0 18 * * 4", "monthly-figures", False)
 
     replies = [fake.say(CHAT_REPLIES[i % len(CHAT_REPLIES)]) for i in range(300)]
-    (home.root / "script.json").write_text(json.dumps(live_demo() + replies))
+    (home.root / "script.json").write_text(json.dumps(unfinished_demo() + live_demo() + replies))
     print(f"done: {root}")
 
 
@@ -333,6 +375,7 @@ def main(argv: list[str]) -> int:
         demo_providers(Home(root))  # added in stage 7; a demo made before then gets them too
         demo_api(Home(root))
         demo_skill_proposal(Home(root))
+        demo_unfinished_specs(Home(root))
     else:
         build(root)
     print(f"a skill folder to add: {demo_skill_folder(root)}")
