@@ -990,10 +990,31 @@ class Chat:
                 self.exchanges[-1].append(_tool_msg(tc.id, result, src))
             if request:
                 return request
-        self.ui.say(f"(The Lead used all {self.limits.chat_calls_per_message} model calls allowed for one message "
-                 "without answering. Ask again more narrowly.)")
-        self.transcript.note("The Lead used all its model calls for this message without answering.")
+        self._last_word()
         return None
+
+    def _last_word(self) -> None:
+        """The calls for one message have run out: one more call, told to answer now with what it has
+        (a draft, what it found, what is left), so a message never ends with nothing. Any tool it
+        still asks for is not run."""
+        n = self.limits.chat_calls_per_message
+        said = ""
+        try:
+            reply = self._model_call(self._messages() + [{"role": "system", "content": prompts.CHAT_LAST_CALL}])
+            said = (reply.content or "").strip()
+        except (ModelError, LimitReached, OSError) as e:
+            self.transcript.note(f"The Lead's last answer for this message could not be had: {_short(str(e), 200)}")
+        if said:
+            self.exchanges[-1].append({"role": "assistant", "content": said})
+            self.ui.show(LeadSaid(said))
+            self.transcript.lead(said)
+            self.ui.say(f"(That used all {n} model calls allowed for one message, so the Lead stopped there. "
+                        "Say carry on to let it continue.)")
+            self.transcript.note("The Lead used all its model calls for this message and answered with what it had.")
+            return
+        self.ui.say(f"(The Lead used all {n} model calls allowed for one message without answering. Say carry on, "
+                    "or ask again more narrowly.)")
+        self.transcript.note("The Lead used all its model calls for this message without answering.")
 
     # -- tools -------------------------------------------------------------
 

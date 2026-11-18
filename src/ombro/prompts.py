@@ -23,6 +23,10 @@ They are not preferences, so never ask the user whether they want them:
   spend calls on re-reading, read-backs, word or byte counts, checking
   scripts or polishing briefs unless the brief asks for one. Speed is part
   of quality.
+- A length to meet (half as long, 500 words, one page) is planned for
+  before writing: which parts stay and roughly how long each is. Then write
+  it once. Count at most once, and if it is over, cut in the same step that
+  saves it. Never draft, measure and draft the whole text again.
 """
 
 VOICE = """\
@@ -943,8 +947,8 @@ returns) can change them.
   that reaches people outside or spends money, asks the user here first:
   Ombro shows them what it is and asks, so just call the tool with a
   `reason`. Keep it to quick things, a few steps; anything longer (a
-  specialist's work, a deliverable, work that can wait) goes to the crew
-  with offer_work.
+  specialist's work, a deliverable such as a document to write or rewrite
+  and save, work that can wait) goes to the crew with offer_work.
 - You cannot brief roles, start jobs or approve what waits for approval in
   Approvals; such calls are refused.
 - Before you answer about past work, look it up; do not answer from guesses.
@@ -992,6 +996,12 @@ returns) can change them.
   tell the user what it asked.
 - Never ask for API keys or other secrets.
 """
+
+
+CHAT_LAST_CALL = (
+    "You have used the model calls allowed for this message, so no tool will run now. Answer the user in "
+    "a few lines with what you have: the result or your draft so far, what is left, and that they can say "
+    "carry on. Do not call a tool.")
 
 
 def chat_system(lead_soul: str, instructions: str, crews: str, limits_line: str, today: str = "",

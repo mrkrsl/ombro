@@ -209,7 +209,7 @@ LIMITS_META = {
     "memory_index_entry_chars": 200,
     "memory_search_max_chars": 4_000,
     "chat_history_chars": 200_000,
-    "chat_calls_per_message": 8,
+    "chat_calls_per_message": 20,
     "fetch_max_query": 200,
     "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
                             "web.fetch": 15, "folders.list": 30, "folders.read": 40, "folders.write": 10,
@@ -286,6 +286,7 @@ Chat:
   note first, then middle turns are left out. The opening turns and the
   recent ones always stay (the transcript keeps everything).
 - chat_calls_per_message: model calls the Lead may make for one message.
+  When they run out, it answers with what it has, and you can say carry on.
 - chat_tool_max_calls: calls per tool in one chat session.
 - fetch_max_query: the most characters web.fetch allows after ? in an
   address, so a page cannot have a role send data out in a link.
