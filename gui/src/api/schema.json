@@ -1200,8 +1200,12 @@
       "type": "object"
     },
     "Field": {
-      "description": "One question. In a form, one field of it.\n\nkind: text (a line, or several if `multiline`), secret (hidden, never shown\nor saved), choice (one of `options`), yesno, or wait (only to go on).\n`pattern` is a regular expression the answer must match in full, and\n`invalid` what to say when it does not (or when a required answer is\nempty). A choice with `other` also takes a free answer, described by it.",
+      "description": "One question. In a form, one field of it.\n\nkind: text (a line, or several if `multiline`), secret (hidden, never shown\nor saved), choice (one of `options`), yesno, or wait (only to go on).\n`pattern` is a regular expression the answer must match in full, and\n`invalid` what to say when it does not (or when a required answer is\nempty). A choice with `other` also takes a free answer, described by it; with\n`pattern` too, only a free answer that matches it.\n\n`aside`: a question asked in the chat that a new message may set aside. When\nwhat the user sends is not an answer to it, the interface raises SetAside\nfrom `ask` and passes the message to the session, which sends it to the\nLead once the chat has dealt with the question going unanswered.",
       "properties": {
+        "aside": {
+          "default": false,
+          "type": "boolean"
+        },
         "default": {
           "default": null,
           "tsType": "unknown"

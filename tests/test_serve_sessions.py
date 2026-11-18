@@ -529,3 +529,59 @@ def test_a_file_attached_in_the_app_goes_to_the_lead_with_the_message(serve, hom
     assert outside.status_code == 400 and "attach it again" in outside.json()["error"]
     assert serve.http.post("/attachments", content=b"x").status_code == 400  # no name
     ws.close()
+
+
+def test_a_new_message_sets_the_open_question_aside(serve):
+    """Report back or live is waiting, and Mark writes something else: the question goes unanswered
+    ("not now"), the transcript says so, and the message goes to the Lead as an ordinary one."""
+    _script(serve.client, [
+        fake.call("offer_work", {"summary": "Three invented bakeries in Lowtown", "title": "Bakeries",
+                                 "task": "List three invented bakeries in Lowtown."}),
+        fake.say("Of course: it's invented, so call it sunny."),
+    ])
+    ws = serve.socket()
+    sid = serve.post("/sessions", status=201)["session"]["id"]
+    ws.send({"type": "subscribe", "sessions": {sid: 0}})
+    serve.post(f"/sessions/{sid}/input", {"text": "Find me bakeries in Lowtown."})
+    how = ws.until(question(sid))
+    assert how["field"]["name"] == "how" and how["field"]["aside"] is True
+
+    # The app sends what is typed mid-question as an answer; one that isn't an answer sets it aside.
+    assert serve.post(f"/sessions/{sid}/answer", {"id": how["id"], "value": "What's the weather like?"})["ok"]
+    ws.until(lambda m: m.get("type") == "question_closed" and m["id"] == how["id"])
+    ws.until(lambda m: m.get("type") == "event" and "set aside" in (m["event"].get("text") or ""))
+    said = ws.until(event("lead", sid))
+    assert said["event"]["text"].startswith("Of course")
+    ws.until(state("idle", sid))
+    assert not list(serve.app.state.serve.home.jobs_dir.iterdir())  # nothing started
+
+    # The Lead was told the question was set aside, then given the message, as Mark wrote it.
+    last = serve.client.calls[-1]["messages"]
+    tool = next(m for m in last if m["role"] == "tool")
+    assert "set this question aside" in tool["content"]
+    assert last[-1] == {"role": "user", "content": "What's the weather like?"} or \
+        last[-1]["content"].endswith("What's the weather like?")
+    chat = serve.get(f"/sessions/{sid}")["chat"]
+    text = (serve.app.state.serve.home.chats_dir / f"{chat}.md").read_text()
+    assert "You set the question aside (Shall I take this away" in text
+    assert text.index("set the question aside") < text.index("What's the weather like?")
+    ws.close()
+
+
+def test_an_answer_to_the_open_question_still_answers_it(serve):
+    """Typed answers are still answers: "not now" declines, and nothing is queued."""
+    _script(serve.client, [
+        fake.call("offer_work", {"summary": "Invented work", "title": "Invented", "task": "Do invented work."}),
+        fake.say("Fine, another time."),
+    ])
+    ws = serve.socket()
+    sid = serve.post("/sessions", status=201)["session"]["id"]
+    ws.send({"type": "subscribe", "sessions": {sid: 0}})
+    serve.post(f"/sessions/{sid}/input", {"text": "Do some invented work."})
+    how = ws.until(question(sid))
+    assert serve.post(f"/sessions/{sid}/answer", {"id": how["id"], "value": "Not now"})["ok"]
+    assert ws.until(event("lead", sid))["event"]["text"] == "Fine, another time."
+    ws.until(state("idle", sid))
+    tool = next(m for m in serve.client.calls[-1]["messages"] if m["role"] == "tool")
+    assert "said not now" in tool["content"]
+    ws.close()

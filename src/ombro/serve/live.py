@@ -8,7 +8,9 @@ terminal's TuiUI:
   sends it out;
 - ask(field) sends a question with an id and blocks until it is answered;
 - edit(paths) sends edit_files and blocks until the window says they are saved;
-- interrupt makes the next show or ask raise, as Ctrl+C does in the terminal.
+- interrupt makes the next show or ask raise, as Ctrl+C does in the terminal;
+- a message sent as the answer to a chat question it doesn't answer sets the
+  question aside: ask raises SetAside, and the chat takes the message next.
 
 The session lives in serve, not in a window: a window that closes and comes
 back subscribes with the last sequence number it saw and gets what it missed,
@@ -27,7 +29,7 @@ from ombro import commands as core_commands
 from ombro.flows import Flows
 from ombro.home import Home
 from ombro.session import Session
-from ombro.ui import UI, Event, Failure, Field, Note, parse_answer
+from ombro.ui import UI, Event, Failure, Field, Note, SetAside, parse_answer, sets_aside
 
 LOG_KEEP = 2000  # messages a session keeps for windows that reconnect
 
@@ -221,6 +223,11 @@ class LiveSession:
         q = self.question
         if q is None or q.id != qid:
             raise LookupError("that question is no longer open")
+        if q.kind == "question" and sets_aside(q.field, value):
+            self.session.send_next(value.strip(), attached)
+            q.error = SetAside(q.field)
+            q.done.set()
+            return None
         if attached and isinstance(value, str):
             value = self.session.attach_to_answer(value, attached)
         if q.kind == "question":

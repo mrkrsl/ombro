@@ -849,3 +849,23 @@ def test_clicking_read_the_report_opens_it_at_its_top(home, job):
             assert conv.region.y <= report.region.y < conv.region.y + 3
 
     drive(go())
+
+
+def test_a_new_message_sets_the_open_question_aside(home):
+    """Mark writes something else while report back or live is asked: the Lead gets it."""
+    offer = fake.call("offer_work", {"summary": "Invented work", "title": "Invented", "task": "Do invented work."})
+    app, client = _app(home, [offer, fake.say("An invented weather report.")])
+
+    async def go():
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press(*"Do some invented work.")
+            await pilot.press("enter")
+            await answer(pilot, app, "Is it sunny")
+            await settle(pilot, app)
+            texts = _texts(app)
+            assert any("set aside" in t for t in texts)
+            assert any(t.startswith("• An invented weather report.") for t in texts)
+            assert client.calls[-1]["messages"][-1]["content"].endswith("Is it sunny")
+
+    drive(go())

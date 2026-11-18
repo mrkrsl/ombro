@@ -30,7 +30,8 @@ from ombro.home import Home
 from ombro.session import JobWatcher, Session, setup_needed  # noqa: F401 - setup_needed kept importable here
 from ombro.tui import look
 from ombro.ui import (UI, ChatCleared, Event, Failure, Field, JobEnded, JobProgress, JobStarted, LeadSaid,
-                      ModeChanged, Note, PastTurn, Progress, ProposalShown, Usage, field_prompt, parse_answer)
+                      ModeChanged, Note, PastTurn, Progress, ProposalShown, SetAside, Usage, field_prompt,
+                      parse_answer, sets_aside)
 
 # The slash commands (specification 14.1), as every interface lists them.
 SLASH = [(c.name, c.help) for c in core_commands.COMMANDS]
@@ -735,6 +736,13 @@ class OmbroApp(App):
         shown = "•" * len(text) if f.kind == "secret" else text
         if f.kind != "secret" or text:
             self.add_line(Note(shown or "(Enter)"), "you")
+        if sets_aside(f, text):
+            # A new message, not an answer: the question goes unanswered and the Lead gets this next.
+            self.pending = None
+            self.session.send_next(text.strip())
+            pending.error = SetAside(f)
+            pending.done.set()
+            return
         value, problem = parse_answer(f, text)
         if problem:
             self.add_line(Note(problem), "note")

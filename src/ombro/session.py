@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from ombro import jobs, mdfile, views
 from ombro.home import Home
-from ombro.ui import UI, Event, Failure, JobEnded, JobFile, JobOffer, JobProgress, JobStarted
+from ombro.ui import UI, Event, Failure, JobEnded, JobFile, JobOffer, JobProgress, JobStarted, SetAside
 
 
 class StartError(Exception):
@@ -413,6 +413,13 @@ class Session:
         self.started: list[str] = []
         self._start_job = start_job or self.start_job
         self.on_started = on_started or (lambda job_id: None)
+        # Messages sent while a question was open, which set it aside: the chat takes them next.
+        self.queued: list[tuple[str, list[Path] | None]] = []
+
+    def send_next(self, text: str, attached: list[Path] | None = None) -> None:
+        """A message that set the open question aside (the interface raises SetAside from `ask`):
+        the chat turn under way finishes, then this goes to the Lead as an ordinary message."""
+        self.queued.append((text, attached))
 
     def ensure_chat(self):
         if self.chat is None:
@@ -440,7 +447,7 @@ class Session:
         if not go_on:
             return False
         if len(chat.specs) > specs_before:
-            self.offer_start(chat.specs[-1])
+            self.offer_start(chat.specs[-1], aside=True)
         while chat.start_offers:  # the user already said yes in chat
             offer = chat.start_offers.pop(0)
             if isinstance(offer, dict):  # carry on a job that didn't finish
@@ -448,6 +455,9 @@ class Session:
             else:
                 name, roles = offer
                 self.offer_start(name, roles=roles, ask=False)
+        if self.queued:
+            text, attached = self.queued.pop(0)
+            return self.chat_turn(text, attached)
         return True
 
     def attach_to_answer(self, value: str, attached: list[Path]) -> str:
@@ -480,13 +490,19 @@ class Session:
         return new_id
 
     def offer_start(self, spec: str, shown: str | None = None, *, roles: list[str] | None = None,
-                    ask: bool = True) -> str | None:
+                    ask: bool = True, aside: bool = False) -> str | None:
         """Start a saved spec now, in the background, after the user's yes: after a confirmed brief, on /start,
-        or when the Lead offered it in chat and the user said yes there (specification 10.3, 10.4)."""
+        or when the Lead offered it in chat and the user said yes there (specification 10.3, 10.4).
+        `aside`: asked in the chat, where a new message may set the question aside."""
         if shown:
             self.ui.say(f"Saved spec {shown}")
-        if ask and not self.ui.yes("start_now", "Start it now? It works in the background, and its progress "
-                                                "shows here.", True):
+        try:
+            go = not ask or self.ui.yes("start_now", "Start it now? It works in the background, and its progress "
+                                                     "shows here.", True, aside=aside)
+        except SetAside as e:
+            self.chat.set_aside(e)
+            go = False
+        if not go:
             self.ui.say(f"Start it later with `ombro start --spec {spec}`.")
             return None
         job_id = self._start_job(spec, roles or [])

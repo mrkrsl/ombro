@@ -217,7 +217,13 @@ class Field:
     or saved), choice (one of `options`), yesno, or wait (only to go on).
     `pattern` is a regular expression the answer must match in full, and
     `invalid` what to say when it does not (or when a required answer is
-    empty). A choice with `other` also takes a free answer, described by it.
+    empty). A choice with `other` also takes a free answer, described by it; with
+    `pattern` too, only a free answer that matches it.
+
+    `aside`: a question asked in the chat that a new message may set aside. When
+    what the user sends is not an answer to it, the interface raises SetAside
+    from `ask` and passes the message to the session, which sends it to the
+    Lead once the chat has dealt with the question going unanswered.
     """
 
     name: str
@@ -232,6 +238,7 @@ class Field:
     multiline: bool = False
     other: str = ""
     mode: str = ""  # the conversation mode it is asked in (Chat, Brief), shown by some interfaces
+    aside: bool = False
 
     def __post_init__(self) -> None:
         if self.kind not in FIELD_KINDS:
@@ -248,13 +255,20 @@ class Field:
                 return o.key
         return None
 
+    def free_answer(self, text: str) -> bool:
+        """Whether a choice takes this as its free answer (`other`), within `pattern` if it has one."""
+        text = text.strip()
+        if not self.other or not text:
+            return False
+        return not self.pattern or re.fullmatch(self.pattern, text) is not None
+
     def check(self, value: Any) -> str | None:
         """Why an answer cannot be taken, or None. Any interface may call it; the core does too."""
         if self.kind in ("yesno", "wait"):
             return None
         text = "" if value is None else str(value)
         if self.kind == "choice":
-            if self.choose(text) is not None or (self.other and text.strip()):
+            if self.choose(text) is not None or self.free_answer(text):
                 return None
             return self.invalid or "Choose one of: " + ", ".join(o.key for o in self.options) + "."
         if not text.strip():
@@ -490,7 +504,7 @@ def parse_answer(f: Field, raw: Any) -> tuple[Any, str | None]:
     if f.kind == "choice":
         given = text if text.strip() or f.default in (None, "") else str(f.default)
         value = f.choose(given)
-        if value is None and f.other and given.strip():
+        if value is None and f.free_answer(given):
             value = given.strip()
         if value is None:
             return None, f.invalid or f.check(given) or "Choose one of those shown."
@@ -500,6 +514,28 @@ def parse_answer(f: Field, raw: Any) -> tuple[Any, str | None]:
     value = text if text.strip() or f.default in (None, "") else str(f.default)
     problem = f.check(value)
     return (None, problem) if problem else (value, None)
+
+
+class SetAside(BaseException):
+    """Raised by `UI.ask` when the user sent a new message instead of answering a question that
+    may be set aside (`Field.aside`): the question goes unanswered, and the message is the
+    session's to send to the Lead next. Not an Exception, so that, like an interruption, it
+    passes the handlers that turn a tool's failure into an error for the Lead."""
+
+    def __init__(self, field: Field):
+        super().__init__(field.label or field.name)
+        self.field = field
+
+
+def sets_aside(f: Field, raw: Any) -> bool:
+    """Whether what the user sent sets this question aside rather than answering it: a message
+    (not a command, not empty) to a question that allows it, which isn't an answer to it."""
+    if not f.aside or not isinstance(raw, str):
+        return False
+    text = raw.strip()
+    if not text or text.startswith("/"):
+        return False
+    return parse_answer(f, raw)[1] is not None
 
 
 def field_prompt(f: Field) -> str:

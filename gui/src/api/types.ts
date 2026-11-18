@@ -818,12 +818,19 @@ export interface QuestionMessage {
  * or saved), choice (one of `options`), yesno, or wait (only to go on).
  * `pattern` is a regular expression the answer must match in full, and
  * `invalid` what to say when it does not (or when a required answer is
- * empty). A choice with `other` also takes a free answer, described by it.
+ * empty). A choice with `other` also takes a free answer, described by it; with
+ * `pattern` too, only a free answer that matches it.
+ *
+ * `aside`: a question asked in the chat that a new message may set aside. When
+ * what the user sends is not an answer to it, the interface raises SetAside
+ * from `ask` and passes the message to the session, which sends it to the
+ * Lead once the chat has dealt with the question going unanswered.
  *
  * This interface was referenced by `OmbroApi`'s JSON-Schema
  * via the `definition` "Field".
  */
 export interface Field {
+  aside?: boolean;
   default?: unknown;
   help?: string;
   invalid?: string;

@@ -32,7 +32,8 @@ from ombro import keys, material, mdfile, memory, prompts, jobs, skills
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home, crew_title, find_crew, words_title
-from ombro.ui import UI, ChatCleared, PastTurn, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option, Usage
+from ombro.ui import (UI, ChatCleared, PastTurn, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option,
+                      SetAside, Usage)
 from ombro.journal import utc_now
 from ombro.roles import load_lead
 from ombro.settings import ModelSpec, SetupError, format_tokens, load_limits, load_models, load_preferences, load_tool_settings
@@ -102,6 +103,11 @@ SKILL_TOOLS = {"skills__read": "skills.read"}
 NATIVE_TOOLS = {"browser__open": "browser.open", "browser__click": "browser.click", "browser__type": "browser.type",
                 "browser__screenshot": "browser.screenshot", "browser__submit": "browser.submit",
                 "code__run": "code.run"}
+NOT_NOW = r"(?i)(not now|no|n|nope|not yet|later)[.!]?"  # a choice's "not now", typed; other words set it aside
+# What the Lead is told when the user sent a new message instead of answering: the message comes next.
+SET_ASIDE_RESULT = {"declined": "the user set this question aside and sent a new message instead, so nothing was done; "
+                              "their message comes next. Do not reply now, and do not offer this again unless they "
+                              "ask."}
 OFFERS = ("offer_brief", "offer_work", "offer_remember", "offer_start", "offer_skill", "offer_role")
 
 HELP = """\
@@ -829,7 +835,12 @@ class Chat:
             return True
         if self.take_paths and not text.startswith("/"):
             text = self._take_dragged(text)
-        if not self._command(text):
+        try:
+            is_message = self._command(text)
+        except SetAside as e:
+            self.set_aside(e)
+            is_message = False
+        if not is_message:
             if text.lower() in QUIT_WORDS:
                 return False
             self._save()  # a remember or a brief is on record at once
@@ -850,15 +861,25 @@ class Chat:
         if self.titles and (not self.title or self.titled_by == "first words") and self.exchanges \
                 and self.mode == "Chat":
             self._auto_title()
-        if request and request[0] == "live":
-            self._live(*request[1:])
-        elif request and request[0] == "role":
-            self._role(*request[1:])
-        elif request:
-            revise = request[2] if len(request) > 2 else None
-            self._brief(request[0], self.brief_opening("", request[1]), revise=revise)
+        try:
+            if request and request[0] == "live":
+                self._live(*request[1:])
+            elif request and request[0] == "role":
+                self._role(*request[1:])
+            elif request:
+                revise = request[2] if len(request) > 2 else None
+                self._brief(request[0], self.brief_opening("", request[1]), revise=revise)
+        except SetAside as e:  # after a live job: its "keep it as a brief?"
+            self.set_aside(e)
         self._save()
         return True
+
+    def set_aside(self, e: SetAside) -> None:
+        """The user sent a new message instead of answering a question: it goes unanswered, and
+        the transcript says so. The interface sends the message on next."""
+        label = " ".join((e.field.label or e.field.name).split())
+        self.transcript.note(f"You set the question aside ({_short(label, 120)}) and sent a new message instead.")
+        self.ui.show(Note("Question set aside. Your message goes to the Lead."))
 
     def close(self) -> None:
         self._save()
@@ -963,12 +984,17 @@ class Chat:
                 self.transcript.lead(said)
             if not reply.tool_calls:
                 return None
-            request = None
+            request, aside = None, None
             for tc in reply.tool_calls:
-                if request:
+                if aside:
+                    result = {"error": "ignored: the user sent a new message"}
+                elif request:
                     result = {"error": "ignored: the brief is starting"}
                 else:
-                    result, request = self._tool(tc)
+                    try:
+                        result, request = self._tool(tc)
+                    except SetAside as e:
+                        aside, result = e, dict(SET_ASIDE_RESULT)
                 src = None
                 if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside", LOAD_NAME,
                                                              "skills__read", "browser__type",
@@ -988,6 +1014,9 @@ class Chat:
                         self.ui.say(line)
                         self.transcript.note(line)
                 self.exchanges[-1].append(_tool_msg(tc.id, result, src))
+            if aside:
+                self.set_aside(aside)
+                return None
             if request:
                 return request
         self.ui.say(f"(The Lead used all {self.limits.chat_calls_per_message} model calls allowed for one message "
@@ -1114,7 +1143,7 @@ class Chat:
         if decision == "stage":
             self._lead_says(f"I'd like to {self._act_words(tool.name, args)}" + (f": {reason}" if reason else "."),
                             level="lead", items=self._act_items(tool.name, args))
-            if not self.ui.yes("tool_act", "Go ahead?", False):
+            if not self.ui.yes("tool_act", "Go ahead?", False, aside=True):
                 self.transcript.note(f"The user said no to {tool.name}.")
                 return {"declined": "The user said no, so nothing was done. Ask what they would like instead."}
         out = tool.handler(args, ctx) if tool.handler else {"ok": True}
@@ -1174,7 +1203,7 @@ class Chat:
             why = " ".join(str(args.get("why") or "").split())
             self._lead_says(f"I'd like to move {native._display(ctx, target.resolve())} into {shelf}/: {why}",
                         level="lead")
-            if not self.ui.yes("folder_set_aside", "Go ahead?", False):
+            if not self.ui.yes("folder_set_aside", "Go ahead?", False, aside=True):
                 return {"declined": "The user said no, so nothing was moved."}
             out = native._set_aside({"path": path, "as": args.get("as") or "for-deletion", "why": why}, ctx)
             self.transcript.note(f"Moved {out['from']} to {out['to']}, with the user's yes.")
@@ -1192,7 +1221,7 @@ class Chat:
         kept = " and keep the current version in Archive/" if what == "replace" else ""
         self._lead_says(f"I'd like to {what} {shown}{kept} ({lines:,} lines, {len(content):,} characters).",
                     level="lead", items=[_short(content, 400)] if content else [])
-        if not self.ui.yes("folder_write", "Go ahead?", False):
+        if not self.ui.yes("folder_write", "Go ahead?", False, aside=True):
             self.transcript.note(f"The user said no to writing {shown}.")
             return {"declined": f"The user said no, so {shown} was not changed. Ask what they would like instead."}
         out = native._write({"path": path, "content": content, "mode": mode}, ctx)
@@ -1254,7 +1283,8 @@ class Chat:
         self.transcript.note(f"The Lead offered to start saved spec {name!r} again ({how}).")
         answer = self.ui.ask(Field(
             "start_now", 'If you prefer to read through the spec again and change it, just say "change it". '
-                       "Otherwise, should I just start it?", "yesno", default=True, other="change it", mode="Chat"))
+                       "Otherwise, should I just start it?", "yesno", default=True, other="change it", mode="Chat",
+            aside=True))
         if answer == "change it":
             self.transcript.note(f"You chose to change spec {name!r} first.")
             return ({"status": "the user wants to change the spec first; the interview starts now, so do not "
@@ -1325,7 +1355,7 @@ class Chat:
         options = [Option("more", o.label, ("m", "more room")) if o.command.endswith(" more") else
                    Option("yes", o.label, ("y", "ok", kind, f"{kind} it")) for o in offers]
         answer = self.ui.ask(Field("again", f"Shall I {kind} it?", "choice", default=options[0].key, mode="Chat",
-                                   other="not now", options=options))
+                                   other="not now", pattern=NOT_NOW, options=options, aside=True))
         if answer in ("yes", "more"):
             self.start_offers.append({"job": job_dir.name, "more": answer == "more"})
             self.transcript.note(f"You said yes: job {job_dir.name} is {AGAIN_DONE[kind]}"
@@ -1378,7 +1408,7 @@ class Chat:
         else:
             self._lead_says(f"This sounds like a task. I can brief it{which}: {summary}.", level="lead")
             question = "Shall we start the brief?"
-        if self.ui.yes("start_brief", question, True, mode="Chat"):
+        if self.ui.yes("start_brief", question, True, mode="Chat", aside=True):
             self.transcript.note(f"The Lead offered a brief ({summary}); you accepted.")
             return ({"status": "the user accepted; the task interview starts now, so do not reply"},
                     (crews, summary, revise))
@@ -1395,7 +1425,7 @@ class Chat:
         who = f"a {title}" if title else "a new crew member"
         self._lead_says(f"I can set up {who} for the {crew_title(self.home, crew)}: {summary}.", level="lead")
         if self.ui.yes("start_role", "Shall we set it up now? You'll see it before anything is saved.", True,
-                       mode="Chat"):
+                       mode="Chat", aside=True):
             self.transcript.note(f"The Lead offered a new crew member ({summary}); you accepted.")
             return ({"status": "the user accepted; the role interview starts now, so do not reply"},
                     ("role", crew, title, summary))
@@ -1444,7 +1474,7 @@ class Chat:
         # Reporting back is Ombro's main way of working; live is the other choice, never pushed.
         answer = self.ui.ask(Field(
             "how", "Shall I take this away and report back, or shall we do it live, here?", "choice",
-            default="report", mode="Chat", other="not now",
+            default="report", mode="Chat", other="not now", pattern=NOT_NOW, aside=True,
             options=[Option("report", "Report back"), Option("live", "Do it live")]))
         if answer == "live" and task:
             self.transcript.note(f"The Lead offered work ({summary}); you chose to do it live.")
@@ -1487,8 +1517,8 @@ class Chat:
             return
         what = self.ui.ask(Field(
             "after_live", "Want to run this again later? I can keep it as a brief.", "choice", default="no",
-            mode="Chat", options=[Option("save", "Save as a brief"), Option("schedule", "Schedule it"),
-                                  Option("no", "Not now")]))
+            mode="Chat", aside=True, options=[Option("save", "Save as a brief"), Option("schedule", "Schedule it"),
+                                              Option("no", "Not now", ("n",))]))
         if what not in ("save", "schedule"):
             return
         brief = livejob.save_as_brief(self.home, job_dir)
@@ -1515,7 +1545,7 @@ class Chat:
             answer = self.ui.ask(Field(
                 "remember", "", "choice", mode="Chat",
                 options=[Option("y", "yes"), Option("e", "edit the wording", ("edit",)), Option("n", "no")],
-                other="@crew for another crew"))
+                other="@crew for another crew", pattern=r"@\S.*", aside=True))
             if answer == "y":
                 break
             if answer == "e":
@@ -1558,7 +1588,7 @@ class Chat:
                 "over_cap", "", "choice", mode="Chat",
                 options=[Option("s", "shorten the wording", ("shorten",)),
                          Option("e", "edit notes.md by hand", ("edit",)), Option("c", "cancel")],
-                other="the numbers of your entries to remove (e.g. 2 5)"))).lower()
+                other="the numbers of your entries to remove (e.g. 2 5)", pattern=r"[\d,\s]+", aside=True))).lower()
             numbers = [int(x) for x in answer.replace(",", " ").split() if x.isdigit()]
             if numbers and len(numbers) == len(answer.replace(",", " ").split()):
                 notes = memory.without_your_entries(notes, numbers)
@@ -1614,7 +1644,7 @@ class Chat:
                 self.ui.say(line)
                 self.transcript.note(line)
             answer = self.ui.ask(Field(
-                "skill", "Write it?", "choice", mode="Chat",
+                "skill", "Write it?", "choice", mode="Chat", aside=True,
                 options=[Option("y", "yes"), Option("e", "edit it first", ("edit",)), Option("n", "no")]))
             if answer == "y":
                 break
@@ -1794,6 +1824,7 @@ class Chat:
         shown = past[:20]
         pick = self.ui.ask(Field("chat", "Which chat would you like to carry on? (newest first)", "choice",
                                  default="1", invalid="Please choose one of the numbers shown.", mode="Chat",
+                                 aside=True,
                                  options=[Option(str(i), f"{c['title']}  ({c['when']})")
                                           for i, c in enumerate(shown, 1)]))
         self.reopen(Path(shown[int(pick) - 1]["path"]))
