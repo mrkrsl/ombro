@@ -12,7 +12,7 @@ def assert_reported(job, status: str, limit: str | None = None, by_lead: bool = 
     report = job.report
     assert job.meta["status"] == status
     assert f"**Status:** {status}" in report
-    for section in ("## Summary", "## What was asked", "## What was done", "## What was not done and why",
+    for section in ("## Summary", "## What was asked", "## What was done",
                     "## Deliverables", "## Outward actions", "## Changes to notes.md", "## Usage"):
         assert section in report, section
     # "Decisions for you" only when something waits on the user, never a "None." for the sake of it.
@@ -60,14 +60,23 @@ def test_report_keeps_closing_note_and_brief_lines_short(job):
             fake.brief("researcher", "Line one of the task.\n\nLine two of the task."),
             fake.result("Summary over\ntwo lines."),
             fake.finish(long_note),
-            LEAD_REPORT,
+            fake.keep_notes(), LEAD_REPORT,
         ]
     )
-    note_line = next(l for l in job.report.splitlines() if l.startswith("- **Lead's closing note"))
-    assert len(note_line) < 520 and "full note is in the journal" in note_line
+    assert "LEAD-REPORT-MARKER" in job.report
+    # The Lead wrote a report, so its closing note and the roles' summaries aren't repeated in the record.
+    assert "Lead's closing note" not in job.report
     finish_event = next(e for e in job.events if e["action"] == "finish")
     assert finish_event["summary"] == long_note.strip()  # nothing lost
     assert "1. **researcher** (ok): Line one of the task. Line two of the task." in job.report
+    assert "   - Summary over two lines." in job.report
+
+
+def test_a_report_without_the_lead_keeps_the_closing_note_short(job):
+    long_note = "Final text follows.\n\n" + ("An invented paragraph of guide text. " * 60)
+    job([fake.brief("researcher", "The task."), fake.result("Summary over\ntwo lines."), fake.finish(long_note)])
+    note_line = next(l for l in job.report.splitlines() if l.startswith("- **Lead's closing note"))
+    assert len(note_line) < 520 and "full note is in the journal" in note_line
     assert "   - Summary over two lines." in job.report
 
 

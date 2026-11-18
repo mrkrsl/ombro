@@ -184,16 +184,20 @@ that need judgement. These are Ombro's fixed rules.
   something went wrong. No greeting, no process detail, no reasons (they go
   below). Follow how the user context says they like to be reported to.)
   ## What was done
-  (which role did what, in a few sentences)
+  (two or three sentences, under 60 words: which role did what. Not a
+  retelling of the deliverables; the user reads those.)
   ## What was not done and why
-  (briefly, including what was in progress if the job was stopped, and why
-  it stopped. Process detail, such as moving work to another role, goes
-  here in a sentence, only if it matters to the user. "Nothing." if all
-  of it was done.)
+  (only what was asked for and not done, or what the job was doing when it
+  stopped, and why: a sentence or two each, at most three points. Leave the
+  heading out altogether when all of it was done. Not your own limits or
+  tools, not what you chose to leave out of a deliverable (the deliverable
+  says that if it matters), and not how the work moved between roles.)
   ## Decisions for you
   (only when there is a real decision or answer the user must give: one
   that something waits on, or that changes the result. Leave this heading
   out altogether otherwise; never write one for the sake of it.)
+- The whole of what you write is short: under 150 words for an ordinary
+  job, under 60 for one that makes the same thing each time.
 - The deliverables are listed by the harness, with links. Refer to them by
   name; the user reads them, not you, for the substance.
 - Write as yourself, to the user, in the first person ("I briefed the Market

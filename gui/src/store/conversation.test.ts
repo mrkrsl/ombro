@@ -1,7 +1,7 @@
 // The conversation, built from messages as serve sends them (recorded from a real session).
 import { describe, expect, it } from "vitest";
 import type { QuestionMessage, ServerMessage } from "../api/types";
-import { addLocal, apply, greeting, HOW_IT_WORKS, newConversation, opening, quickAnswers, reportSummary, usageText } from "./conversation";
+import { addLocal, apply, greeting, HOW_IT_WORKS, newConversation, opening, quickAnswers, reportSummary, usageText, withoutSection } from "./conversation";
 
 const S = "a1b2c3";
 const ev = (seq: number, event: object) => ({ type: "event", session: S, seq, event }) as ServerMessage;
@@ -112,6 +112,12 @@ describe("live jobs", () => {
     expect(reportSummary(head)).toBe("Today's report is ready.");
     expect(reportSummary("# Old\n\n## Summary\n\nAll of it.")).toBe("All of it.");
     expect(reportSummary("# None here")).toBe("");
+  });
+
+  it("leaves out a report's Deliverables when the card lists the files", () => {
+    const head = "# B\n\n## Summary\n\nReady.\n\n## Deliverables\n\n- It: /x\n\nWorkspace: /w\n\n## What was done\n\nWork.";
+    expect(withoutSection(head, "Deliverables")).toBe("# B\n\n## Summary\n\nReady.\n\n## What was done\n\nWork.");
+    expect(withoutSection("# B\n\n## Deliverables\n\n- It", "Deliverables")).toBe("# B");
   });
 
   it("shows a background job's report in the chat too", () => {

@@ -273,7 +273,7 @@ def test_only_workspace_files_are_listed_as_deliverables(job, home):
     ])
     deliverables = job.report.split("## Deliverables")[1].split("## Outward actions")[0]
     ws, sc = (job.job_dir / "workspace").resolve(), (job.job_dir / "scratch").resolve()
-    assert f"- list (researcher): {ws / 'list.md'}" in deliverables
+    assert f"- list: {ws / 'list.md'}" in deliverables
     assert "list again" not in deliverables
     assert f"Working files (scratch/, not deliverables): {sc / 'draft.md'} (researcher)" in deliverables
     notes = "Notes roles gave in place of a file:\n- remark (researcher): The makers all close on Sundays."

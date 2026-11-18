@@ -232,6 +232,25 @@ def _still_waiting(f: dict[str, Any], staged: list[dict]) -> tuple[list[dict], l
 DECIDED = {"executed": "approved and done", "declined": "declined", "failed": "approved, but it failed"}
 
 
+def _without_copies(deliverables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Deliverables less a workspace copy of a file also delivered to a shared folder."""
+    shared = [d for d in deliverables if d.get("shared")]
+    out = []
+    for d in deliverables:
+        if not d.get("shared") and any(_same_file(d["path"], s["path"]) for s in shared):
+            continue
+        out.append(d)
+    return out
+
+
+def _same_file(a: str, b: str) -> bool:
+    try:
+        pa, pb = Path(a), Path(b)
+        return pa.name == pb.name and pa.stat().st_size == pb.stat().st_size and pa.read_bytes() == pb.read_bytes()
+    except OSError:
+        return False
+
+
 def _resolve_deliverable(job_dir: Path, d: dict, shared: dict[str, Path] | None = None) -> dict[str, Any]:
     """A deliverable's path may be `workspace/x`, `scratch/x`, plain `x` (in the
     workspace) or `shared/<name>/x` in a folder shared with the job. Anything that
@@ -472,10 +491,10 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     out += ["## Deliverables", ""]
     if not f["deliverables"] and not f.get("missing_deliverables"):
         out.append("None.")
-    for d in f["deliverables"]:
-        out.append(f"- {d['name']} ({d['role']}): {d['path']}")
+    for d in _without_copies(f["deliverables"]):
+        out.append(f"- {d['name']}: {d['path']}")
     for d in f.get("missing_deliverables") or []:
-        out.append(f"- {d['name']} ({d['role']}): {d['missing']} was named but could not be found")
+        out.append(f"- {d['name']}: {d['missing']} was named but could not be found")
     other = f.get("other_files") or []
     if other:
         out += ["", "Other files in the workspace that no role named as a deliverable:"]
@@ -487,8 +506,10 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     decisions = decision_lines(f, parts.get("Decisions for you") or "")
     if decisions:  # only when something waits on the user
         out += ["## Decisions for you", "", decisions, ""]
-    for heading in ("What was done", "What was not done and why"):
-        out += [f"## {heading}", "", parts.get(heading) or "None recorded.", ""]
+    out += ["## What was done", "", parts.get("What was done") or "None recorded.", ""]
+    not_done = parts.get("What was not done and why") or ""
+    if not_done and not NOTHING.match(not_done.strip("-* ").rstrip(".")):  # no "Nothing." section
+        out += ["## What was not done and why", "", not_done, ""]
     if extra:
         out += ["## The Lead's other notes", "", extra, ""]
 
@@ -503,7 +524,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         out.append(f"- **Stopped by:** `{f['limit']['limit']}`: {f['limit']['detail']}")
     for fail in f["failures"]:
         out.append(f"- **Failed:** {fail}")
-    if f["finish"]:
+    if f["finish"] and not narrative:  # the Lead wrote no report: its closing note is all there is
         note_text = _line(f["finish"]["summary"], CLOSING_NOTE_CAP)
         if len(" ".join(str(f["finish"]["summary"] or "").split())) > CLOSING_NOTE_CAP:
             note_text += " (shortened; the full note is in the journal)"
@@ -517,9 +538,9 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     if not f["briefs"]:
         out.append("No roles were briefed.")
     for i, b in enumerate(f["briefs"], 1):
-        out.append(f"{i}. **{b['role']}** ({b['status']}): {_line(b['task'], 200)}")
-        if b.get("result"):
-            out.append(f"   - {_line(b['result'].get('summary', ''), 500)}")
+        out.append(f"{i}. **{b['role']}** ({b['status']}): {_line(b['task'], 160)}")
+        if b.get("result"):  # the role's own word, to check the Lead's account against
+            out.append(f"   - {_line(b['result'].get('summary', ''), 200 if narrative else 500)}")
         if b.get("reason"):
             out.append(f"   - {_line(b['reason'], 500)}")
     if f.get("spec_roles"):
@@ -821,6 +842,32 @@ def all_notes_lines(events: list[dict[str, Any]] | None) -> list[str]:
     return out[:-1]
 
 
+NOTES_LISTED = 5
+
+
+def _lesson_changes(added: list[str], removed: list[str]) -> tuple[list[str], int, list[str]]:
+    """Added and removed lessons, with a rewording (an added lesson much like a removed one)
+    counted rather than listed twice: (new, number reworded, removed)."""
+    from difflib import SequenceMatcher
+
+    def norm(x: str) -> str:
+        return " ".join(str(x).lstrip("-* ").lower().split())
+
+    left = [norm(r) for r in removed]
+    new: list[str] = []
+    reworded = 0
+    for a in added:
+        na = norm(a)
+        best = max(range(len(left)), key=lambda i: SequenceMatcher(None, na, left[i]).ratio(), default=None)
+        if best is not None and SequenceMatcher(None, na, left[best]).ratio() >= 0.4:
+            reworded += 1
+            left.pop(best)
+            removed = removed[:best] + removed[best + 1:]
+        else:
+            new.append(a)
+    return new, reworded, list(removed)
+
+
 def notes_lines(ev: dict[str, Any] | None) -> list[str]:
     """What the report says about notes.md, from the harness's own record."""
     if not ev:
@@ -828,13 +875,15 @@ def notes_lines(ev: dict[str, Any] | None) -> list[str]:
     outcome, note = ev.get("outcome"), ev.get("note", "")
     if outcome == "changed":
         added, removed = ev.get("added") or [], ev.get("removed") or []
-        lines = [f"The Lead rewrote its part (\"From jobs\"). notes.md is now {ev.get('size', 0):,} of "
-                 f"{ev.get('cap', 0):,} characters."]
-        for label, items in (("Added", added), ("Removed", removed)):
+        new, reworded, gone = _lesson_changes(added, removed)
+        counts = [f"{n} {word}" for n, word in ((len(new), "new"), (reworded, "reworded"), (len(gone), "removed")) if n]
+        lines = [f"The Lead rewrote its part (\"From jobs\"): {', '.join(counts) or 'no lesson changed'}. "
+                 f"notes.md is now {ev.get('size', 0):,} of {ev.get('cap', 0):,} characters."]
+        for label, items in (("Added", new), ("Removed", gone)):
             if items:
-                lines += ["", f"{label}:"] + [f"- {_line(x.lstrip('-* '), 300)}" for x in items[:15]]
-                if len(items) > 15:
-                    lines.append(f"- and {len(items) - 15} more")
+                lines += ["", f"{label}:"] + [f"- {_line(x.lstrip('-* '), 200)}" for x in items[:NOTES_LISTED]]
+                if len(items) > NOTES_LISTED:
+                    lines.append(f"- and {len(items) - NOTES_LISTED} more")
         if not added and not removed:
             lines += ["", "No lesson was added or removed; only the wording or order changed."]
         return lines

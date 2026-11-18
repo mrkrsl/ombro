@@ -65,6 +65,17 @@ export function splitReport(text: string): { head: string; record: string } {
   return { head: text.trimEnd(), record: "" };
 }
 
+/** A report's head without one of its "## " sections (the card lists the job's files itself). */
+export function withoutSection(head: string, title: string): string {
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of head.split("\n")) {
+    if (line.startsWith("## ") || line.startsWith("# ")) skipping = line.trim() === `## ${title}`;
+    if (!skipping) out.push(line);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+}
+
 /** A report's Summary: the Lead's short paragraph, what the chat shows when a job ends. "" if it has none. */
 export function reportSummary(head: string): string {
   const m = /^## Summary[ \t]*\n([\s\S]*?)(?=^## |^# |(?![\s\S]))/m.exec(head);

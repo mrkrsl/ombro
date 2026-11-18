@@ -162,7 +162,7 @@ def deliverables(home: Home, job_dir: Path) -> list[vt.Deliverable]:
     except (OSError, mdfile.FrontMatterError):
         return []
     out: list[vt.Deliverable] = []
-    for d in facts.get("deliverables") or []:
+    for d in report._without_copies(facts.get("deliverables") or []):
         p = Path(d["path"])
         out.append({"name": d.get("name") or p.name, "role": d.get("role", ""), "path": str(p),
                     "url": p.as_uri(), "exists": p.is_file(), "kind": "deliverable"})

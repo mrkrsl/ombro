@@ -469,5 +469,5 @@ def test_a_deliverable_in_a_shared_folder_is_listed_with_its_full_path(job, home
     ], spec_meta={"folders": ["photos"]})
     report = job.report
     deliverables = report.split("## Deliverables", 1)[1].split("\n## ", 1)[0]
-    assert f"- Colour note (researcher): {user / 'Pictures' / 'Trip' / 'colour.md'}" in deliverables
+    assert f"- Colour note: {user / 'Pictures' / 'Trip' / 'colour.md'}" in deliverables
     assert "could not be found" not in deliverables

@@ -308,7 +308,7 @@ def test_start_with_tools_from_the_command_line(home, spec_file):
     r = ombro(home, "start", "--spec", str(spec_file))
     assert r.returncode == 0, r.stderr
     job_dir = jobs.latest_job(home, "default")
-    assert f"Rivers (researcher): {(job_dir / 'workspace' / 'rivers.md').resolve()}" in r.stdout
+    assert f"Rivers: {(job_dir / 'workspace' / 'rivers.md').resolve()}" in r.stdout
     s = ombro(home, "status", job_dir.name)
     assert "web.search" in s.stdout and "$" not in s.stdout and "cost" not in s.stdout.lower()
     assert (job_dir / "fake-calls.jsonl").is_file()

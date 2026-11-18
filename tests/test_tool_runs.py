@@ -53,7 +53,7 @@ def test_a_role_searches_fetches_and_writes_a_deliverable(job, home):
     written = job.job_dir / "workspace" / "makers.md"
     assert written.read_text() == "# Makers\n\n- Ada Pots\n"
     # The report lists the deliverable by its full path.
-    assert f"- Teapot makers (researcher): {written.resolve()}" in job.report
+    assert f"- Teapot makers: {written.resolve()}" in job.report
     # The fake provider recorded what it was asked.
     asked = fake_calls(job)
     assert [c["tool"] for c in asked] == ["web.search", "web.fetch"]
@@ -228,6 +228,6 @@ def test_deliverables_in_either_form_are_found(job, home):
         ]
     )
     ws = (job.job_dir / "workspace").resolve()
-    assert f"- first (researcher): {ws / 'a.md'}" in job.report
-    assert f"- second (researcher): {ws / 'sub' / 'b.md'}" in job.report
+    assert f"- first: {ws / 'a.md'}" in job.report
+    assert f"- second: {ws / 'sub' / 'b.md'}" in job.report
     assert str(job.job_dir.resolve() / "job.md") not in job.report

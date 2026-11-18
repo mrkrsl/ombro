@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { Copy, FolderOpen } from "lucide-react";
 import type { Report } from "../api/types";
-import { reportSummary, splitReport } from "../store/conversation";
+import { reportSummary, splitReport, withoutSection } from "../store/conversation";
 import { useStore } from "../store/store";
 import { Markdown, MarkdownFile } from "./Markdown";
 
@@ -69,7 +69,7 @@ export function ReportCard({ report, brief = false }: { report: Report; brief?: 
         </span>
       </div>
       <div className="report-body">
-        <Markdown text={short ? summary : head} />
+        <Markdown text={short ? summary : made.length > 0 ? withoutSection(head, "Deliverables") : head} />
         {made.length > 0 && (
           <>
             <h4>What the job made</h4>
