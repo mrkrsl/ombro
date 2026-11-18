@@ -260,6 +260,19 @@ def ensure(home: Home, inst: Installer | None = None) -> bool:
         return False
 
 
+def schedule_turned_on(home: Home, ticking: bool = False) -> dict[str, Any]:
+    """What follows a schedule being added or turned on, wherever it was done (the Scheduled page,
+    the chat): the app installs the scheduler service itself where it may, then says, as `check` does,
+    whether scheduled jobs can run. `ticking`: this process starts them itself (serve --tick)."""
+    from ombro import service
+
+    if ticking or service.serve_ticks(home):
+        return {"ok": True, "message": "", "can_install": False}
+    if may_install_itself(home):
+        ensure(home)
+    return check(home)
+
+
 def make_installer(home: Home) -> Installer:
     """The installer for this machine. Tests replace this function."""
     return Installer(home)

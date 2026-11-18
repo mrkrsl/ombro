@@ -237,3 +237,35 @@ def describe(cron: Cron) -> str:
 
 def describe_next(cron: Cron, now: datetime, n: int = 3) -> list[str]:
     return [w.strftime("%a %d %b %Y %H:%M") for w in next_slots(cron, now, n)]
+
+
+def zone_name() -> str:
+    """The machine's time zone by its IANA name (Europe/London), or "" when it can't be told."""
+    import os
+
+    tz = os.environ.get("TZ", "").lstrip(":")
+    if "/" in tz and not tz.startswith("/"):
+        return tz
+    for link in (tz if tz.startswith("/") else "", "/etc/localtime"):
+        if link:
+            real = os.path.realpath(link)
+            if "zoneinfo/" in real:
+                return real.split("zoneinfo/", 1)[1]
+    try:
+        with open("/etc/timezone", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def local_zone(now: datetime | None = None) -> str:
+    """The zone schedules run in (this machine's local time), in words: "Europe/London (GMT,
+    UTC+00:00)", or "GMT (UTC+00:00)" when the zone's name can't be told."""
+    aware = (now or datetime.now()).astimezone()
+    off = aware.strftime("%z") or "+0000"
+    offset = f"UTC{off[0]}{off[1:3]}:{off[3:5]}"
+    abbr = aware.tzname() or ""
+    name = zone_name()
+    if name:
+        return f"{name} ({abbr + ', ' if abbr and abbr != name else ''}{offset})"
+    return f"{abbr} ({offset})" if abbr else offset

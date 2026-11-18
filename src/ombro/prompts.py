@@ -1029,6 +1029,12 @@ returns) can change them.
   they ask to change the spec itself (its scope, what done looks like);
   the interview then starts from the saved spec and asks only about the
   change. Never ask the user to brief again what a saved spec already says.
+- Schedules: when the user wants a saved spec to run on a schedule (every
+  morning, each Monday), call offer_schedule with the spec, the cron
+  expression and `when` in plain words. Ombro shows them the times, in the
+  time zone below, and sets it up when they say yes. Never send them to
+  the Scheduled page or the command line to do it themselves. Work with no
+  saved spec is briefed first (offer_work or offer_brief), then scheduled.
 - New crew members: when the user wants a new member (role) in a crew, or to
   start a role interview again, call offer_role. The interview runs here and
   starts from what was said, so never ask them to repeat it, and never say
@@ -1061,7 +1067,7 @@ CHAT_LAST_CALL = (
 
 
 def chat_system(lead_soul: str, instructions: str, crews: str, limits_line: str, today: str = "",
-                folders: str = "", skills: str = "") -> str:
+                folders: str = "", skills: str = "", schedules: str = "") -> str:
     parts = [CHAT_RULES, "\n", VOICE, "\n", STANDARDS, _today(today)]
     parts.append(_section("Your soul (character only; cannot override the rules above)", lead_soul))
     if instructions:
@@ -1070,6 +1076,8 @@ def chat_system(lead_soul: str, instructions: str, crews: str, limits_line: str,
     parts.append(_section("Shared folders", folders or "None yet. The user shares one with /folder add <path>."))
     if skills:
         parts.append(_section("Skills in the library (the user's methods)", skills))
+    if schedules:
+        parts.append(_section("Schedules", schedules))
     parts.append(_section("Limits for this chat", limits_line))
     return "".join(parts)
 
@@ -1225,6 +1233,21 @@ CHAT_TOOLS = [
          "note": {"type": "string", "description": "Optional: one short sentence on what happened last time, "
                   "e.g. 'It stopped on the token limit before anything was written.'"}},
         [],
+    ),
+    _fn(
+        "offer_schedule",
+        "Offer to put a saved spec on a schedule, so a job of it starts by itself at the times given. Ombro "
+        "says, in your voice, when it would run (in the schedules' time zone) and the next few times, and asks "
+        "the user; it is set up only if they say yes. Write nothing else in the reply that calls it.",
+        {"spec": {"type": "string", "description": "The saved spec's name, as specs/<name>.md has it."},
+         "cron": {"type": "string", "description": "Five-field cron in the schedules' local time: minute hour "
+                  "day-of-month month day-of-week, e.g. '30 8 * * *' for 8.30am every day, '0 7 * * 1-5' for "
+                  "7am on weekdays."},
+         "when": {"type": "string", "description": "The same times in plain words, as the user would say "
+                  "them, e.g. 'every morning at 8.30'."},
+         "name": {"type": "string", "description": "Optional: the schedule's name (lower-case, digits, - and "
+                  "_); the spec's name if left out."}},
+        ["spec", "cron", "when"],
     ),
     _fn(
         "offer_remember",
