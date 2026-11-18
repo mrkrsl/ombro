@@ -61,6 +61,7 @@ export interface Api {
   approval: ApprovalRow;
   approval_detail: ApprovalDetail;
   brief: Brief;
+  browser: BrowserView;
   chat: ChatRow;
   chat_detail: ChatDetail;
   command: CommandView;
@@ -164,6 +165,27 @@ export interface Brief {
   status: string | null;
   total_tokens: number;
   waiting: number;
+}
+/**
+ * Settings › General › Browser: the choice, and what each would be.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "BrowserView".
+ */
+export interface BrowserView {
+  choice: string;
+  endpoint: string | null;
+  installed: InstalledBrowser[];
+  problem: string | null;
+  using: string | null;
+}
+/**
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "InstalledBrowser".
+ */
+export interface InstalledBrowser {
+  name: string;
+  path: string;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

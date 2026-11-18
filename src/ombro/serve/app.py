@@ -308,6 +308,7 @@ def _views(s: Serve) -> list[Route]:
         "/keys": lambda r: views.key_list(home),
         "/folders": lambda r: views.folder_list(home),
         "/tools": lambda r: views.tool_list(home, signing=s.signing),
+        "/browser": lambda r: views.browser_view(home),
         "/skills": skills_view,
         "/sessions": lambda r: [live.describe() for live in s.sessions.by_id.values()],
         "/sessions/{sid}": lambda r: s.sessions.get(r.path_params["sid"]).describe(),
@@ -575,6 +576,12 @@ def _action_routes(s: Serve) -> list[Route]:
         dropped = set_allowance(home, _need(data, "allowance"))
         return {**views.limit_values(home), "removed_by_hand": dropped}
 
+    def set_browser(r: Request, data: dict[str, Any]) -> Any:
+        from ombro import tool_cmd
+
+        tool_cmd.set_browser(home, _need(data, "choice"))
+        return views.browser_view(home)
+
     def default_model(r: Request, data: dict[str, Any]) -> Any:
         from ombro import models
 
@@ -652,6 +659,7 @@ def _action_routes(s: Serve) -> list[Route]:
         Route("/crews/{name}", _handler(retitle_crew, with_body=True), methods=["PUT"]),
         Route("/preferences", _handler(preferences, with_body=True), methods=["PUT"]),
         Route("/limits", _handler(limits, with_body=True), methods=["PUT"]),
+        Route("/browser", _handler(set_browser, with_body=True), methods=["PUT"]),
         Route("/models/default", _handler(default_model, with_body=True), methods=["PUT"]),
         Route("/keys/{name}", _handler(set_key, with_body=True), methods=["PUT"]),
         Route("/keys/{name}", _handler(remove_key), methods=["DELETE"]),

@@ -56,7 +56,7 @@ const remote: ServerRow = { server: "notion", url: "https://mcp.invented.invalid
   sign_in: "not signed in", signing_in: false, problem: null };
 const tools: ToolList = {
   native: [{ tool: "web.search", provider: "duckduckgo", max_calls: null, calls: 60 },
-    { tool: "web.fetch", provider: "direct", max_calls: null, calls: 100 }],
+    { tool: "web.fetch", provider: "browser", max_calls: null, calls: 100 }],
   servers: [remote], sandbox: null, folders: [], composio: null, browser: "Google Chrome",
   apis: [{ name: "podcasts", url: "https://api.podcasts.invalid/v2", about: "Invented list.", how_to: "",
     access: "read-only", send_key: "bearer", key: "PODCASTS_API_KEY", key_set: true, calls: 30 }],
@@ -83,10 +83,14 @@ function sent(method: string, path: string): unknown {
   return calls.find(([m, p]) => m === method && p === path)?.[2];
 }
 
+const browser = { choice: "auto", using: "Google Chrome", endpoint: null, problem: null,
+  installed: [{ name: "Google Chrome", path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" }] };
+
 beforeEach(() => {
   calls = [];
   replies = { "/preferences": prefs, "/models": models, "/limits": { allowance: "moderate" }, "/crews": crews,
-    "/folders": folders, "/tools": tools, "/skills": library, "/keys": { keys: [], sign_ins: [], file: "/x" } };
+    "/folders": folders, "/tools": tools, "/skills": library, "/keys": { keys: [], sign_ins: [], file: "/x" },
+    "/browser": browser };
   useStore.setState({ api: fakeApi(), settingsPage: "general", screen: "settings", remote: false });
 });
 
@@ -148,6 +152,20 @@ describe("Settings › General", () => {
     replies["PUT /preferences"] = { ...prefs, outward: "manual" };
     await userEvent.selectOptions(screen.getByLabelText("Approval mode"), "manual");
     expect(sent("PUT", "/preferences")).toEqual({ outward: "manual" });
+  });
+});
+
+describe("Settings › General: the browser", () => {
+  it("is one choice: automatic, a browser on this computer, or none", async () => {
+    render(<Settings />);
+    const picker = await screen.findByLabelText("Browser");
+    expect([...(picker as HTMLSelectElement).options].map((o) => o.text))
+      .toEqual(["Automatic (Google Chrome)", "Google Chrome", "Don't use a browser"]);
+    replies["PUT /browser"] = { ...browser, choice: "off", using: null,
+      problem: "Turned off: crews and chat can't read web pages (search still works)." };
+    await userEvent.selectOptions(picker, "off");
+    expect(sent("PUT", "/browser")).toEqual({ choice: "off" });
+    expect(await screen.findByText(/Turned off/)).toBeTruthy();
   });
 });
 

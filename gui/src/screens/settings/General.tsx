@@ -2,7 +2,7 @@
 // delete: C5); the default model, the token usage limit and the approval mode; the theme.
 
 import { useEffect, useState } from "react";
-import type { Connection, ModelList, Preferences, ProviderPreset } from "../../api/types";
+import type { BrowserView, Connection, ModelList, Preferences, ProviderPreset } from "../../api/types";
 import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 import { ServerForm } from "../Connect";
@@ -422,6 +422,7 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
   const { run, problem } = useAction();
   const prefs = useView<Preferences>("/preferences");
   const limits = useView<{ allowance: string }>("/limits");
+  const browser = useView<BrowserView>("/browser");
   const { themeChoice, setThemeChoice } = useStore();
   const [saved, setSaved] = useState<Record<string, number>>({});
   const mark = (k: string) => setSaved((s) => ({ ...s, [k]: Date.now() }));
@@ -487,6 +488,37 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
           <Saved when={saved.mode ?? 0} />
         </span>
       </Field>
+      {browser.data && (
+        <Field
+          label="Browser"
+          hint={
+            browser.data.problem ??
+            `Crews and chat read web pages in ${browser.data.using} without a window, with a new, empty profile each time. Forms with your details wait for your approval.`
+          }
+        >
+          <span className="form-row tight">
+            <select
+              aria-label="Browser"
+              value={browser.data.choice}
+              onChange={async (e) => {
+                const b = await run((api) => api.put<BrowserView>("/browser", { choice: e.target.value }));
+                if (b) { browser.set(b); mark("browser"); }
+              }}
+            >
+              <option value="auto">
+                Automatic{browser.data.choice === "auto" && browser.data.using ? ` (${browser.data.using})` : ""}
+              </option>
+              {browser.data.installed.map((b) => (
+                <option key={b.path} value={b.path}>
+                  {b.name}
+                </option>
+              ))}
+              <option value="off">Don't use a browser</option>
+            </select>
+            <Saved when={saved.browser ?? 0} />
+          </span>
+        </Field>
+      )}
       <Field label="Appearance">
         <span className="form-row tight">
           <select aria-label="Appearance" value={themeChoice} onChange={(e) => setThemeChoice(e.target.value as ThemeChoice)}>

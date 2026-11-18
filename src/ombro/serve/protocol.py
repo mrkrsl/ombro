@@ -168,5 +168,6 @@ class Api(TypedDict):
     folders: vt.FolderList
     preferences: vt.Preferences
     tools: vt.ToolList
+    browser: vt.BrowserView
     models: vt.ModelList
     since_last: vt.SinceLast

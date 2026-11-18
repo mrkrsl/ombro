@@ -38,6 +38,9 @@
         "brief": {
           "$ref": "#/$defs/Brief"
         },
+        "browser": {
+          "$ref": "#/$defs/BrowserView"
+        },
         "chat": {
           "$ref": "#/$defs/ChatRow"
         },
@@ -152,6 +155,7 @@
         "folders",
         "preferences",
         "tools",
+        "browser",
         "models",
         "since_last"
       ],
@@ -489,6 +493,59 @@
         "spec"
       ],
       "title": "Brief",
+      "type": "object"
+    },
+    "BrowserView": {
+      "description": "Settings \u203a General \u203a Browser: the choice, and what each would be.",
+      "properties": {
+        "choice": {
+          "type": "string"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "installed": {
+          "items": {
+            "$ref": "#/$defs/InstalledBrowser"
+          },
+          "type": "array"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "using": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "choice",
+        "using",
+        "installed",
+        "endpoint",
+        "problem"
+      ],
+      "title": "BrowserView",
       "type": "object"
     },
     "ChatCleared": {
@@ -1346,6 +1403,22 @@
         }
       },
       "title": "InputReply",
+      "type": "object"
+    },
+    "InstalledBrowser": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "title": "InstalledBrowser",
       "type": "object"
     },
     "JobEnded": {

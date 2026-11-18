@@ -237,6 +237,21 @@ class Preferences(TypedDict):
     files: dict[str, str]
 
 
+class InstalledBrowser(TypedDict):
+    name: str  # "Google Chrome"
+    path: str
+
+
+class BrowserView(TypedDict):
+    """Settings › General › Browser: the choice, and what each would be."""
+
+    choice: str  # "auto", "off", or the path of one installed browser
+    using: str | None  # what jobs and chat use now ("Google Chrome", "the browser container"), or None
+    installed: list[InstalledBrowser]  # on the machine Ombro runs on
+    endpoint: str | None  # a browser elsewhere (the Docker container), if one is set
+    problem: str | None  # why there is none now, in words
+
+
 class NativeTool(TypedDict):
     tool: str
     provider: str | None

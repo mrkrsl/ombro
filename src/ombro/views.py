@@ -362,6 +362,30 @@ def tool_list(home: Home, settings=None, signing: dict | None = None, fresh: boo
             "folders": folders.granted_names(home), "browser": _browser_name(settings)}
 
 
+def browser_view(home: Home) -> vt.BrowserView:
+    from ombro import browser
+    from ombro.settings import load_tool_settings
+
+    cfg = load_tool_settings(home).providers.get("browser") or {}
+    choice = "off" if cfg.get("off") else str(cfg.get("path") or "auto")
+    found = browser.find_browser(cfg)
+    endpoint = found.get("endpoint") if found else (cfg.get("endpoint") or os.environ.get("OMBRO_BROWSER_ENDPOINT"))
+    using, problem = None, None
+    if choice == "off":
+        problem = "Turned off: crews and chat can't read web pages (search still works)."
+    elif found and "endpoint" in found:
+        if browser.answers(found["endpoint"]):
+            using = "the browser container" if found["endpoint"].startswith("http://browser") else found["endpoint"]
+        else:
+            problem = f"No browser answers at {found['endpoint']}. In Docker, start it with --profile browser."
+    elif found:
+        using = browser._name(found["path"])
+    else:
+        problem = "No browser found. Install Chrome, Chromium, Edge or Brave, and crews and chat can read web pages."
+    return {"choice": choice, "using": using, "installed": browser.installed(), "endpoint": endpoint,
+            "problem": problem}
+
+
 def _browser_name(settings: Any) -> str | None:
     from ombro import browser
 

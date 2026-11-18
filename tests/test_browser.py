@@ -360,3 +360,25 @@ def test_in_a_job_a_form_of_choices_is_sent_without_approval(job, home, site, mo
     assert outbox.actions(job.job_dir) == []
     [post] = [r for r in site.requests if r[0] == "POST"]
     assert post[1] == "/availability" and parse_qs(post[2]) == {"day": ["Friday"], "n": ["2"]}
+
+
+def test_the_browser_setting_is_auto_one_browser_or_off(home):
+    from ombro import tool_cmd, views
+    from ombro.settings import SetupError, load_tool_settings
+
+    assert views.browser_view(home)["choice"] == "auto" and views.browser_view(home)["using"]
+    first = browser_mod.installed()[0]
+    tool_cmd.set_browser(home, first["path"])
+    assert load_tool_settings(home).providers["browser"] == {"path": first["path"]}
+    assert views.browser_view(home)["using"] == first["name"]
+    tool_cmd.set_browser(home, "off")
+    v = views.browser_view(home)
+    assert v["choice"] == "off" and v["using"] is None and "can't read web pages" in v["problem"]
+    from ombro.native import native_registry
+
+    reg = native_registry(home, load_tool_settings(home))
+    assert reg.get("web.fetch") is None and reg.get("browser.open") is None
+    tool_cmd.set_browser(home, "auto")
+    assert "browser" not in load_tool_settings(home).providers
+    with pytest.raises(SetupError):
+        tool_cmd.set_browser(home, "/usr/bin/invented-browser")

@@ -44,6 +44,32 @@ def describe(home: Home, tool: str) -> list[str]:
     return lines
 
 
+def set_browser(home: Home, choice: str) -> None:
+    """Settings › General › Browser: "auto" (the first found), "off", or the path of one installed
+    browser. Written to tools.md as providers: browser:, keeping the rest of it."""
+    from ombro import browser
+
+    choice = str(choice or "").strip()
+    paths = {b["path"] for b in browser.installed()}
+    if choice not in ("auto", "off") and choice not in paths:
+        raise SetupError(f"{choice!r} is not a browser on this machine; choose auto, off or one of: "
+                         + (", ".join(sorted(paths)) or "none found"))
+    meta, body = mdfile.read(home.tools) if home.tools.is_file() else ({}, "")
+    providers = meta.get("providers") if isinstance(meta.get("providers"), dict) else {}
+    entry = {k: v for k, v in (providers.get("browser") or {}).items() if k not in ("path", "off")}
+    if choice == "off":
+        entry["off"] = True
+    elif choice != "auto":
+        entry["path"] = choice
+    if entry:
+        providers["browser"] = entry
+    else:
+        providers.pop("browser", None)
+    meta["providers"] = providers
+    mdfile.write(home.tools, meta, body)
+    load_tool_settings(home)
+
+
 def set_tool(home: Home, tool: str, *, provider: str | None = None, max_calls: int | None = None) -> None:
     """Set a native tool's provider and/or max_calls in tools.md, keeping the rest."""
     if not is_native(tool):
