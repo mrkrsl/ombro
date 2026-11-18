@@ -525,6 +525,14 @@ class Chat:
         for t in api_tools(self.home, settings.apis):
             if t.effect == "read-only" and not outward.refused(t.name, settings):
                 found[t.wire_name] = t
+        if settings.composio:  # Composio's lookups, listed by name in tools__load like an MCP server's
+            from ombro import composio
+
+            listed, problems = composio.tools(self.home, settings)
+            for p in problems:
+                self.transcript.note(p)
+            found.update({t.wire_name: t for t in listed
+                          if t.effect == "read-only" and not outward.refused(t.name, settings)})
         if settings.servers:
             from ombro.mcp import McpError
 

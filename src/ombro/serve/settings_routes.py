@@ -463,6 +463,33 @@ def settings_routes(s: Serve) -> list[Route]:
         keys.forget_unused(home, [cfg.get("key") or ""])
         return tools_view()
 
+    # -- Composio: the user's own account, by its key ----------------------------------
+
+    def connect_composio(r: Request, data: dict[str, Any]) -> Any:
+        from ombro import composio
+
+        composio.connect(home, _need(data, "key"))
+        return views.tool_list(home, signing=s.signing, fresh=True)
+
+    def refresh_composio(r: Request) -> Any:
+        return views.tool_list(home, signing=s.signing, fresh=True)
+
+    def check_composio(r: Request) -> Any:
+        from ombro.settings import load_tool_settings
+
+        cfg = load_tool_settings(home).composio
+        if cfg is None:
+            raise LookupError("Composio isn't connected")
+        return {"blocked": None, "warnings": [
+            "Every crew member stops being offered the tools from your Composio account. Nothing changes in "
+            "Composio itself.", *_key_notes([cfg["key"]], "Composio")]}
+
+    def disconnect_composio(r: Request) -> Any:
+        from ombro import composio
+
+        composio.disconnect(home)
+        return tools_view()
+
     # -- skills (C4) -----------------------------------------------------------------
 
     def skill_view(r: Request) -> Any:
@@ -579,6 +606,10 @@ def settings_routes(s: Serve) -> list[Route]:
         Route("/tools/apis/{name}", _handler(edit_api, with_body=True), methods=["PUT"]),
         Route("/tools/apis/{name}/check", _handler(check_api), methods=["GET"]),
         Route("/tools/apis/{name}", _handler(remove_api), methods=["DELETE"]),
+        Route("/tools/composio", _handler(connect_composio, with_body=True), methods=["PUT"]),
+        Route("/tools/composio/refresh", _handler(refresh_composio), methods=["POST"]),
+        Route("/tools/composio/check", _handler(check_composio), methods=["GET"]),
+        Route("/tools/composio", _handler(disconnect_composio), methods=["DELETE"]),
         Route("/tools/{tool}", _handler(set_native, with_body=True), methods=["PUT"]),
         Route("/skills", _handler(new_skill, status=201, with_body=True), methods=["POST"]),
         Route("/skills/import", _handler(import_skill, with_body=True), methods=["POST"]),

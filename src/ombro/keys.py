@@ -177,6 +177,8 @@ def key_uses(home: Home) -> dict[str, list[str]]:
         for api, cfg in tools.apis.items():
             if cfg.get("key"):
                 uses.setdefault(str(cfg["key"]), []).append(f"API {api}")
+        if tools.composio:
+            uses.setdefault(str(tools.composio["key"]), []).append("Composio")
     return uses
 
 

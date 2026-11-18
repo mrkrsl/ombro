@@ -981,6 +981,7 @@ export interface Counts {
  */
 export interface ToolList {
   apis: ApiRow[];
+  composio: ComposioAccount | null;
   folders: string[];
   native: NativeTool[];
   sandbox: string | null;
@@ -1002,6 +1003,33 @@ export interface ApiRow {
   name: string;
   send_key: string;
   url: string;
+}
+/**
+ * The user's Composio account, once connected: its key by name only, and its toolkits.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ComposioAccount".
+ */
+export interface ComposioAccount {
+  access: string;
+  dashboard: string;
+  key: string;
+  key_set: boolean;
+  problem: string | null;
+  toolkits: ComposioToolkit[];
+}
+/**
+ * A service connected in the user's Composio account, such as Google Docs.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ComposioToolkit".
+ */
+export interface ComposioToolkit {
+  active: boolean;
+  slug: string;
+  status: string;
+  title: string;
+  tools: number | null;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

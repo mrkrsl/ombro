@@ -622,6 +622,8 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
             return _approve_skill(home, a)
         if a.tool.startswith("api."):
             return _approve_api(home, a)
+        if a.tool.startswith("composio."):
+            return _approve_api(home, a, composio=True)
         parts = split_name(a.tool)
         if parts is None:
             raise OutboxError(f"{a.ref} names {a.tool!r}, which is not an MCP tool")
@@ -668,24 +670,27 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
         return a
 
 
-def _approve_api(home: Home, a: Action) -> Action:
-    """Run an approved web API request, under the lock approve() holds, at most once."""
+def _approve_api(home: Home, a: Action, composio: bool = False) -> Action:
+    """Run an approved web API request (or Composio tool), under the lock approve() holds, at most once."""
     from ombro import apitool
+    from ombro import composio as composio_mod
     from ombro.tools import ToolError
 
     job_dir = a.job_dir
     meta, _ = jobs.read_job(job_dir)
     _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
     _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
+    run = composio_mod.run_approved if composio else apitool.run_approved
+    what = "Composio" if composio else "the API"
     try:
-        text = apitool.run_approved(home, meta.get("tools"), a.tool, a.arguments)
-    except apitool.ApiNotReached as e:
+        text = run(home, meta.get("tools"), a.tool, a.arguments)
+    except (apitool.ApiNotReached, composio_mod.ComposioNotReached) as e:
         _save(a, status="pending", last_error=str(e), executing_at=None, executing_pid=None)
         _journal(job_dir, "outbox_not_reached", a, f"not sent: {e}")
         _record(job_dir)
-        raise OutboxError(f"{a.ref} was not sent, because the API could not be reached: {e}. "
+        raise OutboxError(f"{a.ref} was not sent, because {what} could not be reached: {e}. "
                           "It is still waiting; try again later") from None
-    except apitool.ApiCallLost as e:
+    except (apitool.ApiCallLost, composio_mod.ComposioCallLost) as e:
         _save(a, status="uncertain", note=f"{e}; it may or may not have happened. It is never retried.",
               decided_at=utc_now())
         _journal(job_dir, "outbox_uncertain", a, str(e))
@@ -694,7 +699,7 @@ def _approve_api(home: Home, a: Action) -> Action:
     except (ToolError, SetupError) as e:
         _save(a, status="failed", error=str(e)[:RESULT_CHARS], decided_at=utc_now())
         _journal(job_dir, "outbox_failed", a, str(e)[:300])
-        _record(job_dir, a, f"approved; the API refused it: {str(e)[:200]}")
+        _record(job_dir, a, f"approved; {what} refused it: {str(e)[:200]}")
         return a
     text = text[:RESULT_CHARS]
     _save(a, status="executed", executed_at=utc_now(), decided_at=utc_now(), result=text)

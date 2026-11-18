@@ -57,7 +57,7 @@ const remote: ServerRow = { server: "notion", url: "https://mcp.invented.invalid
 const tools: ToolList = {
   native: [{ tool: "web.search", provider: "duckduckgo", max_calls: null, calls: 60 },
     { tool: "web.fetch", provider: "direct", max_calls: null, calls: 100 }],
-  servers: [remote], sandbox: null, folders: [],
+  servers: [remote], sandbox: null, folders: [], composio: null,
   apis: [{ name: "podcasts", url: "https://api.podcasts.invalid/v2", about: "Invented list.", how_to: "",
     access: "read-only", send_key: "bearer", key: "PODCASTS_API_KEY", key_set: true, calls: 30 }],
 };
@@ -108,6 +108,8 @@ describe("the settings rules", () => {
     expect(sendKey("header:X-API-Key")).toEqual(["header", "X-API-Key"]);
     expect(approvalTitle("api.podcasts.request", { method: "POST", path: "/playlists", body: { title: "Invented list" } }))
       .toBe("Send to /playlists in Podcasts: “Invented list”");
+    expect(approvalTitle("composio.googledocs.CREATE_DOCUMENT", { title: "Invented notes" }))
+      .toBe("Create document in Googledocs (via Composio): “Invented notes”");
     expect(usedBy(library.skills[0], { ...library, all_skills: ["legal/assistant", "ops/clerk"] }, crews)).toBe("Legal Crew, Ops");
   });
 });
@@ -310,6 +312,23 @@ describe("Settings › Folders, Tools and Skills", () => {
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(sent("POST", "/tools/apis")).toEqual({ name: "weather", url: "http://192.168.1.20/api", key: "wk-INVENTED",
       send_key: "header", key_param: "X-API-Key", about: "Invented weather.", how_to: "", access: "external", max_calls: 30 });
+  });
+
+  it("connects a Composio account by its key, and lists its services", async () => {
+    useStore.setState({ settingsPage: "tools" });
+    replies["PUT /tools/composio"] = { ...tools, composio: { key: "COMPOSIO_API_KEY", key_set: true, access: "external",
+      problem: null, dashboard: "https://dashboard.composio.dev", toolkits: [
+        { slug: "googledocs", title: "Google Docs", active: true, status: "active", tools: 31 },
+        { slug: "gmail", title: "Gmail", active: false, status: "expired", tools: 60 }] } };
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Connect my Composio account" }));
+    await userEvent.type(screen.getByLabelText("Composio API key"), "ak_INVENTED");
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    expect(sent("PUT", "/tools/composio")).toEqual({ key: "ak_INVENTED" });
+    expect(await screen.findByText("Google Docs (via Composio)")).toBeInTheDocument();
+    expect(screen.getByText("31 tools")).toBeInTheDocument();
+    expect(screen.getByText(/Connection expired/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect my Composio account" })).not.toBeInTheDocument();
   });
 
   it("writes a new skill", async () => {

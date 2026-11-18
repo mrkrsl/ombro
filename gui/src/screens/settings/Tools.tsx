@@ -5,7 +5,7 @@
 // their names, and a value left empty keeps the one stored.
 
 import { useEffect, useState } from "react";
-import type { ApiRow, KeyList, NativeTool, ServerRow, ToolList } from "../../api/types";
+import type { ApiRow, ComposioAccount, KeyList, NativeTool, ServerRow, ToolList } from "../../api/types";
 import { inTauri } from "../../api/serve";
 import { openLink } from "../../platform";
 import { useStore } from "../../store/store";
@@ -133,6 +133,42 @@ function ApiForm({ current, onDone, onCancel }: { current: ApiRow | null; onDone
     </div>
   );
 }
+/** Connect a Composio account by its project API key, or change the key. Composio's tools then show
+ * in the list, one row for each service connected there. */
+function ComposioForm({ current, onDone, onCancel }: { current: ComposioAccount | null; onDone: (t: ToolList) => void; onCancel: () => void }) {
+  const here = useStore((s) => (s.remote ? "the server" : "this computer"));
+  const { run, problem, busy } = useAction();
+  const [key, setKey] = useState("");
+  async function save() {
+    const t = await run((api) => api.put<ToolList>("/tools/composio", { key: key.trim() }));
+    if (t) onDone(t);
+  }
+  return (
+    <div className="inline-form">
+      <h3>{current ? "Change your Composio key" : "Connect my Composio account"}</h3>
+      <p className="muted">
+        Composio connects services such as Google Docs, Gmail and Sheets for you. In the Composio dashboard, choose{" "}
+        <strong>Platform</strong> and your project, connect the services there, and copy the project's key (it starts{" "}
+        <code>ak_</code>) from{" "}
+        <a href="#" onClick={(e) => { e.preventDefault(); void openLink("https://dashboard.composio.dev/~/project/settings/api-keys"); }}>Settings › API Keys</a>.
+        The <code>ck_</code> key under For You won't work here. Use and limits are on your Composio account.
+      </p>
+      <Field label="Composio API key" hint={`Kept on ${here}, and only ever sent to Composio. It's checked with Composio before it's kept.`}>
+        <input className="text-input" type="password" autoComplete="off" aria-label="Composio API key" value={key} onChange={(e) => setKey(e.target.value)} />
+      </Field>
+      <div className="form-actions">
+        <button className="primary" disabled={busy || !key.trim()} onClick={() => void save()}>
+          {busy ? "Checking…" : current ? "Save" : "Connect"}
+        </button>
+        <button className="secondary" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      <Problem text={problem} />
+    </div>
+  );
+}
+
 type Secret = { name: string; value: string; kept: boolean };
 
 /** How a server's sign-in reads, and whether it needs one now. `remote`: Ombro is on a server, so a
@@ -349,6 +385,7 @@ export function Tools() {
   const removal = useRemoval();
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState<Kind | null>(null);
+  const [composio, setComposio] = useState(false); // the Composio form is open
   const [kind, setKind] = useState<Kind>("remote");
   const [warning, setWarning] = useState<string | null>(null);
   const remote = useStore((st) => st.remote);
@@ -409,7 +446,7 @@ export function Tools() {
     <>
       <h1 className="page-title">Connected tools</h1>
       <p className="lede">
-        The MCP servers and APIs your crews can use on their jobs. These are currently offered to every crew member.
+        The MCP servers, APIs and Composio services your crews can use on their jobs. These are currently offered to every crew member.
       </p>
       <Problem text={tools.problem} />
       {t && (
@@ -473,6 +510,18 @@ export function Tools() {
                   }}
                 />
               )}
+            </div>
+          ))}
+          {t.composio?.toolkits.map((k) => (
+            <div className="row-block" key={`composio:${k.slug}`}>
+              <Item
+                name={`${k.title} (via Composio)`}
+                details={[
+                  k.active ? (k.tools ? `${k.tools} tools` : "Connected") : <span className="problem-inline">Connection {k.status}: reconnect it in Composio</span>,
+                  k.active ? ACCESS_SHORT[t.composio!.access] ?? t.composio!.access : null,
+                ]}
+                actions={null}
+              />
             </div>
           ))}
           {t.servers.map((s) => {
@@ -546,12 +595,22 @@ export function Tools() {
           })}
         </div>
       )}
+      {composio && !t?.composio && (
+        <ComposioForm current={null} onCancel={() => setComposio(false)} onDone={(x) => { tools.set(x); setComposio(false); }} />
+      )}
       {adding === null ? (
-        <div className="form-actions">
-          <button className="primary" onClick={() => { setAdding(kind); setEditing(null); }}>
-            Add a tool
-          </button>
-        </div>
+        !(composio && !t?.composio) && (
+          <div className="form-actions">
+            <button className="primary" onClick={() => { setAdding(kind); setEditing(null); setComposio(false); }}>
+              Add a tool
+            </button>
+            {t && !t.composio && (
+              <button className="secondary" onClick={() => { setComposio(true); setAdding(null); setEditing(null); }}>
+                Connect my Composio account
+              </button>
+            )}
+          </div>
+        )
       ) : (
         <div className="add-tool">
           <h2>Add a tool</h2>
@@ -590,6 +649,55 @@ export function Tools() {
               }}
             />
           )}
+        </div>
+      )}
+      {t?.composio && (
+        <div className="composio-account">
+          <h2>Composio</h2>
+          <div className="rows">
+            <div className="row-block">
+              <Item
+                name="Composio account"
+                details={[
+                  t.composio.problem ? (
+                    <span className="problem-inline">{t.composio.problem}</span>
+                  ) : t.composio.toolkits.length ? (
+                    `${t.composio.toolkits.length} service${t.composio.toolkits.length === 1 ? "" : "s"} connected`
+                  ) : (
+                    "No services connected in Composio yet"
+                  ),
+                  <a href="#" onClick={(e) => { e.preventDefault(); void openLink(t.composio!.dashboard); }}>Connect more in Composio</a>,
+                ]}
+                actions={
+                  <>
+                    <button className="text-button strong" onClick={async () => { const x = await run((api) => api.post<ToolList>("/tools/composio/refresh")); if (x) tools.set(x); }}>
+                      Refresh
+                    </button>
+                    <button className="text-button strong" onClick={() => { setComposio(true); setAdding(null); setEditing(null); }}>
+                      Change key
+                    </button>
+                    <button className="text-button strong" onClick={() => void removal.ask("composio", () => useStore.getState().api!.get<Check>("/tools/composio/check"))}>
+                      Disconnect
+                    </button>
+                  </>
+                }
+              />
+              {composio && (
+                <ComposioForm current={t.composio} onCancel={() => setComposio(false)} onDone={(x) => { tools.set(x); setComposio(false); }} />
+              )}
+              {removal.target === "composio" && (
+                <RemovePanel
+                  removal={removal}
+                  what="your Composio account"
+                  onConfirm={async () => {
+                    const x = await run((api) => api.del<ToolList>("/tools/composio"));
+                    if (x) tools.set(x);
+                    return !!x;
+                  }}
+                />
+              )}
+            </div>
+          </div>
         </div>
       )}
       {warning && <p className="warning-note">Note: {warning}</p>}

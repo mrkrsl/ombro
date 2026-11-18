@@ -146,6 +146,7 @@ class Engine:
         self._expand_all_tools()
         self._load_mcp()
         self._load_apis()
+        self._load_composio()
         self._prepare_code()
         self._prepare_folders()
         for role in [self.lead, *self.roles.values()]:
@@ -259,6 +260,27 @@ class Engine:
         self.journal.write("harness", "apis_ready", f"{len(tools)} API tool(s): " + ", ".join(
             f"{t.name} ({t.effect}: {outward.decide(self.outward, t.name, t.effect or 'external', self.tool_settings)})"
             for t in tools))
+
+    def _load_composio(self) -> None:
+        """Offer the tools of each toolkit connected in the user's Composio account to every crew
+        member (not the Lead), as the web APIs are."""
+        if not self.tool_settings.composio:
+            return
+        from ombro import composio
+
+        found, warnings = composio.tools(self.home, self.tool_settings)
+        for w in warnings:
+            self.journal.write("harness", "warning", w)
+        tools = [t for t in found if not outward.refused(t.name, self.tool_settings)]
+        if not tools:
+            return
+        for t in tools:
+            self.registry.register(t)
+        for role in self.roles.values():
+            role.tools.extend(t.name for t in tools if t.name not in role.tools)
+        kits = sorted({t.name.split(".")[1] for t in tools})
+        self.journal.write("harness", "composio_ready", f"{len(tools)} Composio tool(s) from "
+                           f"{', '.join(kits)}", toolkits=kits, tools=len(tools))
 
     def _prepare_code(self) -> None:
         """code.run is offered only where the sandbox can be set up. Code never runs unconfined."""

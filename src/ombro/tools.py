@@ -168,7 +168,7 @@ LOAD_SHORT_CHARS = 90  # of each tool's description in the listing
 
 
 def is_deferred(tool: "Tool") -> bool:
-    return tool.name.startswith("mcp.")
+    return tool.name.startswith(("mcp.", "composio."))
 
 
 def _first_sentence(text: str) -> str:

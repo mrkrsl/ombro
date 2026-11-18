@@ -312,9 +312,9 @@ def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
                 " same folders. Use it for batch work on files rather than many single tool calls; print a short"
                 " summary of what it did, and check the files it reports as changed."
             )
-        if any(t.startswith("mcp.") for t in tool_names):
+        if any(t.startswith(("mcp.", "composio.")) for t in tool_names):
             tools_line += (
-                " Tools named mcp.* reach outside services. They are listed by name in tools__load: load the"
+                " Tools named mcp.* and composio.* reach outside services. They are listed by name in tools__load: load the"
                 " ones the brief needs before you call them, and leave the rest alone. A call that changes or sends something needs a"
                 " one-sentence reason. Depending on the user's settings it is done at once, or held for the"
                 " user to approve after the job: the result says which. An action waiting for approval has not happened, so"

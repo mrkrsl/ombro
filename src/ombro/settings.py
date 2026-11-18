@@ -396,14 +396,15 @@ class ToolSettings:
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
     servers: dict[str, dict[str, Any]] = field(default_factory=dict)
     apis: dict[str, dict[str, Any]] = field(default_factory=dict)
+    composio: dict[str, Any] | None = None  # the user's Composio account (ombro.composio), if connected
 
     @classmethod
     def from_dict(cls, d: dict[str, Any] | None, where: str = "tools.md") -> "ToolSettings":
         d = d or {}
-        unknown = set(d) - {"tools", "providers", "servers", "apis"}
+        unknown = set(d) - {"tools", "providers", "servers", "apis", "composio"}
         if unknown:
             raise SetupError(f"{where}: unknown setting(s): {', '.join(sorted(unknown))} "
-                             "(use tools:, providers:, servers: and apis:)")
+                             "(use tools:, providers:, servers:, apis: and composio:)")
         raw_tools = d.get("tools") or {}
         raw_providers = d.get("providers") or {}
         raw_servers = d.get("servers") or {}
@@ -432,9 +433,9 @@ class ToolSettings:
                     raise SetupError(f"{where}: max_calls for {name} must be a positive whole number")
                 out["max_calls"] = v
             if "class" in cfg or "permission" in cfg:
-                if not name.startswith("mcp."):
-                    raise SetupError(f"{where}: class and permission apply only to MCP tools (mcp.<server>.<tool>), "
-                                     f"not {name}")
+                if not name.startswith(("mcp.", "composio.")):
+                    raise SetupError(f"{where}: class and permission apply only to MCP tools (mcp.<server>.<tool>) "
+                                     f"and Composio's (composio.<toolkit>.<tool>), not {name}")
             if "class" in cfg:
                 if cfg["class"] in _OLD_CLASSES:
                     raise SetupError(f"{where}: class {cfg['class']!r} for {name} has been renamed; use "
@@ -498,13 +499,18 @@ class ToolSettings:
         from ombro.apitool import check_apis
 
         apis = check_apis(d.get("apis") or {}, where)
-        return cls(tools=tools, providers=providers, servers=servers, apis=apis)
+        from ombro.composio import check as check_composio
+
+        composio = check_composio(d.get("composio"), where)
+        return cls(tools=tools, providers=providers, servers=servers, apis=apis, composio=composio)
 
     def to_dict(self) -> dict[str, Any]:
         out = {"tools": copy.deepcopy(self.tools), "providers": copy.deepcopy(self.providers),
                "servers": copy.deepcopy(self.servers)}
         if self.apis:
             out["apis"] = copy.deepcopy(self.apis)
+        if self.composio:
+            out["composio"] = copy.deepcopy(self.composio)
         return out
 
     def provider_for(self, tool: str) -> str:

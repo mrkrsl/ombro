@@ -1330,6 +1330,7 @@ input[type="checkbox"]:not([role="switch"]) {
 
 .settings-section h2,
 .add-tool h2,
+.composio-account h2,
 .crew-head h2 {
   font-size: 20px;
   font-weight: 700;
@@ -1485,6 +1486,10 @@ input[type="checkbox"]:not([role="switch"]) {
 
 .add-tool {
   margin-top: 28px;
+}
+
+.composio-account {
+  margin-top: 36px;
 }
 
 .secrets {

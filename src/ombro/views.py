@@ -310,7 +310,7 @@ def folder_list(home: Home) -> vt.FolderList:
     return {"folders": rows, "declined": [str(d) for d in declined], "file": str(home.folders)}
 
 
-def tool_list(home: Home, settings=None, signing: dict | None = None) -> vt.ToolList:
+def tool_list(home: Home, settings=None, signing: dict | None = None, fresh: bool = False) -> vt.ToolList:
     """The built-in tools with their provider and call limit, the MCP servers by address or
     command (never their secret headers or environment), and whether code.run can work here."""
     from ombro import folders, sandbox
@@ -350,7 +350,11 @@ def tool_list(home: Home, settings=None, signing: dict | None = None) -> vt.Tool
                               "key": c.get("key"), "key_set": bool(c.get("key") and keys.get_key(home, c["key"])),
                               "calls": c.get("max_calls") or apitool.DEFAULT_CALLS}
                              for n, c in settings.apis.items()]
-    return {"native": native, "servers": servers, "apis": apis, "sandbox": sandbox.unavailable_reason(),
+    from ombro import composio
+
+    account: vt.ComposioAccount | None = composio.view(home, settings.composio, fresh)  # type: ignore[assignment]
+    return {"native": native, "servers": servers, "apis": apis, "composio": account,
+            "sandbox": sandbox.unavailable_reason(),
             "folders": folders.granted_names(home)}
 
 

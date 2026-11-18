@@ -64,9 +64,10 @@ def _tool_list(value: Any, where: str, key: str) -> list[str]:
         name = str(v).strip()
         if name.startswith("api.") and len(name.split(".")) == 2:
             name += ".request"  # an API by its name: its one tool that changes things
-        if not name.startswith(("mcp.", "api.")) or len(name.split(".", 2)) != 3 or not all(name.split(".", 2)):
-            raise SetupError(f"{where}: outward.{key} names tools as mcp.<server>.<tool> or api.<name>.request, "
-                             f"not {name!r}")
+        if not name.startswith(("mcp.", "api.", "composio.")) or len(name.split(".", 2)) != 3 \
+                or not all(name.split(".", 2)):
+            raise SetupError(f"{where}: outward.{key} names tools as mcp.<server>.<tool>, api.<name>.request or "
+                             f"composio.<toolkit>.<tool>, not {name!r}")
         out.append(name)
     return out
 

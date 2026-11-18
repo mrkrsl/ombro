@@ -22,13 +22,16 @@ function capital(s: string): string {
 export function toolPlace(tool: string): string {
   const parts = tool.split(".");
   if ((parts[0] === "mcp" || parts[0] === "api") && parts.length >= 3) return parts.slice(1, -1).map((p) => capital(words(p))).join(" ");
+  if (parts[0] === "composio" && parts.length >= 3) return `${capital(words(parts[1]))} (via Composio)`;
   return "";
 }
 
 /** What a tool does, readably: `mcp.sheets.post_message` → "Post message in Sheets". */
 export function toolAction(tool: string): string {
   if (tool === SKILL_TOOL) return "Add or change a skill";
-  const action = capital(words(tool.split(".").slice(-1)[0] || tool));
+  const last = tool.split(".").slice(-1)[0] || tool;
+  // Composio's tool names are in capitals: GOOGLEDOCS_CREATE_DOCUMENT reads as "Create document".
+  const action = capital(tool.startsWith("composio.") ? words(last).toLowerCase() : words(last));
   const place = toolPlace(tool);
   return place ? `${action} in ${place}` : action;
 }

@@ -269,10 +269,32 @@ class ApiRow(TypedDict):
     calls: int
 
 
+class ComposioToolkit(TypedDict):
+    """A service connected in the user's Composio account, such as Google Docs."""
+
+    slug: str
+    title: str  # Composio's name for it
+    active: bool  # its connection works, so crews are offered its tools
+    status: str  # the connection's state in Composio, in lower case: active, expired, failed…
+    tools: int | None  # how many tools it has, if Composio said
+
+
+class ComposioAccount(TypedDict):
+    """The user's Composio account, once connected: its key by name only, and its toolkits."""
+
+    key: str
+    key_set: bool
+    access: str  # internal or external: what its tools that change things count as
+    problem: str | None  # why its toolkits couldn't be listed, in plain words
+    toolkits: list[ComposioToolkit]
+    dashboard: str  # where the user connects more services
+
+
 class ToolList(TypedDict):
     native: list[NativeTool]
     servers: list[ServerRow]
     apis: list[ApiRow]
+    composio: ComposioAccount | None
     sandbox: str | None  # why code.run can't work here, or None
     folders: list[str]
 

@@ -698,6 +698,85 @@
       "title": "CommandView",
       "type": "object"
     },
+    "ComposioAccount": {
+      "description": "The user's Composio account, once connected: its key by name only, and its toolkits.",
+      "properties": {
+        "access": {
+          "type": "string"
+        },
+        "dashboard": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "key_set": {
+          "type": "boolean"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolkits": {
+          "items": {
+            "$ref": "#/$defs/ComposioToolkit"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "key_set",
+        "access",
+        "problem",
+        "toolkits",
+        "dashboard"
+      ],
+      "title": "ComposioAccount",
+      "type": "object"
+    },
+    "ComposioToolkit": {
+      "description": "A service connected in the user's Composio account, such as Google Docs.",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "slug",
+        "title",
+        "active",
+        "status",
+        "tools"
+      ],
+      "title": "ComposioToolkit",
+      "type": "object"
+    },
     "Connection": {
       "properties": {
         "api": {
@@ -3201,6 +3280,16 @@
           },
           "type": "array"
         },
+        "composio": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ComposioAccount"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "folders": {
           "items": {
             "type": "string"
@@ -3234,6 +3323,7 @@
         "native",
         "servers",
         "apis",
+        "composio",
         "sandbox",
         "folders"
       ],
