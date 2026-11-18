@@ -2,7 +2,7 @@
 // and call its actions; nothing else talks to serve.
 
 import { create } from "zustand";
-import { client, events, handshake, inTauri, type Client, type ServerMessage } from "../api/serve";
+import { client, events, handshake, inTauri, type Attachment, type Client, type ServerMessage } from "../api/serve";
 import type {
   ApprovalRow,
   Brief,
@@ -25,6 +25,8 @@ import { readCopy, saveCopy, saveFolder } from "../copies";
 import { PROTOCOL, startConnection, tooOld, whereNow, type Where } from "../where";
 import { SHORTCUTS, shortcutText } from "../shortcuts";
 import { addLocal, addReport, apply, newConversation, opening, type Conversation } from "./conversation";
+
+const MAX_ATTACH_BYTES = 25 * 1024 * 1024; // the most serve takes for one file
 
 /** A toast, in the window's corner. Timed (`ms`), dismissable, both, or neither: a persistent one
  *  (such as "Reconnecting…") stays until whatever showed it takes it away. One per id: showing an
@@ -85,6 +87,8 @@ type State = {
   specs: SpecRow[];
   report: Report | null; // on the report page
   brief: Brief | null; // on the brief page: the brief a job ran from
+  attached: Attachment[]; // files waiting to go with the next message or answer
+  attaching: number; // uploads under way
   opener: string | null; // after New from a chat you'd used: the Lead's line that it was saved, in place of the home screen
   welcome: boolean; // a fresh install: set-up's first question waits under the home screen
   running: string[]; // the jobs running now, by id: a chat that started one shows the ring in the sidebar
@@ -117,6 +121,11 @@ type Actions = {
   load: (screen?: Screen) => Promise<void>;
   readReport: (jobId: string, inChat: boolean) => Promise<void>;
   readBrief: (jobId: string) => Promise<void>;
+  /** Files dropped on the window or chosen with the paperclip: kept by Ombro, shown as chips, sent with the next message. */
+  attachFiles: (files: File[]) => Promise<void>;
+  unattach: (path: string) => void;
+  /** Discuss this brief: a new chat, where the Lead has the brief a job ran from. */
+  discussBrief: (jobId: string) => Promise<void>;
   clearJobs: (jobId?: string) => Promise<void>;
   restoreJob: (jobId: string) => Promise<void>;
   decide: (approve: boolean, refs: string[]) => Promise<string[]>;
@@ -227,6 +236,8 @@ export const useStore = create<State & Actions>((set, get) => {
     specs: [],
     report: null,
     brief: null,
+    attached: [],
+    attaching: 0,
     opener: null,
     welcome: false,
     running: [],
@@ -478,6 +489,38 @@ export const useStore = create<State & Actions>((set, get) => {
       }
     },
 
+    async attachFiles(files) {
+      const api = get().api;
+      if (!api) return;
+      for (const f of files) {
+        if (f.size > MAX_ATTACH_BYTES) {
+          get().say(`${f.name} is over 25 MB, too large to attach.`, "error");
+          continue;
+        }
+        set((s) => ({ attaching: s.attaching + 1 }));
+        try {
+          const a = await api.attach(f.name, f);
+          set((s) => ({ attached: [...s.attached, a] }));
+        } catch (e) {
+          get().say(`${f.name} wasn't attached: ${e instanceof Error ? e.message : String(e)}`, "error");
+        } finally {
+          set((s) => ({ attaching: s.attaching - 1 }));
+        }
+      }
+    },
+
+    unattach(path) {
+      set((s) => ({ attached: s.attached.filter((a) => a.path !== path) }));
+    },
+
+    async discussBrief(jobId) {
+      try {
+        await openSession({ discuss: jobId });
+      } catch (e) {
+        get().say(e instanceof Error ? e.message : String(e), "error");
+      }
+    },
+
     async readBrief(jobId) {
       const api = get().api;
       if (!api) return;
@@ -540,7 +583,9 @@ export const useStore = create<State & Actions>((set, get) => {
     },
 
     async send(text) {
-      const trimmed = text.trim();
+      const files = get().attached;
+      // Files alone are a message too: it says what was attached.
+      const trimmed = text.trim() || (files.length ? `I've attached ${files.map((a) => a.name).join(", ")}.` : "");
       if (!trimmed) return;
       const { api, current, conversations, summary } = get();
       if (!api) return;
@@ -572,8 +617,11 @@ export const useStore = create<State & Actions>((set, get) => {
           await get().answer(trimmed);
           return;
         }
-        set((s) => ({ conversations: { ...s.conversations, [id!]: addLocal(s.conversations[id!], "you", trimmed) } }));
-        const reply = await api.post<InputReply>(`/sessions/${id}/input`, { text: trimmed });
+        const shown = files.length ? `${trimmed}\n\n${files.map((a) => `📎 ${a.name}`).join("  ")}` : trimmed;
+        set((s) => ({ conversations: { ...s.conversations, [id!]: addLocal(s.conversations[id!], "you", shown) } }));
+        const body = files.length ? { text: trimmed, attachments: files.map((a) => a.path) } : { text: trimmed };
+        if (files.length && !cmd) set({ attached: [] });
+        const reply = await api.post<InputReply>(`/sessions/${id}/input`, body);
         if (reply.route) {
           const r = reply.route;
           if (r.where === "app") return appCommand(r.command);
@@ -628,8 +676,13 @@ export const useStore = create<State & Actions>((set, get) => {
       } else if (!(q.field.kind === "secret" && !value)) {
         set((s) => ({ conversations: { ...s.conversations, [current]: addLocal(s.conversations[current], "you", label) } }));
       }
+      const files = typeof value === "string" && q.field.kind !== "secret" ? get().attached : [];
       try {
-        await api.post(`/sessions/${current}/answer`, { id: q.id, value });
+        await api.post(
+          `/sessions/${current}/answer`,
+          files.length ? { id: q.id, value, attachments: files.map((a) => a.path) } : { id: q.id, value },
+        );
+        if (files.length) set({ attached: [] });
       } catch (e) {
         get().say(e instanceof Error ? e.message : String(e), "error");
       }

@@ -9,13 +9,14 @@ included, masked or otherwise.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from ombro import journal, keys, mdfile, outbox, jobs
 from ombro import viewtypes as vt
-from ombro.home import Home, crew_title
+from ombro.home import Home, crew_title, words_title
 from ombro.settings import SetupError, load_limits, load_preferences
 
 
@@ -192,11 +193,14 @@ def chat_list(home: Home) -> list[vt.ChatRow]:
     out: list[vt.ChatRow] = []
     for p in folder.glob("*.md") if folder.is_dir() else []:
         try:
-            meta, _ = mdfile.read(p)
+            meta, body = mdfile.read(p)
         except (OSError, mdfile.FrontMatterError):
             continue
         updated = str(meta.get("updated_at") or meta.get("started_at") or "")
         title = str(meta.get("title") or "").strip()
+        if not title:  # untitled (before 18 Nov a thinking model often gave no title): its first words
+            first = re.search(r"^\*\*You \(Chat\):\*\* (.+)$", body, re.M)
+            title = words_title(first.group(1)) if first else ""
         if not title:
             m = jobs.WHEN.search(p.stem)
             title = f"Chat of {m.group(1)[6:8]}/{m.group(1)[4:6]}/{m.group(1)[:4]}" if m else p.stem

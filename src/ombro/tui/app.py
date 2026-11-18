@@ -802,6 +802,7 @@ class OmbroApp(App):
         self.run_worker(work, thread=True, exclusive=False)
 
     def _chat_turn(self, text: str) -> None:
+        self.session.ensure_chat().take_paths = True  # a file dragged into the terminal is attached
         if not self.session.chat_turn(text):
             self.call_from_thread(self.leave)
 

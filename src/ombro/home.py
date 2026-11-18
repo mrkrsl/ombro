@@ -11,6 +11,7 @@ in one place, as `jobs/` and `chats/`). Prompts and indexes name job files `jobs
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from ombro import mdfile
@@ -441,6 +442,25 @@ def tidy_title(name: str) -> str:
     """A display title from a folder name: market-researcher becomes Market Researcher."""
     words = [w for w in name.replace("_", "-").split("-") if w]
     return " ".join(w[:1].upper() + w[1:] for w in words) or name
+
+
+_OPENERS = re.compile(
+    r"^(?:(?:hi|hello|hey|ok|okay|so|right|please|thanks)[,!. ]+)*"
+    r"(?:(?:can|could|would|will) you(?: please)?|please|i'?d like (?:you )?to|i want (?:you )?to|"
+    r"i need (?:you )?to|let'?s|we need to|help me)?\s*", re.I)
+
+
+def words_title(text: str, words: int = 6) -> str:
+    """A chat's title from what you first said, when the model gave none: "Can you connect to my
+    Gmail and summarise the top three emails?" becomes "Connect to my Gmail and summarise"."""
+    text = " ".join(str(text or "").split())
+    text = re.split(r"(?<=[.?!])\s", text, maxsplit=1)[0]  # the first sentence
+    text = _OPENERS.sub("", text, count=1) or text
+    picked = [w.strip(",;:") for w in text.split()[:words]]
+    while picked and picked[-1].lower() in ("and", "or", "the", "a", "an", "to", "of", "for", "with", "my", "in"):
+        picked.pop()
+    title = " ".join(picked).rstrip(".?!,;:")
+    return (title[:1].upper() + title[1:])[:70]
 
 
 def crew_title(home: "Home", crew: str) -> str:

@@ -214,12 +214,15 @@ class LiveSession:
         if not self.closed:
             self.set_state("working")
 
-    def answer(self, qid: str, value: Any) -> str | None:
+    def answer(self, qid: str, value: Any, attached: list[Path] | None = None) -> str | None:
         """Answer the open question (or say edited files are saved). Returns what to say when the
-        answer can't be taken; the question then stays open."""
+        answer can't be taken; the question then stays open. Files attached with an answer in a
+        brief are the chat's, given to the job; the answer names them."""
         q = self.question
         if q is None or q.id != qid:
             raise LookupError("that question is no longer open")
+        if attached and isinstance(value, str):
+            value = self.session.attach_to_answer(value, attached)
         if q.kind == "question":
             f = q.field
             value, problem = parse_answer(f, value)
@@ -235,6 +238,8 @@ class LiveSession:
     def start(self, fn: Callable[[], Any]) -> None:
         if self.closed:
             raise LookupError("the session has ended")
+        if self.worker is not None and self.worker.is_alive() and self.state != "working":
+            self.worker.join(timeout=2)  # it has said idle and is only finishing up
         if self.worker is not None and self.worker.is_alive():
             raise Busy("I'm still working on the last thing. Press Esc to stop it, or wait for it to finish.")
         self.set_state("working")
@@ -263,9 +268,9 @@ class LiveSession:
         self.worker = threading.Thread(target=work, name=f"session-{self.id}", daemon=True)
         self.worker.start()
 
-    def input(self, text: str) -> dict[str, Any]:
-        """A message or slash command, as typed. A command that belongs to a page of its own is
-        not run: the reply says where the window should go."""
+    def input(self, text: str, attached: list[Path] | None = None) -> dict[str, Any]:
+        """A message or slash command, as typed, with any files attached. A command that belongs to a
+        page of its own is not run: the reply says where the window should go."""
         text = text.strip()
         if not text:
             return {"handled": False}
@@ -274,7 +279,7 @@ class LiveSession:
             return {"handled": False, "route": {"where": where, "command": cmd.name, "screen": cmd.screen,
                                                 "args": text.partition(" ")[2].strip()}}
         if where == "chat":
-            self.start(lambda: self.session.chat_turn(text))
+            self.start(lambda: self.session.chat_turn(text, attached))
         else:
             word, _, rest = text.partition(" ")
             name = core_commands.ALIASES.get(word.lower(), word.lower())

@@ -13,7 +13,7 @@ const commands: CommandView[] = [
   { name: "/chat", help: "back to Chat", where: "chat", screen: "" },
 ];
 
-beforeEach(() => useStore.setState({ commands, summary: null, toasts: [] }));
+beforeEach(() => useStore.setState({ commands, summary: null, toasts: [], attached: [], attaching: 0 }));
 
 describe("the composer", () => {
   it("lists the commands that match what has been typed", async () => {
@@ -26,6 +26,27 @@ describe("the composer", () => {
     expect(screen.getByRole("option")).toHaveTextContent("/approvals");
     await userEvent.keyboard("{Tab}");
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("/approvals ");
+  });
+
+  it("attaches files from the paperclip, shows them as chips and sends them with the message", async () => {
+    const picked: string[] = [];
+    const sent: string[] = [];
+    useStore.setState({
+      attachFiles: async (files: File[]) => {
+        picked.push(...files.map((f) => f.name));
+        useStore.setState({ attached: files.map((f) => ({ path: `/files/${f.name}`, name: f.name, size: f.size, kind: "pdf" as const })) });
+      },
+      send: async (text: string) => { sent.push(text); },
+    });
+    render(<Composer conversation={null} />);
+    expect(screen.getByRole("button", { name: "Attach files" })).toBeInTheDocument();
+    await userEvent.upload(screen.getByTestId("attach-input"), new File(["%PDF"], "invented.pdf", { type: "application/pdf" }));
+    expect(picked).toEqual(["invented.pdf"]);
+    expect(screen.getByRole("list", { name: "Attached files" })).toHaveTextContent("invented.pdf");
+    await userEvent.keyboard("{Enter}"); // files alone can be sent
+    expect(sent).toEqual([""]);
+    await userEvent.click(screen.getByRole("button", { name: "Remove invented.pdf" }));
+    expect(useStore.getState().attached).toEqual([]);
   });
 
   it("hides what is typed for a secret, and offers buttons for yes or no", () => {

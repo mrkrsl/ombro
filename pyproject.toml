@@ -16,6 +16,7 @@ dependencies = [
     "starlette>=1.10.0",
     "websockets>=17.4",
     "uvicorn>=0.54.0",
+    "pypdf>=6",
 ]
 
 [project.scripts]

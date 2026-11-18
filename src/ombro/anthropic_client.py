@@ -255,6 +255,17 @@ def _text_of(content: Any) -> str:
     return "" if content is None else str(content)
 
 
+def _images(content: Any) -> list[dict[str, Any]]:
+    """Image parts in a user's message (OpenAI's form, data URLs) as Anthropic's image blocks."""
+    out = []
+    for p in content if isinstance(content, list) else []:
+        url = str(((p or {}).get("image_url") or {}).get("url") or "") if isinstance(p, dict) else ""
+        if p.get("type") == "image_url" and url.startswith("data:") and ";base64," in url:
+            head, data = url[5:].split(";base64,", 1)
+            out.append({"type": "image", "source": {"type": "base64", "media_type": head, "data": data}})
+    return out
+
+
 def _signatures(messages: list[dict[str, Any]]) -> set[str]:
     return {str(b.get("signature") or b.get("data")) for m in messages if isinstance(m.get("content"), list)
             for b in m["content"] if isinstance(b, dict) and b.get("type") in _THINKING}
@@ -322,9 +333,10 @@ def to_anthropic(messages: list[dict[str, Any]], stale: set[str] | None = None, 
             add("user", [{"type": "tool_result", "tool_use_id": str(m.get("tool_call_id") or ""),
                           "content": _text_of(m.get("content")) or "(no output)"}])
         else:
+            images = _images(m.get("content"))
             text = _text_of(m.get("content"))
-            if text.strip():
-                add("user", [{"type": "text", "text": text}])
+            if text.strip() or images:
+                add("user", [*images, *([{"type": "text", "text": text}] if text.strip() else [])])
     if not out or out[0]["role"] != "user":
         out.insert(0, {"role": "user", "content": [{"type": "text", "text": "Begin."}]})
     return "\n\n".join(p for p in system_parts if p), out

@@ -121,11 +121,12 @@ def spec_text(title: str, task: str) -> str:
     return f"# {title}\n\n{str(task).strip()}\n"
 
 
-def start(home: Home, crews: list[str], title: str, task: str, *, chat: str | None = None) -> Path:
+def start(home: Home, crews: list[str], title: str, task: str, *, chat: str | None = None,
+          inputs: list[str] | None = None) -> Path:
     """Create a live job from what the Lead wrote in the chat, and start it in the background."""
     from ombro.settings import load_limits, load_tool_settings
 
-    spec_meta: dict[str, Any] = {"crews": crews, "live": True}
+    spec_meta: dict[str, Any] = {"crews": crews, "live": True, **({"inputs": list(inputs)} if inputs else {})}
     body = spec_text(title, task)
     tools = load_tool_settings(home)
     limits = load_limits(home, None, tools)
@@ -161,6 +162,9 @@ def save_as_brief(home: Home, job_dir: Path) -> str:
 
     meta, body = mdfile.read(Path(job_dir) / "spec.md")
     meta = {k: v for k, v in meta.items() if k not in ("live",)}
+    from ombro.attachments import without_inputs_section
+
+    body = without_inputs_section(body)  # the job adds it again, for the files it is given
     base = re.sub(r"[^a-z0-9]+", "-", (jobs.first_line(body, 60) or "live-job").lower()).strip("-")[:48] or "live-job"
     name, n = base, 2
     home.specs_dir.mkdir(parents=True, exist_ok=True)

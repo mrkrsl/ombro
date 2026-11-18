@@ -346,6 +346,14 @@ def _handler(fn: Callable[[Request], Any], *, status: int = 200, with_body: bool
 def _session_routes(s: Serve) -> list[Route]:
     home = s.home
 
+    def _attached(data: dict[str, Any]) -> list[Path]:
+        from ombro.serve.files import Refused, attached_path
+
+        try:
+            return [attached_path(s, p) for p in data.get("attachments") or []]
+        except Refused as e:
+            raise HttpError(e.status, str(e)) from e
+
     def create(r: Request, data: dict[str, Any]) -> Any:
         """A new chat, a chat reopened by name, or a flow (setup, role.add)."""
         flow = data.get("flow")
@@ -359,6 +367,13 @@ def _session_routes(s: Serve) -> list[Route]:
                 s.sessions.remove(live.id)
                 raise LookupError(f"no chat called {name!r}")
             live.reopen(path)
+        elif data.get("discuss"):  # Discuss this brief: a new chat about the brief a job ran from
+            try:
+                job_dir = jobs.find_job(home, str(data["discuss"]))
+            except LookupError:
+                s.sessions.remove(live.id)
+                raise
+            live.start(lambda: live.session.ensure_chat().discuss_brief(job_dir))
         elif flow == "setup":
             live.start(lambda: live.flows.setup() and None)
         elif flow == "role.add":
@@ -370,11 +385,11 @@ def _session_routes(s: Serve) -> list[Route]:
 
     def text_input(r: Request, data: dict[str, Any]) -> Any:
         live = s.sessions.get(r.path_params["sid"])
-        return live.input(_need(data, "text"))
+        return live.input(_need(data, "text"), _attached(data))
 
     def answer(r: Request, data: dict[str, Any]) -> Any:
         live = s.sessions.get(r.path_params["sid"])
-        problem = live.answer(_need(data, "id"), data.get("value"))
+        problem = live.answer(_need(data, "id"), data.get("value"), _attached(data))
         return {"ok": problem is None, "problem": problem}
 
     def interrupt(r: Request) -> Any:

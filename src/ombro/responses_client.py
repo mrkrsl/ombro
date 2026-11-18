@@ -304,7 +304,13 @@ def to_responses(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, An
             items.append({"type": "function_call_output", "call_id": str(m.get("tool_call_id") or ""),
                           "output": _text(m.get("content")) or "(no output)"})
         else:
-            text = _text(m.get("content"))
-            if text.strip():
+            content = m.get("content")
+            text = _text(content)
+            images = [{"type": "input_image", "image_url": str(p["image_url"].get("url") or "")}
+                      for p in (content if isinstance(content, list) else [])
+                      if isinstance(p, dict) and p.get("type") == "image_url" and isinstance(p.get("image_url"), dict)]
+            if images:
+                items.append({"role": "user", "content": [{"type": "input_text", "text": text}, *images]})
+            elif text.strip():
                 items.append({"role": "user", "content": text})
     return "\n\n".join(p for p in instructions if p), items

@@ -141,12 +141,21 @@ def _read(args: dict, ctx: ToolContext) -> dict[str, Any]:
         raise ToolInputError(f"{args['path']} does not exist")
     if not target.is_file():
         raise ToolInputError(f"{args['path']} is a folder; use workspace.list")
-    if target.stat().st_size > FILE_MAX_BYTES * 2:
+    from ombro import attachments
+
+    kind = attachments.kind_of(target)
+    if target.stat().st_size > (attachments.MAX_BYTES if kind in ("pdf", "word") else FILE_MAX_BYTES * 2):
         raise ToolInputError(f"{args['path']} is too large to read")
-    data = target.resolve().read_bytes()
-    if b"\x00" in data[:4096]:
-        raise ToolInputError(f"{args['path']} is not a text file")
-    text = data.decode("utf-8", errors="replace")
+    if kind in ("pdf", "word"):  # read as their text, as an attached file is
+        got = attachments.read(target.resolve(), limit=attachments.MAX_BYTES)
+        if got.text is None:
+            raise ToolInputError(f"{args['path']} can't be read as text" + (f": {got.problem}" if got.problem else ""))
+        text = got.text
+    else:
+        data = target.resolve().read_bytes()
+        if b"\x00" in data[:4096]:
+            raise ToolInputError(f"{args['path']} is not a text file")
+        text = data.decode("utf-8", errors="replace")
     offset = int(args.get("offset") or 0)
     limit = int(args.get("max_chars") or READ_DEFAULT_CHARS)
     chunk = text[offset : offset + limit]
@@ -425,8 +434,8 @@ def workspace_tools() -> list[Tool]:
     return [
         Tool(
             name="workspace.read",
-            description="Read a text file from this job's workspace/ or scratch/ folder. Long files come in parts: "
-            "pass next_offset back as offset to read on.",
+            description="Read a text file from this job's workspace/ or scratch/ folder (PDF and Word .docx files "
+            "are read as their text). Long files come in parts: pass next_offset back as offset to read on.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
