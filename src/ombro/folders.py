@@ -3,7 +3,8 @@
 A job's own workspace/ and scratch/ need no grant. Everything else on the
 machine does. Grants live in folders.md, are made only by the user (a model
 can suggest a folder, but the harness asks and writes), and apply to every
-crew; a spec names the ones its job uses and may lower write to read.
+crew. A spec names the ones its job may write to (and then gets only those); a job whose
+spec names none may read every shared folder and write to none.
 
 What can be granted is a fixed rule: a folder inside the user's home folder,
 or on a mounted drive or server share, never the root, system folders, the
@@ -41,8 +42,10 @@ CHANGES_LISTED = 200
 FOLDERS_BODY = """\
 Folders on this machine that jobs may use, by name. A job's own workspace/
 and scratch/ need no grant; everything else does. Grants apply to every
-crew, and a spec names the ones its job uses (`folders: [brand, photos]`),
-and may lower write to read (`folders: {photos: read}`).
+crew. A job whose spec names no folders may read all of them and change
+none. A spec that names folders (`folders: [brand, photos]`) gets only
+those, at their access here, and may lower write to read
+(`folders: {photos: read}`).
 
 - access: read (roles can read and list it) or write (they can also change,
   add and remove files, as you could). Changes are listed in the report.
@@ -340,14 +343,22 @@ def parse_spec(value: Any) -> dict[str, str | None]:
 
 
 def for_job(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str, str]], list[str]]:
-    """The folders a job gets, fixed at its start, and why any it named were left out."""
+    """The folders a job gets, fixed at its start, and why any it named were left out.
+
+    A spec that names folders (`folders: [brand]`, or `{brand: read}`) gets only those, at the
+    access it asks for and never more than the grant. A spec that names none, however the job
+    started (a live job, a follow-up, a hand-written spec), may read every shared folder and
+    write to none: reading is what "pick up yesterday's work" needs, and writing is given only
+    where a spec asks for it."""
     wanted = parse_spec((spec_meta or {}).get("folders"))
-    if not wanted:
-        return [], []
     try:
         grants, _ = load(home)
     except SetupError as e:
         return [], [f"folders.md could not be read, so no shared folder was given: {e}"]
+    if not wanted:
+        wanted, ceiling = {name: "read" for name in grants}, True
+    else:
+        ceiling = False
     out: list[dict[str, str]] = []
     left: list[str] = []
     for name, access in wanted.items():
@@ -367,19 +378,59 @@ def for_job(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
             left.append(f"folder {name!r} was left out: {g.path} now leads to {display_path(real)} through a "
                         "symlink. Check it, then share the folder again with `ombro folder add`")
             continue
-        final = "read" if "read" in (access, g.access) else "write"
+        final = "read" if "read" in (access, g.access) or ceiling else "write"
         out.append({"name": name, "path": str(real), "access": final})
     return out, left
 
 
 def for_chat(home: Home) -> tuple[list[dict[str, str]], list[str]]:
     """Every granted folder, with its own access, checked as a job's are: the Lead in
-    chat works across all of them, as the user would."""
+    chat works across all of them, as the user would (it writes only with their yes)."""
     try:
         grants, _ = load(home)
     except SetupError as e:
         return [], [f"folders.md could not be read: {e}"]
     return for_job(home, {"folders": {name: g.access for name, g in grants.items()}})
+
+
+SAVE_WORDS = re.compile(r"\b(save|saved|saving|write|writing|put|create|store|into|keep a copy)\b", re.I)
+
+
+def save_target(home: Home, text: str) -> str | None:
+    """The shared folder a task saves into, by name, or None. Folders are found by shared/<name>/ or by
+    a path under one (~/..., or in full; the innermost when one is inside another), in the sentences
+    that speak of saving or writing. A folder only read from is never the target; with more than one
+    named for saving, there is no telling which, so None."""
+    try:
+        grants, _ = load(home)
+    except SetupError:
+        return None
+    if not grants or not text:
+        return None
+    places = []  # (path parts, name, as written)
+    for name, g in grants.items():
+        try:
+            real = expand(g.path).resolve()
+        except OSError:
+            continue
+        for written in {str(real), display_path(real), str(g.path)}:
+            places.append((len(real.parts), name, written.rstrip("/")))
+    places.sort(reverse=True)
+
+    def named_in(chunk: str) -> set[str]:
+        found = set(re.findall(r"shared/([A-Za-z0-9](?:[\w.-]*[\w-])?)", chunk)) & set(grants)
+        rest = chunk
+        for _, name, written in places:  # innermost first, so ~/A/B is not also counted as ~/A
+            if written and written in rest:
+                found.add(name)
+                rest = rest.replace(written, " ")
+        return found
+
+    saving = set()
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+        if SAVE_WORDS.search(sentence):
+            saving |= named_in(sentence)
+    return next(iter(saving)) if len(saving) == 1 else None
 
 
 def granted_names(home: Home) -> list[str]:

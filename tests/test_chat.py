@@ -341,10 +341,23 @@ def test_chat_tool_calls_are_capped(chat, job, home):
 
 def test_the_lead_gets_a_set_number_of_calls_per_message(chat, home):
     mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_calls_per_message": 2}, mdfile.read(home.limits)[1])
-    chat([fake.call("memory__list", {}), fake.call("memory__list", {"crew": "default"}), fake.say("Late.")],
+    chat([fake.call("memory__list", {}), fake.call("memory__list", {"crew": "default"}), fake.say("Here's what I have.")],
+         ["List things.", "/quit"])
+    # The calls ran out, so one more is told to answer now with what it has.
+    assert len(chat.client.calls) == 3
+    last = chat.client.calls[2]["messages"][-1]
+    assert last["role"] == "system" and "no tool will run now" in last["content"]
+    assert "Here's what I have." in chat.output
+    assert "used all 2 model calls allowed for one message" in chat.output and "carry on" in chat.output
+
+
+def test_a_tool_asked_for_after_the_last_call_is_not_run(chat, home):
+    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_calls_per_message": 1}, mdfile.read(home.limits)[1])
+    chat([fake.call("memory__list", {}), fake.call("memory__list", {"crew": "default"}), fake.say("Next message.")],
          ["List things.", "/quit"])
     assert len(chat.client.calls) == 2
-    assert "used all 2 model calls allowed for one message" in chat.output
+    assert len(chat.tool_replies()) == 1
+    assert "without answering" in chat.output and "carry on" in chat.output
 
 
 def test_a_long_chat_keeps_its_opening_and_trims_the_middle_in_one_step(chat, home):

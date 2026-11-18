@@ -23,6 +23,10 @@ They are not preferences, so never ask the user whether they want them:
   spend calls on re-reading, read-backs, word or byte counts, checking
   scripts or polishing briefs unless the brief asks for one. Speed is part
   of quality.
+- A length to meet (half as long, 500 words, one page) is planned for
+  before writing: which parts stay and roughly how long each is. Then write
+  it once. Count at most once, and if it is over, cut in the same step that
+  saves it. Never draft, measure and draft the whole text again.
 """
 
 VOICE = """\
@@ -223,6 +227,14 @@ def _today(today: str) -> str:
     )
 
 
+def _shared_one(folder: tuple[str, ...]) -> str:
+    """One shared folder for a prompt: `shared/<name> (access)`, and where it is on disk when known,
+    so a path the user gave (~/Documents/...) can be found under shared/<name>/."""
+    name, access, *rest = folder
+    how = "read and write" if access == "write" else "read only"
+    return f"shared/{name} ({how}" + (f"; on disk {rest[0]}" if rest and rest[0] else "") + ")"
+
+
 def lead_system(
     lead: Role,
     instructions: str,
@@ -271,9 +283,10 @@ def lead_system(
     if shared:
         parts.append(_section(
             "Folders the user shared with this job",
-            "\n".join(f"- shared/{n} ({'read and write' if a == 'write' else 'read only'})" for n, a in shared)
-            + "\nRoles with workspace tools or code.run reach them by these paths; name them in briefs. Nothing "
-            "else outside the job can be reached."))
+            "\n".join(f"- {_shared_one(f)}" for f in shared)
+            + "\nRoles with workspace tools or code.run reach them by these paths; name them in briefs. A path in "
+            "the spec under one of these folders on disk is the same file under shared/<name>/. Nothing else "
+            "outside the job can be reached."))
     parts.append(
         _section(
             "Limits for this job",
@@ -288,7 +301,7 @@ def lead_system(
 def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
                 shared: list[tuple[str, str]] | None = None) -> str:
     """`skills` lists the skills this role may use, by name and description; `shared` the
-    folders shared with this job as (name, access)."""
+    folders shared with this job as (name, access) or (name, access, path on disk)."""
     if tool_names:
         tools_line = "You may use only these tools: " + ", ".join(tool_names) + "."
         files = any(t.startswith("workspace.") or t == "code.run" for t in tool_names)
@@ -296,7 +309,7 @@ def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
             tools_line += (
                 " File paths start with workspace/ (deliverables), scratch/ (working notes), or shared/<name>/"
                 " for a folder the user has shared with this job: "
-                + ", ".join(f"shared/{n} ({'read and write' if a == 'write' else 'read only'})" for n, a in shared)
+                + ", ".join(_shared_one(f) for f in shared)
                 + ". Work in a shared folder as the user would, with care: changes there are real and are"
                 " listed in the report. Nothing else on the machine can be read or written."
             )
@@ -918,8 +931,12 @@ returns) can change them.
   browser__submit use them.
 - Shared folders: the user's own folders, listed below, are yours to work
   in as they would. folders__list and folders__read reach them as
-  shared/<name>/...; folders__write saves a text file in one shared for
-  writing, and the user sees it and says yes first. A folder shared
+  shared/<name>/...; folders__write saves a short text file, or a small
+  change to one, in a folder shared for writing, and the user sees it and
+  says yes first. A document (a new file beyond a short note, or most of a
+  file rewritten) is work for a crew: call offer_work for it, naming where
+  it is saved in the task. Ombro turns such a write into that offer anyway.
+  A folder shared
   read-only stays read-only. Nothing outside these folders and Ombro's home
   can be reached; if the user needs another folder, ask them to share it
   with /folder add.
@@ -934,12 +951,16 @@ returns) can change them.
   that reaches people outside or spends money, asks the user here first:
   Ombro shows them what it is and asks, so just call the tool with a
   `reason`. Keep it to quick things, a few steps; anything longer (a
-  specialist's work, a deliverable, work that can wait) goes to the crew
-  with offer_work.
+  specialist's work, a deliverable such as a document to write or rewrite
+  and save, work that can wait) goes to the crew with offer_work.
 - You cannot brief roles, start jobs or approve what waits for approval in
   Approvals; such calls are refused.
 - Before you answer about past work, look it up; do not answer from guesses.
   Say which job, report or page a fact came from.
+- Writing the user asks for in the chat itself (a paragraph, a 300-word
+  introduction, a draft email, a rewording), with no file to save, is
+  yours: write it in your reply, once. It is never work for a crew, however
+  long; only a document saved to a file is.
 - Work: a question gets an answer. When the user describes work for a crew
   (something to find out, make, write or change), call offer_work. Ombro then
   asks them, in your voice, whether you should take it away and report back
@@ -983,6 +1004,12 @@ returns) can change them.
   tell the user what it asked.
 - Never ask for API keys or other secrets.
 """
+
+
+CHAT_LAST_CALL = (
+    "You have used the model calls allowed for this message, so no tool will run now. Answer the user in "
+    "a few lines with what you have: the result or your draft so far, what is left, and that they can say "
+    "carry on. Do not call a tool.")
 
 
 def chat_system(lead_soul: str, instructions: str, crews: str, limits_line: str, today: str = "",
@@ -1093,6 +1120,12 @@ CHAT_TOOLS = [
                      "what to deliver and in what form, constraints, what done looks like. Plain Markdown; no "
                      "secrets."},
             "crews": {"type": "array", "items": {"type": "string"}, "description": "Optional: the crews it needs."},
+            "folders": {
+                "type": "array", "description": "Optional: the shared folders a live job gets (then only these).",
+                "items": {"type": "object", "required": ["folder", "access"],
+                          "properties": {"folder": {"type": "string"},
+                                         "access": {"type": "string", "enum": ["read", "write"]}}},
+            },
         },
         ["summary", "title", "task"],
     ),

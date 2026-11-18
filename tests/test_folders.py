@@ -159,10 +159,64 @@ def test_a_spec_names_grants_and_may_lower_write_to_read(home, user):
     folders.add(home, user / "Documents" / "Brand", "brand", "read")
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
     got, left = folders.for_job(home, {"folders": {"brand": "write", "photos": "read", "secret": None}})
+    # brand is read-only in Settings, so naming it for writing keeps it read-only
     assert [(f["name"], f["access"]) for f in got] == [("brand", "read"), ("photos", "read")]
     assert "not shared" in left[0] and "secret" in left[0]
-    got, _ = folders.for_job(home, {"folders": ["photos"]})
-    assert got[0]["access"] == "write" and got[0]["path"] == str(user / "Pictures" / "Trip")
+
+
+def test_a_spec_that_names_folders_gets_only_those(home, user):
+    folders.add(home, user / "Documents" / "Brand", "brand", "write")
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    got, left = folders.for_job(home, {"folders": ["photos"]})
+    assert [(f["name"], f["access"], f["path"]) for f in got] == [("photos", "write", str(user / "Pictures" / "Trip"))]
+    assert left == []
+
+
+def test_a_spec_that_names_none_reads_every_folder_and_writes_none(home, user, monkeypatch):
+    """17 Nov: a live job from a chat said "no folders are shared with this job" because its spec
+    named none. Such a job may read every shared folder, but change none of them (finding M4)."""
+    from ombro import livejob
+
+    folders.add(home, user / "Documents" / "Brand", "brand", "write")
+    folders.add(home, user / "Pictures" / "Trip", "photos", "read")
+    want = [("brand", "read", str(user / "Documents" / "Brand")), ("photos", "read", str(user / "Pictures" / "Trip"))]
+    assert folders.for_job(home, {}) == folders.for_job(home, None)
+    assert sorted((f["name"], f["access"], f["path"]) for f in folders.for_job(home, {})[0]) == want
+
+    monkeypatch.setattr(jobs, "start_detached", lambda h, d: None)
+    live = livejob.start(home, ["default"], "Round two", "Read shared/brand/guide.md.", chat="c1")
+    plain = jobs.create_job(home, ["default"], {}, "# A follow-up", load_limits(home), source="test")
+    for job_dir in (live, plain):
+        meta, _ = jobs.read_job(job_dir)
+        assert sorted((f["name"], f["access"], f["path"]) for f in meta["folders"]) == want
+        assert "folders_left_out" not in meta
+
+
+def test_a_live_job_that_names_a_folder_may_write_there_and_reads_only_what_it_names(home, user, monkeypatch):
+    from ombro import livejob
+
+    folders.add(home, user / "Documents" / "Brand", "brand", "write")
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    monkeypatch.setattr(jobs, "start_detached", lambda h, d: None)
+    job_dir = livejob.start(home, ["default"], "Round two", "Write shared/brand/copy.md.", folders={"brand": "write"})
+    smeta, _ = mdfile.read(job_dir / "spec.md")
+    assert smeta["folders"] == {"brand": "write"}
+    meta, _ = jobs.read_job(job_dir)
+    assert [(f["name"], f["access"]) for f in meta["folders"]] == [("brand", "write")]
+
+
+def test_only_folders_a_job_can_write_to_are_backed_up(job, home, user):
+    folders.add(home, user / "Pictures" / "Trip", "photos", "write")
+    folders.add(home, user / "Documents" / "Brand", "brand", "write")
+    status = job([fake.brief("researcher", "Look."), fake.result("Looked."), fake.finish(), fake.keep_notes(),
+                  LEAD_REPORT])
+    assert status == "completed"
+    assert {f["name"]: f["access"] for f in job.meta["folders"]} == {"photos": "read", "brand": "read"}
+    assert not (job.job_dir / "backup").exists()
+    assert all("backup" not in f for f in job.meta["folders"])
+
+
+def test_with_no_folders_shared_a_job_gets_none_and_no_warning(home, user):
     assert folders.for_job(home, {}) == ([], [])
 
 
@@ -234,9 +288,10 @@ def test_a_job_backs_up_and_lists_changes_in_a_writable_folder(job, home, user):
     assert "missing" in report and "not shared" in report
     assert str(user / "Library" / "Mail" / "x") in report.split("Refused because")[1]
     system = job.client.calls[1]["messages"][0]["content"]
-    assert "shared/photos (read and write)" in system and "shared/brand (read only)" in system
+    assert "shared/photos (read and write; on disk " in system and "shared/brand (read only; on disk " in system
     lead = job.client.calls[0]["messages"][0]["content"]
-    assert "Folders the user shared with this job" in lead and "shared/photos (read and write)" in lead
+    assert "Folders the user shared with this job" in lead
+    assert "shared/photos (read and write; on disk ~/Pictures/Trip)" in lead
 
 
 # ---------------------------------------------------------------------------

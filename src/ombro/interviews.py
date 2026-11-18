@@ -518,10 +518,12 @@ class BriefPurpose(Purpose):
             if inside:
                 lines.append(f"The user started this brief in {folders.display_path(here)}, inside shared folder "
                              f"{inside[0].name!r}.")
-        lines.append("A job reaches only its own workspace and the folders its spec names. If the task needs "
-                     "files outside the job (documents to read, or a folder to save results in), ask which "
-                     "folder and why, and list it in `folders`: a shared folder by name, or a new one by its full "
-                     "path. The harness asks the user before sharing a new folder; you never share one.")
+        lines.append("A job whose spec lists no folders may read all the shared folders above and change none. "
+                     "A spec that lists folders in `folders` gets only those, so list every folder the task needs: "
+                     "access write where it saves or changes files, read where it only reads. If the task needs a "
+                     "folder that is not shared yet (documents to read, or a folder to save results in), ask which "
+                     "folder and why, and list it by its full path. The harness asks the user before sharing a new "
+                     "folder; you never share one.")
         return "\n".join(lines)
 
     def tool(self) -> dict:

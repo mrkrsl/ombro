@@ -97,6 +97,31 @@ def test_a_live_job_runs_in_the_chat_asks_you_and_can_be_kept_as_a_brief(home, i
     assert chat.chat.saved_briefs == [saved.stem] and chat.chat.specs == []  # not offered to start again
 
 
+def test_the_lead_names_the_folders_a_live_job_writes_to(home, in_thread, tmp_path, monkeypatch):
+    """The Lead names a shared folder in a live job's spec when the work writes there (finding M4)."""
+    from ombro import folders
+    from ombro.chat import _offered_folders
+
+    me = tmp_path / "user"
+    (me / "Documents" / "Brand").mkdir(parents=True)
+    (me / "Documents" / "Notes").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(me))
+    folders.add(home, me / "Documents" / "Brand", "brand", "write")
+    folders.add(home, me / "Documents" / "Notes", "notes", "write")
+    in_thread[:] = [fake.finish("Wrote it."), LEAD_REPORT]
+    chat = ChatSession(home)
+    named = fake.call("offer_work", {"summary": "New copy", "title": "New copy", "task": "Write shared/brand/x.md.",
+                                     "folders": [{"folder": "brand", "access": "write"},
+                                                 {"folder": "shared/notes", "access": "read"}]})
+    chat([named, fake.say("Done.")], ["Write the new copy into the brand folder.", "live", "no", "/quit"])
+    (job_dir,) = list(home.jobs_dir.iterdir())
+    smeta, _ = mdfile.read(job_dir / "spec.md")
+    assert smeta["folders"] == {"brand": "write", "notes": "read"}
+    meta, _ = jobs.read_job(job_dir)
+    assert {f["name"]: f["access"] for f in meta["folders"]} == {"brand": "write", "notes": "read"}
+    assert _offered_folders("not a list") == {} and _offered_folders(["brand", {"folder": "a/b"}]) == {"brand": "read"}
+
+
 def test_slash_live_starts_one_with_your_words(home, in_thread):
     in_thread[:] = [fake.finish("Done."), LEAD_REPORT]
     chat = ChatSession(home)

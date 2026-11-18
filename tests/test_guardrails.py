@@ -159,7 +159,7 @@ def test_over_token_limit_stops_and_reserve_pays_for_report(job, short_character
     status = job(
         [
             fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 11200, "output": 200}),
+            fake.result("Read it all.", usage={"input": 11000, "output": 200}),
             LEAD_REPORT,  # no notes call: it would have left too little for the report
         ],
         limits=limits,
