@@ -246,11 +246,17 @@ def zone_name() -> str:
     tz = os.environ.get("TZ", "").lstrip(":")
     if "/" in tz and not tz.startswith("/"):
         return tz
+    import re
+
     for link in (tz if tz.startswith("/") else "", "/etc/localtime"):
-        if link:
-            real = os.path.realpath(link)
-            if "zoneinfo/" in real:
-                return real.split("zoneinfo/", 1)[1]
+        if not link:
+            continue
+        # The link itself first (macOS: /var/db/timezone/zoneinfo/Europe/London), then where it ends up
+        # (/usr/share/zoneinfo.default/Europe/London).
+        for path in ((os.readlink(link) if os.path.islink(link) else ""), os.path.realpath(link)):
+            m = re.search(r"zoneinfo[^/]*/(.+)$", path)
+            if m and "/" in m.group(1):
+                return m.group(1)
     try:
         with open("/etc/timezone", encoding="utf-8") as f:
             return f.read().strip()

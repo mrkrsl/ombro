@@ -108,3 +108,19 @@ def test_the_zone_is_named_with_its_offset():
 
     text = cronmod.local_zone(datetime(2026, 7, 1, 12, 0))
     assert "UTC" in text and "(" in text
+
+
+def test_the_zone_name_is_read_from_the_link_on_macos(monkeypatch):
+    """macOS: /etc/localtime -> /var/db/timezone/zoneinfo/Europe/London, which itself ends up in
+    /usr/share/zoneinfo.default/: either gives the name."""
+    import os
+
+    monkeypatch.delenv("TZ", raising=False)
+    monkeypatch.setattr(os.path, "islink", lambda p: True)
+    monkeypatch.setattr(os, "readlink", lambda p: "/var/db/timezone/zoneinfo/Europe/Invented")
+    assert cronmod.zone_name() == "Europe/Invented"
+    monkeypatch.setattr(os, "readlink", lambda p: "")
+    monkeypatch.setattr(os.path, "realpath", lambda p: "/usr/share/zoneinfo.default/America/Invented")
+    assert cronmod.zone_name() == "America/Invented"
+    monkeypatch.setenv("TZ", "Asia/Invented")
+    assert cronmod.zone_name() == "Asia/Invented"
