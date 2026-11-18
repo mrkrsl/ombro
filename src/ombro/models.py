@@ -89,6 +89,34 @@ def move_to_anthropic_api(home: Home) -> str | None:
             "Ombro can cache prompts and keep Claude's thinking between steps. Nothing else changed.")
 
 
+PLAN_SUFFIX = "-plan"  # gpt-x on the ChatGPT plan is gpt-x-plan, so it can sit beside gpt-x on an API key
+
+
+def add_plan_models(home: Home, slugs: list[str]) -> list[str]:
+    """An entry (api: chatgpt) for each model the ChatGPT plan offers. The default is left as it
+    is, unless there was none. Returns the names, in OpenAI's order."""
+    meta, body, models = _read(home)
+    had_default = "default" in models
+    names = []
+    for slug in slugs:
+        name = entry_name(slug) + PLAN_SUFFIX
+        have = models.get(name)
+        if isinstance(have, dict) and (have.get("api") != "chatgpt" or have.get("model") != slug):
+            continue
+        models.setdefault(name, {"api": "chatgpt", "model": slug})
+        names.append(name)
+    if not had_default and names:
+        models["default"] = names[0]
+    models.setdefault("cheap", "default")
+    _write(home, meta, body, models)
+    return names
+
+
+def plan_names(home: Home) -> list[str]:
+    _, _, models = _read(home)
+    return [n for n, e in models.items() if isinstance(e, dict) and e.get("api") == "chatgpt"]
+
+
 def set_default(home: Home, name: str) -> None:
     """Point `default` at a model entry. A default written out in full is first kept
     under its own name, so nothing it held is lost."""
@@ -172,7 +200,8 @@ KNOWN_PROVIDERS = {"deepseek": "DeepSeek", "anthropic": "Anthropic", "openai": "
 PRESETS: list[dict[str, Any]] = [
     {"label": "DeepSeek", "endpoint": "https://api.deepseek.com", "key": "DEEPSEEK_API_KEY",
      "model": "deepseek-chat"},
-    {"label": "OpenAI", "endpoint": "https://api.openai.com/v1", "key": "OPENAI_API_KEY", "model": None},
+    # An OpenAI API key, paid for in the OpenAI Platform. Using a ChatGPT plan instead is a sign-in (chatgpt.py).
+    {"label": "OpenAI API (key)", "endpoint": "https://api.openai.com/v1", "key": "OPENAI_API_KEY", "model": None},
     {"label": "Anthropic", "endpoint": "https://api.anthropic.com/v1", "key": "ANTHROPIC_API_KEY",
      "model": "claude-opus-5-5"},
     {"label": "Google Gemini", "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -200,6 +229,8 @@ def chat_models(ids: list[str]) -> list[str]:
 def provider_label(endpoint: str | None, api: str = "openai") -> str:
     """A provider's name for people, from its address: api.deepseek.com is DeepSeek; an address on
     this computer or the local network is Local; anything else is its host."""
+    if api == "chatgpt":
+        return "ChatGPT plan"
     if not endpoint:
         return "Test model" if api == "fake" else api
     from urllib.parse import urlparse
@@ -350,17 +381,19 @@ def refresh_flow(home: Home, ui, client_factory=None) -> int:
 
     factory = client_factory or make_client
     for c in connections(home):
-        if c["api"] not in ("openai", "anthropic"):
+        if c["api"] not in ("openai", "anthropic", "chatgpt"):
             continue
         spec = ModelSpec(name="default", api=c["api"], model="", endpoint=c["endpoint"], key=c["key"])
+        where = c["endpoint"] or c["label"]
         try:
             ids = factory(spec, home).list_models()
         except (ModelError, AttributeError) as e:
-            ui.say(f"{c['endpoint']} did not list its models: {e}")
+            ui.say(f"{where} did not list its models: {e}")
             continue
         before = {m["name"] for m in c["models"]}
-        added = [n for n in add_models(home, c["endpoint"], c["key"], ids) if n not in before]
-        ui.say(f"{c['endpoint']}: {len(ids)} model{'s' if len(ids) != 1 else ''}"
+        new = add_plan_models(home, ids) if c["api"] == "chatgpt" else add_models(home, c["endpoint"], c["key"], ids)
+        added = [n for n in new if n not in before]
+        ui.say(f"{where}: {len(ids)} model{'s' if len(ids) != 1 else ''}"
                + (f", added {', '.join(added)}." if added else ", nothing new."))
     return 0
 
@@ -446,8 +479,17 @@ def model_flow(home: Home, ui, who: str | None = None, name: str | None = None) 
 # Providers: a connection (an endpoint and its key) as one thing to add, edit or remove (plan C5)
 
 
+PLAN = "chatgpt"  # stands for the ChatGPT plan where a provider's address is asked for: it has none
+
+
 def _of(entry: Any, endpoint: str) -> bool:
+    if endpoint == PLAN:
+        return isinstance(entry, dict) and entry.get("api") == "chatgpt"
     return isinstance(entry, dict) and entry.get("endpoint") == endpoint
+
+
+def _spec_of(spec: Any, endpoint: str) -> bool:
+    return spec is not None and (spec.api == "chatgpt" if endpoint == PLAN else spec.endpoint == endpoint)
 
 
 def provider_names(home: Home, endpoint: str) -> list[str]:
@@ -528,7 +570,7 @@ def check_remove_provider(home: Home, endpoint: str) -> dict[str, Any]:
     specs = load_models(home)
     default = specs.get("default")
     blocked = None
-    if default is not None and default.endpoint == endpoint:
+    if _spec_of(default, endpoint):
         blocked = "Your default model comes from this provider. Choose a default model from another one first."
     else:
         used = users(home)
@@ -538,7 +580,7 @@ def check_remove_provider(home: Home, endpoint: str) -> dict[str, Any]:
                        "Give them another model first.")
     warnings = []
     cheap = specs.get("cheap")
-    if cheap is not None and cheap.endpoint == endpoint and not blocked:
+    if _spec_of(cheap, endpoint) and not blocked:
         warnings.append("Helpers use one of its models; they'll use the default model instead.")
     return {"blocked": blocked, "warnings": warnings, "models": names}
 

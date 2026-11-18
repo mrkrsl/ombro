@@ -7,7 +7,8 @@ import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 import { ServerForm } from "../Connect";
 import { describe, useThisComputer } from "../../where";
-import { appVersion } from "../../platform";
+import { appVersion, openLink } from "../../platform";
+import { inTauri } from "../../api/serve";
 
 export const LIMITS: [string, string][] = [
   ["conservative", "Light: up to 300k tokens a job"],
@@ -426,6 +427,145 @@ export function Version() {
   );
 }
 
+/** Use your ChatGPT plan (Sign in with ChatGPT): model calls on the plan's models (named …-plan)
+ * use the usage included in the person's ChatGPT plan, with no key. Separate from an OpenAI API
+ * key, which is a provider above. */
+export function ChatGPTPlan({ models, onChange }: { models: ModelList; onChange: (m: ModelList) => void }) {
+  const { run, problem } = useAction();
+  const remote = useStore((st) => st.remote);
+  const [pasting, setPasting] = useState(false);
+  const [pasted, setPasted] = useState("");
+  const plan = models.chatgpt;
+  const conn = models.connections.find((c) => c.api === "chatgpt");
+  const removal = useRemoval();
+  const reload = async () => {
+    const m = await run((api) => api.get<ModelList>("/models"));
+    if (m) onChange(m);
+  };
+
+  // While the browser is open, look again every two seconds.
+  useEffect(() => {
+    if (!plan?.signing_in) return;
+    const timer = setInterval(() => void reload(), 2000);
+    return () => clearInterval(timer);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!plan) return null;
+
+  async function signIn() {
+    let port: number | null = null;
+    if (remote && inTauri) {
+      // Ombro is on a server, but the browser is here: the app catches the answer and hands it over.
+      const { invoke } = await import("@tauri-apps/api/core");
+      port = await invoke<number>("sign_in_listener");
+    }
+    const r = await run((api) =>
+      api.post<{ url: string | null; problem?: string }>("/models/chatgpt/sign-in", remote ? { hand_over: true, redirect_port: port } : {}),
+    );
+    if (r?.url) {
+      setPasting(remote);
+      setPasted("");
+      await openLink(r.url);
+    }
+    await reload();
+    if (port !== null && r?.url) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const answer = await invoke<string | null>("sign_in_answer", { port, seconds: 600 }).catch(() => null);
+      if (answer) await handOver(answer);
+    }
+  }
+
+  async function handOver(url: string) {
+    const ok = await run((api) => api.post("/models/chatgpt/sign-in/answer", { url }));
+    if (ok) setPasting(false);
+    await reload();
+  }
+
+  const signedIn = plan.state === "signed in";
+  return (
+    <section className="settings-section">
+      <h2>Use your ChatGPT plan</h2>
+      <p className="lede">
+        Sign in with ChatGPT and Ombro's model calls on your plan's models use the usage included in your ChatGPT plan, instead of an
+        API key. This is separate from an OpenAI API key, which you add as a provider above.
+      </p>
+      {plan.welcome && (
+        <div className="notice-card" role="status">
+          <strong>You're using your ChatGPT plan</strong>
+          <p>Model calls on the models ending in -plan use your ChatGPT plan. You can see and limit that use in ChatGPT settings.</p>
+          <button className="primary small" onClick={async () => { const m = await run((api) => api.post<ModelList>("/models/chatgpt/welcomed", {})); if (m) onChange(m); }}>
+            Got it
+          </button>
+        </div>
+      )}
+      {signedIn || conn ? (
+        <div className="rows">
+          <div className="row-block">
+            <Item
+              name="ChatGPT plan"
+              details={[
+                signedIn ? (plan.email ? `Signed in as ${plan.email}` : "Signed in") : "Signed out: these models won't work until you sign in again",
+                conn ? <span title={conn.models.map((m) => m.model).join(", ")}>{conn.models.length === 1 ? "1 model" : `${conn.models.length} models`}</span> : null,
+                signedIn ? "Using ChatGPT plan" : null,
+              ].filter(Boolean)}
+              actions={
+                <>
+                  <button className="text-button strong" onClick={() => void openLink(plan.usage_url)}>Manage usage</button>
+                  {signedIn ? (
+                    <button className="text-button strong" onClick={async () => { const m = await run((api) => api.del<ModelList>("/models/chatgpt/sign-in")); if (m) onChange(m); }}>
+                      Sign out
+                    </button>
+                  ) : (
+                    <button className="text-button strong" disabled={plan.signing_in} onClick={() => void signIn()}>Sign in</button>
+                  )}
+                  {conn && (
+                    <button
+                      className="text-button strong"
+                      onClick={() => void removal.ask("chatgpt", async () => useStore.getState().api!.post<Check>("/models/providers/check", { endpoint: "chatgpt" }))}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </>
+              }
+            />
+            {removal.target === "chatgpt" && (
+              <RemovePanel
+                removal={removal}
+                what="the ChatGPT plan"
+                onConfirm={async () => {
+                  const m = await run((api) => api.post<ModelList>("/models/providers/remove", { endpoint: "chatgpt" }));
+                  if (m) onChange(m);
+                  return !!m;
+                }}
+              />
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="form-actions">
+          <button className="chatgpt-button" disabled={plan.signing_in} onClick={() => void signIn()}>
+            Continue with ChatGPT
+          </button>
+        </div>
+      )}
+      {plan.signing_in && <p className="hint">Waiting for you to continue with ChatGPT, in your browser…</p>}
+      {plan.signing_in && pasting && (
+        <details className="paste-answer">
+          <summary>Signed in, but Ombro is still waiting?</summary>
+          <Field label="Paste the address your browser ended up on" hint="Copy it from the browser's address bar after signing in.">
+            <span className="form-row tight">
+              <input className="text-input" value={pasted} onChange={(e) => setPasted(e.target.value)} />
+              <button className="secondary" disabled={!pasted.trim()} onClick={() => void handOver(pasted)}>Finish</button>
+            </span>
+          </Field>
+        </details>
+      )}
+      <Problem text={plan.problem ?? problem} />
+    </section>
+  );
+}
+
 export function General() {
   const models = useView<ModelList>("/models");
   return (
@@ -436,6 +576,7 @@ export function General() {
       {models.data ? (
         <>
           <Providers models={models.data} onChange={models.set} />
+          <ChatGPTPlan models={models.data} onChange={models.set} />
           <Choices models={models.data} onChange={models.set} />
         </>
       ) : (

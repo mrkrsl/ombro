@@ -1705,3 +1705,41 @@ input[type="checkbox"]:not([role="switch"]) {
   gap: 8px;
   margin: 4px 0 12px;
 }
+
+/* Use your ChatGPT plan (Settings › General): OpenAI's "Continue with ChatGPT" button is black
+   with white text in light mode, and the reverse in dark mode. */
+.chatgpt-button {
+  border: 0;
+  border-radius: 999px;
+  background: #000;
+  color: #fff;
+  padding: 10px 24px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chatgpt-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chatgpt-button {
+    background: #fff;
+    color: #000;
+  }
+}
+:root[data-theme="dark"] .chatgpt-button {
+  background: #fff;
+  color: #000;
+}
+.notice-card {
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 8px 0 12px;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.notice-card p {
+  margin: 0;
+}

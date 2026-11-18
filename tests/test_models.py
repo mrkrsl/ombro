@@ -102,7 +102,7 @@ def test_presets_name_their_keys_and_chat_models_leave_out_the_rest():
     from ombro.models import PRESETS, chat_models
 
     labels = [p["label"] for p in PRESETS]
-    assert "OpenAI" in labels and "Anthropic" in labels
+    assert "OpenAI API (key)" in labels and "Anthropic" in labels
     assert all(p["endpoint"].startswith("http") for p in PRESETS)
     local = next(p for p in PRESETS if p["key"] == "")
     assert model_form(local).fields == []  # a provider on this computer: no URL, no key name asked

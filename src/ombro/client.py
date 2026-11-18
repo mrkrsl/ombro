@@ -50,11 +50,14 @@ class ModelReply:
     # The reply as the provider sent it, for a provider that needs it back exactly (Anthropic's thinking
     # blocks). Kept on the message under "_blocks"; other providers never see keys that start with "_".
     blocks: list[dict[str, Any]] | None = None
+    items: list[dict[str, Any]] | None = None  # the same for OpenAI's Responses API (the ChatGPT plan): "_items"
 
     def as_message(self) -> dict[str, Any]:
         msg: dict[str, Any] = {"role": "assistant", "content": self.content if self.content is not None else ""}
         if self.blocks:
             msg["_blocks"] = self.blocks
+        if self.items:
+            msg["_items"] = self.items
         if self.tool_calls:
             msg["content"] = self.content
             msg["tool_calls"] = [
@@ -320,6 +323,11 @@ def make_client(spec, home) -> ChatClient:
     if spec.api == "fake":
         return ScriptedClient.shared(spec.script, base=home.root)
     key_name = spec.key
+    if spec.api == "chatgpt":
+        from ombro.chatgpt import Session
+        from ombro.responses_client import ChatGPTClient
+
+        return ChatGPTClient(spec.model, Session(home), effort=getattr(spec, "reasoning_effort", None))
     if spec.api == "anthropic" or (spec.api == "openai" and is_anthropic(spec.endpoint)):
         from ombro.anthropic_client import AnthropicClient
 

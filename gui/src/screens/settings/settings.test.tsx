@@ -35,6 +35,8 @@ const models: ModelList = {
     { label: "Anthropic", endpoint: "https://api.anthropic.com/v1", key: "ANTHROPIC_API_KEY", model: "claude-opus-5-5" },
     { label: "Ollama, on this computer", endpoint: "http://localhost:11434/v1", key: "", model: null },
   ],
+  chatgpt: { state: "not signed in", email: null, signing_in: false, problem: null, welcome: null,
+    usage_url: "https://chatgpt.com/settings/usage" },
 };
 const crews: CrewsView = {
   lead: { name: "lead", title: "Lead", model: "default", path: "/x" },
@@ -144,6 +146,34 @@ describe("Settings › General", () => {
     replies["PUT /preferences"] = { ...prefs, outward: "manual" };
     await userEvent.selectOptions(screen.getByLabelText("Approval mode"), "manual");
     expect(sent("PUT", "/preferences")).toEqual({ outward: "manual" });
+  });
+});
+
+describe("Settings › General: the ChatGPT plan", () => {
+  it("signs in with ChatGPT in the browser, apart from an API key", async () => {
+    replies["POST /models/chatgpt/sign-in"] = { url: "https://auth.openai.com/api/accounts/authorize?x=1", state: "waiting" };
+    render(<Settings />);
+    expect(await screen.findByText("Use your ChatGPT plan")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Continue with ChatGPT" }));
+    expect(sent("POST", "/models/chatgpt/sign-in")).toEqual({});
+  });
+
+  it("says once that the plan is in use, and links to its usage", async () => {
+    const plan = { ...models.chatgpt, state: "signed in", email: "ada@invented.invalid",
+      welcome: "You're using your ChatGPT plan." };
+    const conn = { api: "chatgpt", label: "ChatGPT plan", endpoint: null, key: null,
+      models: [{ name: "gpt-invented-plan", model: "gpt-invented", default: false, used_by: [] }] };
+    replies["/models"] = { ...models, connections: [...models.connections, conn], chatgpt: plan };
+    replies["POST /models/chatgpt/welcomed"] = { ...models, connections: [...models.connections, conn],
+      chatgpt: { ...plan, welcome: null } };
+    render(<Settings />);
+    expect(await screen.findByText("You're using your ChatGPT plan")).toBeInTheDocument();
+    expect(screen.getByText("Signed in as ada@invented.invalid")).toBeInTheDocument();
+    expect(screen.getByText("Using ChatGPT plan")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Got it" }));
+    expect(calls.some(([m, p]) => m === "POST" && p === "/models/chatgpt/welcomed")).toBe(true);
+    expect(screen.queryByText("You're using your ChatGPT plan")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manage usage" })).toBeInTheDocument();
   });
 });
 

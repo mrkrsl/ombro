@@ -209,7 +209,10 @@ def scrub(home: Home, text: str) -> tuple[str, int]:
         return text, 0
     from ombro import oauth
 
-    values = {v for v in read_env(home).values() if len(v) >= 8} | oauth.secret_values(home)
+    from ombro import chatgpt
+
+    values = {v for v in read_env(home).values() if len(v) >= 8} | oauth.secret_values(home) | \
+        chatgpt.secret_values(home)
     for name in key_uses(home):
         v = os.environ.get(name)
         if v and len(v) >= 8:

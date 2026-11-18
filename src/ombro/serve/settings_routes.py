@@ -89,8 +89,88 @@ def settings_routes(s: Serve) -> list[Route]:
     def remove_provider(r: Request, data: dict[str, Any]) -> Any:
         from ombro import models
 
-        removed = models.remove_provider(home, _need(data, "endpoint"))
+        endpoint = _need(data, "endpoint")
+        removed = models.remove_provider(home, endpoint)
+        if endpoint == models.PLAN:  # the ChatGPT plan: removing it signs out too
+            from ombro import chatgpt
+
+            chatgpt.sign_out(home)
+            views.CHATGPT_SIGNING.clear()
         return {**views.model_list(home), "removed": removed}
+
+    # -- the ChatGPT plan (Sign in with ChatGPT) -----------------------------------------
+
+    def chatgpt_sign_in(r: Request, data: dict[str, Any]) -> Any:
+        """Start signing in with ChatGPT on a thread and hand back the page to open. GET /models
+        shows when it has finished (chatgpt.signing_in, problem, welcome)."""
+        from ombro import chatgpt, oauth
+
+        signing = views.CHATGPT_SIGNING
+        opened: dict[str, str] = {}
+        ready = threading.Event()
+        receiver = None
+        if data.get("hand_over"):
+            # The app on another computer catches the browser's answer there and hands it over.
+            port = data.get("redirect_port")
+            if port is not None and (not isinstance(port, int) or not 0 < port < 65536):
+                raise HttpError(400, "`redirect_port` must be a port number")
+            receiver = oauth.HandOver(port, path=chatgpt.CALLBACK_PATH)
+            s.handovers[":chatgpt"] = receiver
+
+        def open_browser(url: str) -> None:
+            opened["url"] = url
+            ready.set()
+
+        def run() -> None:
+            try:
+                done = chatgpt.sign_in(home, open_browser=open_browser, say=lambda _t: None, receiver=receiver,
+                                       back_to="the Ombro app")
+                signing.update({"signing_in": False, "problem": None if done["plan"] else chatgpt.NOT_ALLOWED,
+                                "welcome": done["welcome"]})
+            except (oauth.SignInError, Exception) as e:  # noqa: BLE001 - shown on the card
+                text = str(e)
+                signing.update({"signing_in": False, "problem": text[:1].upper() + text[1:] if text else
+                                "The sign-in didn't finish."})
+            finally:
+                ready.set()
+                if s.handovers.get(":chatgpt") is receiver:
+                    s.handovers.pop(":chatgpt", None)
+
+        signing.clear()
+        signing.update({"signing_in": True})
+        threading.Thread(target=run, daemon=True, name="sign-in-chatgpt").start()
+        ready.wait(30)
+        if "url" in opened and signing.get("signing_in"):
+            return {"url": opened["url"], "state": "waiting"}
+        return {"url": None, "state": "failed", "problem": signing.get("problem")}
+
+    def chatgpt_answer(r: Request, data: dict[str, Any]) -> Any:
+        from ombro import oauth
+
+        receiver = s.handovers.get(":chatgpt")
+        if receiver is None:
+            raise LookupError("no ChatGPT sign-in is waiting for an answer")
+        answer = oauth.answer_from(str(data.get("url") or ""))
+        if not answer:
+            raise HttpError(400, "That address has no sign-in answer in it. Copy the whole address from "
+                                 "the browser's address bar.")
+        if not receiver.give(answer):
+            raise HttpError(400, "That isn't the answer to this sign-in. Start the sign-in again.")
+        return {"state": "answered"}
+
+    def chatgpt_welcomed(r: Request, data: dict[str, Any]) -> Any:
+        from ombro import chatgpt
+
+        chatgpt.mark_welcomed(home)
+        views.CHATGPT_SIGNING.pop("welcome", None)
+        return views.model_list(home)
+
+    def chatgpt_sign_out(r: Request) -> Any:
+        from ombro import chatgpt
+
+        done = chatgpt.sign_out(home)
+        views.CHATGPT_SIGNING.clear()
+        return {**views.model_list(home), **done}
 
     # -- crews and roles (C4) ----------------------------------------------------------
 
@@ -476,6 +556,10 @@ def settings_routes(s: Serve) -> list[Route]:
     return [
         Route("/models/providers", _handler(add_provider, status=201, with_body=True), methods=["POST"]),
         Route("/models/providers", _handler(edit_provider, with_body=True), methods=["PUT"]),
+        Route("/models/chatgpt/sign-in", _handler(chatgpt_sign_in, with_body=True), methods=["POST"]),
+        Route("/models/chatgpt/sign-in/answer", _handler(chatgpt_answer, with_body=True), methods=["POST"]),
+        Route("/models/chatgpt/sign-in", _handler(chatgpt_sign_out), methods=["DELETE"]),
+        Route("/models/chatgpt/welcomed", _handler(chatgpt_welcomed, with_body=True), methods=["POST"]),
         Route("/models/providers/check", _handler(check_provider, with_body=True), methods=["POST"]),
         Route("/models/providers/remove", _handler(remove_provider, with_body=True), methods=["POST"]),
         Route("/crews/{name}/check", _handler(check_crew), methods=["GET"]),

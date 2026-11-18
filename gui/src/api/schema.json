@@ -558,6 +558,60 @@
       "title": "ChatDetail",
       "type": "object"
     },
+    "ChatGPTPlan": {
+      "description": "Signing in with ChatGPT, so model calls use the person's ChatGPT plan (no key).",
+      "properties": {
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signing_in": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string"
+        },
+        "usage_url": {
+          "type": "string"
+        },
+        "welcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "email",
+        "signing_in",
+        "problem",
+        "welcome",
+        "usage_url"
+      ],
+      "title": "ChatGPTPlan",
+      "type": "object"
+    },
     "ChatRow": {
       "properties": {
         "id": {
@@ -1980,6 +2034,9 @@
     },
     "ModelList": {
       "properties": {
+        "chatgpt": {
+          "$ref": "#/$defs/ChatGPTPlan"
+        },
         "connections": {
           "items": {
             "$ref": "#/$defs/Connection"
@@ -2006,7 +2063,8 @@
       "required": [
         "connections",
         "default",
-        "presets"
+        "presets",
+        "chatgpt"
       ],
       "title": "ModelList",
       "type": "object"

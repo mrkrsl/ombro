@@ -61,7 +61,8 @@ pub async fn sign_in_listener(app: tauri::AppHandle) -> Result<u16, String> {
             }
             let head = String::from_utf8_lossy(&buf[..got]).to_string();
             match target(&head) {
-                Some(t) if t.starts_with("/callback?") => {
+                // /callback for tool servers; /auth/callback for Sign in with ChatGPT, which asks for it.
+                Some(t) if t.starts_with("/callback?") || t.starts_with("/auth/callback?") => {
                     let body = PAGE.as_bytes();
                     let reply = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

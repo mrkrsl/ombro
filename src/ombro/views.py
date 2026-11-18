@@ -360,7 +360,21 @@ def model_list(home: Home) -> vt.ModelList:
 
     connections: list[vt.Connection] = models.connections(home)  # type: ignore[assignment]
     presets: list[vt.ProviderPreset] = [dict(p) for p in models.PRESETS]  # type: ignore[misc]
-    return {"connections": connections, "default": load_lead_model(home), "presets": presets}
+    return {"connections": connections, "default": load_lead_model(home), "presets": presets,
+            "chatgpt": chatgpt_view(home)}
+
+
+# Signing in with ChatGPT from the app, while it lasts: {"signing_in", "problem", "welcome"}.
+CHATGPT_SIGNING: dict[str, Any] = {}
+
+
+def chatgpt_view(home: Home) -> vt.ChatGPTPlan:
+    from ombro import chatgpt
+
+    st = chatgpt.status(home)
+    return {"state": st["state"], "email": st["email"], "signing_in": bool(CHATGPT_SIGNING.get("signing_in")),
+            "problem": CHATGPT_SIGNING.get("problem"), "welcome": CHATGPT_SIGNING.get("welcome"),
+            "usage_url": chatgpt.USAGE_URL}
 
 
 def approval_row(a: outbox.Action, home: Home | None = None) -> vt.ApprovalRow:

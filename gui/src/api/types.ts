@@ -394,9 +394,24 @@ export interface SignIn {
  * via the `definition` "ModelList".
  */
 export interface ModelList {
+  chatgpt: ChatGPTPlan;
   connections: Connection[];
   default: string | null;
   presets: ProviderPreset[];
+}
+/**
+ * Signing in with ChatGPT, so model calls use the person's ChatGPT plan (no key).
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ChatGPTPlan".
+ */
+export interface ChatGPTPlan {
+  email: string | null;
+  problem: string | null;
+  signing_in: boolean;
+  state: string;
+  usage_url: string;
+  welcome: string | null;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

@@ -617,6 +617,77 @@ def cmd_disconnect(args) -> int:
     return 0
 
 
+def cmd_chatgpt(args) -> int:
+    """Sign in with ChatGPT so model calls use your ChatGPT plan; sign out; or say how it stands."""
+    import webbrowser
+
+    from ombro import chatgpt, oauth
+    from ombro.client import ModelError
+
+    home = _home()
+    action = args.action or "status"
+    if action == "status":
+        st = chatgpt.status(home)
+        if st["state"] == "signed in":
+            print(f"Signed in with ChatGPT{' as ' + st['email'] if st['email'] else ''}: Ombro uses your ChatGPT "
+                  f"plan for the models ending in -plan. Manage usage: {chatgpt.USAGE_URL}")
+        elif st["state"] == "plan not allowed":
+            print(chatgpt.NOT_ALLOWED)
+        else:
+            print("Not signed in with ChatGPT. `ombro chatgpt sign-in` uses your ChatGPT plan instead of an API key.")
+        return 0
+    if action == "sign-out":
+        done = chatgpt.sign_out(home)
+        if not done["signed_out"]:
+            print("Not signed in with ChatGPT.")
+        elif done["revoked"]:
+            print("Signed out of ChatGPT, and the sign-in was revoked. The -plan models stay in models.md but "
+                  "won't work until you sign in again.")
+        else:
+            print("Signed out of ChatGPT here, but OpenAI didn't confirm the sign-in was revoked. You can "
+                  "disconnect Ombro in ChatGPT settings.")
+        return 0
+    if args.paste or _no_browser_here():
+        receiver = oauth.HandOver(path=chatgpt.CALLBACK_PATH)
+
+        def opener(url: str) -> None:
+            print(f"Open this address in a browser on any computer, and continue with ChatGPT:\n\n  {url}\n")
+            print("Afterwards the browser shows a page that can't be reached. That's expected: copy the "
+                  "whole address from its address bar.")
+            while True:
+                text = input("Paste the address here: ").strip()
+                if not text:
+                    raise KeyboardInterrupt
+                answer = oauth.answer_from(text)
+                if answer and receiver.give(answer):
+                    return
+                print("That isn't the address from this sign-in. Copy the whole address after signing in, "
+                      "or press Enter to cancel.")
+    else:
+        receiver = None
+        opener = (lambda url: print(f"Open this address to sign in:\n\n  {url}\n")) if args.no_browser \
+            else webbrowser.open
+        print(f"Waiting up to {oauth.CONNECT_TIMEOUT / 60:.0f} minutes for you to continue with ChatGPT. "
+              "Ctrl-C cancels.")
+    try:
+        done = chatgpt.sign_in(home, open_browser=opener, receiver=receiver, say=lambda _t: None)
+    except (oauth.SignInError, ModelError) as e:
+        raise CliError(f"Could not sign in with ChatGPT: {e}") from None
+    except (KeyboardInterrupt, EOFError):
+        print("\nCancelled. Nothing was saved.")
+        return 1
+    if not done["plan"]:
+        print(chatgpt.NOT_ALLOWED)
+        return 1
+    who = f" as {done['email']}" if done["email"] else ""
+    print(f"Signed in with ChatGPT{who}. Added {len(done['models'])} model{'s' if len(done['models']) != 1 else ''} "
+          f"on your plan: {', '.join(done['models'])}.")
+    if done["welcome"]:
+        print(done["welcome"])
+        chatgpt.mark_welcomed(home)
+    return 0
+
+
 def cmd_models(args) -> int:
     from ombro import models
     from ombro.ui import ConsoleUI
@@ -1337,6 +1408,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--paste", action="store_true", help="sign in with a browser on another computer, then paste "
                    "the address it ends up on (the default over SSH)")
     s.set_defaults(func=cmd_connect)
+
+    s = sub.add_parser("chatgpt", help="use your ChatGPT plan for model calls: sign in, sign out, or status")
+    s.add_argument("action", nargs="?", choices=["status", "sign-in", "sign-out"], help="default: status")
+    s.add_argument("--no-browser", action="store_true", help="print the sign-in address instead of opening it")
+    s.add_argument("--paste", action="store_true", help="sign in with a browser on another computer, then paste "
+                   "the address it ends up on (the default over SSH)")
+    s.set_defaults(func=cmd_chatgpt)
 
     s = sub.add_parser("server", help="add or remove an MCP server in tools.md")
     s.add_argument("action", choices=["add", "remove"])

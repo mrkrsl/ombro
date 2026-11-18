@@ -146,11 +146,21 @@ def ask_name(home: Home, ui: UI, label: str = "") -> str:
     return name
 
 
-def endpoint_field() -> Field:
+# In the terminal, set-up can also sign in with ChatGPT (the browser opens here). The app signs in
+# from Settings › General instead.
+PLAN_CHOICE = {"label": "ChatGPT plan (sign in, no key)", "endpoint": None, "model": None, "key": None,
+               "plan": True}
+
+
+def endpoint_choices(ui: UI) -> list[dict]:
+    return [*ENDPOINTS, PLAN_CHOICE] if isinstance(ui, ConsoleUI) else list(ENDPOINTS)
+
+
+def endpoint_field(choices: list[dict] | None = None) -> Field:
     return Field(
         "endpoint", "First, choose a provider", "choice", default="1",
         options=[Option(str(i), e["label"] + (f" ({e['endpoint']})" if e["endpoint"] else ""))
-                 for i, e in enumerate(ENDPOINTS, 1)],
+                 for i, e in enumerate(choices or ENDPOINTS, 1)],
         invalid="Please choose one of the numbers shown.",
     )
 
@@ -234,7 +244,13 @@ def connect_model(home: Home, ui: UI, client_factory=make_client) -> tuple[str, 
     from ombro import models as model_list
 
     while True:
-        preset = ENDPOINTS[int(ui.ask(endpoint_field())) - 1]
+        choices = endpoint_choices(ui)
+        preset = choices[int(ui.ask(endpoint_field(choices))) - 1]
+        if preset.get("plan"):
+            done = _plan_sign_in(home, ui)
+            if done:
+                return done
+            continue
         answers = ui.form(model_form(preset)) if model_form(preset).fields else {}
         endpoint = preset["endpoint"] or str(answers.get("url") or "").strip()
         key_name = preset["key"] if preset["key"] is not None else str(answers.get("key_name") or "").strip()
@@ -279,6 +295,30 @@ def connect_model(home: Home, ui: UI, client_factory=make_client) -> tuple[str, 
                 entry["key"] = key_name
             _write_default_model(home, entry)
         return endpoint, model, key_name
+
+
+def _plan_sign_in(home: Home, ui: UI) -> tuple[str, str, str] | None:
+    """Set-up's ChatGPT plan choice: sign in in the browser, and the plan's first model is the default."""
+    import webbrowser
+
+    from ombro import chatgpt, oauth
+    from ombro import models as model_list
+
+    ui.say("Your browser will open to continue with ChatGPT. Allow Ombro to use your plan, then come back here.",
+           level="lead")
+    try:
+        done = chatgpt.sign_in(home, open_browser=webbrowser.open, say=lambda _t: None)
+    except (oauth.SignInError, ModelError) as e:
+        ui.show(Failure(f"Couldn't sign in with ChatGPT: {e}"))
+        return None
+    if not done["plan"] or not done["models"]:
+        ui.show(Failure(chatgpt.NOT_ALLOWED))
+        return None
+    model_list.set_default(home, done["models"][0])
+    if done["welcome"]:
+        ui.say(done["welcome"], level="lead")
+        chatgpt.mark_welcomed(home)
+    return "ChatGPT plan", load_models(home)["default"].model, ""
 
 
 def _offer_search_key(home: Home, ui: UI) -> None:

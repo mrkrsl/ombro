@@ -299,10 +299,21 @@ class ProviderPreset(TypedDict):
     model: str | None  # suggested when the provider doesn't list its models
 
 
+class ChatGPTPlan(TypedDict):
+    """Signing in with ChatGPT, so model calls use the person's ChatGPT plan (no key)."""
+    state: str  # "signed in", "plan not allowed", "not signed in"
+    email: str | None
+    signing_in: bool  # waiting for the browser
+    problem: str | None  # why the last sign-in didn't finish
+    welcome: str | None  # the first-time "You're using your ChatGPT plan", until it's been shown
+    usage_url: str  # ChatGPT settings › Usage
+
+
 class ModelList(TypedDict):
     connections: list[Connection]
     default: str | None
     presets: list[ProviderPreset]  # well-known providers, to fill the add form
+    chatgpt: ChatGPTPlan
 
 
 # -- the summary -------------------------------------------------------------------

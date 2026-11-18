@@ -306,7 +306,7 @@ class Receiver:
     """Catches the sign-in answer on a 127.0.0.1 address, once. `back_to` is where the page it
     shows sends the user back to: the terminal, or the app (when the app's own Ombro signs in)."""
 
-    def __init__(self, back_to: str = "the terminal"):
+    def __init__(self, back_to: str = "the terminal", path: str = "/callback"):
         from ombro.signin_page import success_page
 
         page = success_page(back_to).encode("utf-8")
@@ -318,7 +318,7 @@ class Receiver:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 parts = urllib.parse.urlsplit(self.path)
-                if parts.path != "/callback":
+                if parts.path != path:
                     self.send_response(404)
                     self.end_headers()
                     return
@@ -344,7 +344,7 @@ class Receiver:
 
         self._server = HTTPServer(("127.0.0.1", 0), Handler)
         self._received, self._done = received, done
-        self.redirect_uri = f"http://127.0.0.1:{self._server.server_address[1]}/callback"
+        self.redirect_uri = f"http://127.0.0.1:{self._server.server_address[1]}{path}"
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
 
     def expect(self, state: str) -> None:
@@ -368,14 +368,14 @@ class HandOver:
     ended up on (`ombro connect` over SSH). `give` takes it; only the answer to this sign-in
     (its `state`) is taken, so a stray one can't end it."""
 
-    def __init__(self, port: int | None = None):
+    def __init__(self, port: int | None = None, path: str = "/callback"):
         if not port:
             import socket
 
             with socket.socket() as sock:  # a port that's free here; the browser's machine may differ
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
-        self.redirect_uri = f"http://127.0.0.1:{port}/callback"
+        self.redirect_uri = f"http://127.0.0.1:{port}{path}"
         self._expected: str | None = None
         self._answer: dict[str, str] = {}
         self._done = threading.Event()
