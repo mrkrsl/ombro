@@ -60,7 +60,7 @@ CANDIDATES = (
 FLAGS = (
     "--headless", "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-sync",
     "--disable-background-networking", "--disable-component-update", "--disable-default-apps",
-    "--disable-features=Translate,MediaRouter,OptimizationHints", "--mute-audio", "--hide-scrollbars",
+    "--disable-features=Translate,MediaRouter,OptimizationHints,MacAppCodeSignClone", "--mute-audio", "--hide-scrollbars",
     "--window-size=1280,900", "--password-store=basic", "--use-mock-keychain",
     "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--remote-allow-origins=",
 )

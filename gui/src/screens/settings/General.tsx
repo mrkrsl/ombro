@@ -1,7 +1,7 @@
 // Settings › General (design 09): what to call you and your profile; model providers (add, edit,
 // delete: C5); the default model, the token usage limit and the approval mode; the theme.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { BrowserView, Connection, ModelList, Preferences, ProviderPreset } from "../../api/types";
 import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
@@ -418,6 +418,16 @@ function Providers({ models, onChange }: { models: ModelList; onChange: (m: Mode
   );
 }
 
+/** A setting under its section's heading: the control and its hint, with no label of its own. */
+function Setting({ hint, children }: { hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="field">
+      {children}
+      {hint && <span className="field-hint">{hint}</span>}
+    </div>
+  );
+}
+
 function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelList) => void }) {
   const { run, problem } = useAction();
   const prefs = useView<Preferences>("/preferences");
@@ -430,6 +440,7 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
   const current = all.find((m) => m.default)?.name ?? "";
   const mode = prefs.data?.outward ?? "balanced";
   return (
+    <>
     <section className="settings-section">
       <Field label="Default model" hint="The Lead and every crew member without a model of its own use it.">
         <span className="form-row tight">
@@ -469,28 +480,11 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
           <Saved when={saved.limit ?? 0} />
         </span>
       </Field>
-      <Field label="Approval mode" hint={MODES.find(([v]) => v === mode)?.[2]}>
-        <span className="form-row tight">
-          <select
-            aria-label="Approval mode"
-            value={mode}
-            onChange={async (e) => {
-              const p = await run((api) => api.put<Preferences>("/preferences", { outward: e.target.value }));
-              if (p) { prefs.set(p); mark("mode"); }
-            }}
-          >
-            {MODES.map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <Saved when={saved.mode ?? 0} />
-        </span>
-      </Field>
-      {browser.data && (
-        <Field
-          label="Browser"
+    </section>
+    {browser.data && (
+      <section className="settings-section">
+        <h2>Browser</h2>
+        <Setting
           hint={
             browser.data.problem ??
             `Crews and chat read web pages in ${browser.data.using} without a window, with a new, empty profile each time. Forms with your details wait for your approval.`
@@ -517,9 +511,34 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
             </select>
             <Saved when={saved.browser ?? 0} />
           </span>
-        </Field>
-      )}
-      <Field label="Appearance">
+        </Setting>
+      </section>
+    )}
+    <section className="settings-section">
+      <h2>Approval mode</h2>
+      <Setting hint={MODES.find(([v]) => v === mode)?.[2]}>
+        <span className="form-row tight">
+          <select
+            aria-label="Approval mode"
+            value={mode}
+            onChange={async (e) => {
+              const p = await run((api) => api.put<Preferences>("/preferences", { outward: e.target.value }));
+              if (p) { prefs.set(p); mark("mode"); }
+            }}
+          >
+            {MODES.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <Saved when={saved.mode ?? 0} />
+        </span>
+      </Setting>
+    </section>
+    <section className="settings-section">
+      <h2>Appearance</h2>
+      <Setting>
         <span className="form-row tight">
           <select aria-label="Appearance" value={themeChoice} onChange={(e) => setThemeChoice(e.target.value as ThemeChoice)}>
             {THEMES.map(([v, label]) => (
@@ -529,9 +548,10 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
             ))}
           </select>
         </span>
-      </Field>
+      </Setting>
       <Problem text={problem} />
     </section>
+    </>
   );
 }
 
