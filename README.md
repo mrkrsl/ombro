@@ -94,8 +94,9 @@ ombro approvals decline ab12-2         # drop it for good
 ombro approvals edit ab12-3            # change its arguments; it waits for approval again
 ombro tools [server]                   # tools and MCP servers; a server's tools and their permission
 ombro tools web.search --provider duckduckgo --max-calls 30   # change a built-in tool
-ombro server add <name>                # add an MCP server to tools.md; asks for any secret hidden
-ombro server remove <name>
+ombro tools add <name>                 # add a web API or an MCP server (asks which, or --api / --mcp)
+ombro tools edit <name>                # change a web API
+ombro tools remove <name>              # remove a web API or an MCP server
 ombro folder                           # shared folders, and whether each can be backed up
 ombro folder add ~/Documents/Brand     # share one; asks read or write
 ombro folder remove brand
@@ -166,7 +167,8 @@ The `/` commands do what their `ombro` commands do:
 - `/keys`, `/keys set <NAME>` (hidden); `/folder`, `/folder add <path>`,
   `/folder remove <name>`; `/schedule`, `/schedule enable | disable <name>`;
   `/tools`, `/tools <tool>` (change a built-in tool's provider or calls, such
-  as `/tools web.search`), `/tools add [name]`, `/tools remove <name>`; `/preferences`,
+  as `/tools web.search`), `/tools add [name]` (a web API or an MCP server),
+  `/tools remove <name>`; `/preferences`,
   `/preferences edit`; `/theme`, `/help`, `/quit`.
 
 Enter sends; Shift+Return (or Option+Return, Ctrl+J, or `\` then Return)
@@ -1002,7 +1004,8 @@ tools:
 ---
 ```
 
-`ombro server add <name>` writes an entry like these for you, so tools.md need
+`ombro tools add --mcp <name>` (or `/tools add`, choosing an MCP server) writes
+an entry like these for you, so tools.md need
 not be edited by hand. It asks whether the server is local or remote, takes its
 command or address, and asks for each secret in a hidden prompt: the value goes
 into `secrets/keys.env` and tools.md gets only `${NAME}`, in `env` for a local
@@ -1012,10 +1015,12 @@ command line, checks the entry as a job would, and writes nothing until you
 confirm. The same as flags, for scripts and interfaces:
 
 ```bash
-ombro server add notes --command "uvx invented-notes-mcp==1.2.3" --secret NOTES_TOKEN --class internal
-ombro server add tracker --url https://mcp.tracker.invalid/mcp --secret Authorization=TRACKER_TOKEN
-ombro server remove notes    # its tool settings too; says which roles named its tools; keys are kept
+ombro tools add notes --mcp --command "uvx invented-notes-mcp==1.2.3" --secret NOTES_TOKEN --class internal
+ombro tools add tracker --mcp --url https://mcp.tracker.invalid/mcp --secret Authorization=TRACKER_TOKEN
+ombro tools remove notes     # its tool settings too; says which roles named its tools; keys are kept
 ```
+
+(`ombro server add` and `ombro server remove`, the old names, still work.)
 
 `${NAME}` is read from `secrets/keys.env` when the server starts and is never logged.
 A server Ombro starts gets only `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`,
@@ -1334,8 +1339,8 @@ flows in `flows.py`.
 
 **Tools.** `tools.py` is the registry. Native tools (search, fetch,
 workspace files) are in `native.py`; outward tools, their class and the
-permission each call gets in `outward.py`; MCP servers in `mcp.py`; web APIs
-in `apitool.py`; Composio in `composio.py`; the browser in `browser.py`;
+permission each call gets in `outward.py`; MCP servers in `mcp.py` (added and
+removed by `mcp_servers.py`); web APIs in `apitool.py` (added by `tool_cmd.py`); Composio in `composio.py`; the browser in `browser.py`;
 staged actions waiting for approval in `outbox.py`. Text that came from
 outside (web pages, tool answers) is marked as material in `material.py`.
 

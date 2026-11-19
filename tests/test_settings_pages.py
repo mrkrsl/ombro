@@ -9,7 +9,7 @@ import os
 import pytest
 
 from conftest import write_role
-from ombro import keys, mdfile, models, removing, server_cmd, skills
+from ombro import keys, mdfile, models, removing, mcp_servers, skills
 from ombro.fake import ScriptedClient
 from ombro.home import ensure_crew
 from ombro.jobs import new_job_id
@@ -118,10 +118,10 @@ def test_the_profile_keeps_its_guidance_and_the_mode_keeps_per_tool_choices(home
 
 
 def test_a_server_is_updated_in_place(home):
-    server_cmd.add_server(home, "invented", {"url": "https://mcp.invented.invalid", "class": "internal"})
+    mcp_servers.add_server(home, "invented", {"url": "https://mcp.invented.invalid", "class": "internal"})
     mdfile.write(home.tools, {**mdfile.read(home.tools)[0], "tools": {"mcp.invented.post": {"class": "external"}}},
                  mdfile.read(home.tools)[1])
-    server_cmd.update_server(home, "invented", {"url": "https://mcp2.invented.invalid", "class": "internal"})
+    mcp_servers.update_server(home, "invented", {"url": "https://mcp2.invented.invalid", "class": "internal"})
     t = load_tool_settings(home)
     assert t.servers["invented"]["url"] == "https://mcp2.invented.invalid" and "mcp.invented.post" in t.tools
 
@@ -227,7 +227,7 @@ def test_a_sign_in_from_an_app_on_another_computer(serve, home, monkeypatch):
     world = World()
     real = oauth.connect
     monkeypatch.setattr(oauth, "connect", lambda *a, **k: real(*a, transport=world.transport(), **k))
-    server_cmd.add_server(home, "notes", server_cmd.server_entry(url=MCP))
+    mcp_servers.add_server(home, "notes", mcp_servers.server_entry(url=MCP))
 
     assert serve.http.post("/tools/servers/notes/sign-in/answer", json={"url": "x"}).status_code == 404
     started = serve.http.post("/tools/servers/notes/sign-in", json={"hand_over": True, "redirect_port": 5555}).json()

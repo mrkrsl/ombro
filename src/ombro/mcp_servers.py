@@ -1,4 +1,4 @@
-"""`ombro server add | remove`: MCP servers in tools.md, without editing the file by hand.
+"""`ombro tools add --mcp` and `ombro tools remove`: MCP servers in tools.md, without editing the file by hand.
 
 A server is either local (a command Ombro starts) or remote (an address). Any
 secret it needs is typed into a hidden prompt, stored in secrets/keys.env, and
@@ -282,7 +282,7 @@ def cmd_server(args, *, ask: Callable[[str], str] | None = None,
 
 
 def add_flow(home: Home, args, ui: UI) -> int:
-    """`ombro server add`: what is missing from `args` is asked through `ui`."""
+    """Adding an MCP server (`ombro tools add --mcp`): what is missing from `args` is asked through `ui`."""
     cli = _cli()
     name = (args.name or "").strip() or ui.text("name", "Server name (lower-case, e.g. sheets)").strip()
     if not SERVER_NAME.match(name or ""):
@@ -293,7 +293,7 @@ def add_flow(home: Home, args, ui: UI) -> int:
         raise cli.CliError(str(e)) from None
     if name in existing:
         raise cli.CliError(f"There is already a server named {name!r} in tools.md. Remove it first with "
-                           f"`ombro server remove {name}`, or edit {home.tools}.")
+                           f"`ombro tools remove {name}`, or edit {home.tools}.")
     command, url = args.command, args.url
     if not command and not url:
         kind = ui.ask(Field("kind", "Is it local (a command Ombro starts) or remote (an address)?", "choice",
@@ -381,11 +381,11 @@ def add_flow(home: Home, args, ui: UI) -> int:
 
 
 def remove_flow(home: Home, args, ui: UI) -> int:
-    """`ombro server remove`, asking through `ui`."""
+    """Removing an MCP server (`ombro tools remove`), asking through `ui`."""
     cli = _cli()
     name = (args.name or "").strip()
     if not name:
-        raise cli.CliError("Give the server's name, e.g. `ombro server remove sheets`.")
+        raise cli.CliError("Give the server's name, e.g. `ombro tools remove sheets`.")
     try:
         servers = ToolSettings.from_dict(_read_tools(home)[0], str(home.tools)).servers
     except SetupError as e:

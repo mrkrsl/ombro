@@ -259,7 +259,7 @@ def settings_routes(s: Serve) -> list[Route]:
     def _server_entry(name: str, data: dict[str, Any], old: dict[str, Any] | None = None) -> tuple[dict, dict]:
         """The tools.md entry from the form, and the keys to store. A secret left blank in an edit
         keeps the one already there."""
-        from ombro import server_cmd
+        from ombro import mcp_servers
 
         url = str(data.get("url") or "").strip() or None
         command = str(data.get("command") or "").strip() or None
@@ -270,7 +270,7 @@ def settings_routes(s: Serve) -> list[Route]:
         for var, value in secrets.items():
             if not re.match(r"^[A-Za-z_][A-Za-z0-9_-]*$", var):
                 raise HttpError(400, f"{var!r} can't be the name of a header or a setting")
-            key = server_cmd.key_name(name, var)
+            key = mcp_servers.key_name(name, var)
             to_set[key] = value
             ref = "${" + key + "}"
             refs[var] = f"Bearer {ref}" if url and var.lower() == "authorization" else ref
@@ -279,7 +279,7 @@ def settings_routes(s: Serve) -> list[Route]:
             for var in keep:
                 if var in had and var not in refs:
                     refs[var] = had[var]
-        entry = server_cmd.server_entry(command=command, url=url, env=None if url else refs,
+        entry = mcp_servers.server_entry(command=command, url=url, env=None if url else refs,
                                         headers=refs if url else None)
         if old:
             for k, v in old.items():  # what the form doesn't show, such as a class or a timeout
@@ -291,19 +291,19 @@ def settings_routes(s: Serve) -> list[Route]:
         return entry, to_set
 
     def add_server(r: Request, data: dict[str, Any]) -> Any:
-        from ombro import server_cmd
+        from ombro import mcp_servers
 
         name = re.sub(r"[^a-z0-9_-]+", "-", _need(data, "name").strip().lower()).strip("-")[:31]
         if not name:
             raise HttpError(400, "Give it a name, such as notion or sheets.")
         entry, to_set = _server_entry(name, data)
         with keys.setting(home, to_set):
-            server_cmd.add_server(home, name, entry)
-        warning = server_cmd.pin_warning(entry["command"], entry.get("args") or []) if entry.get("command") else None
+            mcp_servers.add_server(home, name, entry)
+        warning = mcp_servers.pin_warning(entry["command"], entry.get("args") or []) if entry.get("command") else None
         return {**tools_view(), "added": name, "warning": warning}
 
     def edit_server(r: Request, data: dict[str, Any]) -> Any:
-        from ombro import server_cmd
+        from ombro import mcp_servers
         from ombro.settings import load_tool_settings
 
         name = r.path_params["name"]
@@ -312,33 +312,33 @@ def settings_routes(s: Serve) -> list[Route]:
             raise LookupError(f"no tool called {name!r}")
         entry, to_set = _server_entry(name, data, old)
         with keys.setting(home, to_set):
-            server_cmd.update_server(home, name, entry)
+            mcp_servers.update_server(home, name, entry)
         keys.forget_unused(home, _server_keys(name, old))  # a secret the edit took out
-        warning = server_cmd.pin_warning(entry["command"], entry.get("args") or []) if entry.get("command") else None
+        warning = mcp_servers.pin_warning(entry["command"], entry.get("args") or []) if entry.get("command") else None
         return {**tools_view(), "warning": warning}
 
     def check_server(r: Request) -> Any:
-        from ombro import server_cmd
+        from ombro import mcp_servers
         from ombro.settings import load_tool_settings
 
         name = r.path_params["name"]
         cfg = load_tool_settings(home).servers.get(name)
         if cfg is None:
             raise LookupError(f"no tool called {name!r}")
-        users = server_cmd.roles_using(home, name)
+        users = mcp_servers.roles_using(home, name)
         warnings = [f"{', '.join(users)} use{'s' if len(users) == 1 else ''} its tools and will go without them."] \
             if users else []
         warnings += _key_notes(_server_keys(name, cfg), f"MCP server {name}")
         return {"blocked": None, "warnings": warnings}
 
     def remove_server(r: Request) -> Any:
-        from ombro import oauth, server_cmd
+        from ombro import oauth, mcp_servers
         from ombro.settings import load_tool_settings
 
         name = r.path_params["name"]
         check_server(r)
         cfg = load_tool_settings(home).servers.get(name) or {}
-        server_cmd.remove_server(home, name)
+        mcp_servers.remove_server(home, name)
         keys.forget_unused(home, _server_keys(name, cfg))
         if oauth.load(home, name) is not None:
             oauth.disconnect(home, name)
@@ -348,7 +348,7 @@ def settings_routes(s: Serve) -> list[Route]:
     def server_claims(r: Request) -> Any:
         """What each of a server's tools says it does, and which still wait for your confirmation:
         the same as `ombro tools <server>`. Starts the server, which may download it first."""
-        from ombro import server_cmd
+        from ombro import mcp_servers
         from ombro.mcp import McpError
         from ombro.settings import load_tool_settings
 
@@ -356,14 +356,14 @@ def settings_routes(s: Serve) -> list[Route]:
         if name not in load_tool_settings(home).servers:
             raise LookupError(f"no tool called {name!r}")
         try:
-            rows = server_cmd.tool_claims(home, name)
+            rows = mcp_servers.tool_claims(home, name)
         except McpError as e:
             return {"tools": [], "unconfirmed": [], "problem": f"Its tools could not be listed: {e}"}
-        return {"tools": rows, "unconfirmed": server_cmd.unconfirmed(rows), "problem": None}
+        return {"tools": rows, "unconfirmed": mcp_servers.unconfirmed(rows), "problem": None}
 
     def confirm_claims(r: Request, data: dict[str, Any]) -> Any:
         """Your yes to what the server says of these tools (they stay inside your organisation)."""
-        from ombro import server_cmd
+        from ombro import mcp_servers
 
         tools = data.get("tools")
         if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
@@ -372,7 +372,7 @@ def settings_routes(s: Serve) -> list[Route]:
         if claims["problem"]:
             raise HttpError(400, claims["problem"])
         wanted = [t for t in tools if t in claims["unconfirmed"]]  # only a claim the server makes now
-        server_cmd.confirm_internal(home, r.path_params["name"], wanted)
+        mcp_servers.confirm_internal(home, r.path_params["name"], wanted)
         return server_claims(r)
 
     def sign_in(r: Request, data: dict[str, Any]) -> Any:

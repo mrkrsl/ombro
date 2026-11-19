@@ -1,4 +1,5 @@
-"""`ombro server add | remove`. All values are invented; the only server started is Ombro's fake one."""
+"""`ombro tools add --mcp` and `ombro tools remove` (and `ombro server`, their old name).
+All values are invented; the only server started is Ombro's fake one."""
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import pytest
 
 from conftest import write_role
 from ombro import cli, keys, mdfile
-from ombro.server_cmd import key_name, pin_warning, server_entry, ServerError
+from ombro.mcp_servers import key_name, pin_warning, server_entry, ServerError
 from ombro.settings import load_tool_settings
 
 SECRET = "invented-secret-value-123"
@@ -146,3 +147,34 @@ def test_pin_warning_and_entries():
     assert key_name("my-notes", "api-key") == "MY_NOTES_API_KEY"
     with pytest.raises(ServerError, match="internal or external"):
         server_entry(url="https://x.invalid", server_class="read-only")
+
+
+def test_tools_add_adds_an_mcp_server_as_server_add_does(home, typed, capsys):
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}}}, "")
+    typed("y")
+    assert cli.main(["tools", "add", "notes", "--mcp", "--command", "uvx invented-notes-mcp==1.2.3",
+                     "--class", "internal", "--no-prompt"]) == 0
+    assert load_tool_settings(home).servers["notes"]["class"] == "internal"
+
+
+def test_tools_add_asks_what_kind_when_not_told(home, typed, capsys):
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}}}, "")
+    a, _ = typed("m", "y")  # an MCP server; then yes to adding it
+    assert cli.main(["tools", "add", "notes", "--url", "https://mcp.notes.invalid/mcp"]) == 0
+    assert "web API, or an MCP server" in a.prompts[0]
+    assert "notes" in load_tool_settings(home).servers
+
+
+def test_a_server_class_must_be_internal_or_external(home, capsys):
+    assert cli.main(["tools", "add", "notes", "--mcp", "--command", "uvx x==1", "--class", "read-only"]) != 0
+    assert "internal or external" in capsys.readouterr().err
+
+
+def test_tools_remove_removes_an_api_or_a_server(home, typed, capsys):
+    mdfile.write(home.tools, {"servers": {"notes": {"command": "uvx", "args": ["invented-notes-mcp==1.2.3"]}},
+                              "apis": {"weather": {"url": "https://api.weather.invalid/v1", "about": "Invented."}}},
+                 "")
+    assert cli.main(["tools", "remove", "weather", "--yes"]) == 0
+    assert "weather" not in load_tool_settings(home).apis
+    assert cli.main(["tools", "remove", "notes", "--yes"]) == 0
+    assert "notes" not in load_tool_settings(home).servers

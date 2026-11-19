@@ -43,3 +43,18 @@ def test_the_command_line_changes_a_built_in_tool(home):
 
     assert main(["tools", "web.fetch", "--max-calls", "9"]) == 0
     assert load_limits(home, None, load_tool_settings(home)).max_calls_for("web.fetch") == 9
+
+
+def test_what_kind_of_tool_is_added_is_asked_unless_said():
+    import pytest as _pytest
+
+    from ombro import tool_cmd
+    from ombro.settings import SetupError
+    from test_ui import ScriptedUI
+
+    assert tool_cmd.which_kind(ScriptedUI([]), api=True) == "api"
+    assert tool_cmd.which_kind(ScriptedUI([]), mcp=True) == "mcp"
+    ui = ScriptedUI(["mcp"])
+    assert tool_cmd.which_kind(ui) == "mcp"
+    with _pytest.raises(SetupError):
+        tool_cmd.which_kind(ScriptedUI([]), api=True, mcp=True)

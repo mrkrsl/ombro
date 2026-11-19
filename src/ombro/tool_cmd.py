@@ -1,6 +1,6 @@
 """Changing a native tool from an interface or the command line: which provider backs it
 (web.search, web.fetch) and how many calls a job may make. Written to tools.md, keeping
-everything else in it. MCP servers are added and removed elsewhere (server_cmd)."""
+everything else in it. MCP servers are added and removed in mcp_servers; which_kind asks which of the two a new tool is."""
 
 from __future__ import annotations
 
@@ -222,3 +222,15 @@ def api_flow(home: Home, ui: UI, action: str, name: str | None, given: dict, yes
     if old is None:
         ui.say("Every crew member is offered it from the next job.")
     return 0
+
+
+def which_kind(ui: UI, api: bool = False, mcp: bool = False) -> str:
+    """"api" or "mcp": what `ombro tools add` and `/tools add` add, from --api or --mcp, or asked."""
+    if api and mcp:
+        raise SetupError("Say --api or --mcp, not both.")
+    if api or mcp:
+        return "api" if api else "mcp"
+    return str(ui.ask(Field("kind", "What are you adding: a web API, or an MCP server?", "choice", default="api",
+                            options=[Option("api", "a web API (an address and a key)", ("a", "web api")),
+                                     Option("mcp", "an MCP server (a program, or a remote server)",
+                                            ("m", "server", "mcp server"))])) or "api")

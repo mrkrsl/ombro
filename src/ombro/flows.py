@@ -520,22 +520,40 @@ class Flows:
             return
         action = words[0].lower() if words else "list"
         if action in ("add", "remove"):
-            from ombro.server_cmd import ServerError, add_flow, remove_flow
+            # The same as `ombro tools add` and `ombro tools remove`: a web API or an MCP server.
+            from ombro import apitool
             from ombro.cli import CliError
+            from ombro.mcp_servers import ServerError, add_flow, remove_flow
+            from ombro.settings import SetupError, load_tool_settings
 
-            args = argparse.Namespace(name=words[1] if len(words) > 1 else None, command=None, url=None, env=None,
-                                      header=None, secret=None, server_class=None, no_prompt=False, yes=False)
+            flags = {w.lower() for w in words[1:] if w.startswith("--")}
+            names = [w for w in words[1:] if not w.startswith("--")]
+            name = names[0] if names else None
+            args = argparse.Namespace(name=name, command=None, url=None, env=None, header=None, secret=None,
+                                      server_class=None, no_prompt=False, yes=False)
             try:
-                (add_flow if action == "add" else remove_flow)(self.home, args, self.ui)
-            except (CliError, ServerError) as e:
+                if action == "remove":
+                    if name and name in load_tool_settings(self.home).apis:
+                        if self.ui.yes("confirm", f"Remove the API {name}? Its key is kept."):
+                            apitool.remove_api(self.home, name)
+                            self.say(f"Removed the API {name}.", level="done")
+                        return
+                    remove_flow(self.home, args, self.ui)
+                    return
+                kind = tool_cmd.which_kind(self.ui, "--api" in flags, "--mcp" in flags)
+                if kind == "api":
+                    tool_cmd.api_flow(self.home, self.ui, "add", name, {})
+                else:
+                    add_flow(self.home, args, self.ui)
+            except (CliError, ServerError, SetupError) as e:
                 self.fail(str(e))
             return
         env = {**os.environ, **self.home.process_env()}
         cmd = [*jobs.ombro_argv(), "tools"] + ([words[0]] if words else [])
         r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=180, stdin=subprocess.DEVNULL)
         self.say((r.stdout or r.stderr).rstrip() or "No output.")
-        self.say("Change a built-in tool with /tools <tool>, such as /tools web.search. Add an MCP server with "
-                 "/tools add [name]; remove one with /tools remove <name>.")
+        self.say("Change a built-in tool with /tools <tool>, such as /tools web.search. Add a web API or an MCP "
+                 "server with /tools add [name]; remove one with /tools remove <name>.")
 
     def cmd_preferences(self, words: list[str], rest: str) -> None:
         if words and words[0].lower() == "edit":

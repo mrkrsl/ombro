@@ -392,7 +392,7 @@ def cmd_tools(args) -> int:
           + " (`ombro folder`)")
     print("\nMCP servers (tools.md `servers:`):")
     if not rows["servers"]:
-        print("  none yet. Add one with `ombro server add <name>` (or under `servers:` in tools.md), then see "
+        print("  none yet. Add one with `ombro tools add --mcp <name>` (or under `servers:` in tools.md), then see "
               "its tools with `ombro tools <server>`.")
     for r in rows["servers"]:
         how = r["url"] or " ".join([r["command"] or "", *map(str, r["args"])])
@@ -498,19 +498,19 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
                   "not with `class:` on the server.")
     waiting = [r["tool"].split(".", 2)[2] for r in rows if r["class_from"] == "unconfirmed"]
     if waiting:
-        from ombro import server_cmd
+        from ombro import mcp_servers
 
         claims = [{"tool": r["tool"].split(".", 2)[2], "description": r["description"], "class_from": r["class_from"]}
                   for r in rows]
         if getattr(args, "confirm", False):
-            server_cmd.confirm_internal(home, name, waiting)
+            mcp_servers.confirm_internal(home, name, waiting)
             print(f"\nConfirmed: {len(waiting)} tool(s) of {name} count as internal.")
         elif sys.stdin.isatty():
             from ombro.ui import ConsoleUI
 
-            server_cmd.confirm_flow(home, name, ConsoleUI(), claims)
+            mcp_servers.confirm_flow(home, name, ConsoleUI(), claims)
         else:
-            print("\n" + "\n".join(server_cmd.claims_text(name, claims)))
+            print("\n" + "\n".join(mcp_servers.claims_text(name, claims)))
             print(f"Confirm them with `ombro tools {name} --confirm`.")
     print("\nGive a role a tool by naming it in its config.md `tools:` list.")
     return 0

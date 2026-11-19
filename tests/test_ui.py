@@ -266,7 +266,7 @@ def test_adding_a_server_from_an_interface(home):
     import argparse
 
     from ombro import keys
-    from ombro.server_cmd import add_flow
+    from ombro.mcp_servers import add_flow
     from ombro.settings import load_tool_settings
 
     args = argparse.Namespace(name=None, command=None, url=None, env=None, header=None, secret=None,

@@ -14,12 +14,12 @@ import sys
 import pytest
 
 from conftest import fake_sent, use_fake_mcp, write_role
-from ombro import cli, fake, mdfile, outbox, outward, server_cmd
+from ombro import cli, fake, mdfile, outbox, outward, mcp_servers
 from ombro.settings import SetupError, ToolSettings, load_tool_settings
 from ombro.ui import Note
 from test_composio import KEY, connected, fake_composio  # noqa: F401 - fixtures
 from test_outbox import ALL, script, spec_with
-from test_server_cmd import typed  # noqa: F401 - fixture
+from test_mcp_servers import typed  # noqa: F401 - fixture
 
 LONG_BODY = "Dear client, thank you for the invented order. " * 16  # well past the old 400-character cut
 ATTACKER = "attacker@example.invalid"
@@ -203,11 +203,11 @@ def test_adding_a_server_shows_its_claims_and_keeps_the_yes(home, typed, capsys)
     assert "1 of sheets's tools say they change things but stay inside" in said and "mcp.sheets.add_row" in said
     assert "Confirmed: 1 tool(s) of sheets count as internal." in said
     assert load_tool_settings(home).servers["sheets"]["confirmed_internal"] == ["add_row"]
-    rows = {r["tool"]: r for r in server_cmd.tool_claims(home, "sheets")}
+    rows = {r["tool"]: r for r in mcp_servers.tool_claims(home, "sheets")}
     assert rows["add_row"]["class"] == "internal" and rows["post_message"]["class_from"] == "default"
     # A new command is another server, as far as anyone knows: the yes goes with the old one.
     entry = dict(load_tool_settings(home).servers["sheets"])
-    server_cmd.update_server(home, "sheets", {**entry, "args": [*entry["args"], "--invented"]})
+    mcp_servers.update_server(home, "sheets", {**entry, "args": [*entry["args"], "--invented"]})
     assert "confirmed_internal" not in load_tool_settings(home).servers["sheets"]
 
 
@@ -216,9 +216,9 @@ def test_saying_no_leaves_the_claimed_tools_external(home, typed, capsys):  # no
     assert cli.main(["server", "add", "sheets", "--command", f"{sys.executable} -m ombro.fake_mcp", "--no-prompt"]) == 0
     assert "They count as external" in capsys.readouterr().out
     assert "confirmed_internal" not in load_tool_settings(home).servers["sheets"]
-    assert server_cmd.unconfirmed(server_cmd.tool_claims(home, "sheets")) == ["add_row"]
+    assert mcp_servers.unconfirmed(mcp_servers.tool_claims(home, "sheets")) == ["add_row"]
     assert cli.main(["tools", "sheets"]) == 0  # not a terminal: it says how, and asks nothing
     out = capsys.readouterr().out
     assert "add_row" in out and "unconfirmed" in out and "ombro tools sheets --confirm" in out
     assert cli.main(["tools", "sheets", "--confirm"]) == 0
-    assert server_cmd.unconfirmed(server_cmd.tool_claims(home, "sheets")) == []
+    assert mcp_servers.unconfirmed(mcp_servers.tool_claims(home, "sheets")) == []

@@ -394,10 +394,10 @@ def test_an_answer_is_read_from_a_pasted_address():
 def test_ombro_connect_over_ssh_asks_for_the_address(home, monkeypatch, capsys):
     from ombro import cli
 
-    from ombro import server_cmd
+    from ombro import mcp_servers
 
     world = World()
-    server_cmd.add_server(home, "notes", server_cmd.server_entry(url=MCP))
+    mcp_servers.add_server(home, "notes", mcp_servers.server_entry(url=MCP))
     real = oauth.connect
     monkeypatch.setattr(oauth, "connect", lambda *a, **k: real(*a, transport=world.transport(), **k))
     monkeypatch.setenv("SSH_CONNECTION", "203.0.113.1 50000 192.0.2.1 22")

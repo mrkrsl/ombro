@@ -1174,9 +1174,48 @@ def cmd_skills(args) -> int:
     return run(args)
 
 
+def _mcp_args(args, action: str) -> argparse.Namespace:
+    """`ombro tools add --mcp` and `ombro tools remove` in the form the MCP server flows take."""
+    if args.api_class == "read-only":
+        raise CliError("An MCP server's class is internal or external: its read-only tools say so themselves.")
+    return argparse.Namespace(action=action, name=args.name, command=args.command, url=args.url, env=args.env,
+                              header=args.header, secret=args.secret, server_class=args.api_class,
+                              no_prompt=args.no_prompt, yes=args.yes)
+
+
 def cmd_tools(args) -> int:
     from ombro import tool_cmd
 
+    if args.server == "remove":
+        from ombro import apitool
+        from ombro.settings import load_tool_settings
+
+        if args.name and args.name in load_tool_settings(_home()).apis:
+            if not args.yes and not _confirm(f"Remove the API {args.name} from tools.md? Its key is kept."):
+                return 1
+            apitool.remove_api(_home(), args.name)
+            print(f"Removed the API {args.name}.")
+            return 0
+        from ombro.mcp_servers import cmd_server as run_server
+
+        return run_server(_mcp_args(args, "remove"))
+    if args.server == "add":
+        from ombro.ui import ConsoleUI
+
+        try:
+            # Flags only one kind takes say which it is; otherwise it's asked.
+            api = args.api or bool(args.about or args.how_to or args.send_key or args.get_looks_up or args.no_key
+                                   or args.max_calls or args.api_class == "read-only")
+            mcp = args.mcp or bool(args.command or args.env or args.header or args.secret or args.no_prompt)
+            if api and mcp and not (args.api or args.mcp):
+                raise CliError("Those flags are for both a web API and an MCP server: say --api or --mcp.")
+            kind = tool_cmd.which_kind(ConsoleUI(), api and not args.mcp, mcp and not args.api)
+        except SetupError as e:
+            raise CliError(str(e)) from None
+        if kind == "mcp":
+            from ombro.mcp_servers import cmd_server as run_server
+
+            return run_server(_mcp_args(args, "add"))
     if args.server in ("add", "edit"):
         from ombro.ui import ConsoleUI
 
@@ -1202,7 +1241,7 @@ def cmd_tools(args) -> int:
 
 
 def cmd_server(args) -> int:
-    from ombro.server_cmd import cmd_server as run
+    from ombro.mcp_servers import cmd_server as run
 
     return run(args)
 
@@ -1460,7 +1499,8 @@ def build_parser() -> argparse.ArgumentParser:
                    "the address it ends up on (the default over SSH)")
     s.set_defaults(func=cmd_chatgpt)
 
-    s = sub.add_parser("server", help="add or remove an MCP server in tools.md")
+    # The old name for `ombro tools add --mcp` and `ombro tools remove`, kept working but not listed.
+    s = sub.add_parser("server")
     s.add_argument("action", choices=["add", "remove"])
     s.add_argument("name", nargs="?", help="the server's name, e.g. sheets")
     s.add_argument("--command", help='for add: a local server\'s command line, e.g. "uvx some-server==1.2.3"')
@@ -1520,25 +1560,35 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_skills)
 
     s = sub.add_parser("tools", help="native tools, MCP servers and web APIs; with a server, its tools, class and "
-                       "permission; add <name> or edit <name> for a web API")
+                       "permission; add, edit or remove one")
     s.add_argument("server", nargs="?", help="an MCP server named in tools.md, or a built-in tool such as "
-                   "web.search to see or change it; or add or edit, for a web API")
-    s.add_argument("name", nargs="?", help="for add and edit: the web API's name, e.g. podcasts")
+                   "web.search to see or change it; or add (a web API or an MCP server), edit (a web API) or remove")
+    s.add_argument("name", nargs="?", help="for add, edit and remove: the tool's name, e.g. podcasts or sheets")
+    s.add_argument("--api", action="store_true", help="for add: a web API (otherwise asked)")
+    s.add_argument("--mcp", action="store_true", help="for add: an MCP server (otherwise asked)")
+    s.add_argument("--command", help='for an MCP server: a local server\'s command line, e.g. "uvx some-server==1.2.3"')
+    s.add_argument("--env", action="append", metavar="NAME=VALUE", help="for an MCP server: a setting for a local "
+                   "server (not a secret); repeat for several")
+    s.add_argument("--header", action="append", metavar="NAME=VALUE", help="for an MCP server: a header for a "
+                   "remote server (not a secret)")
+    s.add_argument("--secret", action="append", metavar="NAME[=KEY]", help="for an MCP server: a variable (local) "
+                   "or header (remote) that holds a secret, typed hidden and kept in secrets/keys.env as KEY")
+    s.add_argument("--no-prompt", action="store_true", help="for an MCP server: do not ask about secrets not given")
     s.add_argument("--confirm", action="store_true", help="for a server: confirm, without asking, that the tools "
                    "it says stay inside your organisation do (until then they count as external)")
     s.add_argument("--provider", help="for a built-in tool: the provider to use (e.g. duckduckgo, firecrawl)")
     s.add_argument("--max-calls", type=int, help="for a built-in tool or an API: the most calls one job may make")
-    s.add_argument("--url", help="for an API: its address, e.g. https://api.example.com/v2")
+    s.add_argument("--url", help="for add: an API's address (https://api.example.com/v2) or a remote MCP server's")
     s.add_argument("--about", help="for an API: what it's for, in a line")
     s.add_argument("--how-to", help="for an API: its paths, from its docs")
     s.add_argument("--class", dest="api_class", choices=["read-only", "internal", "external"],
-                   help="for an API: what it can do (external, the default, waits for your approval to change "
-                   "things)")
+                   help="for add: what it can do (external, the default, waits for your approval to change "
+                   "things); an MCP server is internal or external")
     s.add_argument("--get-looks-up", choices=["yes", "no"], help="for an API: whether its GET requests only "
                    "look things up (yes, the default); no gives them the API's class")
     s.add_argument("--send-key", help="for an API: bearer (the default), header:<Name> or query:<param>")
     s.add_argument("--no-key", action="store_true", help="for edit: the API needs no key; its key is removed")
-    s.add_argument("--yes", action="store_true", help="for add and edit: do not ask before saving")
+    s.add_argument("--yes", action="store_true", help="for add, edit and remove: do not ask first")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_tools)
 
