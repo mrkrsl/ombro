@@ -1316,4 +1316,4 @@ tests, and `cargo test` in `gui/src-tauri` the Rust side's.
 ## Licence
 
 Ombro is free software under the GNU Affero General Public License, version 3
-(see `LICENSE`). Copyright © 2026 Heliotrope Atelier Ltd.
+only (`AGPL-3.0-only`; see `LICENSE`). Copyright © 2026 Heliotrope Atelier Ltd.
