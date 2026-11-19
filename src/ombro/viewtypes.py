@@ -280,6 +280,7 @@ class ApiRow(TypedDict):
     about: str
     how_to: str
     access: str  # read-only, internal or external: what its changes are
+    get_looks_up: bool  # whether its GET requests only look things up (M2); a no gives them its class
     send_key: str  # bearer, header:<Name> or query:<param>
     key: str | None
     key_set: bool

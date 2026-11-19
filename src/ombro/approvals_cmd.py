@@ -368,6 +368,8 @@ def cmd_tools(args) -> int:
         pref = outward.resolve(home, {})
     except SetupError as e:
         raise cli.CliError(str(e)) from None
+    if args.server == "composio" and "composio" not in settings.servers:
+        return _composio_tools(home, settings, pref, args)
     if args.server:
         return _server_tools(home, settings, pref, args)
     from ombro import sandbox, views
@@ -411,6 +413,35 @@ def cmd_tools(args) -> int:
     print(f"\nOutward permissions by default: {outward.describe(pref)}.")
     print("  " + "; ".join(f"{p}: {', '.join(f'{c} {v}' for c, v in outward.PRESETS[p].items())}"
                          for p in outward.PRESETS))
+    return 0
+
+
+def _composio_tools(home: Home, settings, pref: dict, args) -> int:
+    """`ombro tools composio`: each Composio tool's class, where it came from, and its permission (L5)."""
+    cli = _cli()
+    from ombro import composio
+    from ombro.tools import ToolError
+
+    if not settings.composio:
+        raise cli.CliError("Composio isn't connected. Connect your account in the app (Settings › Tools).")
+    try:
+        rows = composio.tool_classes(home, settings)
+    except ToolError as e:
+        raise cli.CliError(f"Could not list Composio's tools: {e}") from None
+    for r in rows:
+        r["permission"] = outward.decide(pref, r["tool"], r["class"], settings)
+    if args.json:
+        _print_json(rows)
+        return 0
+    print(f"Composio's tools ({len(rows)}), with the permission each gets under {pref['preset']}:\n")
+    print(f"  {'TOOL':<52} {'CLASS':<10} {'FROM':<8} {'PERMISSION':<10} DESCRIPTION")
+    for r in rows:
+        print(f"  {r['tool']:<52} {r['class']:<10} {r['class_from']:<8} {r['permission']:<10} {r['description'][:50]}")
+    print("\nFROM: marking (Composio says it only reads), name (from the words of its name: a reading word "
+          "with\nnothing in the name that makes, shares, links or marks something; one that sends, deletes or "
+          "spends;\nor a change in your own document tools), tool (set in tools.md), or default (composio's "
+          "class in\ntools.md). Change one under `tools:` in tools.md, e.g.\n    "
+          f"{rows[0]['tool'] if rows else 'composio.gmail.FETCH_EMAILS'}: {{class: read-only}}")
     return 0
 
 

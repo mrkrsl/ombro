@@ -1045,6 +1045,7 @@ export interface ApiRow {
   about: string;
   access: string;
   calls: number;
+  get_looks_up: boolean;
   how_to: string;
   key: string | null;
   key_set: boolean;

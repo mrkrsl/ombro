@@ -135,6 +135,8 @@ API_CLASSES = {
     "internal": "internal: it changes things in your own tools",
     "external": "external: it can change things or reach outside (its changes wait for your approval)",
 }
+GET_QUESTION = "Do GET requests to this API only look things up?"
+GET_ANSWERS = {True: "only look things up", False: "can send or change things, so they follow what it can do"}
 SEND_KEY = {"bearer": "as a bearer token (Authorization: Bearer …), the usual way",
             "header": "in a header of its own, such as X-API-Key",
             "query": "in the address, such as ?api_key=…"}
@@ -145,7 +147,7 @@ def _form_of(entry: dict) -> dict:
     how, _, param = str(entry.get("send_key") or "bearer").partition(":")
     return {"url": entry.get("url", ""), "send_key": how, "key_param": param, "about": entry.get("about", ""),
             "how_to": entry.get("how_to", ""), "access": entry.get("class", "external"),
-            "max_calls": entry.get("max_calls")}
+            "get_looks_up": entry.get("get_looks_up", True), "max_calls": entry.get("max_calls")}
 
 
 def _choice(ui: UI, name: str, label: str, choices: dict[str, str], current: str) -> str:
@@ -189,6 +191,8 @@ def api_flow(home: Home, ui: UI, action: str, name: str | None, given: dict, yes
         form["about"] = ui.text("about", "What it's for, in a line: the Lead decides from this when it helps",
                                 default=form.get("about") or None)
         form["access"] = _choice(ui, "access", "What can it do?", API_CLASSES, form.get("access", "external"))
+        if form["access"] != "read-only":
+            form["get_looks_up"] = ui.yes("get_looks_up", GET_QUESTION, form.get("get_looks_up") is not False)
     key_value = ""
     if asking or (old is None and not given.get("no_key")):
         have = bool(old and old.get("key") and keys.get_key(home, old["key"]))
@@ -204,6 +208,7 @@ def api_flow(home: Home, ui: UI, action: str, name: str | None, given: dict, yes
     entry = apitool.entry_from(name, form, old)
     ui.say(f"{'Adding' if old is None else 'Changing'} the API {name}:", items=[
         f"address: {entry['url']}", f"what it can do: {API_CLASSES[entry['class']]}",
+        *([f"GET requests: {GET_ANSWERS[apitool.gets_look_up(entry)]}"] if entry["class"] != "read-only" else []),
         f"what it's for: {entry['about'] or '(not said)'}",
         f"key: {entry['key'] + (' (typed now)' if key_value else '') if entry.get('key') else 'none'}"
         + (f", sent {entry['send_key']}" if entry.get("key") else ""),

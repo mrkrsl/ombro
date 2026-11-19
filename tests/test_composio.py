@@ -359,3 +359,35 @@ def test_what_a_create_call_made_is_read_from_its_result():
         == {"sheet_made_12345"}
     assert targets_made('{"id": "page_made_123456", "parent": {"id": "parent_0123456"}}') == {"page_made_123456"}
     assert targets_made("no ids here") == set()
+
+
+def test_an_unmarked_tools_name_makes_it_a_lookup_only_when_nothing_in_it_makes_or_changes_things():
+    """Security review L5: GET_, FIND_ and the like count as lookups only where no other word says the
+    tool also makes, shares, links or marks something; the rest keep batch 4's classing."""
+    for short in ["GET_DOCUMENT_BY_ID", "LIST_DRIVE_ITEM_PERMISSIONS", "FETCH_EMAILS", "SEARCH_PAGES", "GET_POST"]:
+        assert composio.class_of({}, short, "external", toolkit="gmail") == ("read-only", "name"), short
+    for short, kit, want in [("FIND_OR_CREATE_ROW", "googlesheets", "internal"),  # own documents: their work
+                             ("FIND_OR_CREATE_CONTACT", "hubspot", "external"),  # composio's class
+                             ("GET_SHARE_LINK", "googledrive", "external"),  # sharing reaches people
+                             ("GET_SHAREABLE_LINK", "dropbox", "internal"),
+                             ("FETCH_AND_MARK_READ", "gmail", "external"),
+                             ("FETCH_AND_MARK_READ", "slack", "internal")]:
+        server = "internal" if kit == "slack" else "external"
+        assert composio.classify({}, short, server, toolkit=kit) == want, short
+    # Composio's own marking still wins, as does tools.md.
+    assert composio.class_of({"tags": ["readOnlyHint"]}, "GET_SHARE_LINK", "external", toolkit="googledrive") == (
+        "read-only", "marking")
+    assert composio.class_of({}, "GET_SHARE_LINK", "external", "read-only", "googledrive") == ("read-only", "tool")
+    # A tool Composio marks (as not read-only) never counts as a lookup by its name.
+    assert composio.class_of({"tags": ["destructiveHint"]}, "GET_DOCUMENT", "external", toolkit="gmail") == (
+        "external", "default")
+
+
+def test_the_terminal_shows_each_composio_tools_class_and_where_it_came_from(home, connected):
+    from ombro import cli
+
+    rows = {r["tool"]: r for r in composio.tool_classes(home, load_tool_settings(home))}
+    assert rows["composio.googledocs.GET_DOCUMENT_BY_ID"]["class_from"] == "name"
+    assert rows["composio.googledocs.SUMMARISE"]["class_from"] == "marking"
+    assert rows["composio.googledocs.CREATE_DOCUMENT"]["class"] == "internal"
+    assert cli.main(["tools", "composio"]) == 0

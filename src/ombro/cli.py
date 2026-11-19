@@ -1181,7 +1181,8 @@ def cmd_tools(args) -> int:
         from ombro.ui import ConsoleUI
 
         given = {"url": args.url, "about": args.about, "how_to": args.how_to, "access": args.api_class,
-                 "send_key": args.send_key, "max_calls": args.max_calls, "no_key": args.no_key or None}
+                 "send_key": args.send_key, "max_calls": args.max_calls, "no_key": args.no_key or None,
+                 "get_looks_up": args.get_looks_up}
         try:
             return tool_cmd.api_flow(_home(), ConsoleUI(), args.server, args.name, given, yes=args.yes)
         except SetupError as e:
@@ -1531,6 +1532,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--class", dest="api_class", choices=["read-only", "internal", "external"],
                    help="for an API: what it can do (external, the default, waits for your approval to change "
                    "things)")
+    s.add_argument("--get-looks-up", choices=["yes", "no"], help="for an API: whether its GET requests only "
+                   "look things up (yes, the default); no gives them the API's class")
     s.add_argument("--send-key", help="for an API: bearer (the default), header:<Name> or query:<param>")
     s.add_argument("--no-key", action="store_true", help="for edit: the API needs no key; its key is removed")
     s.add_argument("--yes", action="store_true", help="for add and edit: do not ask before saving")

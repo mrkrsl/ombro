@@ -177,6 +177,9 @@
         "calls": {
           "type": "integer"
         },
+        "get_looks_up": {
+          "type": "boolean"
+        },
         "how_to": {
           "type": "string"
         },
@@ -209,6 +212,7 @@
         "about",
         "how_to",
         "access",
+        "get_looks_up",
         "send_key",
         "key",
         "key_set",

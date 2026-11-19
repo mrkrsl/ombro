@@ -59,7 +59,7 @@ const tools: ToolList = {
     { tool: "web.fetch", provider: "browser", max_calls: null, calls: 100 }],
   servers: [remote], sandbox: null, folders: [], composio: null, browser: "Google Chrome",
   apis: [{ name: "podcasts", url: "https://api.podcasts.invalid/v2", about: "Invented list.", how_to: "",
-    access: "read-only", send_key: "bearer", key: "PODCASTS_API_KEY", key_set: true, calls: 30 }],
+    access: "read-only", get_looks_up: true, send_key: "bearer", key: "PODCASTS_API_KEY", key_set: true, calls: 30 }],
 };
 const library: Library = {
   skills: [{ name: "fact-check", description: "Checks facts.", source: "you", path: "/x", used_by: ["legal/counsel"], warning: null }],
@@ -415,9 +415,13 @@ describe("Settings › Folders, Tools and Skills", () => {
     await userEvent.selectOptions(screen.getByLabelText("How the key is sent"), "header");
     await userEvent.type(screen.getByLabelText("Header name"), "X-API-Key");
     await userEvent.type(screen.getByLabelText(/^What it's for/), "Invented weather.");
+    const gets = screen.getByLabelText("Do GET requests to this API only look things up?");
+    expect(gets).toHaveValue("yes");
+    await userEvent.selectOptions(gets, "no");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(sent("POST", "/tools/apis")).toEqual({ name: "weather", url: "http://127.0.0.1:8080/api", key: "wk-INVENTED",
-      send_key: "header", key_param: "X-API-Key", about: "Invented weather.", how_to: "", access: "external", max_calls: 30 });
+      send_key: "header", key_param: "X-API-Key", about: "Invented weather.", how_to: "", access: "external",
+      get_looks_up: false, max_calls: 30 });
   });
 
   it("connects a Composio account by its key, and lists its services", async () => {

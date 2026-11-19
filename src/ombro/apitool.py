@@ -10,12 +10,20 @@ An API lives in tools.md under `apis:`:
       about: Our podcast list.     # what it's for: the Lead decides from this when it helps
       how_to: GET /episodes?q=…    # optional: its paths, from its docs
       class: external              # read-only, internal or external: what its changes are
+      get_looks_up: true           # do its GET requests only look things up? (true when not said)
       max_calls: 30
 
 Every crew member is offered it. A role gets `api.<name>.get` (GET only: a lookup) and
-`api.<name>.request` (any other method: a change of the API's class, so it follows the outward
-presets and may wait in Approvals). An API whose class is read-only has one tool,
-`api.<name>.request`, that takes any method as a lookup: some APIs search with POST.
+`api.<name>.request` (any method: a change of the API's class, so it follows the outward presets and
+may wait in Approvals). An API whose class is read-only has one tool, `api.<name>.request`, that takes
+any method as a lookup: some APIs search with POST.
+
+Some APIs act on a GET (a bot's /sendMessage?text=…, a webhook, a trigger), so a GET isn't always a
+lookup (security review M2). The user says, when adding an API, whether its GETs only look things
+up; if not, it has no `get`, and every GET goes through `request` with the API's class. Even when they
+do, `get` won't run a path that names a sending verb (send, post, notify, trigger, webhook…) or a query
+longer than the fetch cap (fetch_max_query, as web.fetch and the browser): those go through `request`
+as a GET, so they take the API's class and, once the brief has read material, wait for approval.
 
 The guards: a role names a path, never an address, and the call can only go to the API's own host
 and path prefix; redirects are not followed; Ombro adds the key, which no model sees, and wipes it
@@ -43,7 +51,18 @@ REPLY_CHARS = 20_000
 TIMEOUT = 30.0
 LOOKUP = ("GET",)
 CHANGE = ("POST", "PUT", "PATCH", "DELETE")
-_FIELDS = {"url", "key", "send_key", "about", "how_to", "class", "max_calls"}
+_FIELDS = {"url", "key", "send_key", "about", "how_to", "class", "get_looks_up", "max_calls"}
+# Words in a GET's path that say it sends or changes something, so it isn't run as a lookup (M2).
+SENDING_WORDS = frozenset({
+    "send", "post", "notify", "trigger", "webhook", "webhooks", "hook", "hooks", "create", "delete", "update",
+    "remove", "publish", "submit", "push", "invite", "share", "transfer", "pay", "charge", "refund", "cancel",
+    "subscribe", "unsubscribe", "reply", "forward", "upload", "insert", "edit", "modify", "destroy", "purge",
+    "write", "add", "set", "put", "patch", "execute", "exec", "run", "dispatch", "emit", "broadcast", "sms",
+    "mark", "approve", "reject", "enable", "disable", "start", "stop", "restart", "reset", "deploy", "revoke",
+})
+# Query values that often name what a GET does: ?action=send, ?method=chat.postMessage.
+_ACTION_KEYS = frozenset({"action", "method", "op", "operation", "cmd", "command", "do", "task", "func", "function"})
+
 _SEND = re.compile(r"^(bearer|header:[A-Za-z0-9][A-Za-z0-9-]*|query:[A-Za-z0-9_.-]+)$")
 TRANSPORT: httpx.BaseTransport | None = None  # tests put a fake API here; nothing else sets it
 
@@ -105,6 +124,11 @@ def check_apis(raw: Any, where: str = "tools.md") -> dict[str, dict[str, Any]]:
         if cls not in TOOL_CLASSES:
             raise SetupError(f"{where}: class for API {name} must be one of {', '.join(TOOL_CLASSES)}")
         entry["class"] = cls
+        if "get_looks_up" in cfg:
+            if not isinstance(cfg["get_looks_up"], bool):
+                raise SetupError(f"{where}: get_looks_up for API {name} is true or false")
+            if cls != "read-only":  # a read-only API's every call is a lookup already
+                entry["get_looks_up"] = cfg["get_looks_up"]
         if "max_calls" in cfg:
             v = cfg["max_calls"]
             if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
@@ -114,8 +138,16 @@ def check_apis(raw: Any, where: str = "tools.md") -> dict[str, dict[str, Any]]:
     return out
 
 
+def gets_look_up(cfg: dict[str, Any]) -> bool:
+    """Whether the API's GETs only look things up, as the user said. An API added before the question
+    was asked counts as yes."""
+    return cfg.get("get_looks_up", True) is not False
+
+
 def tool_names(api: str, cfg: dict[str, Any]) -> list[str]:
-    return [f"api.{api}.request"] if cfg.get("class") == "read-only" else [f"api.{api}.get", f"api.{api}.request"]
+    if cfg.get("class") == "read-only" or not gets_look_up(cfg):
+        return [f"api.{api}.request"]
+    return [f"api.{api}.get", f"api.{api}.request"]
 
 
 def key_name(api: str) -> str:
@@ -136,8 +168,10 @@ def clean_name(text: str) -> str:
 
 def entry_from(name: str, form: dict[str, Any], old: dict[str, Any] | None = None) -> dict[str, Any]:
     """The tools.md entry from the app's form or the terminal's answers: url, send_key (bearer,
-    header or query) with key_param, about, how_to, access (the class), max_calls, and key (its
-    value, if one was typed). A key left empty in an edit keeps the one there; `no_key` removes it."""
+    header or query) with key_param, about, how_to, access (the class), get_looks_up (the answer to
+    "Do GET requests to this API only look things up?"; an edit that doesn't say keeps the old one),
+    max_calls, and key (its value, if one was typed). A key left empty in an edit keeps the one there;
+    `no_key` removes it."""
     how = str(form.get("send_key") or "bearer")
     param = str(form.get("key_param") or "").strip()
     if how in ("header", "query"):
@@ -154,6 +188,17 @@ def entry_from(name: str, form: dict[str, Any], old: dict[str, Any] | None = Non
     entry: dict[str, Any] = {"url": url, "send_key": how, "about": str(form.get("about") or ""), "class": access}
     if str(form.get("how_to") or "").strip():
         entry["how_to"] = str(form["how_to"]).strip()
+    if access != "read-only":
+        looks = form.get("get_looks_up")
+        if looks is None or looks == "":
+            looks = gets_look_up(old or {})
+        elif isinstance(looks, str):
+            if looks.strip().lower() not in ("yes", "no", "true", "false"):
+                raise SetupError("Say yes or no: do GET requests to this API only look things up?")
+            looks = looks.strip().lower() in ("yes", "true")
+        elif not isinstance(looks, bool):
+            raise SetupError("`get_looks_up` is true or false")
+        entry["get_looks_up"] = looks
     if max_calls:
         entry["max_calls"] = max_calls
     if str(form.get("key") or "").strip():
@@ -265,10 +310,34 @@ def _reply_text(r: httpx.Response, secret: str | None) -> str:
     return text
 
 
+def get_check(path: str, query: dict[str, Any] | None, cap: int) -> str | None:
+    """Why a GET can't run as a lookup (M2), or None: its path names a sending verb, or its query is over
+    the cap, which is how a page would have a role carry data out."""
+    raw_path, _, raw_query = str(path or "").partition("?")
+    pairs = parse_qsl(raw_query, keep_blank_values=True) + [(str(k), str(v)) for k, v in (query or {}).items()]
+    words = _words(raw_path)
+    for k, v in pairs:
+        if k.strip().lower() in _ACTION_KEYS:
+            words |= _words(v)
+    found = sorted(words & SENDING_WORDS)
+    if found:
+        return f"its path says it may send or change something ({', '.join(found)})"
+    length = len(urlencode(pairs))
+    if length > cap:
+        return f"its query is {length:,} characters, over the {cap:,} a lookup may carry"
+    return None
+
+
+def _words(text: str) -> set[str]:
+    """/sendMessage -> {send, message}; /chat.post_message -> {chat, post, message}."""
+    return {w.lower() for w in re.split(r"[^A-Za-z0-9]+|(?<=[a-z])(?=[A-Z])", text) if w}
+
+
 def call(home: Home, api: str, cfg: dict[str, Any], method: str, path: str, query: dict | None = None,
-         body: Any = None, timeout: float = TIMEOUT) -> dict[str, Any]:
+         body: Any = None, timeout: float = TIMEOUT, sends: bool = False) -> dict[str, Any]:
     """Make one request. Raises ApiNotReached (nothing sent), ApiCallLost (sent, no answer) or
-    ToolError (the API said no, or its reply could not be read)."""
+    ToolError (the API said no, or its reply could not be read). `sends`: a GET that may have done
+    something, so a lost answer is ApiCallLost, never a plain error to try again."""
     from ombro import keys
 
     method = method.upper()
@@ -295,7 +364,7 @@ def call(home: Home, api: str, cfg: dict[str, Any], method: str, path: str, quer
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         raise ApiNotReached(f"{api} could not be reached: {type(e).__name__}") from None
     except httpx.TimeoutException:
-        if method in LOOKUP:
+        if method in LOOKUP and not sends:
             raise ToolError(f"{api} took too long to answer") from None
         raise ApiCallLost(f"{api} took too long to answer") from None
     except httpx.HTTPError as e:
@@ -311,6 +380,12 @@ def call(home: Home, api: str, cfg: dict[str, Any], method: str, path: str, quer
 
 # ---------------------------------------------------------------------------
 # The tools a role is offered
+
+
+def _fetch_cap() -> int:
+    from ombro.native import FETCH_MAX_QUERY
+
+    return FETCH_MAX_QUERY
 
 
 def _params(methods: tuple[str, ...]) -> dict[str, Any]:
@@ -344,12 +419,21 @@ def api_tools(home: Home, apis: dict[str, dict[str, Any]]) -> list[Tool]:
     for api, cfg in apis.items():
         cls = cfg.get("class") or "external"
 
-        def handler(args: dict, ctx: ToolContext, api=api, cfg=cfg, fixed: str | None = None) -> dict[str, Any]:
+        def handler(args: dict, ctx: ToolContext, api=api, cfg=cfg, cls=cls, fixed: str | None = None
+                    ) -> dict[str, Any]:
             from ombro.outward import MCP_NOTE
 
             method = fixed or str(args.get("method") or "GET")
+            if fixed == "GET":
+                cap = int(getattr(ctx.limits, "fetch_max_query", 0) or _fetch_cap())
+                why = get_check(args.get("path", ""), args.get("query"), cap)
+                if why:
+                    # Ombro's own words, so a plain error (not the API's, which would be material).
+                    return {"error": f"not run as a lookup: {why}. A GET like this can send or change things, "
+                            f"so make it with api.{api}.request, method GET: that follows what the user said "
+                            "this API can do, and may wait for their approval."}
             out = call(home, api, cfg, method, args.get("path", ""), args.get("query"), args.get("body"),
-                       timeout=min(TIMEOUT, ctx.timeout))
+                       timeout=min(TIMEOUT, ctx.timeout), sends=fixed is None and cls != "read-only")
             return {**out, "note": MCP_NOTE}
 
         if cls == "read-only":
@@ -358,15 +442,23 @@ def api_tools(home: Home, apis: dict[str, dict[str, Any]]) -> list[Tool]:
                                        parameters=schema, handler=handler, outward=True, effect="read-only",
                                        input_schema=schema)))
             continue
-        get_schema = _params(LOOKUP)
-        out.append(_validated(Tool(name=f"api.{api}.get", description=_describe(api, cfg, "Looks things up (GET) in"),
-                                   parameters=get_schema, input_schema=get_schema, outward=True, effect="read-only",
-                                   handler=lambda args, ctx, h=handler: h(args, ctx, fixed="GET"))))
-        change = _params(CHANGE)
+        looks = gets_look_up(cfg)
+        if looks:
+            get_schema = _params(LOOKUP)
+            out.append(_validated(Tool(name=f"api.{api}.get", description=_describe(
+                api, cfg, "Looks things up (GET) in") + f"\nA GET that sends or changes something (a path such as "
+                "/sendMessage, /notify or /webhook) or carries a long query isn't run here: make it with "
+                f"api.{api}.request, method GET.", parameters=get_schema, input_schema=get_schema, outward=True,
+                effect="read-only", handler=lambda args, ctx, h=handler: h(args, ctx, fixed="GET"))))
+        change = _params(("GET", *CHANGE))
         params, reason_key = _with_reason(change)
         label = {"internal": "Changes things in", "external": "Changes things or reaches outside the organisation "
                  "through"}[cls]
-        out.append(Tool(name=f"api.{api}.request", description=_describe(api, cfg, label), parameters=params,
+        text = _describe(api, cfg, label) + ("\nUse it with GET only for a GET that sends or changes something, or "
+                                             f"carries a long query; look things up with api.{api}.get." if looks
+                                             else "\nThe user says this API's GET requests can send or change "
+                                             "things, so every call goes here, GET included.")
+        out.append(Tool(name=f"api.{api}.request", description=text, parameters=params,
                         handler=handler, outward=True, effect=cls, input_schema=change, reason_key=reason_key))
     return out
 
@@ -383,5 +475,6 @@ def run_approved(home: Home, tools_settings: dict[str, Any] | None, tool: str, a
     if cfg is None:
         raise ToolError(f"the job has no API called {parts[1]}")
     method = "GET" if parts[2] == "get" else str(arguments.get("method") or "POST")
-    out = call(home, parts[1], cfg, method, arguments.get("path", ""), arguments.get("query"), arguments.get("body"))
+    out = call(home, parts[1], cfg, method, arguments.get("path", ""), arguments.get("query"), arguments.get("body"),
+               sends=parts[2] != "get")
     return f"{out['status']}: {out['reply']}"

@@ -10,8 +10,10 @@ API key. Ombro keeps the key in secrets/keys.env and the connection in tools.md:
 Each toolkit with an active connected account is offered to every crew member, as one tool per
 Composio tool: composio.<toolkit>.<tool>, such as composio.googledocs.CREATE_DOCUMENT. Like an MCP
 server's tools, they are listed by name in tools__load and sent in full only once loaded. A tool
-Composio marks read-only (or whose name says it only looks things up, where Composio says nothing)
-is a lookup. A tool whose name sends to other people, deletes or spends is external and waits
+Composio marks read-only is a lookup. Where Composio says nothing, a name that starts with a reading
+word (GET_, LIST_, FIND_…) is a lookup only if no other word in it says it makes or changes something
+(FIND_OR_CREATE, GET_SHARE_LINK, FETCH_AND_MARK_READ): those are classed as changes (security review
+L5). `ombro tools composio` shows each tool's class and where it came from. A tool whose name sends to other people, deletes or spends is external and waits
 in Approvals; any other change in the organisation's own document tools (Sheets, Docs, Drive,
 Notion and the like, OWN_TOOLKITS) or to a draft is internal, so a brief that asks for a sheet gets
 it made and formatted without asking. Anything else follows `class:` above.
@@ -51,6 +53,17 @@ _TOOLKIT = re.compile(r"[^a-z0-9_-]+")
 # The first word of a tool's name, when Composio gives no marking, that says it only looks things up.
 READ_VERBS = {"GET", "LIST", "SEARCH", "FETCH", "FIND", "READ", "RETRIEVE", "QUERY", "LOOKUP", "DESCRIBE",
               "COUNT", "VIEW"}
+# Words that, anywhere in an unmarked tool's name, say a reading word isn't the whole story: it may
+# make, send, share, link, mark or delete something too (L5). Verbs only: outward.RISKY_WORDS has
+# nouns a lookup's name may carry (LIST_DRIVE_ITEM_PERMISSIONS, GET_POST).
+CHANGE_WORDS = frozenset({
+    "OR", "AND", "CREATE", "MAKE", "ADD", "INSERT", "UPDATE", "UPSERT", "SET", "EDIT", "MODIFY", "PATCH", "PUT",
+    "WRITE", "SAVE", "UPLOAD", "COPY", "MOVE", "RENAME", "SHARE", "LINK", "MARK", "ARCHIVE", "STAR", "APPLY",
+    "ENABLE", "DISABLE", "EXECUTE", "TRIGGER", "NOTIFY", "GENERATE", "EXPORT", "IMPORT", "SYNC", "LOCK",
+    "UNLOCK", "CLAIM", "ACCEPT", "APPROVE", "REGISTER", "SUBSCRIBE", "WATCH", "SEND", "REPLY", "FORWARD",
+    "INVITE", "PUBLISH", "DELETE", "REMOVE", "PURGE", "DESTROY", "PAY", "PURCHASE", "BUY", "CHARGE", "REFUND",
+    "TRANSFER",
+})
 # Toolkits that are the organisation's own documents, sheets, pages and boards. Making and editing
 # things in them is the work a brief asks for (internal), unless the name is risky (see classify).
 OWN_TOOLKITS = frozenset({"googlesheets", "googledocs", "googledrive", "googleslides", "googletasks", "notion",
@@ -322,26 +335,36 @@ def toolkit_tools(home: Home, cfg: dict[str, Any], slug: str, fresh: bool = Fals
 
 def classify(tool: dict[str, Any], short: str, server_class: str, override: str | None = None,
              toolkit: str = "") -> str:
-    """read-only, internal or external. In order: tools.md's class for the tool; Composio's read-only
-    marking, or (where it says nothing) the first word of its name; a name that sends to other people,
-    deletes or spends (outward.RISKY_WORDS) is external; any other change in one of the organisation's
-    own document tools (OWN_TOOLKITS), or to a draft, is internal; anything else takes composio's class."""
+    """read-only, internal or external: class_of without where it came from."""
+    return class_of(tool, short, server_class, override, toolkit)[0]
+
+
+def class_of(tool: dict[str, Any], short: str, server_class: str, override: str | None = None,
+             toolkit: str = "") -> tuple[str, str]:
+    """A Composio tool's class and where it came from. In order: tools.md's class for the tool (tool);
+    Composio's read-only marking (marking); where Composio marks nothing, a name that starts with a
+    reading word and has no word that makes, shares, links or marks something (name); a name that
+    sends to other people, deletes or spends (outward.RISKY_WORDS) is external (name); any other
+    change in one of the organisation's own document tools (OWN_TOOLKITS), or to a draft, is internal
+    (name); anything else takes composio's class (default)."""
     from ombro.outward import name_words, risky
     from ombro.settings import TOOL_CLASSES
 
     if override in TOOL_CLASSES:
-        return override
+        return override, "tool"
     tags = {str(t).lower() for t in (tool.get("tags") or [])}
     if "readonlyhint" in tags:
-        return "read-only"
+        return "read-only", "marking"
     marked = tags & {"destructivehint", "openworldhint", "idempotenthint"}
-    if not marked and short.split("_", 1)[0].upper() in READ_VERBS:
-        return "read-only"
+    words = name_words(short)
+    if (not marked and short.split("_", 1)[0].upper() in READ_VERBS
+            and not words & CHANGE_WORDS):
+        return "read-only", "name"
     if risky(short):
-        return "external"
-    if toolkit in OWN_TOOLKITS or "DRAFT" in name_words(short) or "DRAFTS" in name_words(short):
-        return "internal"
-    return server_class
+        return "external", "name"
+    if toolkit in OWN_TOOLKITS or "DRAFT" in words or "DRAFTS" in words:
+        return "internal", "name"
+    return server_class, "default"
 
 
 def run(home: Home, cfg: dict[str, Any], slug: str, arguments: dict, account: dict[str, Any] | None,
@@ -433,6 +456,26 @@ def tools(home: Home, settings: Any) -> tuple[list[Tool], list[str]]:
             out.append(Tool(name=name, description=text[:1000], parameters=params, handler=handler, outward=True,
                             effect=effect, input_schema=schema, reason_key=reason_key))
     return out, warnings
+
+
+def tool_classes(home: Home, settings: Any) -> list[dict[str, Any]]:
+    """Every tool of each active toolkit, with its class and where it came from (`ombro tools composio`):
+    {tool, class, class_from, description}. Raises ToolError if the account can't be listed."""
+    cfg = getattr(settings, "composio", None)
+    if not cfg:
+        return []
+    rows: list[dict[str, Any]] = []
+    for kit in toolkits(home, cfg):
+        if kit["status"] != "ACTIVE":
+            continue
+        for t in toolkit_tools(home, cfg, kit["slug"]):
+            short = re.sub(r"[^A-Za-z0-9_-]", "_", short_name(kit["name"], str(t["slug"])))
+            name = f"composio.{kit['name']}.{short}"
+            effect, source = class_of(t, short, cfg.get("class") or "external",
+                                      settings.tools.get(name, {}).get("class"), kit["name"])
+            rows.append({"tool": name, "class": effect, "class_from": source,
+                         "description": " ".join(str(t.get("description") or t.get("name") or "").split())})
+    return rows
 
 
 def run_approved(home: Home, tools_settings: dict[str, Any] | None, tool: str, arguments: dict) -> str:
