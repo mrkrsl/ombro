@@ -1053,6 +1053,25 @@ servers:
 `ombro tools <server>` shows each tool's class, where it came from, and the
 line to add where a tool is external only by default.
 
+Composio's tools are classed by what they do, since one Composio account
+holds many services. A tool whose name only looks things up is read-only.
+One whose name sends to other people, shares, deletes or spends (`SEND`,
+`REPLY`, `SHARE`, `PERMISSION`, `DELETE`, `TRASH`, `PAY` and the like) is
+external, so it waits. Any other change in your own document tools (Google
+Sheets, Docs, Drive and Slides, Notion, Airtable, Linear and the like), or
+to a draft, is internal: a brief that asks for a sheet gets it made, filled
+and formatted without asking. Anything else follows `class:` under
+`composio:`, and `class:` on a tool in `tools:` still wins over all of it.
+
+**One piece of work, one approval.** Calls on the same item (the same
+sheet, document, page or file, in the same service) count as one piece of
+work. Deleting inside something the same job or chat made is editing its
+own work, so it is internal; sending, sharing and spending never are. In a
+job, once a call on an item waits for approval, later calls on that item are
+not held one by one: the role is told it waits, and the report names them.
+In a chat, one yes covers the later calls on that item, unless they send,
+share, delete or spend.
+
 **Permissions.** Every outward call is allowed (it runs, and is recorded),
 held for approval (it waits under Approvals) or refused:
 
@@ -1082,6 +1101,13 @@ reason, the time, a status), tells the role it waits for approval, and never
 holds an identical call twice in a job. Each one counts towards the tool's
 `max_calls`. The report's Outward actions section lists work done, sends
 allowed, and everything that waited for approval, from the harness's own record.
+
+A job never waits for an approval, whether report-back or live: it carries
+on with everything that does not need the action and reports the rest as
+not done. When something still waits as the report is written, the Summary
+opens with **Stopped for your approval**, naming it, and Approvals and the tray
+show it waiting. Approving later runs only that action,
+not the steps after it; ask the Lead in a chat to finish the work.
 
 You can decide while the job is still going. Holding an action and every decision take
 the job's outbox lock, so the two never cross. An action you approve during

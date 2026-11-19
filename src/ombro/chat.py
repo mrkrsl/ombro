@@ -382,6 +382,7 @@ class Chat:
         self.dropped = 0
         self.pending_note = ""
         self.transcript = Transcript()
+        self.scope = None  # outward.Scope: what this chat made and what you said yes to (see _act)
         self.refused: list[str] = []
         self.remembered: list[dict[str, str]] = []
         self.specs: list[str] = []
@@ -1204,21 +1205,29 @@ class Chat:
 
     def _act(self, tool, args: dict) -> dict[str, Any]:
         """A tool that changes or sends something, used by the Lead in chat. The job's rules, with you
-        here: what a job would stage for approval (and anything external) asks you first, in the chat."""
+        here: what a job would stage for approval (and anything external) asks you first, in the chat.
+        You are asked once per thing worked on: after a yes, later calls on the same sheet, document or
+        page in the same service go ahead, unless they send, share, delete or spend (outward.Scope)."""
         from ombro import outward
 
+        if self.scope is None:
+            self.scope = outward.Scope()
         settings = load_tool_settings(self.home)
         reason = str(args.pop(tool.reason_key, "") or "").strip() if tool.reason_key else ""
         ctx = self._work_context(tool.name)
         if tool.prepare is not None:  # browser.submit: the page's refs become its address and fields
             args = tool.prepare(args, ctx)
         effect = str(args.pop("_effect", "") or tool.effect or "external")
+        effect = self.scope.effect(tool.name, args, effect)  # deleting in what this chat made is its own work
         setting = outward.resolve(self.home, None)
         decision = outward.decide(setting, tool.name, effect, settings)
         if decision == "refuse":
             return {"error": f"{tool.name} is refused by the user's settings."}
         if effect == "external" and tool.name not in (setting.get("allow") or []):
             decision = "stage"  # reaches people outside, or spends: never without the user's yes in chat
+        covered = decision == "stage" and self.scope.covered(tool.name, args)
+        if covered:
+            decision = "allow"  # the same thing you already said yes to: one yes covers the related calls
         problem = outward.validation_error(tool.input_schema, args)
         if problem:
             return {"error": problem}
@@ -1229,7 +1238,10 @@ class Chat:
                 self.transcript.note(f"The user said no to {tool.name}.")
                 return {"declined": "The user said no, so nothing was done. Ask what they would like instead."}
         out = tool.handler(args, ctx) if tool.handler else {"ok": True}
-        self.transcript.note(f"Used {tool.name}" + (" with the user's yes." if decision == "stage" else "."))
+        self.scope.done(tool.name, args, out, approved=decision == "stage")
+        self.transcript.note(f"Used {tool.name}" + (" with the user's yes." if decision == "stage" else
+                                                    ", covered by the user's earlier yes for the same item."
+                                                    if covered else "."))
         return {"status": "done", **(out if isinstance(out, dict) else {"result": out})}
 
     @staticmethod

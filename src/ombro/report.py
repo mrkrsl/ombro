@@ -54,7 +54,7 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
     gaps: list[str] = []
     notes: list[dict[str, Any]] = []
     outward: dict[str, list[dict[str, Any]]] = {"staged": [], "done": [], "errors": [], "refused": [],
-                                                 "duplicates": [], "uncertain": []}
+                                                 "duplicates": [], "uncertain": [], "grouped": []}
     code_runs: list[dict[str, Any]] = []
     folder_changes: dict[str, dict[str, Any]] = {}
     placed: list[dict[str, Any]] = []
@@ -106,6 +106,8 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
             outward["staged"].append(ev)
         elif action == "staged_duplicate":
             outward["duplicates"].append(ev)
+        elif action == "staged_grouped":
+            outward["grouped"].append(ev)
         elif action == "outward_done":
             outward["done"].append(ev)
         elif action == "outward_error":
@@ -412,6 +414,21 @@ def _clean_narrative(text: str) -> str:
 NOTHING = re.compile(r"^(none|none recorded|nothing|no decisions?|n/?a)\b[^\n]{0,80}$", re.IGNORECASE)
 
 
+def stopped_for_approval(f: dict[str, Any]) -> str:
+    """The first words of the Summary when actions still wait for approval as the report is written: the
+    job did not wait for them, so the work that needed them was not done. "" when nothing waits."""
+    waiting, _ = _still_waiting(f, (f.get("outward") or {}).get("staged") or [])
+    if not waiting:
+        return ""
+    what = ", ".join(f"`{ev.get('tool')}` ({ev.get('ref')})" for ev in waiting[:3]) + \
+        (f" and {len(waiting) - 3} more" if len(waiting) > 3 else "")
+    n = len(waiting)
+    return (f"**Stopped for your approval:** {n} {'action' if n == 1 else 'actions'} ({what}) waited for your "
+            "approval when the job ended. Jobs do not wait for approvals, so nothing that needed "
+            f"{'it' if n == 1 else 'them'} was done. Approving now runs only the waiting "
+            f"{'action' if n == 1 else 'actions'}, not the steps after; to finish the work, ask the Lead in a chat.")
+
+
 def decision_lines(f: dict[str, Any], lead_text: str) -> str:
     """What waits on the user: the Lead's real decisions (a "None." is dropped), then, from the
     record, actions waiting for approval and skills waiting for review. "" when nothing does."""
@@ -478,13 +495,15 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     for fail in f["failures"]:
         out.append(f"\n**Failed:** {fail}")
     out.append("")
+    stopped = stopped_for_approval(f)
 
     parts, extra = _sections(narrative or mechanical_narrative(f))
     if not parts.get("Summary") and f.get("finish"):
         parts["Summary"] = _short(" ".join(str(f["finish"]["summary"] or "").split()), 900)
     if not parts.get("Summary"):  # the Lead wrote none: Ombro's own sentence on how it ended
         parts["Summary"] = _sections(mechanical_narrative(f))[0].get("Summary", "")
-    out += ["## Summary", "", parts.get("Summary") or "No summary was written.", ""]
+    out += ["## Summary", ""] + ([stopped, ""] if stopped else []) + \
+        [parts.get("Summary") or "No summary was written.", ""]
     if not narrative:
         out += [f"_This report was written by the harness from the journal{': ' + note if note else ''}._", ""]
 
@@ -673,6 +692,10 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
                 lines.append(f"  - Reason: {_line(ev['reason'], 200)}")
         if dups:
             lines.append(f"- ({len(dups)} identical repeat(s) were not added again.)")
+        held = [ev for ev in ow.get("grouped") or [] if ev.get("ref") in {s.get("ref") for s in staged}]
+        if held:
+            lines.append(f"- ({len(held)} later call(s) on the same item were held with it, not added one by one, "
+                         "and have not happened: " + ", ".join(sorted({f"`{ev.get('tool')}`" for ev in held})) + ".)")
         lines += ["", "See them with `ombro approvals`; approve or decline each by its reference, e.g. "
                   f"`ombro approvals show {staged[0].get('ref')}`.", ""]
     if uncertain:
