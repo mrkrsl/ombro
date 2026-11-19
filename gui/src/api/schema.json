@@ -2445,6 +2445,12 @@
         },
         "theme": {
           "type": "string"
+        },
+        "thinking": {
+          "type": "string"
+        },
+        "thinking_set": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -2458,6 +2464,8 @@
         "instructions",
         "background_feed",
         "notifications",
+        "thinking",
+        "thinking_set",
         "files"
       ],
       "title": "Preferences",

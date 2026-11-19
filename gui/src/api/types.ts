@@ -484,6 +484,8 @@ export interface Preferences {
   notifications: boolean;
   outward: string;
   theme: string;
+  thinking: string;
+  thinking_set: boolean;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

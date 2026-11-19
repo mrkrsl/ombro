@@ -412,7 +412,7 @@ def _session_routes(s: Serve) -> list[Route]:
 
 
 PREFERENCE_KEYS = {"name": str, "theme": str, "default_crew": str, "editor": str, "background_feed": bool,
-                   "notifications": bool, "instructions": str, "outward": str}
+                   "notifications": bool, "instructions": str, "outward": str, "thinking": str}
 
 
 def _action_routes(s: Serve) -> list[Route]:
@@ -550,7 +550,8 @@ def _action_routes(s: Serve) -> list[Route]:
 
     def preferences(r: Request, data: dict[str, Any]) -> Any:
         from ombro.outward import PRESETS
-        from ombro.settings import THEMES, set_instructions, set_outward, set_preference
+        from ombro.settings import THEMES, set_instructions, set_outward, set_preference, set_thinking
+        from ombro.thinking import LEVELS
 
         for key, value in data.items():
             if key not in PREFERENCE_KEYS or not isinstance(value, PREFERENCE_KEYS[key]):
@@ -561,11 +562,15 @@ def _action_routes(s: Serve) -> list[Route]:
                 raise HttpError(400, f"there's no crew called {value!r}")
             if key == "outward" and value not in PRESETS:
                 raise HttpError(400, f"the approval mode is one of {', '.join(PRESETS)}")
+            if key == "thinking" and value not in LEVELS:
+                raise HttpError(400, f"thinking is one of {', '.join(LEVELS)}")
         for key, value in data.items():
             if key == "instructions":
                 set_instructions(home, value)  # the profile, in its own file
             elif key == "outward":
                 set_outward(home, value)
+            elif key == "thinking":
+                set_thinking(home, value)
             else:
                 set_preference(home, key, " ".join(value.split())[:60] if key == "name" else value)
         return views.preferences(home)

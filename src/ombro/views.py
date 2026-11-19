@@ -473,6 +473,8 @@ def limit_values(home: Home) -> dict[str, Any]:
 
 
 def preferences(home: Home) -> vt.Preferences:
+    from ombro import thinking
+
     p = load_preferences(home)
     outward = p.outward
     preset = outward.get("preset") if isinstance(outward, dict) else outward
@@ -481,6 +483,7 @@ def preferences(home: Home) -> vt.Preferences:
             "outward": str(preset or "balanced"), "instructions_set": bool(p.instructions.strip()),
             "instructions": p.instructions,
             "background_feed": p.background_feed, "notifications": p.notifications,
+            "thinking": p.thinking or thinking.DEFAULT, "thinking_set": bool(p.thinking),
             "files": {"config": str(home.preferences_config), "instructions": str(home.instructions)}}
 
 

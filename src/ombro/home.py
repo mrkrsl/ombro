@@ -325,11 +325,14 @@ endpoints. Any OpenAI-compatible chat endpoint with tool calling works.
   model used in tests and dry runs (`script:` names a JSON file of replies).
 - max_output_tokens (optional): the most this model may write in one reply,
   where its endpoint allows less than max_output_tokens in limits.md.
-- reasoning_effort (optional): for a thinking model, how hard it thinks
-  before answering, sent to the endpoint as reasoning_effort (for example
-  `low`; DeepSeek takes none, low, high and max, and thinks at high when it
-  is not set). Thinking is most of a thinking model's time, so `low` makes
+- thinking (optional): this model's own thinking level, over `thinking` in
+  preferences: off, low, medium, high or xhigh. Ombro sends it in the
+  provider's form (DeepSeek: thinking off, or effort low, high or max;
+  OpenRouter: reasoning.effort; Anthropic: effort, or a thinking budget for
+  older models). Thinking is most of a thinking model's time, so `low` makes
   jobs much faster. An endpoint that refuses it is called without it.
+- reasoning_effort (optional): the same as thinking, or a provider's own
+  word to send as it is.
 - max_concurrent (optional): how many calls may be in flight at once to this
   model's provider, across every job, chat and schedule (4 when not set).
   A provider that is busy (too many requests) is waited out and tried again.
@@ -436,6 +439,10 @@ PREFERENCES_BODY = """\
   your organisation's own tools) run; external actions (reaching people outside your organisation, or the
   public, or spending money) wait. auto: everything runs. What waits is under Approvals:
   `ombro approvals`.
+- thinking: how much models think before they answer: off, low, medium,
+  high or xhigh (extra high), put to each provider in the form it takes and
+  left out for models that don't think. medium when not set. A model's own
+  `thinking` in models.md wins. `ombro preferences thinking <level>` sets it.
 """
 
 INSTRUCTIONS_BODY = """\

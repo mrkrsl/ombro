@@ -441,8 +441,28 @@ def cmd_summary(args) -> int:
 
 def cmd_preferences(args) -> int:
     from ombro import views
+    from ombro.thinking import LABELS as THINKING_LABELS
 
     home = _home()
+    if args.action == "thinking":
+        from ombro.settings import set_thinking
+        from ombro.thinking import describe
+
+        if args.level:
+            try:
+                level = set_thinking(home, args.level)
+            except SetupError as e:
+                print(e, file=sys.stderr)
+                return 2
+            print(f"Thinking is now {THINKING_LABELS[level]}, from the next chat, interview or job.")
+        else:
+            p = views.preferences(home)
+            print(f"Thinking: {THINKING_LABELS[p['thinking']]}" + ("" if p["thinking_set"] else " (the default)"))
+        own = [m for m in describe(home) if m["from"] == "models.md"]
+        if own:
+            print("Models with their own level in models.md: "
+                  + ", ".join(f"{m['model']} ({m['level']})" for m in own))
+        return 0
     if args.action == "edit":
         from ombro.interview import open_in_editor
         from ombro.ui import ConsoleUI
@@ -459,6 +479,7 @@ def cmd_preferences(args) -> int:
     print(f"Default crew  {p['default_crew_title']} (--crew {p['default_crew']})")
     print(f"Editor        {p['editor'] or '(from $VISUAL or $EDITOR)'}")
     print(f"Outward       {p['outward']}")
+    print(f"Thinking      {THINKING_LABELS[p['thinking']]}" + ("" if p["thinking_set"] else " (the default)"))
     print(f"About you     {'set' if p['instructions_set'] else 'not set (the set-up interview writes it)'}")
     print(f"\nFiles: {p['files']['config']}\n       {p['files']['instructions']}")
     print("Change them with `ombro preferences edit`.")
@@ -1357,7 +1378,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_summary)
 
     s = sub.add_parser("preferences", help="show your preferences, or edit them")
-    s.add_argument("action", nargs="?", choices=["show", "edit"], default="show")
+    s.add_argument("action", nargs="?", choices=["show", "edit", "thinking"], default="show")
+    s.add_argument("level", nargs="?", help="for thinking: off, low, medium, high or xhigh (extra high)")
     s.add_argument("--json", action="store_true", help="for show: print JSON, for interfaces")
     s.set_defaults(func=cmd_preferences)
 

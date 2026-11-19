@@ -551,6 +551,7 @@ class ModelSpec:
     max_output_tokens: int | None = None  # the most this model may write in one reply, if less than the limit
     reasoning_effort: str | None = None  # how hard a thinking model thinks (sent as reasoning_effort), e.g. low
     max_concurrent: int | None = None  # calls in flight to this model's provider at once, across Ombro (T10)
+    thinking: str | None = None  # this model's own thinking level (ombro.thinking.LEVELS), over the preference
 
 
 def _positive_int(value, name: str, field: str, home: Home) -> int | None:
@@ -591,9 +592,17 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
         if api == "fake" and not entry.get("script"):
             raise SetupError(f"{home.models}: fake model {name!r} has no script")
         effort = entry.get("reasoning_effort")
+        if effort is False:  # YAML reads `none`-like words such as off and no as false
+            effort = "off"
         if effort is not None and not (isinstance(effort, str) and effort.isalpha() and len(effort) <= 20):
             raise SetupError(f"{home.models}: model {name!r} has reasoning_effort {effort!r}; use one word the "
                              "provider accepts, e.g. none, low, high")
+        from ombro.thinking import LABELS, level_of
+
+        thinking = entry.get("thinking")
+        if thinking is not None and level_of(thinking) is None:
+            raise SetupError(f"{home.models}: model {name!r} has thinking {thinking!r}; use one of "
+                             + ", ".join(LABELS))
         return ModelSpec(
             name=name,
             api=api,
@@ -604,6 +613,7 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
             max_output_tokens=int(entry["max_output_tokens"]) if entry.get("max_output_tokens") else None,
             reasoning_effort=effort.lower() if effort else None,
             max_concurrent=_positive_int(entry.get("max_concurrent"), name, "max_concurrent", home),
+            thinking=level_of(thinking) if thinking is not None else None,
         )
 
     return {name: resolve(name) for name in raw}
@@ -626,6 +636,7 @@ class Preferences:
     outward: Any = None
     background_feed: bool = True  # jobs' progress lines in the conversation
     notifications: bool = True  # the desktop app's system notifications when a job ends
+    thinking: str = ""  # how much models think (ombro.thinking.LEVELS); empty: ombro.thinking.DEFAULT
 
 
 def set_preference(home: Home, key: str, value: Any) -> None:
@@ -660,6 +671,9 @@ def load_preferences(home: Home) -> Preferences:
         prefs.outward = meta.get("outward")
         prefs.background_feed = meta.get("background_feed") is not False
         prefs.notifications = meta.get("notifications") is not False
+        from ombro.thinking import level_of
+
+        prefs.thinking = level_of(meta.get("thinking")) or ""
     if home.instructions.is_file():
         _, body = mdfile.read(home.instructions)
         prefs.instructions = mdfile.prompt_text(body)
@@ -674,6 +688,17 @@ def set_instructions(home: Home, text: str) -> None:
     path = home.instructions
     meta, body = mdfile.read(path) if path.is_file() else ({}, INSTRUCTIONS_BODY)
     mdfile.write(path, meta, mdfile.with_comments(body, text))
+
+
+def set_thinking(home: Home, level: str) -> str:
+    """The thinking preference: how much every model thinks, unless models.md gives a model its own."""
+    from ombro.thinking import LABELS, level_of
+
+    found = level_of(level)
+    if not found:
+        raise SetupError("Choose one of: " + ", ".join(LABELS) + ".")
+    set_preference(home, "thinking", found)
+    return found
 
 
 def set_outward(home: Home, preset: str) -> None:

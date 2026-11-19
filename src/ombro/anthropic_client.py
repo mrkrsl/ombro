@@ -52,6 +52,7 @@ class AnthropicClient:
         sleep: Callable[[float], None] = time.sleep,
         effort: str | None = None,
         slots=None,
+        thinking: str | None = None,
     ):
         self.slots = slots  # ombro.slots.ProviderSlots: how many calls may be in flight to Anthropic at once
         self.base = endpoint.rstrip("/")
@@ -66,6 +67,8 @@ class AnthropicClient:
         effort = _EFFORT_ALIASES.get((effort or "").lower(), (effort or "").lower())
         self.effort = effort if effort in EFFORTS else None  # "none" and unknown words: the model's default
         self.effort_refused = False
+        self.thinking = thinking  # a level (ombro.thinking) when models.md gives no effort word of its own
+        self.thinking_refused = False
         self.fallback_refused = False  # a model or account that doesn't take server-side fallbacks
         self.stale_thinking: set[str] = set()  # signatures of thinking blocks Anthropic no longer accepts
 
@@ -96,6 +99,15 @@ class AnthropicClient:
             body["tools"] = to_anthropic_tools(tools)
         if self.effort and not self.effort_refused:
             body["output_config"] = {"effort": self.effort}
+        elif self.thinking and not self.effort:
+            from ombro.thinking import anthropic_fields
+
+            fields = anthropic_fields(self.thinking, self.model, int(body["max_tokens"]))
+            if self.thinking_refused:
+                fields.pop("thinking", None)
+            if self.effort_refused:
+                fields.pop("output_config", None)
+            body.update(fields)
         if not self.fallback_refused:
             # If Claude's safety checks decline a request, Anthropic tries another Claude model.
             body["fallbacks"] = "default"
@@ -140,6 +152,10 @@ class AnthropicClient:
                     if "fallback" in low and "fallbacks" in body:
                         self.fallback_refused = True  # this model doesn't take them: carry on without
                         del body["fallbacks"]
+                        continue
+                    if "thinking" in low and "thinking" in body and "signature" not in low:
+                        self.thinking_refused = True  # this model doesn't take that thinking setting
+                        del body["thinking"]
                         continue
                     if "effort" in low and "output_config" in body:
                         self.effort_refused = True
