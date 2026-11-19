@@ -209,7 +209,7 @@ function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** What the usage looks like in the footer. */
+/** What the chat's usage looks like in the inspector. */
 export function usageText(u: Conversation["usage"]): string {
   if (!u) return "";
   if (!u.max) return `Usage: ${u.total.toLocaleString()} tokens`;

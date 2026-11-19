@@ -515,3 +515,19 @@ def test_the_leads_character_is_built_in_and_cannot_be_edited_away(home):
     assert soul.startswith(LEAD_SOUL.strip()) and soul.endswith("With Ada, you report early.")
     soul_path.write_text(LEAD_SOUL + "\n## Working with Ada\n\nShort.\n")  # an older home's file
     assert load_lead(home, load_limits(home)).soul.count("You are the Ombro Lead") == 1
+
+
+def test_a_proposals_changes_carry_no_diff_headers(tmp_path):
+    """T25: the changes shown under a proposal that updates a file have no @@ hunk headers, which
+    read as part of the brief; a gap between changes is a plain ⋯."""
+    from ombro.interview import FileDraft, Proposal, proposal_view
+
+    path = tmp_path / "invented-brief.md"
+    old = ["---", "name: invented-brief", "---", "# An invented brief", ""] + [f"Line {i}." for i in range(40)]
+    path.write_text("\n".join(old) + "\n", encoding="utf-8")
+    new = list(old)
+    new[6], new[30] = "An invented changed line.", "Another invented change."
+    shown = proposal_view(Proposal([FileDraft("The brief", path, "\n".join(new) + "\n")]))
+    diff = shown.files[0].diff
+    assert diff and not any(line.startswith("@@") for line in diff)
+    assert "+An invented changed line." in diff and "⋯" in diff

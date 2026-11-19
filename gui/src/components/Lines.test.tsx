@@ -19,3 +19,24 @@ describe("the offer to carry on a job that didn't finish", () => {
     expect(screen.getByRole("button", { name: "Resume it" })).toBeDisabled();
   });
 });
+
+describe("a proposal that updates a saved brief (T25)", () => {
+  it("renders the brief, with its changes folded away apart from it and no diff headers", () => {
+    const { container } = render(
+      <Lines
+        lines={[{ key: "p", kind: "proposal", warnings: [], files: [{ label: "The brief", path: "/specs/invented.md",
+          replaces: true, text: "# An invented brief\n\nCount the invented teapots.\n",
+          diff: ["@@ -4,81 +4,41 @@", " # An invented brief", "-Count the cups.", "+Count the invented teapots.", "⋯"] }] }]}
+      />,
+    );
+    const brief = container.querySelector(".markdown-file")!;
+    expect(brief).toHaveTextContent("Count the invented teapots.");
+    expect(brief).not.toHaveTextContent("@@");
+    expect(container).not.toHaveTextContent("@@");
+    const changes = container.querySelector("details.changes") as HTMLDetailsElement;
+    expect(changes.open).toBe(false);
+    expect(changes.querySelector("summary")).toHaveTextContent("Changes from the current file");
+    expect(changes.querySelector(".removed")).toHaveTextContent("Count the cups.");
+    expect(changes.querySelector(".added")).toHaveTextContent("Count the invented teapots.");
+  });
+});

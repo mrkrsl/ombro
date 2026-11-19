@@ -104,6 +104,9 @@
               "$ref": "#/$defs/SessionMessage"
             },
             {
+              "$ref": "#/$defs/ChatSavedMessage"
+            },
+            {
               "$ref": "#/$defs/JobMessage"
             },
             {
@@ -713,6 +716,32 @@
         "jobs"
       ],
       "title": "ChatRow",
+      "type": "object"
+    },
+    "ChatSavedMessage": {
+      "description": "A session's chat was written for the first time, or renamed with its title: list it now.",
+      "properties": {
+        "chat": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "type": {
+          "const": "chat_saved",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "session",
+        "seq",
+        "chat"
+      ],
+      "title": "ChatSavedMessage",
       "type": "object"
     },
     "ChatTurn": {
@@ -3010,6 +3039,9 @@
         },
         {
           "$ref": "#/$defs/SessionMessage"
+        },
+        {
+          "$ref": "#/$defs/ChatSavedMessage"
         },
         {
           "$ref": "#/$defs/JobMessage"
