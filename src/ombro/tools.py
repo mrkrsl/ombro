@@ -90,6 +90,10 @@ class ToolContext:
     # Files in shared folders whose old version this job has archived before replacing it.
     # None: archive before every replacement (chat, which has no backup clone).
     archived: set[str] | None = None
+    # What the job carries to other sites once it has read private material (ombro.carry.Carry), and,
+    # in chat, how the user is asked when a check is hit: ask(what, lines) -> their yes. None in a job.
+    carry: Any = None
+    ask: Callable[[str, list[str]], bool] | None = None
 
     def record(self, action: str, note: str, **fields: Any) -> None:
         if self.event is not None:

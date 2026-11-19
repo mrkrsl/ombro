@@ -65,6 +65,7 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
     tainted: list[str] = []
     skill_events: list[dict[str, Any]] = []
     skill_reads: list[dict[str, Any]] = []
+    browsed: dict[str, list[dict[str, Any]]] = {"opened": [], "typed": [], "held": []}
     for ev in events:
         action = ev.get("action")
         if action == "spec_roles":
@@ -125,6 +126,10 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
         elif action == "tool_error" and ev.get("not_shared"):
             if ev["not_shared"] not in not_shared:
                 not_shared.append(ev["not_shared"])
+        elif action == "browser" and ev.get("kind") in ("opened", "typed"):
+            browsed[ev["kind"]].append(ev)
+        elif action == "carry_held":
+            browsed["held"].append(ev)
     if failure:
         failures.append(failure)
 
@@ -210,6 +215,7 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
         "spec_roles": spec_roles,
         "set_aside": set_aside,
         "tainted_staged": tainted,
+        "browser": browsed,
         "workspace": str(workspace),
     }
 
@@ -587,6 +593,8 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         if f.get("set_aside"):
             out += ["Kept rather than deleted or lost, in For deletion/ and Archive/ (only you empty them):", ""]
             out += [f"- {x}" for x in f["set_aside"]] + [""]
+    if any((f.get("browser") or {}).values()):
+        out += ["## Browser", "", *browser_lines(f), ""]
     if f.get("material_flags") or f.get("tainted_staged"):
         out += ["## Material", "", *material_lines(f), ""]
     if f.get("skills") or f.get("skill_reads"):
@@ -714,6 +722,36 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
     while lines and not lines[-1]:
         lines.pop()
     return lines
+
+
+def browser_lines(f: dict[str, Any], n: int = 40) -> list[str]:
+    """Every site typed into, with what was typed, and every address opened, from the harness's own
+    record; and what was held back once the job had read private material (H1)."""
+    b = f.get("browser") or {}
+    out: list[str] = []
+
+    def who(ev: dict[str, Any]) -> str:
+        return f" ({ev['role']})" if ev.get("role") and ev["role"] != "lead" else ""
+
+    if b.get("held"):
+        out.append(f"Held back, because the job had read private material ({len(b['held'])}):")
+        out += [f"- {_line(ev.get('note', ''), 300)}{who(ev)}" for ev in b["held"][:n]]
+        out.append("")
+    if b.get("typed"):
+        out.append(f"Typed into pages ({len(b['typed'])}):")
+        out += [f"- {ev.get('site') or '?'}, \"{_line(ev.get('field') or '', 60)}\": "
+                f"\"{_line(ev.get('typed') or '', 200)}\"{who(ev)}" for ev in b["typed"][:n]]
+        if len(b["typed"]) > n:
+            out.append(f"- and {len(b['typed']) - n} more in the journal")
+        out.append("")
+    if b.get("opened"):
+        out.append(f"Addresses opened ({len(b['opened'])}):")
+        out += [f"- {_line(ev.get('url') or '', 200)}{who(ev)}" for ev in b["opened"][:n]]
+        if len(b["opened"]) > n:
+            out.append(f"- and {len(b['opened']) - n} more in the journal")
+    while out and not out[-1]:
+        out.pop()
+    return out
 
 
 def material_lines(f: dict[str, Any]) -> list[str]:

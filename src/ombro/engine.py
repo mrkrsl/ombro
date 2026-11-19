@@ -14,6 +14,7 @@ from typing import Any, Callable
 from ombro import contract, folders, material, mdfile, memory, outbox, outward, prompts, report, jobs
 from ombro import skills as skills_mod
 from ombro import journal as journal_mod
+from ombro import carry as carry_mod
 from ombro.client import ChatClient, ModelError, ModelReply, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home
@@ -104,6 +105,7 @@ class Engine:
         self.limits = Limits.from_dict(meta["limits"])  # fixed when the job was created
         self.live = bool(meta.get("live"))  # a live job: the user is watching, and the Lead may ask them
         self.scope = outward.Scope()  # what the job made and what waits, so related calls are one piece of work
+        self.carry = carry_mod.Carry()  # private material read in the job, against what the browser carries out (H1)
         self.clock = clock
         self.journal = Journal(self.job_dir / "journal.jsonl", echo=echo)
         # Tool settings, like limits, were fixed when the job was created.
@@ -380,7 +382,7 @@ class Engine:
     def _context(self, role: Role, tool: str) -> ToolContext:
         return ToolContext(
             self.job_dir, role.name, timeout=self._tool_timeout(tool), shared=self.shared, limits=self.limits,
-            archived=self.archived,
+            archived=self.archived, carry=self.carry,
             cancelled=lambda: self.gate.stop_requested or self.gate.timed_out(),
             event=lambda action, note, **fields: self.journal.write(role.name, action, note, **fields),
         )
@@ -611,6 +613,9 @@ class Engine:
                     src = f"the result {who} returned" if tc.name == "brief" and who else material.source(
                         "workspace.read" if tc.name == "workspace__read" else "memory.search", tc.arguments)
                     self._flag("lead", src, out)
+                    if tc.name != "brief" and carry_mod.is_private(
+                            "workspace.read" if tc.name == "workspace__read" else "memory.search", args=tc.arguments):
+                        self.carry.saw(src, out)  # the Lead may pass it on in a brief (H1)
                 messages.append(_tool_message(tc.id, out, src))
 
     def _so_far(self) -> str:
@@ -927,6 +932,8 @@ class Engine:
                         src = material.source(name, tc.arguments)
                         self.tainted = True  # this brief has read material from outside (7.1)
                         self._flag(role.name, src, out)
+                        if carry_mod.is_private(name, outward=tool.outward, args=tc.arguments, shared=bool(self.shared)):
+                            self.carry.saw(src, out)
                     messages.append(_tool_message(tc.id, out, src))
                 continue
             result, errors = contract.validate_text(reply.content)
@@ -1020,11 +1027,12 @@ class Engine:
         # A tool may say what this one call is (browser.submit: a form of filters is internal, one with the
         # user's details external); otherwise its class.
         effect = str(args.pop("_effect", "") or tool.effect or "external")
+        carried = bool(args.pop("_carry", False))  # would carry private material to a site: always asks (H1)
         effect = self.scope.effect(name, args, effect)  # deleting in what this job made is its own work
         decision = outward.decide(self.outward, name, effect, self.tool_settings)
         tainted_stage = False
-        if (decision == "allow" and effect == "external" and getattr(self, "tainted", False)
-                and name not in ((self.outward or {}).get("allow") or [])):
+        if decision == "allow" and effect == "external" and (carried or (
+                getattr(self, "tainted", False) and name not in ((self.outward or {}).get("allow") or []))):
             # Material taints a brief: after reading it, an external call waits for the user, even
             # under auto, unless the spec allows this tool by name (7.1).
             decision, tainted_stage = "stage", True
