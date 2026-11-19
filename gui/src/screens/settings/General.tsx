@@ -9,6 +9,8 @@ import { ServerForm } from "../Connect";
 import { describe, useThisComputer } from "../../where";
 import { appVersion, openLink } from "../../platform";
 import { inTauri } from "../../api/serve";
+import { ModelOptions } from "../../components/ModelOptions";
+import { modelChoices } from "../../store/models";
 
 export const LIMITS: [string, string][] = [
   ["conservative", "Light: up to 300k tokens a job"],
@@ -436,8 +438,7 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
   const { themeChoice, setThemeChoice } = useStore();
   const [saved, setSaved] = useState<Record<string, number>>({});
   const mark = (k: string) => setSaved((s) => ({ ...s, [k]: Date.now() }));
-  const all = models.connections.flatMap((c) => c.models.map((m) => ({ ...m, label: c.label })));
-  const current = all.find((m) => m.default)?.name ?? "";
+  const current = modelChoices(models).find((m) => m.default)?.name ?? "";
   const mode = prefs.data?.outward ?? "balanced";
   return (
     <>
@@ -452,11 +453,7 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
               if (m) { onChange(m); mark("model"); }
             }}
           >
-            {all.map((m) => (
-              <option key={m.name} value={m.name}>
-                {m.model} ({m.label})
-              </option>
-            ))}
+            <ModelOptions models={models} />
           </select>
           <Saved when={saved.model ?? 0} />
         </span>

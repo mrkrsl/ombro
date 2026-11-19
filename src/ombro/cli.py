@@ -975,6 +975,24 @@ def cmd_role(args) -> int:
             return 1
         print(f"{label} is valid.")
         return 0
+    if action in ("rename", "kind"):
+        from ombro.role_edit import edit_role
+
+        if not args.value:
+            raise CliError(f"Give the new title, e.g. `ombro role rename {args.name} \"Copy Editor\"`."
+                           if action == "rename" else
+                           f"Give the kind, e.g. `ombro role kind {args.name} helper`.")
+        if not crew:
+            raise CliError("The Lead keeps its name and kind.")
+        done = edit_role(home, crew, folder.name, **({"title": args.value} if action == "rename" else {"kind": args.value}))
+        if action == "kind":
+            print(f"{label} is now a {args.value}.")
+        elif done.renamed_from:
+            print(f"Renamed {label} to {crew}/{done.name}." +
+                  (f" Saved briefs changed to the new name: {', '.join(done.specs)}." if done.specs else ""))
+        else:
+            print(f"{label} is now called {' '.join(args.value.split())}.")
+        return 0
     if action == "remove":
         answer = _confirm(f"Remove {label}? Its folder is moved to the crew's removed/ folder.")
         if not answer:
@@ -1326,9 +1344,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_specs)
 
-    s = sub.add_parser("role", help="list, add, edit or remove roles")
-    s.add_argument("action", choices=["list", "add", "edit", "remove"])
+    s = sub.add_parser("role", help="list, add, edit, rename or remove roles, or change their kind")
+    s.add_argument("action", choices=["list", "add", "edit", "rename", "kind", "remove"])
     s.add_argument("name", nargs="?", help="for add: the role's title, e.g. \"Marketing Assistant\"")
+    s.add_argument("value", nargs="?", help="for rename: the new title, e.g. \"Copy Editor\"; "
+                                            "for kind: specialist or helper")
     s.add_argument("--crew")
     s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_role)

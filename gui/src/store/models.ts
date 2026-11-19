@@ -12,3 +12,14 @@ export function modelLabel(model: string | null | undefined, models: ModelList |
   if (model === "cheap") return def ? `${def.model} (helpers)` : "The helpers' model";
   return model;
 }
+
+/** Every model you can choose, each with its provider's label: the one list Settings › General
+ * and the crew member page both show, as "anthropic/claude-opus-5.5 (OpenRouter)". The value
+ * kept is `name`, which is unique across providers, so two providers' Claudes stay apart. */
+export function modelChoices(models: ModelList | null | undefined) {
+  return models?.connections.flatMap((c) => c.models.map((m) => ({ ...m, label: c.label }))) ?? [];
+}
+
+export function choiceText(m: { model: string; label: string }): string {
+  return `${m.model} (${m.label})`;
+}

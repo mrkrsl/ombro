@@ -105,6 +105,8 @@ ombro role list [--crew <crew>]        # the Lead, then each crew's roles
 ombro role add [title] --crew <crew>   # a role joins one crew
 ombro role edit | remove <crew>/<role> # or the role's own name, where only one crew has it
 ombro role edit lead                   # the one Lead's files
+ombro role rename <role> "New Title"   # the folder too; saved briefs that name it follow
+ombro role kind <role> specialist|helper
 ombro crew list | add <name> | use <name>   # a new crew starts empty; `use` sets the default crew
 ombro crew add legal --title "Legal Team"   # the title shown; without one, "Legal Crew"
 ombro start --spec <spec> --crew ops   # --crew gives the crews when the spec names none

@@ -625,16 +625,14 @@ def _action_routes(s: Serve) -> list[Route]:
         return {"done": skills.give(home, r.path_params["name"], _need(data, "role"))}
 
     def save_soul(r: Request, data: dict[str, Any]) -> Any:
-        from ombro import mdfile
+        from ombro.role_edit import write_soul
 
         crew, name = r.path_params["crew"], r.path_params["role"]
         folder = home.lead_dir if name == "lead" else home.roles_dir(crew) / name
         path = folder / "soul.md"
         if "/" in name or not path.is_file():
             raise LookupError(f"no role {crew}/{name}")
-        meta, body = mdfile.read(path)  # its front matter and guidance comments stay
-        mdfile.write(path, meta, mdfile.with_comments(body, _need(data, "text"))) if meta else \
-            mdfile.write_atomic(path, mdfile.with_comments(body, _need(data, "text")))
+        write_soul(folder, _need(data, "text"))  # its front matter and guidance comments stay
         return views.role(home, crew, name)
 
     after = s.counts_soon
