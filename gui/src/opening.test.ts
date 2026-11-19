@@ -1,4 +1,4 @@
-// Security review M3 and L3: files that run code are only shown (the app says why), and the
+// Files that run code are only shown (the app says why), and the
 // app's sign-in listener hands over only the answer that brings back the sign-in's state.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

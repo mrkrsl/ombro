@@ -71,7 +71,7 @@ def test_name_and_theme_preferences(home):
 
 
 def test_a_sentence_names_a_crew_the_way_it_reads(home):
-    """Testing log T22: a crew titled Ombro is "the Ombro crew", never "the Ombro"; a title that
+    """A crew titled Ombro is "the Ombro crew", never "the Ombro"; a title that
     already says it is a group is left alone, never "the Marketing team crew"."""
     from ombro.home import crew_phrase, crew_phrases, ensure_crew, find_crew
 

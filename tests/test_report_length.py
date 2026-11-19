@@ -1,4 +1,4 @@
-"""The report stays short: no empty sections, no lists that repeat themselves (batch I)."""
+"""The report stays short: no empty sections, no lists that repeat themselves."""
 
 from __future__ import annotations
 

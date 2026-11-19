@@ -1,4 +1,4 @@
-"""The Settings pages' actions (plan 2, stage 7): model providers, crews and roles, tools and
+"""The Settings pages' actions: model providers, crews and roles, tools and
 MCP servers, skills. Each calls the core function the terminal or command line calls.
 
 Deleting has two steps: a GET …/check says what stops it and what to know, then DELETE does
@@ -45,7 +45,7 @@ def settings_routes(s: Serve) -> list[Route]:
     home = s.home
     after = s.counts_soon
 
-    # -- model providers (C5) --------------------------------------------------------
+    # -- model providers -------------------------------------------------------------
 
     def add_provider(r: Request, data: dict[str, Any]) -> Any:
         from ombro import models
@@ -172,7 +172,7 @@ def settings_routes(s: Serve) -> list[Route]:
         views.CHATGPT_SIGNING.clear()
         return {**views.model_list(home), **done}
 
-    # -- crews and roles (C4) ----------------------------------------------------------
+    # -- crews and roles ---------------------------------------------------------------
 
     def check_crew(r: Request) -> Any:
         from ombro import removing
@@ -346,8 +346,8 @@ def settings_routes(s: Serve) -> list[Route]:
         return tools_view()
 
     def server_claims(r: Request) -> Any:
-        """What each of a server's tools says it does, and which still wait for your confirmation
-        (M1): the same as `ombro tools <server>`. Starts the server, which may download it first."""
+        """What each of a server's tools says it does, and which still wait for your confirmation:
+        the same as `ombro tools <server>`. Starts the server, which may download it first."""
         from ombro import server_cmd
         from ombro.mcp import McpError
         from ombro.settings import load_tool_settings
@@ -453,7 +453,7 @@ def settings_routes(s: Serve) -> list[Route]:
         s.signing.pop(name, None)
         return {"signed_out": oauth.disconnect(home, name), **tools_view()}
 
-    # -- web APIs (the API tool design) ---------------------------------------------
+    # -- web APIs -------------------------------------------------------------------
 
     def _server_keys(name: str, cfg: dict[str, Any]) -> list[str]:
         from ombro.mcp import ServerConfig
@@ -537,7 +537,7 @@ def settings_routes(s: Serve) -> list[Route]:
         composio.disconnect(home)
         return tools_view()
 
-    # -- skills (C4) -----------------------------------------------------------------
+    # -- skills ----------------------------------------------------------------------
 
     def skill_view(r: Request) -> Any:
         from ombro import skills

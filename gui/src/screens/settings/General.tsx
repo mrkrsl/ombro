@@ -1,5 +1,5 @@
-// Settings › General (design 09): what to call you and your profile; model providers (add, edit,
-// delete: C5); the default model, the token usage limit and the approval mode; the theme.
+// Settings › General: what to call you and your profile; model providers (add, edit,
+// delete); the default model, the token usage limit and the approval mode; the theme.
 
 import { useEffect, useState, type ReactNode } from "react";
 import type { BrowserView, Connection, ModelList, Preferences, ProviderPreset } from "../../api/types";
@@ -128,7 +128,7 @@ function usePlanSignIn(onChange: (m: ModelList) => void) {
     }
     await reload();
     if (port !== null && r?.url) {
-      // Only an answer that brings back this sign-in's state is handed over (security review L3).
+      // Only an answer that brings back this sign-in's state is handed over.
       const answer = await catchSignIn(port, r.url);
       if (answer) await handOver(answer);
     }

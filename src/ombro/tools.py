@@ -192,7 +192,7 @@ def is_deferred(tool: "Tool") -> bool:
 def load_tool_schema(deferred: list["Tool"]) -> dict[str, Any]:
     """The one tool that lists the deferred tools and loads the ones asked for. Names only, grouped by
     service: a line per tool with its first sentence cost a job with Gmail, Docs, Sheets and Notion
-    connected about 10,000 tokens on every call, and the sentence was mostly the same words (T9)."""
+    connected about 10,000 tokens on every call, and the sentence was mostly the same words."""
     groups: dict[str, list[str]] = {}
     for t in deferred:
         prefix, _, short = t.wire_name.rpartition("__")

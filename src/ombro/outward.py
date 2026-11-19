@@ -19,7 +19,7 @@ only once the user has confirmed that claim for the tool, kept as
 `class:` on the server in tools.md (for its tools that are not read-only),
 then `class:` on the tool in tools.md. A tool that changes something and is
 not classed is external: the safe default. A server's word alone never makes
-a tool internal (M1): it could say so of a tool that sends."""
+a tool internal: it could say so of a tool that sends."""
 
 from __future__ import annotations
 
@@ -249,7 +249,7 @@ MAKE_WORDS = frozenset({"CREATE", "NEW", "ADD", "COPY", "DUPLICATE", "UPLOAD", "
 
 
 # After a brief or chat has read material (a web page, an email...), an internal change still runs,
-# unless it deletes something or changes who can see or reach it (M1): those then wait for the user,
+# unless it deletes something or changes who can see or reach it: those then wait for the user,
 # since an injected "trash this" or "make it public" is not undone by page history or a job's backup.
 SHARING_WORDS = frozenset({"SHARE", "UNSHARE", "INVITE", "PERMISSION", "PERMISSIONS", "PUBLISH", "UNPUBLISH",
                            "PUBLIC", "ACCESS", "ACL", "COLLABORATOR", "COLLABORATORS", "GRANT", "REVOKE",
@@ -333,7 +333,7 @@ class Scope:
 
 
 # ---------------------------------------------------------------------------
-# What a call will send, as the person asked to approve it sees it (H3)
+# What a call will send, as the person asked to approve it sees it
 
 # Argument names that say who or where a call reaches, or who can see what it changes: shown first, so
 # a long body can never push a recipient or a sharing setting out of sight.

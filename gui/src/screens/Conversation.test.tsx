@@ -1,4 +1,4 @@
-// T23: the conversation keeps its latest line in view as the input box grows or shrinks.
+// The conversation keeps its latest line in view as the input box grows or shrinks.
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { newConversation } from "../store/conversation";

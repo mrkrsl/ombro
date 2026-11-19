@@ -1,5 +1,5 @@
 """Simple file actions in chat (move, copy, rename, fill in) are file operations, never a rewrite and
-never a job (T20). All invented."""
+never a job. All invented."""
 
 from __future__ import annotations
 

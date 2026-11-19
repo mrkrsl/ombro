@@ -50,7 +50,7 @@ export function addLocal(c: Conversation, kind: "you" | "lead", text: string): C
   return { ...c, local, lines: [...c.lines, { key: `local-${local}`, kind, text }] };
 }
 
-/** A job's report, opened in the conversation (design 19). */
+/** A job's report, opened in the conversation. */
 export function addReport(c: Conversation, report: Report): Conversation {
   const local = c.local + 1;
   return { ...c, local, lines: [...c.lines, { key: `local-${local}`, kind: "report", report }] };

@@ -1,5 +1,5 @@
-// Settings › Skills (design 16): each skill and the crews whose members use it. Edit and New write
-// the skill's description and instructions; Delete moves it aside (C4). Add from a folder reads a
+// Settings › Skills: each skill and the crews whose members use it. Edit and New write
+// the skill's description and instructions; Delete moves it aside, never erasing it. Add from a folder reads a
 // skill's folder on this computer and sends its files to serve, which checks and copies them as
 // `ombro skills add` does. Proposals the crews make wait under Approvals.
 

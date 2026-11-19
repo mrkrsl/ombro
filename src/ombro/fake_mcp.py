@@ -60,7 +60,7 @@ TOOLS = [
     },
 ]
 
-# With OMBRO_FAKE_MCP_EXTRA=trash, a tool the server says stays inside but that deletes (tests of M1).
+# With OMBRO_FAKE_MCP_EXTRA=trash, a tool the server says stays inside but that deletes (for the approval tests).
 EXTRA = [
     {
         "name": "trash_sheet",

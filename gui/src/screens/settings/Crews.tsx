@@ -1,5 +1,5 @@
 // Settings › Crews (designs 10, 11): each crew with its members (kind, model). The Lead is not listed. A new
-// crew, renaming (the title only) and deleting (moved aside: C4); a new member is an interview,
+// crew, renaming (the title only) and deleting (moved aside, never erased); a new member is an interview,
 // so it opens a chat; Edit opens a member's page: name, kind, model and soul.
 
 import { useState } from "react";

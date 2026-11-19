@@ -1,4 +1,4 @@
-//! Opening a job's files with the system's opener (security review M3).
+//! Opening a job's files with the system's opener.
 //!
 //! A job's code runs in a sandbox, but the files it makes are opened here, with Launch Services
 //! (xdg-open on Linux) and your full rights. Some kinds of file run code when opened: a

@@ -12,8 +12,8 @@ Composio tool: composio.<toolkit>.<tool>, such as composio.googledocs.CREATE_DOC
 server's tools, they are listed by name in tools__load and sent in full only once loaded. A tool
 Composio marks read-only is a lookup. Where Composio says nothing, a name that starts with a reading
 word (GET_, LIST_, FIND_…) is a lookup only if no other word in it says it makes or changes something
-(FIND_OR_CREATE, GET_SHARE_LINK, FETCH_AND_MARK_READ): those are classed as changes (security review
-L5). `ombro tools composio` shows each tool's class and where it came from. A tool whose name sends to other people, deletes or spends is external and waits
+(FIND_OR_CREATE, GET_SHARE_LINK, FETCH_AND_MARK_READ): those are classed as changes.
+`ombro tools composio` shows each tool's class and where it came from. A tool whose name sends to other people, deletes or spends is external and waits
 in Approvals; any other change in the organisation's own document tools (Sheets, Docs, Drive,
 Notion and the like, OWN_TOOLKITS) or to a draft is internal, so a brief that asks for a sheet gets
 it made and formatted without asking. Anything else follows `class:` above.
@@ -54,7 +54,7 @@ _TOOLKIT = re.compile(r"[^a-z0-9_-]+")
 READ_VERBS = {"GET", "LIST", "SEARCH", "FETCH", "FIND", "READ", "RETRIEVE", "QUERY", "LOOKUP", "DESCRIBE",
               "COUNT", "VIEW"}
 # Words that, anywhere in an unmarked tool's name, say a reading word isn't the whole story: it may
-# make, send, share, link, mark or delete something too (L5). Verbs only: outward.RISKY_WORDS has
+# make, send, share, link, mark or delete something too. Verbs only: outward.RISKY_WORDS has
 # nouns a lookup's name may carry (LIST_DRIVE_ITEM_PERMISSIONS, GET_POST).
 CHANGE_WORDS = frozenset({
     "OR", "AND", "CREATE", "MAKE", "ADD", "INSERT", "UPDATE", "UPSERT", "SET", "EDIT", "MODIFY", "PATCH", "PUT",

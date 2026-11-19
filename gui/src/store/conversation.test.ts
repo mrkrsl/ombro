@@ -26,7 +26,7 @@ describe("a conversation", () => {
     expect(c.seq).toBe(3);
   });
 
-  it("keeps what a Lead-voiced line lists, such as every argument of an action to approve (H3)", () => {
+  it("keeps what a Lead-voiced line lists, such as every argument of an action to approve", () => {
     const c = run([ev(1, { type: "note", text: "I'd like to use mcp.mail.send.", spaced: false, level: "lead",
       items: ["to: client@example.invalid", "bcc: attacker@example.invalid"] })]);
     expect(c.lines[0]).toMatchObject({ kind: "lead", items: ["to: client@example.invalid", "bcc: attacker@example.invalid"] });

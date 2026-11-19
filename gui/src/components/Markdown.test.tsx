@@ -17,7 +17,7 @@ describe("MarkdownFile", () => {
   });
 });
 
-describe("Markdown headings (T24)", () => {
+describe("Markdown headings", () => {
   it("use one modest scale, largest first, none smaller than the text around them", () => {
     const size = (h: string) => {
       const rule = new RegExp(`\\.markdown ${h}(?:,[^{]*)?\\s*\\{[^}]*font-size:\\s*([\\d.]+)em`).exec(css);

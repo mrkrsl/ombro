@@ -120,7 +120,7 @@ _REFUSED_FIELD = re.compile(r"reason|think|effort|unrecogni[sz]ed|unknown|extra|
 def busy_wait(resp: httpx.Response, detail: str) -> float | None:
     """Seconds the provider asks Ombro to wait before trying again when it is busy rather than refusing the
     request: 429 (too many requests), 529 (overloaded) and OpenRouter's 402 for credit held by requests still in
-    flight. 0 when it gives no Retry-After; None when this is not that kind of refusal (T10)."""
+    flight. 0 when it gives no Retry-After; None when this is not that kind of refusal."""
     status = resp.status_code
     if status == 402:
         low = (detail + " " + resp.text[:2000]).lower()

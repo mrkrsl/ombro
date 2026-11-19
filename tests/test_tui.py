@@ -13,7 +13,7 @@ from ombro.fake import ScriptedClient
 from ombro.tui import look
 from ombro.tui.detect import is_dark, parse_background
 
-# -- the team chart (specification 14.1) -----------------------------------------------
+# -- the team chart --------------------------------------------------------------------
 
 
 def test_the_fresh_install_chart():
@@ -181,7 +181,7 @@ def test_opens_with_the_header_and_the_greeting(home):
             shot = _screen(app)
             assert "Hey Ada, welcome to Ombro" in shot and "Working with Ada" in shot
             assert "Ombro Lead" in shot and "└ Default Crew" in shot and "└ Researcher" in shot and "Balanced" in shot
-            # T14: no usage line under the input; the hint and the model are on its right.
+            # No usage line under the input; the hint and the model are on its right.
             assert "Usage:" not in shot
             foot = next(line for line in shot.splitlines() if "/ for commands" in line)
             assert "Model:" in foot and foot.index("/ for commands") > foot.index("Balanced") \
@@ -211,7 +211,7 @@ def test_a_chat_message_gets_the_leads_answer(home):
 
 
 def test_a_growing_input_keeps_the_latest_line_in_view(home):
-    """T23: at the end of a long conversation, a long message grows the input; the conversation
+    """At the end of a long conversation, a long message grows the input; the conversation
     stays at its end, so its latest line is not hidden behind the input."""
     app, _ = _app(home)
 
@@ -471,7 +471,7 @@ def test_a_job_ending_posts_a_notice_and_marks_it_seen(home, job):
             texts = _texts(app)
             from ombro.jobs import job_name
 
-            assert any(f"{job_name(job_id)} · lead briefed" in t for t in texts)  # by its readable name (C6)
+            assert any(f"{job_name(job_id)} · lead briefed" in t for t in texts)  # by its readable name
             notice = next(t for t in texts if "Your job has finished." in t)
             assert "Here's what it made:" in notice and "The note:" in notice and f"/report {job_id}" in notice
 
@@ -654,7 +654,7 @@ def test_new_clears_the_screen_and_the_usage(home):
             await command(pilot, app, "/new")
             await settle(pilot, app)
             texts = "\n".join(_texts(app))
-            # the chat had a title from its first words from the moment it was sent (T21)
+            # the chat had a title from its first words from the moment it was sent
             assert "Hello there." not in texts and "I've saved the last chat, 'Hi'. This is a new chat." in texts
             assert app.usage[0] == 0
 

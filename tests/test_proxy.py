@@ -1,5 +1,5 @@
 """The browser's proxy (ombro.proxy): each name looked up once, checked, and connected to at the
-address checked, so DNS rebinding can't lead a page to this machine or the local network (H2)."""
+address checked, so DNS rebinding can't lead a page to this machine or the local network."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """The models in models.md, grouped by connection (an endpoint and its key), and
 the changes an interface makes to them: adding a connection's models, choosing
-the default, and choosing the model a role or the Lead uses (specification 14.1).
+the default, and choosing the model a role or the Lead uses.
 
 models.md stays the one record. Each model is an entry named after the model
 (`deepseek-chat: {api, endpoint, model, key}`); `default` names the one used
@@ -476,7 +476,7 @@ def model_flow(home: Home, ui, who: str | None = None, name: str | None = None) 
 
 
 # ---------------------------------------------------------------------------
-# Providers: a connection (an endpoint and its key) as one thing to add, edit or remove (plan C5)
+# Providers: a connection (an endpoint and its key) as one thing to add, edit or remove
 
 
 PLAN = "chatgpt"  # stands for the ChatGPT plan where a provider's address is asked for: it has none

@@ -2,8 +2,8 @@
 
 The browser (ombro.browser) checks every request a page makes here, and its proxy
 (ombro.proxy) checks each connection's address again with checked_addresses and connects to
-that address, so neither a role nor a page can reach this machine or the local network. (Until 18 Nov 2026 a plain download,
-the `direct` provider, used it too; web pages are now always read in the browser.)
+that address, so neither a role nor a page can reach this machine or the local network. (A plain download,
+the `direct` provider, once used it too; web pages are now always read in the browser.)
 """
 
 from __future__ import annotations

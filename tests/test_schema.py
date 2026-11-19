@@ -1,4 +1,4 @@
-"""The desktop app's types are generated from the views and the protocol (plan 3.5): when either
+"""The desktop app's types are generated from the views and the protocol: when either
 changes, gui/src/api/schema.json must be written again, or this fails."""
 
 from __future__ import annotations

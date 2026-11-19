@@ -377,7 +377,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
               Brief
             </button>
           </div>
-          {/* No usage line here (T14): what a chat costs is small; briefed work is where the spend is. */}
+          {/* No usage line here: what a chat costs is small; briefed work is where the spend is. */}
           <span className="hint">/ for commands</span>
           <span className="model" title="The model the Lead uses in this chat. A job's crew may use others: see the inspector.">
             {summary?.model ? `Lead: ${modelLabel(summary.model, models)}` : "No model"}

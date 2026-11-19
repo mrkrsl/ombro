@@ -235,7 +235,7 @@ SPEC = {
 
 
 def test_brief_writes_only_the_fields_that_say_something(talk, home):
-    """No set structure (testing log T4): only a title is required, and empty fields are left out."""
+    """No set structure: only a title is required, and empty fields are left out."""
     out = talk(
         BriefPurpose(home, "default", load_limits(home), "Find invented teapot makers."),
         [fake.call("propose", {**SPEC, "title": " "}), fake.call("propose", {**SPEC, "waste": "", "non_goals": " "})],
@@ -518,7 +518,7 @@ def test_the_leads_character_is_built_in_and_cannot_be_edited_away(home):
 
 
 def test_a_proposals_changes_carry_no_diff_headers(tmp_path):
-    """T25: the changes shown under a proposal that updates a file have no @@ hunk headers, which
+    """The changes shown under a proposal that updates a file have no @@ hunk headers, which
     read as part of the brief; a gap between changes is a plain ⋯."""
     from ombro.interview import FileDraft, Proposal, proposal_view
 

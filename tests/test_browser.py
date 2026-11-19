@@ -164,7 +164,7 @@ def test_a_page_cannot_reach_this_machine(tools, site):
 
 
 def test_a_name_that_rebinds_to_this_machine_is_never_reached(site):
-    # H2: the page's check sees a public address; a moment later the same name is this machine.
+    # DNS rebinding: the page's check sees a public address; a moment later the same name is this machine.
     asked: list[str] = []
 
     def rebinding(host: str, port: int) -> list[str]:
@@ -419,7 +419,7 @@ def test_the_browser_setting_is_auto_one_browser_or_off(home):
         tool_cmd.set_browser(home, "/usr/bin/invented-browser")
 
 
-# -- once a job has read private material (H1) ----------------------------------------
+# -- once a job has read private material ---------------------------------------------
 
 PRIVATE = ("Invented client notes: the agreed fee for Halloway is forty thousand pounds, paid in two parts, "
            "reference HX4471920033.")

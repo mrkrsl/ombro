@@ -1,4 +1,4 @@
-"""The chat Lead puts a saved spec on a schedule (testing log T5): it offers, Ombro says when it
+"""The chat Lead puts a saved spec on a schedule: it offers, Ombro says when it
 would run in the schedules' time zone, and on a yes sets it up as the Scheduled page does. All
 invented; fake model; no network; the scheduler service is a fake (conftest)."""
 

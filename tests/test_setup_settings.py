@@ -1,4 +1,4 @@
-"""Follow-ups batch F (settings and set-up): a skill added from a folder the app sends, a pasted
+"""Settings and set-up: a skill added from a folder the app sends, a pasted
 SKILL.md in the skill form, the default crew, APIs added and edited in the terminal, keys removed
 with what used them, and set-up that saves nothing when a key is refused. All data is invented."""
 
@@ -18,7 +18,7 @@ from test_ui import ScriptedUI
 SKILL = "---\nname: kettle-survey\ndescription: Surveys invented kettles.\n---\n# Method\n\nBoil one, then note it.\n"
 
 
-# -- 6: a whole SKILL.md pasted into the method box ---------------------------------------
+# -- a whole SKILL.md pasted into the method box ------------------------------------------
 
 
 def test_a_pasted_skill_md_gives_its_name_and_description_and_loses_its_front_matter(serve, home):
@@ -36,7 +36,7 @@ def test_a_pasted_skill_md_gives_its_name_and_description_and_loses_its_front_ma
     assert unclosed.status_code == 400 and "front matter" in unclosed.json()["error"]
 
 
-# -- 1: a skill from a folder, sent by the app --------------------------------------------
+# -- a skill from a folder, sent by the app -----------------------------------------------
 
 
 def test_a_skill_folder_sent_by_the_app_is_checked_then_added(serve, home):
@@ -80,7 +80,7 @@ def test_the_terminal_says_which_roles_dont_get_an_added_skill(home, tmp_path, c
     assert "default/surveyor" in out and "ombro skills give kettle-survey" in out
 
 
-# -- 2: the default crew -------------------------------------------------------------------
+# -- the default crew ----------------------------------------------------------------------
 
 
 def test_the_default_crew_is_chosen_over_serve(serve, home):
@@ -92,7 +92,7 @@ def test_the_default_crew_is_chosen_over_serve(serve, home):
     assert serve.http.put("/crews/nowhere/default", json={}).status_code == 404
 
 
-# -- 3: APIs in the terminal ----------------------------------------------------------------
+# -- APIs in the terminal -------------------------------------------------------------------
 
 
 def test_an_api_is_added_from_the_command_line_and_its_key_typed_hidden(home, monkeypatch, capsys):
@@ -127,7 +127,7 @@ def test_an_api_is_added_by_answering_questions(home):
     assert keys.get_key(home, "PODCASTS_API_KEY") == "pk-INVENTED-podcasts-0000"
 
 
-# -- 4: keys go with what used them ------------------------------------------------------------
+# -- keys go with what used them ---------------------------------------------------------------
 
 
 def test_deleting_an_api_or_server_removes_its_key_unless_another_uses_it(serve, home):
@@ -178,7 +178,7 @@ def test_an_edit_that_drops_a_secret_removes_its_key(serve, home):
     assert keys.get_key(home, "FILES_TOKEN") is None
 
 
-# -- 5: no phantom model -------------------------------------------------------------------
+# -- no phantom model ----------------------------------------------------------------------
 
 
 class Refusing:

@@ -229,7 +229,7 @@ def start_again(home: Home, job_id: str, *, more: bool = False, chat: str | None
 
 
 def setup_needed(home: Home) -> str | None:
-    """Why this home needs set-up, found without a model call (specification 10.1), or None."""
+    """Why this home needs set-up, found without a model call, or None."""
     if not home.root.is_dir():
         return "there is no Ombro home."
     try:
@@ -494,7 +494,7 @@ class Session:
     def offer_start(self, spec: str, shown: str | None = None, *, roles: list[str] | None = None,
                     ask: bool = True, aside: bool = False) -> str | None:
         """Start a saved spec now, in the background, after the user's yes: after a confirmed brief, on /start,
-        or when the Lead offered it in chat and the user said yes there (specification 10.3, 10.4).
+        or when the Lead offered it in chat and the user said yes there.
         `aside`: asked in the chat, where a new message may set the question aside."""
         if shown:
             self.ui.say(f"Saved spec {shown}")

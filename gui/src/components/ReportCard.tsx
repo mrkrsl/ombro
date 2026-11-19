@@ -1,4 +1,4 @@
-// A job's report (design 19): where it is, a copy button, the part you read as Markdown, what the
+// A job's report: where it is, a copy button, the part you read as Markdown, what the
 // job made (a Markdown file can open here too), what waits for approval, and Ombro's record of
 // how it went, shown on request. In the chat (`brief`), only the Lead's short summary shows at
 // first, with what the job made under it; "Read the full report" opens the rest here.

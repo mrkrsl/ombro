@@ -1,5 +1,5 @@
 """The Starlette app behind `ombro serve`: the guard, the views, sessions, actions, the socket
-and the poller (plan 3.3, 3.4).
+and the poller.
 
 Every handler that reads or writes the home runs on a worker thread, so the event
 loop only ever sends and receives.

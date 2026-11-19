@@ -1,7 +1,7 @@
 """Material: text a model reads that came from neither the user nor Ombro (web pages,
 MCP results, file contents, script output, what roles return). It is fenced on its
 way to a model, and the common signs of injected instructions are flagged for the
-report. Flags never block anything (specification 7.1)."""
+report. Flags never block anything."""
 
 from __future__ import annotations
 

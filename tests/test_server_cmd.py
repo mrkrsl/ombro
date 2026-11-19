@@ -56,7 +56,7 @@ def test_a_local_server_is_added_with_its_secret_kept_out_of_tools_md(home, type
 
 
 def test_the_added_server_starts_and_lists_its_tools(home, typed, capsys):
-    typed("y", "n")  # add it; don't yet confirm what it says of add_row (M1)
+    typed("y", "n")  # add it; don't yet confirm what it says of add_row
     assert cli.main(["server", "add", "fake", "--command", f"{sys.executable} -m ombro.fake_mcp",
                      "--no-prompt"]) == 0
     capsys.readouterr()

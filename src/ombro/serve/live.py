@@ -1,6 +1,6 @@
 """Live sessions in `ombro serve`, and the hub that sends what they say to the windows.
 
-A session (plan 3.2) is one conversation: a chat, or a flow such as set-up. It
+A session is one conversation: a chat, or a flow such as set-up. It
 runs on its own worker thread with its own ServeUI, the counterpart of the
 terminal's TuiUI:
 
@@ -171,7 +171,7 @@ class LiveSession:
                                titles=sessions.titles, on_started=sessions.watch_job)
         self.flows = Flows(self.session)
         # The chat is on disk (its first message, or a new name with its title): windows list it now,
-        # while the Lead is still answering (T21).
+        # while the Lead is still answering.
         self.session.on_chat_saved = lambda path: self.emit({"type": "chat_saved", "chat": path.stem})
 
     # -- the log ------------------------------------------------------------------

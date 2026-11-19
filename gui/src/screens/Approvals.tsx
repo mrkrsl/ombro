@@ -1,4 +1,4 @@
-// Approvals (design 08, as decided in review): tick one or several, then Approve or Decline. Each
+// Approvals: tick one or several, then Approve or Decline. Each
 // row says in words what it will do, with its crew and job beneath, and opens to show who asked
 // and why, and what exactly it will send, as labelled lines rather than JSON.
 

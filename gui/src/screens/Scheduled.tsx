@@ -1,4 +1,4 @@
-// Scheduled work (design 07): each schedule's name, its spec, and when it runs, in words. On or off,
+// Scheduled work: each schedule's name, its spec, and when it runs, in words. On or off,
 // Edit (when it runs, in place) and Delete (moved aside, never erased). New scheduled job: a saved
 // brief (a spec, saved when a job was briefed), when, and a title. Under the title, a line when the
 // scheduler service that runs them is missing or broken, with Install now.

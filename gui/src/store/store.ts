@@ -1,4 +1,4 @@
-// The one client-side store (plan 2): fed by serve's socket and HTTP replies. Screens read it
+// The one client-side store: fed by serve's socket and HTTP replies. Screens read it
 // and call its actions; nothing else talks to serve.
 
 import { create } from "zustand";
@@ -431,7 +431,7 @@ export const useStore = create<State & Actions>((set, get) => {
       if (!("session" in m) || !m.session) return;
       const id = m.session;
       if (m.type === "chat_saved") {
-        // The chat is on disk from its first message (T21): it joins the list of chats at once, so
+        // The chat is on disk from its first message: it joins the list of chats at once, so
         // clicking away while the Lead answers, or asks a question, never loses it.
         chatNames[id] = m.chat;
         if (get().current === id) set({ chatOn: m.chat });
@@ -780,7 +780,7 @@ export const useStore = create<State & Actions>((set, get) => {
       // Here: the file itself. From a server: a copy kept in ~/Downloads/Ombro, opened or shown.
       const { api, remote } = get();
       try {
-        // A kind that runs code is shown in Finder instead of opened (security review M3): say why.
+        // A kind that runs code is shown in Finder instead of opened: say why.
         const go = async (p: string) => {
           if (how === "reveal") return revealFile(p);
           const why = await openFile(p);

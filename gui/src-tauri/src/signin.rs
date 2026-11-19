@@ -178,7 +178,7 @@ fn pick(caught: &[String], state: &str, port: u16) -> Option<String> {
 
 /// Start listening on a free port for the sign-in's answer. Returns the port. It keeps listening
 /// until the answer is taken (sign_in_answer) or ten minutes pass: a callback with the wrong
-/// `state`, from another program on this computer say, is refused and doesn't end it (review L3).
+/// `state`, from another program on this computer say, is refused and doesn't end it.
 #[tauri::command]
 pub async fn sign_in_listener(app: tauri::AppHandle) -> Result<u16, String> {
     let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| e.to_string())?;

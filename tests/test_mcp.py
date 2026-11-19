@@ -286,7 +286,7 @@ def test_tools_md_servers_and_mcp_settings_are_checked(home):
         ({"servers": {"Bad Name": {"command": "a"}}}, "server name"),
         ({"tools": {"mcp.x.y": {"permission": "allow"}}}, "only be `refuse`"),
         ({"tools": {"mcp.x.y": {"class": "write"}}}, "class for"),
-        ({"tools": {"mcp.x.y": {"class": "send"}}}, "renamed; use 'external'"),  # stage 6 names
+        ({"tools": {"mcp.x.y": {"class": "send"}}}, "renamed; use 'external'"),  # earlier names
         ({"tools": {"mcp.x.y": {"class": "change"}}}, "renamed; use 'internal'"),
         ({"tools": {"mcp.x.y": {"class": "work"}}}, "renamed; use 'internal'"),  # names before the rename
         ({"tools": {"mcp.x.y": {"class": "read"}}}, "renamed; use 'read-only'"),
@@ -304,7 +304,7 @@ def test_tools_md_servers_and_mcp_settings_are_checked(home):
 def test_classes_follow_markings_then_the_server_then_the_tool():
     c = outward.classify_with_source
     assert c({"readOnlyHint": True}) == ("read-only", "marking")
-    # The server says it reaches nothing outside: only its word, so external until the user confirms it (M1).
+    # The server says it reaches nothing outside: only its word, so external until the user confirms it.
     assert c({"openWorldHint": False}) == ("external", "unconfirmed")
     assert c({"openWorldHint": False}, confirmed=True) == ("internal", "marking")
     assert c({}) == ("external", "default")  # changes something, not classed: the safe default

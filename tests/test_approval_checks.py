@@ -1,8 +1,8 @@
-"""What the user is asked to approve, and when (security review of 18 Nov, H3 and M1).
+"""What the user is asked to approve, and when.
 
-H3: chat's "Go ahead?" shows every argument in full, those naming who or where a call reaches first,
+Chat's "Go ahead?" shows every argument in full, those naming who or where a call reaches first,
 and an interface folds a long one with a "Show all", never a silent cut.
-M1: after reading material, an internal change still runs unless it deletes or changes sharing; and a
+After reading material, an internal change still runs unless it deletes or changes sharing; and a
 server's own word (openWorldHint false) makes a tool internal only once the user has confirmed it.
 
 Every service is a fake (Ombro's fake MCP server, the fake Composio); all data is invented."""
@@ -25,7 +25,7 @@ LONG_BODY = "Dear client, thank you for the invented order. " * 16  # well past 
 ATTACKER = "attacker@example.invalid"
 
 
-# -- H3: what chat asks you to approve -------------------------------------------------
+# -- what chat asks you to approve -----------------------------------------------------
 
 
 def test_every_argument_is_shown_in_full_with_recipients_first():
@@ -100,7 +100,7 @@ def test_the_tui_keeps_the_items_under_a_lead_line_and_folds_a_long_one(home):
     asyncio.run(run())
 
 
-# -- M1 (1): after reading, deleting and sharing wait; other internal edits run ---------
+# -- after reading, deleting and sharing wait; other internal edits run -----------------
 
 
 def test_what_waits_after_reading():
@@ -169,7 +169,7 @@ def test_in_chat_a_deletion_after_reading_asks_first(home, tmp_path):
     assert mdfile.read(session.chat.path)[0].get("tainted") is True  # kept for a reopened chat
 
 
-# -- M1 (2): a server's own word needs the user's confirmation ------------------------
+# -- a server's own word needs the user's confirmation --------------------------------
 
 
 def test_a_servers_claim_alone_does_not_make_a_tool_internal():

@@ -356,7 +356,7 @@ def _approve_place(home: Home, a: Action) -> Action:
 
 
 # ---------------------------------------------------------------------------
-# Skills the Lead proposes at the end of a job (specification 4.4). They wait here
+# Skills the Lead proposes at the end of a job. They wait here
 # like any staged action, but reach nobody outside: approving one makes it live.
 
 SKILL_TOOL = "skills.propose"

@@ -1,5 +1,5 @@
-"""Stage 7 of the desktop app: what the Settings pages change in the core and over `ombro serve`.
-Deleting moves aside (C4), providers are edited and removed (C5), the profile is written, and
+"""What the desktop app's Settings pages change in the core and over `ombro serve`.
+Deleting moves aside, providers are edited and removed, the profile is written, and
 secrets go in but never come back out. All data is invented."""
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _two_providers(home) -> None:
     models.add_models(home, "https://other.invalid/v1", "OTHER_API_KEY", ["other-large", "other-small"])
 
 
-# -- removing (C4) --------------------------------------------------------------------
+# -- removing -------------------------------------------------------------------------
 
 
 def test_a_crew_moves_to_removed_and_never_while_its_job_runs(home):
@@ -76,7 +76,7 @@ def test_a_role_and_a_skill_move_aside(home):
     assert moved == home.removed_dir / "skills" / "invented-check" and skills.load(home, "invented-check") is None
 
 
-# -- providers (C5) and preferences -----------------------------------------------------
+# -- providers and preferences ----------------------------------------------------------
 
 
 def test_a_provider_is_added_edited_and_removed(home):

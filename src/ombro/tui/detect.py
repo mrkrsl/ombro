@@ -1,4 +1,4 @@
-"""Light or dark, for `theme: auto` (specification 14.1): ask the terminal for its
+"""Light or dark, for `theme: auto`: ask the terminal for its
 background colour, then fall back to the macOS appearance, then to light.
 Run before the interface takes the screen."""
 

@@ -352,7 +352,7 @@ def declined_listing(home: Home) -> str:
 # ---------------------------------------------------------------------------
 # Evidence for a proposal. A skill is a method that repeats, so the Lead proposes one only when it
 # can name earlier jobs of the same kind: with the job just done, at least MIN_JOBS in all. One job
-# shows how that job went, not what the next one of its kind will share (testing log T19).
+# shows how that job went, not what the next one of its kind will share.
 
 MIN_JOBS = 2
 HISTORY_JOBS = 40

@@ -2,8 +2,8 @@
 
 import { inTauri } from "./api/serve";
 
-/** macOS: the title bar is drawn over the window, with its buttons in the sidebar (design 01).
- * Linux: an ordinary title bar, with its buttons on the right (design 17). */
+/** macOS: the title bar is drawn over the window, with its buttons in the sidebar.
+ * Linux: an ordinary title bar, with its buttons on the right. */
 export const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
 
 /** What the system's file manager is called, for "Show in …": Finder, or Files on Linux (GNOME's). */

@@ -1,5 +1,4 @@
-"""Web APIs as tools: any API the user adds by its name, address and key (the API tool design,
-14 Nov 2026).
+"""Web APIs as tools: any API the user adds by its name, address and key.
 
 An API lives in tools.md under `apis:`:
 
@@ -19,7 +18,7 @@ may wait in Approvals). An API whose class is read-only has one tool, `api.<name
 any method as a lookup: some APIs search with POST.
 
 Some APIs act on a GET (a bot's /sendMessage?text=…, a webhook, a trigger), so a GET isn't always a
-lookup (security review M2). The user says, when adding an API, whether its GETs only look things
+lookup. The user says, when adding an API, whether its GETs only look things
 up; if not, it has no `get`, and every GET goes through `request` with the API's class. Even when they
 do, `get` won't run a path that names a sending verb (send, post, notify, trigger, webhook…) or a query
 longer than the fetch cap (fetch_max_query, as web.fetch and the browser): those go through `request`
@@ -52,7 +51,7 @@ TIMEOUT = 30.0
 LOOKUP = ("GET",)
 CHANGE = ("POST", "PUT", "PATCH", "DELETE")
 _FIELDS = {"url", "key", "send_key", "about", "how_to", "class", "get_looks_up", "max_calls"}
-# Words in a GET's path that say it sends or changes something, so it isn't run as a lookup (M2).
+# Words in a GET's path that say it sends or changes something, so it isn't run as a lookup.
 SENDING_WORDS = frozenset({
     "send", "post", "notify", "trigger", "webhook", "webhooks", "hook", "hooks", "create", "delete", "update",
     "remove", "publish", "submit", "push", "invite", "share", "transfer", "pay", "charge", "refund", "cancel",
@@ -311,7 +310,7 @@ def _reply_text(r: httpx.Response, secret: str | None) -> str:
 
 
 def get_check(path: str, query: dict[str, Any] | None, cap: int) -> str | None:
-    """Why a GET can't run as a lookup (M2), or None: its path names a sending verb, or its query is over
+    """Why a GET can't run as a lookup, or None: its path names a sending verb, or its query is over
     the cap, which is how a page would have a role carry data out."""
     raw_path, _, raw_query = str(path or "").partition("?")
     pairs = parse_qsl(raw_query, keep_blank_values=True) + [(str(k), str(v)) for k, v in (query or {}).items()]

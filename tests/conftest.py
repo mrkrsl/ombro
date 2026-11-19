@@ -233,7 +233,7 @@ def use_fake_mcp(home: Home, record: Path, *, server: str = "fake", tools: dict 
     """Point both web tools at the fake provider and add Ombro's fake MCP server
     to tools.md. Everything the fake server would have done goes to `record`.
     `confirmed`: the tools whose claim to stay inside (openWorldHint false) the
-    user has confirmed, as `ombro server add` asks (M1); add_row by default."""
+    user has confirmed, as `ombro server add` asks; add_row by default."""
     import sys
 
     cfg = {"command": sys.executable, "args": ["-m", "ombro.fake_mcp"],

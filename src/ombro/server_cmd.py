@@ -10,7 +10,7 @@ The building blocks (`server_entry`, `pin_warning`, `add_server`,
 `remove_server`, `tool_claims`, `confirm_internal`) take plain values, so an
 interface can ask the same questions in its own way.
 
-What a server says of its tools is only its word (M1): a tool it marks
+What a server says of its tools is only its word: a tool it marks
 `openWorldHint: false` (changes things, reaches no one outside) counts as
 external until the user has seen the claim and confirmed it, once, for that
 server. The confirmed tools are kept as `confirmed_internal:` on its entry,

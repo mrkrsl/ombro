@@ -1,4 +1,4 @@
-"""The job browser's own proxy: every connection a page makes goes through it (H2, 18 Nov review).
+"""The job browser's own proxy: every connection a page makes goes through it.
 
 Chrome is told to send everything here (`proxyServer` on the job's browser context, and
 `--proxy-server` for a browser Ombro starts), with loopback not bypassed. For each connection

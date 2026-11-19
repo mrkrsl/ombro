@@ -1,4 +1,4 @@
-"""A provider that is busy: 429s, OpenRouter's in-flight 402, and the limit on calls in flight (T10). No network."""
+"""A provider that is busy: 429s, OpenRouter's in-flight 402, and the limit on calls in flight. No network."""
 
 from __future__ import annotations
 

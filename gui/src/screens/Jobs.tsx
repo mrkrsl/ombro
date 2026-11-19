@@ -1,4 +1,4 @@
-// Jobs (design 07): each job as a two-line item, as in Settings: its readable name, and under it
+// Jobs: each job as a two-line item, as in Settings: its readable name, and under it
 // its status or when it finished (the brief shows on hover). Every job: View brief. Running: Stop.
 // Finished: View report, Files and Clear (an ×). Cleared jobs are only hidden (their folders stay), and
 // "Show cleared" lists them again, each with Put back.

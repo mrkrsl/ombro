@@ -418,7 +418,7 @@ def cmd_tools(args) -> int:
 
 
 def _composio_tools(home: Home, settings, pref: dict, args) -> int:
-    """`ombro tools composio`: each Composio tool's class, where it came from, and its permission (L5)."""
+    """`ombro tools composio`: each Composio tool's class, where it came from, and its permission."""
     cli = _cli()
     from ombro import composio
     from ombro.tools import ToolError

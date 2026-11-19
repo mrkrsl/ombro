@@ -173,8 +173,8 @@ def test_a_spec_that_names_folders_gets_only_those(home, user):
 
 
 def test_a_spec_that_names_none_reads_every_folder_and_writes_none(home, user, monkeypatch):
-    """17 Nov: a live job from a chat said "no folders are shared with this job" because its spec
-    named none. Such a job may read every shared folder, but change none of them (finding M4)."""
+    """A live job from a chat once said "no folders are shared with this job" because its spec
+    named none. Such a job may read every shared folder, but change none of them."""
     from ombro import livejob
 
     folders.add(home, user / "Documents" / "Brand", "brand", "write")

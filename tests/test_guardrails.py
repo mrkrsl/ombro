@@ -48,7 +48,7 @@ def test_completed_job(job):
     assert "Found three makers." in job.report
     assert "Ada Pots" in job.report
     assert job.meta["usage"]["rounds"] == 1
-    # Lead, role, Lead, notes, report: no skills call, as no earlier job is of its kind (testing log T19)
+    # Lead, role, Lead, notes, report: no skills call, as no earlier job is of its kind
     assert job.meta["usage"]["model_calls"] == 5
     # The report call had no tools.
     assert job.client.calls[-1]["tools"] is None

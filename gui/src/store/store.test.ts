@@ -1,4 +1,4 @@
-// T21: a new chat is listed from its first message, and clicking it again goes back to the live session.
+// A new chat is listed from its first message, and clicking it again goes back to the live session.
 import { describe, expect, it, vi } from "vitest";
 import type { Client } from "../api/serve";
 import type { ServerMessage } from "../api/types";

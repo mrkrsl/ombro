@@ -1,4 +1,4 @@
-"""Web APIs as tools (the API tool design, 14 Nov 2026): settings, the guards on where a call may go,
+"""Web APIs as tools: settings, the guards on where a call may go,
 the key, a job where lookups run and changes wait, Approvals sending one, and serve's form. The API
 is a fake in this process; nothing reaches the network. All data is invented."""
 
@@ -218,7 +218,7 @@ def test_the_terminal_lists_apis_too(home, api):
     assert KEY not in out
 
 
-# -- GETs that send (security review M2) ---------------------------------------------------
+# -- GETs that send ------------------------------------------------------------------------
 
 
 def test_whether_gets_only_look_things_up_is_a_setting():

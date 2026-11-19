@@ -26,7 +26,7 @@ services:
     # The browser service below, when it runs: crews and chat read web pages in it.
     environment:
       OMBRO_BROWSER_ENDPOINT: http://browser:9222
-      # Ombro's proxy for the browser (every page's connection passes it, H2) listens on these ports;
+      # Ombro's proxy for the browser (every page's connection passes it) listens on these ports;
       # the browser's guard lets it reach Ombro on them and nothing else on the local network.
       OMBRO_BROWSER_PROXY_PORTS: "9300-9399"
     # Code a job writes runs inside bubblewrap, Ombro's sandbox: no internet, and only that job's

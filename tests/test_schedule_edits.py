@@ -1,5 +1,5 @@
-"""Schedules in words, a schedule's timing changed in place (C7), and a schedule removed to
-removed/ rather than erased (C4). All data is invented."""
+"""Schedules in words, a schedule's timing changed in place, and a schedule removed to
+removed/ rather than erased. All data is invented."""
 
 from __future__ import annotations
 

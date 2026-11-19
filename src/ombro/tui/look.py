@@ -1,6 +1,6 @@
 """What the terminal interface shows, worked out without a terminal: the team
 chart, the stats, the greeting, the footer and the logo. Plain functions,
-so the rules are tested on their own (specification 14.1)."""
+so the rules are tested on their own."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# Colours (specification 14.1)
+# Colours
 
 OMBRO = {100: "#EDF8FB", 200: "#C7EBF4", 300: "#8CC2D0", 400: "#2F8196", 500: "#1C5665", 600: "#0E2C33",
          700: "#031216"}

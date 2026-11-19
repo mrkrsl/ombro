@@ -231,13 +231,13 @@ def test_connect_refresh_and_disconnect_over_http(serve, home, fake_composio):
 
 
 
-# -- approvals in briefed work (testing log T15, T16) ---------------------------------------
+# -- approvals in briefed work --------------------------------------------------------------
 
 
 def test_tools_are_classed_by_what_they_do_not_by_one_class_for_all_of_composio():
     sheets = ["CREATE_GOOGLE_SHEET1", "UPDATE_VALUES_BATCH", "FORMAT_CELL", "UPDATE_DIMENSION_PROPERTIES",
               "SET_DATA_VALIDATION_RULE", "UPDATE_SHEET_PROPERTIES", "SPREADSHEETS_VALUES_APPEND"]
-    for short in sheets:  # the calls T16 asked about one by one: the sheet the brief asked for, made and formatted
+    for short in sheets:  # the calls once asked about one by one: the sheet the brief asked for, made and formatted
         assert composio.classify({}, short, "external", toolkit="googlesheets") == "internal", short
     for kit, short in [("googlesheets", "DELETE_SHEET"), ("googledocs", "CREATE_PERMISSION"),
                        ("googledrive", "SHARE_FILE"), ("gmail", "SEND_EMAIL"), ("gmail", "REPLY_TO_THREAD"),
@@ -362,8 +362,8 @@ def test_what_a_create_call_made_is_read_from_its_result():
 
 
 def test_an_unmarked_tools_name_makes_it_a_lookup_only_when_nothing_in_it_makes_or_changes_things():
-    """Security review L5: GET_, FIND_ and the like count as lookups only where no other word says the
-    tool also makes, shares, links or marks something; the rest keep batch 4's classing."""
+    """GET_, FIND_ and the like count as lookups only where no other word says the
+    tool also makes, shares, links or marks something; the rest keep their classing by name."""
     for short in ["GET_DOCUMENT_BY_ID", "LIST_DRIVE_ITEM_PERMISSIONS", "FETCH_EMAILS", "SEARCH_PAGES", "GET_POST"]:
         assert composio.class_of({}, short, "external", toolkit="gmail") == ("read-only", "name"), short
     for short, kit, want in [("FIND_OR_CREATE_ROW", "googlesheets", "internal"),  # own documents: their work

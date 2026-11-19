@@ -1,4 +1,4 @@
-"""How much a model thinks before it answers (T11): one preference for every model, in five words,
+"""How much a model thinks before it answers: one preference for every model, in five words,
 put to each provider in the form it takes.
 
     level     what is sent
@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 LEVELS = ("off", "low", "medium", "high", "xhigh")
 LABELS = {"off": "No thinking", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high"}
-DEFAULT = "medium"  # Mark's choice, 19 Nov 2026: as Opus 5.5 does by itself
+DEFAULT = "medium"  # as Opus 5.5 does by itself
 _ALIASES = {"none": "off", "no": "off", "disabled": "off", "false": "off", "minimal": "low",
             "extra high": "xhigh", "extra-high": "xhigh", "extra_high": "xhigh", "x-high": "xhigh", "max": "xhigh"}
 

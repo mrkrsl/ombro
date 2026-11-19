@@ -6,7 +6,7 @@
 //! part is refused. Reading back is for a draft edited by hand, sent back to the server on Done.
 //!
 //! On macOS each copy is quarantined (`com.apple.quarantine`), as a browser's downloads are: it
-//! came from another machine, so Gatekeeper checks it before anything in it runs (review M3).
+//! came from another machine, so Gatekeeper checks it before anything in it runs.
 
 use std::path::{Component, Path, PathBuf};
 

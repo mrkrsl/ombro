@@ -1,4 +1,4 @@
-"""A crew member's profile changed in one go (testing log T6–T8): rename (the folder too, and
+"""A crew member's profile changed in one go: rename (the folder too, and
 saved briefs that name them), specialist or helper, model and soul; over `ombro serve` and the
 command line. All data is invented."""
 

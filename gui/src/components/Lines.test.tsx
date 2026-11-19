@@ -20,7 +20,7 @@ describe("the offer to carry on a job that didn't finish", () => {
   });
 });
 
-describe("a proposal that updates a saved brief (T25)", () => {
+describe("a proposal that updates a saved brief", () => {
   it("renders the brief, with its changes folded away apart from it and no diff headers", () => {
     const { container } = render(
       <Lines
@@ -41,7 +41,7 @@ describe("a proposal that updates a saved brief (T25)", () => {
   });
 });
 
-describe("what the Lead asks you to approve (H3)", () => {
+describe("what the Lead asks you to approve", () => {
   it("keeps every item under the Lead's line, folding a long one with Show all", () => {
     const body = "body: " + "Dear client, thank you for the invented order. ".repeat(16);
     render(

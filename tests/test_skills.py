@@ -1,4 +1,4 @@
-"""Skills (specification 4.4): one library, read on demand, proposed by the Lead into the
+"""Skills: one library, read on demand, proposed by the Lead into the
 outbox, written from chat only with a yes. Fake model, invented skills; no network."""
 
 from __future__ import annotations
@@ -127,7 +127,7 @@ def test_a_role_sees_names_and_descriptions_and_reads_a_skill_when_it_needs_it(j
     # The Lead sees the whole library and the role's skills.
     lead = job.client.calls[0]["messages"][0]["content"]
     assert "researcher (specialist; skills: kettle-survey)" in lead and "- teapot-check:" in lead
-    # A brief names a fitting skill and leaves its method out, at no set length (testing log T4).
+    # A brief names a fitting skill and leaves its method out, at no set length.
     flat = " ".join(lead.split())
     assert "Never restate a skill's method, format or lists in a brief" in flat
     assert "there is no set length or structure" in flat and "leave its method out of the brief" in flat
@@ -168,7 +168,7 @@ def add_past_job(home, job_id: str, brief: str, status: str = "completed", spec:
 
 @pytest.fixture(autouse=True)
 def an_earlier_job_of_the_same_kind(home):
-    """Every proposal below rests on one earlier kettle survey (T19), unless a test says otherwise."""
+    """Every proposal below rests on one earlier kettle survey, unless a test says otherwise."""
     add_past_job(home, EARLIER, "Survey invented kettle makers in another invented town.")
 
 
@@ -468,7 +468,7 @@ def test_ombro_skills_add_asks_first_and_defaults_to_no(home, tmp_path):
     assert skills.load(home, "kettle-survey") is not None
 
 
-# -- what a proposal says, and what never comes back (testing log T3) ------------------------------
+# -- what a proposal says, and what never comes back -----------------------------------------------
 
 
 def test_a_proposal_says_why_and_what_it_adds_over_a_brief(job, home):
@@ -552,7 +552,7 @@ def test_the_cli_says_what_a_proposal_adds_and_that_declining_is_final(job, home
     assert "Adds      Every survey follows it" in out and "won't suggest it again" in out
 
 
-# -- evidence: two jobs of a kind at least (testing log T19) ---------------------------------------
+# -- evidence: two jobs of a kind at least ---------------------------------------------------------
 
 
 def test_a_proposal_names_the_earlier_jobs_of_its_kind(job, home, capsys):

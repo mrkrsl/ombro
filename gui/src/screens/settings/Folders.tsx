@@ -1,4 +1,4 @@
-// Settings › Folders (design 12): the folders shared with the Lead and every crew, how much they may
+// Settings › Folders: the folders shared with the Lead and every crew, how much they may
 // do there, and any problem. Add picks a folder with the system's own picker; Remove stops sharing it
 // (the folder itself is never touched).
 

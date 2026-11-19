@@ -1,4 +1,4 @@
-"""What a job may carry to other sites once it has read private material (ombro.carry, H1)."""
+"""What a job may carry to other sites once it has read private material (ombro.carry)."""
 
 from __future__ import annotations
 

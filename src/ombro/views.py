@@ -198,7 +198,7 @@ def chat_list(home: Home) -> list[vt.ChatRow]:
             continue
         updated = str(meta.get("updated_at") or meta.get("started_at") or "")
         title = str(meta.get("title") or "").strip()
-        if not title:  # untitled (before 18 Nov a thinking model often gave no title): its first words
+        if not title:  # untitled (a thinking model once often gave no title): its first words
             first = re.search(r"^\*\*You \(Chat\):\*\* (.+)$", body, re.M)
             title = words_title(first.group(1)) if first else ""
         if not title:

@@ -57,7 +57,7 @@ ALLOWANCES: dict[str, dict[str, Any]] = {
     "unlimited": {"max_tokens": None, "max_rounds": 50, "job_timeout": "4h", "interview_max_tokens": None,
                   "chat_max_tokens": None},
 }
-DEFAULT_ALLOWANCE = "generous"  # decided 16 Nov 2026: moderate stopped every real research job
+DEFAULT_ALLOWANCE = "generous"  # moderate stopped every real research job
 LEVEL_KEYS = ("max_tokens", "max_rounds", "job_timeout", "interview_max_tokens", "chat_max_tokens")
 # Memory and chat settings, in characters where they bound text. Defaults for
 # jobs recorded before they existed, and for limits.md files that leave them out.
@@ -84,8 +84,8 @@ CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB"
 SKILL_DEFAULTS: dict[str, Any] = {"skills_list_chars": 4_000, "skill_read_chars": 20_000,
                                   "skill_max_chars": 10_000, "skill_proposals_waiting": 10}
 CODE_DEFAULT_CALLS = 10  # code.job's max_calls when neither limits.md nor tools.md sets one
-# A bigger allowance gives more calls to the tools a research job leans on (decided 16 Nov 2026:
-# a generous job ran out of searches, fetches and code runs). Values set by hand still win.
+# A bigger allowance gives more calls to the tools a research job leans on
+# (a generous job ran out of searches, fetches and code runs). Values set by hand still win.
 TOOL_SCALE = {"generous": 2, "unlimited": 3}  # web.search and web.fetch, times their provider's default
 FREE_PROVIDERS = {"duckduckgo", "browser"}  # only these are scaled: one that bills per call is not
 CODE_CALLS = {"generous": 100, "unlimited": 200}  # code.run (30 and 50 until 17 Nov 2026)
@@ -172,7 +172,7 @@ class Limits:
     memory_search_max_chars: int = 4_000
     chat_max_tokens: int | None = 200_000
     chat_history_chars: int = 200_000
-    fetch_max_query: int = 200  # characters after ? in an address web.fetch will fetch (7.1)
+    fetch_max_query: int = 200  # characters after ? in an address web.fetch will fetch
     chat_calls_per_message: int = 20
     chat_tool_max_calls: dict[str, int] = field(default_factory=dict)
     schedule_grace: float = 900.0
@@ -392,7 +392,7 @@ _SERVER_FIELDS = {"command", "args", "env", "pass_env", "url", "headers", "timeo
 TOOL_CLASSES = ("read-only", "internal", "external")
 # A server-wide class covers its tools that are not read-only; reading stays reading.
 SERVER_CLASSES = ("internal", "external")
-# Earlier names: stage 6's change and send, and read and work before the rename.
+# Earlier names: change and send from early versions, and read and work before the rename.
 _OLD_CLASSES = {"change": "internal", "send": "external", "work": "internal", "read": "read-only"}
 SERVER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,30}$")
 
@@ -435,7 +435,7 @@ class ToolSettings:
             if "provider" in cfg:
                 provider = str(cfg["provider"])
                 if name == "web.fetch" and provider == "direct":
-                    provider = "browser"  # the plain download was retired on 18 Nov 2026: pages are read in the browser
+                    provider = "browser"  # the plain download was retired: pages are read in the browser
                 allowed = PROVIDER_TOOLS.get(name, ((), ""))[0]
                 if provider not in allowed:
                     choices = ", ".join(allowed) if allowed else "none (this tool has no providers)"
@@ -560,7 +560,7 @@ class ModelSpec:
     script: str | None = None
     max_output_tokens: int | None = None  # the most this model may write in one reply, if less than the limit
     reasoning_effort: str | None = None  # how hard a thinking model thinks (sent as reasoning_effort), e.g. low
-    max_concurrent: int | None = None  # calls in flight to this model's provider at once, across Ombro (T10)
+    max_concurrent: int | None = None  # calls in flight to this model's provider at once, across Ombro
     thinking: str | None = None  # this model's own thinking level (ombro.thinking.LEVELS), over the preference
 
 

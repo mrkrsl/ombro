@@ -1,6 +1,6 @@
 """The commands that act, run as flows inside a conversation.
 
-Each does what its command in specification 13 does, through the same core
+Each does what its command on the command line does, through the same core
 functions, and talks to the user only through a UI: it shows notes and asks
 fields. The terminal interface (tui/commands.py) adds its own drawing of the
 lists; the graphical one shows most lists on pages of their own and runs the

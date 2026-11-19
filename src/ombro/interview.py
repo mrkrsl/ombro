@@ -621,7 +621,7 @@ def proposal_view(proposal: Proposal) -> ProposalShown:
             if mdfile.prompt_text(mdfile.parse(old)[1]) and old != f.text:
                 diff = list(difflib.unified_diff(
                     old.splitlines(), f.text.splitlines(), "current", "proposed", lineterm="", n=1))[2:60]
-                # A hunk header (@@ -4,81 +4,41 @@) means nothing to a reader: a gap between changes (T25).
+                # A hunk header (@@ -4,81 +4,41 @@) means nothing to a reader: a gap between changes.
                 diff = ["⋯" if line.startswith("@@") else line for line in diff]
         files.append(FileView(f.label, str(f.path), readable(f.text), exists, diff))
     return ProposalShown(files, list(proposal.warnings))

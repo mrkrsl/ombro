@@ -256,7 +256,7 @@ def test_challenges_and_addresses_are_read_correctly():
     assert oauth.canonical("HTTPS://MCP.Example.invalid/mcp/") == "https://mcp.example.invalid/mcp"
 
 
-# -- edge cases (stage 9) --------------------------------------------------------
+# -- edge cases ------------------------------------------------------------------
 
 
 class _Changed(World):

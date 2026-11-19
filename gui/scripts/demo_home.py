@@ -372,7 +372,7 @@ def main(argv: list[str]) -> int:
         os.environ["OMBRO_HOME"] = str(root)
         from ombro.home import Home
 
-        demo_providers(Home(root))  # added in stage 7; a demo made before then gets them too
+        demo_providers(Home(root))  # added later; a demo made before then gets them too
         demo_api(Home(root))
         demo_skill_proposal(Home(root))
         demo_unfinished_specs(Home(root))

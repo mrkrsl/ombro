@@ -208,7 +208,7 @@ def _tool_msg(call_id: str, payload: Any, src: str | None = None) -> dict:
     if len(content) > TOOL_RESULT_CAP:
         content = content[:TOOL_RESULT_CAP] + "…[truncated]"
     if src:
-        content = material.fence(content, src)  # from outside: assessed, never obeyed (7.1)
+        content = material.fence(content, src)  # from outside: assessed, never obeyed
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 
 
@@ -387,7 +387,7 @@ class Chat:
         self.pending_note = ""
         self.transcript = Transcript()
         self.scope = None  # outward.Scope: what this chat made and what you said yes to (see _act)
-        self.carry = carry_mod.Carry()  # private material read in this chat, against what the browser carries (H1)
+        self.carry = carry_mod.Carry()  # private material read in this chat, against what the browser carries
         self.refused: list[str] = []
         self.remembered: list[dict[str, str]] = []
         self.specs: list[str] = []
@@ -407,7 +407,7 @@ class Chat:
         self.pending_note = ""
         self.transcript = Transcript()
         self.refused = []
-        self.tainted = False  # set once the chat reads material (a page, an email...): see _act (M1)
+        self.tainted = False  # set once the chat reads material (a page, an email...): see _act
         self.remembered = []
         self.specs = []
         self.saved_briefs: list[str] = []  # live jobs kept as briefs (not offered to start again)
@@ -482,7 +482,7 @@ class Chat:
             spec = self.models.get("cheap") or self.spec
             est = estimate_tokens(messages, None)
             # Room for a thinking model to think first: with 30 tokens DeepSeek's spent them all
-            # thinking and the title came back empty, so most chats stayed "New chat" (18 Nov).
+            # thinking and the title came back empty, so most chats stayed "New chat".
             max_out, timeout = self.gate.check_model_call(spec.name, est, TITLE_MAX_OUTPUT)
             reply = self._client_factory(spec).complete(messages, tools=None, max_output_tokens=max_out,
                                                          timeout=min(timeout, 30))
@@ -1037,7 +1037,7 @@ class Chat:
     def _answer_turn(self, text: str) -> tuple[list[str], str] | None:
         self.user_said.append(text)
         self.transcript.user(text, self.mode)
-        # On record before any reply (T21): a chat whose Lead is still answering, or asking a
+        # On record before any reply: a chat whose Lead is still answering, or asking a
         # question, is in the list of chats, so clicking away or quitting never loses it.
         if not self.title and self.mode == "Chat":
             self.set_title(words_title(text), "first words")  # a model title follows after the reply
@@ -1077,14 +1077,14 @@ class Chat:
                     used = (MEMORY_TOOLS.get(tc.name) or WEB_TOOLS.get(tc.name) or FOLDER_TOOLS.get(tc.name)
                             or NATIVE_TOOLS.get(tc.name) or (lookup.name if lookup else tc.name))
                     src = material.source(used, tc.arguments)
-                    self.tainted = True  # this chat has read material from outside (7.1, M1)
+                    self.tainted = True  # this chat has read material from outside
                     if carry_mod.is_private(used, outward=bool(lookup is not None and lookup.outward),
                                             args=tc.arguments,
                                             shared=tc.name == "code__run" and bool(self._shared()[0].shared)):
                         self.carry.saw(src, result)
                     signs = material.flags(result)
                     if signs:
-                        # Ombro's own words, not the Lead's: what to check, never a block (7.1).
+                        # Ombro's own words, not the Lead's: what to check, never a block.
                         line = (f"Ombro: {src} contains text that looks written to steer the Lead "
                                 f"({', '.join(signs)}). It is treated as material, and nothing was done because "
                                 "of it.")
@@ -1248,7 +1248,7 @@ class Chat:
         if tool.prepare is not None:  # browser.submit: the page's refs become its address and fields
             args = tool.prepare(args, ctx)
         effect = str(args.pop("_effect", "") or tool.effect or "external")
-        carried = bool(args.pop("_carry", False))  # would carry private material to a site: always asks (H1)
+        carried = bool(args.pop("_carry", False))  # would carry private material to a site: always asks
         effect = self.scope.effect(tool.name, args, effect)  # deleting in what this chat made is its own work
         setting = outward.resolve(self.home, None)
         decision = outward.decide(setting, tool.name, effect, settings)
@@ -1260,7 +1260,7 @@ class Chat:
                 and tool.name not in (setting.get("allow") or [])
                 and outward.held_after_reading(tool.name, args) and not self.scope.own(args))
         if held:
-            decision = "stage"  # after reading material, deleting or sharing asks, though other edits run (M1)
+            decision = "stage"  # after reading material, deleting or sharing asks, though other edits run
         covered = decision == "stage" and not held and not carried and self.scope.covered(tool.name, args)
         if covered:
             decision = "allow"  # the same thing you already said yes to: one yes covers the related calls
@@ -1296,7 +1296,7 @@ class Chat:
                                                   for f in args.get("fields") or []]]
         from ombro import outward
 
-        # Every argument in full, who or where it reaches first: the user approves all of what is sent (H3).
+        # Every argument in full, who or where it reaches first: the user approves all of what is sent.
         return outward.argument_lines(args)
 
     # -- shared folders ------------------------------------------------------
@@ -1390,7 +1390,7 @@ class Chat:
 
     def _folder_copy(self, ctx: ToolContext, args: dict) -> dict[str, Any]:
         """Copy a file into a folder shared for writing, or move or rename one within such folders: a file
-        operation, byte for byte, with the user's yes. Never a rewrite and never work for a crew (T20)."""
+        operation, byte for byte, with the user's yes. Never a rewrite and never work for a crew."""
         import shutil
 
         from ombro import native
@@ -1442,7 +1442,7 @@ class Chat:
 
     def _folder_edit(self, ctx: ToolContext, path: str, args: dict) -> dict[str, Any]:
         """One exact replacement in a text file in a folder shared for writing: a correction or a detail
-        filled in, with the user's yes. The file is not sent again, and this is never work for a crew (T20)."""
+        filled in, with the user's yes. The file is not sent again, and this is never work for a crew."""
         from ombro import native
 
         old, new = args.get("old"), args.get("new")
@@ -1489,7 +1489,7 @@ class Chat:
     def _offer_start(self, args: dict) -> tuple[dict[str, Any], tuple | None]:
         """The Lead offers to start a saved spec again, in its own voice: yes starts it (the
         interface does), "change it" opens the spec for changing, and no leaves it. Roles
-        given here apply to this job only; the saved spec is unchanged (10.4)."""
+        given here apply to this job only; the saved spec is unchanged."""
         if args.get("job") and not args.get("spec"):
             return self._offer_again(str(args["job"]), " ".join(str(args.get("note") or "").split()))
         path = self._saved_spec(args.get("spec"))
@@ -1782,7 +1782,7 @@ class Chat:
     def _live_folders(self, task: str, write_to: str | None) -> dict[str, str]:
         """A live job whose folders the Lead didn't name: it reads every shared folder, and may write only
         to the one the task saves into (the intercepted write's, or the one the task names). Every folder
-        is named in the spec, so the spec's list is the whole of what the job gets (M4)."""
+        is named in the spec, so the spec's list is the whole of what the job gets."""
         from ombro import folders
 
         target = write_to or folders.save_target(self.home, task)
@@ -1861,7 +1861,7 @@ class Chat:
 
     def _offer_schedule(self, args: dict) -> dict[str, Any]:
         """The Lead offers to put a saved spec on a schedule: Ombro says when it would run, in the zone
-        schedules use, and sets it up on a yes, as the Scheduled page does (testing log T5)."""
+        schedules use, and sets it up on a yes, as the Scheduled page does."""
         from datetime import datetime
 
         from ombro import cron as cronmod
@@ -2010,7 +2010,7 @@ class Chat:
     # -- skills ------------------------------------------------------------
 
     def _offer_skill(self, args: dict) -> dict[str, Any]:
-        """Write a skill into the library, only once the user has seen it and said yes (4.4)."""
+        """Write a skill into the library, only once the user has seen it and said yes."""
         name = str(args.get("name") or "").strip()
         source = f"chat {self.path.name}" if getattr(self, "path", None) else "chat"
         text = skills.compose(name, str(args.get("description") or ""), str(args.get("body") or ""))

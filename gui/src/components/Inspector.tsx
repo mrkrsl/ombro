@@ -1,4 +1,4 @@
-// The inspector (design 06). Before a brief: the chat's own facts (title, mode, the Lead's model,
+// The inspector. Before a brief: the chat's own facts (title, mode, the Lead's model,
 // usage) and "Crew: Not assigned". Once the chat has started a job: that job's crew, schedule,
 // approvals, tools, folders, the crew's models and the job's own usage. Below, the background
 // work of every job (each line with its time; a finished job's clear a minute on), with the switch for showing it in the conversation too.

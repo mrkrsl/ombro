@@ -8,7 +8,7 @@
 # APPLE_SIGNING_IDENTITY, APPLE_API_KEY, APPLE_API_ISSUER and APPLE_API_KEY_PATH.
 #
 # Only the sidecar (ombro-serve) has hardened-runtime exceptions (entitlements.plist: library
-# validation off, which PyInstaller's one-file build needs). The app has none (security review L4).
+# validation off, which PyInstaller's one-file build needs). The app has none.
 # Tauri signs every executable in the bundle with the one entitlements file it is given, so it is
 # given none; this script then signs the sidecar again with entitlements.plist, seals the app again,
 # and only then notarises it, makes the .dmg, and notarises and staples that too.

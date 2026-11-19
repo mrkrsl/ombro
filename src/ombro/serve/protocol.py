@@ -1,4 +1,4 @@
-"""The messages `ombro serve` sends on its socket and the shapes of its replies (plan 3.3), as
+"""The messages `ombro serve` sends on its socket and the shapes of its replies, as
 TypedDicts. Like viewtypes.py they change nothing at run time; the desktop app's TypeScript
 types are generated from them.
 

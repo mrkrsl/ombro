@@ -1,5 +1,5 @@
 """The terminal interface's shell: header, conversation, slash menu, input and
-footer (specification 14.1), with chat wired to the Lead.
+footer, with chat wired to the Lead.
 
 The core runs on a worker thread and talks to the screen only through
 TuiUI, an implementation of ombro.ui.UI: events become lines in the
@@ -34,7 +34,7 @@ from ombro.ui import (UI, ChatCleared, Event, Failure, Field, JobEnded, JobProgr
                       ModeChanged, Note, PastTurn, Progress, ProposalShown, SetAside, Usage, field_prompt,
                       parse_answer, sets_aside)
 
-# The slash commands (specification 14.1), as every interface lists them.
+# The slash commands, as every interface lists them.
 SLASH = [(c.name, c.help) for c in core_commands.COMMANDS]
 CHAT_COMMANDS = ("/chat", "/new", "/chats", "/rename", "/brief", "/remember")  # handled by chat itself
 TUI_COMMANDS = ("/start", "/jobs", "/report", "/stop", "/open", "/approvals", "/schedule", "/crew", "/role", "/model",
@@ -116,7 +116,7 @@ class TuiUI(UI):
 
 class HeaderBlock(Widget):
     """The welcome rule, the logo, the team chart and the stats. It is the first
-    thing in the conversation, so it scrolls away (specification 14)."""
+    thing in the conversation, so it scrolls away."""
 
     DEFAULT_CSS = "HeaderBlock { height: auto; }"
 
@@ -245,7 +245,7 @@ class Line(Static):
 class Fold(Line):
     """One item too long to show whole at first, such as a long argument of an action you are asked
     to approve: its start, then "Show all (N characters)", which opens it (a click, or Enter). Never a
-    silent cut (H3)."""
+    silent cut."""
 
     DEFAULT_CSS = "Fold { height: auto; margin: 0 0 0 0; } Fold:focus { text-style: bold; }"
     can_focus = True
@@ -545,7 +545,7 @@ class OmbroApp(App):
     def update_footer(self) -> None:
         p = self.colours
         model = self.summary.get("model") or "no model"
-        # No usage line (T14): briefed work is where the spend is. The model and the hint sit on the right.
+        # No usage line: briefed work is where the spend is. The model and the hint sit on the right.
         left = Text()
         if self.mode == "Brief":
             left.append("Brief   ", style=f"bold {p.strong}")
@@ -743,7 +743,7 @@ class OmbroApp(App):
         if matches:
             menu.highlighted = 0
         # The input grows with a long message (and the slash menu opens): if the conversation was at its
-        # end before, it stays there once laid out, so the latest line is never hidden behind the input (T23).
+        # end before, it stays there once laid out, so the latest line is never hidden behind the input.
         if self.conv_at_end:
             self.call_after_refresh(self._keep_at_end)
 

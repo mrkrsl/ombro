@@ -42,11 +42,11 @@ def _canonical(args: dict | None, raw: str) -> str:
 
 
 def _tool_message(call_id: str, payload: Any, src: str | None = None) -> dict[str, Any]:
-    """A tool's result for the model; fenced as material when it came from outside (7.1)."""
+    """A tool's result for the model; fenced as material when it came from outside."""
     long_text = isinstance(payload, dict) and isinstance(payload.get("result"), str) and len(payload["result"]) > 500
     if long_text:
         # An outside service's long text answer goes as it is, after the rest: inside JSON every quote and line
-        # break in it would be escaped again, which costs tokens on every later step (T9).
+        # break in it would be escaped again, which costs tokens on every later step.
         rest = {k: v for k, v in payload.items() if k != "result"}
         content = json.dumps(rest, ensure_ascii=False) + "\nresult:\n" + payload["result"]
     else:
@@ -70,7 +70,7 @@ def cut_off(reply: ModelReply, max_out: int) -> bool:
 
 
 # Tools whose results carry nothing from outside: the harness's own confirmations.
-# skills.read returns the user's own library, which is not material either (4.4).
+# skills.read returns the user's own library, which is not material either.
 NOT_MATERIAL = {"workspace.write", "workspace.set_aside", "workspace.place", "skills.read", "browser.type",
                 "browser.screenshot"}
 
@@ -105,7 +105,7 @@ class Engine:
         self.limits = Limits.from_dict(meta["limits"])  # fixed when the job was created
         self.live = bool(meta.get("live"))  # a live job: the user is watching, and the Lead may ask them
         self.scope = outward.Scope()  # what the job made and what waits, so related calls are one piece of work
-        self.carry = carry_mod.Carry()  # private material read in the job, against what the browser carries out (H1)
+        self.carry = carry_mod.Carry()  # private material read in the job, against what the browser carries out
         self.clock = clock
         self.journal = Journal(self.job_dir / "journal.jsonl", echo=echo)
         # Tool settings, like limits, were fixed when the job was created.
@@ -615,7 +615,7 @@ class Engine:
                     self._flag("lead", src, out)
                     if tc.name != "brief" and carry_mod.is_private(
                             "workspace.read" if tc.name == "workspace__read" else "memory.search", args=tc.arguments):
-                        self.carry.saw(src, out)  # the Lead may pass it on in a brief (H1)
+                        self.carry.saw(src, out)  # the Lead may pass it on in a brief
                 messages.append(_tool_message(tc.id, out, src))
 
     def _so_far(self) -> str:
@@ -930,7 +930,7 @@ class Engine:
                         and out.get("status") != "done"))  # staged, uncertain or refused: Ombro's words
                     if tool is not None and name not in NOT_MATERIAL and not harness_reply:
                         src = material.source(name, tc.arguments)
-                        self.tainted = True  # this brief has read material from outside (7.1)
+                        self.tainted = True  # this brief has read material from outside
                         self._flag(role.name, src, out)
                         if carry_mod.is_private(name, outward=tool.outward, args=tc.arguments, shared=bool(self.shared)):
                             self.carry.saw(src, out)
@@ -1027,20 +1027,20 @@ class Engine:
         # A tool may say what this one call is (browser.submit: a form of filters is internal, one with the
         # user's details external); otherwise its class.
         effect = str(args.pop("_effect", "") or tool.effect or "external")
-        carried = bool(args.pop("_carry", False))  # would carry private material to a site: always asks (H1)
+        carried = bool(args.pop("_carry", False))  # would carry private material to a site: always asks
         effect = self.scope.effect(name, args, effect)  # deleting in what this job made is its own work
         decision = outward.decide(self.outward, name, effect, self.tool_settings)
         tainted_stage = False
         if decision == "allow" and effect == "external" and (carried or (
                 getattr(self, "tainted", False) and name not in ((self.outward or {}).get("allow") or []))):
             # Material taints a brief: after reading it, an external call waits for the user, even
-            # under auto, unless the spec allows this tool by name (7.1).
+            # under auto, unless the spec allows this tool by name.
             decision, tainted_stage = "stage", True
         elif (decision == "allow" and effect == "internal" and getattr(self, "tainted", False)
                 and name not in ((self.outward or {}).get("allow") or [])
                 and outward.held_after_reading(name, args) and not self.scope.own(args)):
             # An internal change still runs after reading, but not one that deletes something or changes
-            # who can see it (M1): an injected "trash it" or "make it public" waits for the user.
+            # who can see it: an injected "trash it" or "make it public" waits for the user.
             decision, tainted_stage = "stage", True
         if decision == "refuse":
             self.journal.write(role.name, "tool_refused", f"{name}: refused by tools.md", tool=name,
@@ -1207,7 +1207,7 @@ class Engine:
 
     def _skill_step(self, status: str) -> None:
         """The Lead may propose one skill, into the outbox, after a completed job in which a
-        role returned a result (specification 4.4). Recorded as a `skills` event."""
+        role returned a result. Recorded as a `skills` event."""
         def record(outcome: str, note: str, **extra: Any) -> None:
             self.journal.write("lead" if outcome in ("proposed", "none") else "harness", "skills", note,
                                outcome=outcome, **extra)

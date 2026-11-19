@@ -599,7 +599,7 @@ def add_schedule(home: Home, name: str, spec: str, cron_text: str, enabled: bool
 
 
 def set_timing(path: Path, cron_text: str) -> None:
-    """Change when a schedule runs, in place, keeping the rest of its file (plan C7).
+    """Change when a schedule runs, in place, keeping the rest of its file.
     The expression is checked first: a bad one changes nothing."""
     cronmod.parse(cron_text)
     meta, body = mdfile.read(path)
@@ -608,7 +608,7 @@ def set_timing(path: Path, cron_text: str) -> None:
 
 
 def remove_schedule(home: Home, s: Schedule) -> Path:
-    """Move a schedule's file to removed/schedules/, never erase it (plan C4). Its jobs are kept.
+    """Move a schedule's file to removed/schedules/, never erase it. Its jobs are kept.
     Returns where it went."""
     import shutil
     import time

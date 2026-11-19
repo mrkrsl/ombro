@@ -1,4 +1,4 @@
-"""`ombro serve`, stage 3: a chat, a brief, a started job, its progress and an approval, driven over
+"""`ombro serve`: a chat, a brief, a started job, its progress and an approval, driven over
 HTTP and the socket against a real serve on 127.0.0.1, with the fake model. All data is invented.
 
 The chat talks to a scripted client in this process; the job runs detached, as it would from the app,
@@ -224,7 +224,7 @@ ALL = ["mcp.fake.find_rows", "mcp.fake.add_row", "mcp.fake.post_message", "mcp.f
 
 
 def test_brief_job_progress_and_approval_end_to_end(serve, home, tmp_path):
-    """The whole of stage 3's test: brief a task in a chat, say yes, follow the job, approve what it asks."""
+    """The whole round trip: brief a task in a chat, say yes, follow the job, approve what it asks."""
     record = tmp_path / "fake-sent.jsonl"
     use_fake_mcp(home, record)
     write_role(home, "poster", kind="helper", tools=ALL, max_steps=12)
@@ -261,7 +261,7 @@ def test_brief_job_progress_and_approval_end_to_end(serve, home, tmp_path):
     if not any(waiting(m) for m in ws.seen):
         ws.until(waiting)
 
-    # The job and the chat know each other (C2).
+    # The job and the chat know each other.
     row = next(j for j in serve.get("/jobs") if j["job_id"] == job_id)
     chat = serve.get(f"/sessions/{sid}")["chat"]
     assert row["chat"] == serve.get(f"/sessions/{sid}")["chat_id"]
@@ -609,7 +609,7 @@ def test_an_answer_to_the_open_question_still_answers_it(serve):
 
 
 def test_a_new_chat_is_saved_from_its_first_message_and_survives_clicking_away(serve, home):
-    """T21: a new chat, an opening message, the Lead still answering, a look at another chat: the new
+    """A new chat, an opening message, the Lead still answering, a look at another chat: the new
     chat is on disk and in the list from its first message, before any reply, with a title from its
     first words; it is still there after the reply, and after the app closes mid-reply."""
     gate = threading.Event()
@@ -659,7 +659,7 @@ def test_a_new_chat_is_saved_from_its_first_message_and_survives_clicking_away(s
 
 
 def test_the_counts_name_the_running_jobs_so_the_sidebar_ring_shows_at_once(home):
-    """T17/T18: the counts carry the running jobs' ids, before any step, live or not."""
+    """The counts carry the running jobs' ids, before any step, live or not."""
     from ombro.serve.app import Serve
 
     import os

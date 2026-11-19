@@ -5,7 +5,7 @@ Chrome DevTools Protocol (CDP). Nothing is bundled. Locally the browser is start
 pipe (`--remote-debugging-pipe`), so it ends when Ombro does, even if the job is killed; a
 browser elsewhere (a container next to Ombro's) is reached by its address over a websocket.
 
-What a role can do, and what keeps it safe (specification 7.1):
+What a role can do, and what keeps it safe from untrusted pages:
 - Its own profile. Each job gets a new, empty profile in a temporary folder, removed at
   the end: none of your sign-ins, cookies or saved passwords, and nothing kept between jobs.
 - Public addresses only. Every request the page makes, not only the ones the role asks for,
@@ -452,7 +452,7 @@ class Browser:
                 self.cdp.send("Browser.getVersion", timeout=min(timeout, START_TIMEOUT))
                 # A context of its own, like a private window: nothing shared with other jobs on the same browser.
                 # Everything it fetches goes through the proxy, which looks each name up once and connects to
-                # the address it checked (H2): Chrome never resolves a name itself.
+                # the address it checked: Chrome never resolves a name itself.
                 self.context = self.cdp.send("Target.createBrowserContext", {
                     "disposeOnDetach": True, "proxyServer": self.proxy.address, "proxyBypassList": "<-loopback>",
                 })["browserContextId"]
@@ -534,7 +534,7 @@ class Page:
         cdp.send("Fetch.enable", {"patterns": [{"urlPattern": "*"}]}, s)
         cdp.send("Network.enable", {}, s)
         cdp.send("Network.setBlockedURLs", {"urls": PRIVATE_WS}, s)
-        # No service workers: a worker's requests would not pass this page's checks (H2). The proxy still
+        # No service workers: a worker's requests would not pass this page's checks. The proxy still
         # checks them, but none is registered, and none already there answers for the page.
         cdp.send("Network.setBypassServiceWorker", {"bypass": True}, s)
         cdp.send("Page.enable", {}, s)
@@ -896,14 +896,14 @@ def _check_address(url: str, ctx: ToolContext) -> None:
     cap = _query_cap(ctx)
     query = urlsplit(url).query
     if len(query) > cap:
-        # A long query string is how a page would have a role carry data out (7.1), as with web.fetch.
+        # A long query string is how a page would have a role carry data out, as with web.fetch.
         raise ToolInputError(f"this address carries {len(query):,} characters after '?', over the {cap:,} allowed, "
                              "so it was not opened. Open the page without them.")
 
 
 def check_carried(url: str, ctx: ToolContext, verb: str = "opened") -> None:
     """An address the role made up (browser.open, web.fetch), once the job holds private material:
-    its path capped, no encoded-looking part, no copy of what it read (H1). Links on a page are the
+    its path capped, no encoded-looking part, no copy of what it read. Links on a page are the
     page's own, and are not checked here."""
     carry = ctx.carry
     why = carry.address(url) if carry is not None else []
@@ -1008,7 +1008,7 @@ def browser_tools(browser: Browser) -> list[Tool]:
             raise ToolInputError(f"at most {cap} characters can be typed into a field; for a longer message, "
                                  "give it to browser.submit, which waits for the user's approval")
         # A page's script sees each character as it is typed: once the job holds private material,
-        # typing counts as sending to that site (H1).
+        # typing counts as sending to that site.
         where = site_of(el.get("url") or "")
         label = _short(el.get("label"), 60)
         if not _carry_typing(ctx, where, text, f"type into \"{label}\" on {where}",
@@ -1065,7 +1065,7 @@ def browser_tools(browser: Browser) -> list[Tool]:
         carry, carried = ctx.carry, False
         if carry is not None and carry.private:
             # Once the job holds private material, a form that would carry it, or more than the site's
-            # budget, waits for the user like one that carries their details (H1).
+            # budget, waits for the user like one that carries their details.
             where = site_of(button["url"])
             new = sum(len(str(v)) for v in (args.get("fields") or {}).values())
             held = carry.typing(where, "\n".join(f["value"] for f in fields), count=new)

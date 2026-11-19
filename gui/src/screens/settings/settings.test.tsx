@@ -401,7 +401,7 @@ describe("Settings › Folders, Tools and Skills", () => {
     opened.mockRestore();
   });
 
-  it("adds a program, then shows what its tools claim and keeps your yes (M1)", async () => {
+  it("adds a program, then shows what its tools claim and keeps your yes", async () => {
     useStore.setState({ settingsPage: "tools" });
     const sheets: ServerRow = { server: "sheets", url: null, command: "uvx", args: ["invented-sheets==1.0.0"], secrets: [],
       sign_in: null, signing_in: false, problem: null };

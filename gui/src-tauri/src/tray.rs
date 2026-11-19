@@ -1,4 +1,4 @@
-//! The menu bar item (design 18): a plain menu with Ombro, jobs finished since you last looked,
+//! The menu bar item: a plain menu with Ombro, jobs finished since you last looked,
 //! what waits for approval, and how things stand. The icon changes when something needs you: an
 //! approval, or a finished job you haven't seen (the Jobs page's "new"). The web view sends the counts
 //! (`set_tray`); a click on a line opens the window at that page (the `open-screen` event).

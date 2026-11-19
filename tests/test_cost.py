@@ -1,4 +1,4 @@
-"""What a job pays for: caching through OpenRouter, how tool results and tool names reach the model (T9).
+"""What a job pays for: caching through OpenRouter, how tool results and tool names reach the model.
 No network."""
 
 from __future__ import annotations

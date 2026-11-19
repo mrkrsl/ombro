@@ -16,7 +16,7 @@ const commands: CommandView[] = [
 beforeEach(() => useStore.setState({ commands, summary: null, toasts: [], attached: [], attaching: 0 }));
 
 describe("the composer", () => {
-  it("has no usage line under the input: the commands hint, then the model, on the right (T14)", () => {
+  it("has no usage line under the input: the commands hint, then the model, on the right", () => {
     const { container } = render(<Composer conversation={{ ...newConversation("s"), usage: { total: 1500, max: 150000 } }} />);
     const footer = container.querySelector(".footer")!;
     expect(footer).not.toHaveTextContent("Usage");

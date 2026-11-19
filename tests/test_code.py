@@ -186,7 +186,7 @@ def test_code_limits_have_defaults_and_can_be_set():
     assert lim.max_calls_for("code.run") == 10
     assert parse_size("512MB") == 512 * 1024**2 and parse_size("1.5gb") == int(1.5 * 1024**3)
     old = Limits.from_dict({k: v for k, v in load_limits_dict().items() if not k.startswith("code_")})
-    assert old.code_timeout == 60  # runs recorded before stage 8 still load
+    assert old.code_timeout == 60  # runs recorded before code.run had limits still load
 
 
 # ---------------------------------------------------------------------------

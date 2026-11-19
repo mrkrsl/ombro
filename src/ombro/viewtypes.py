@@ -1,4 +1,4 @@
-"""The shapes of what views.py returns (plan C3), as TypedDicts.
+"""The shapes of what views.py returns, as TypedDicts.
 
 They change nothing at run time: views still return plain dicts. They say what
 each dict holds, so a type checker can hold the views to it, and so the
@@ -280,7 +280,7 @@ class ApiRow(TypedDict):
     about: str
     how_to: str
     access: str  # read-only, internal or external: what its changes are
-    get_looks_up: bool  # whether its GET requests only look things up (M2); a no gives them its class
+    get_looks_up: bool  # whether its GET requests only look things up; a no gives them its class
     send_key: str  # bearer, header:<Name> or query:<param>
     key: str | None
     key_set: bool

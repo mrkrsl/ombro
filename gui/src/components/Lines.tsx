@@ -90,7 +90,7 @@ function LineView({ line }: { line: Line }) {
   }
 }
 
-// An item longer than this shows its start and "Show all", never cut silently (H3). As outward.folded.
+// An item longer than this shows its start and "Show all", never cut silently. As outward.folded.
 const FOLD_CHARS = 600;
 const FOLD_LINES = 8;
 
@@ -128,7 +128,7 @@ function FoldItem({ item }: { item: string }) {
 }
 
 /** What a proposal changes in the current file: apart from the file itself, folded away until asked
- * for, wrapped, with no diff headers (T25). Before, a raw diff under the rendered brief read as part
+ * for, wrapped, with no diff headers. Before, a raw diff under the rendered brief read as part
  * of it, and its long lines widened the page. */
 export function Changes({ lines }: { lines: string[] }) {
   return (

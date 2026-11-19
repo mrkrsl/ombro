@@ -1,4 +1,4 @@
-"""`ombro serve`, stage 1: the handshake, the token and origin checks, the hello event."""
+"""`ombro serve`: the handshake, the token and origin checks, the hello event."""
 
 from __future__ import annotations
 

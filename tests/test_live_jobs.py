@@ -108,7 +108,7 @@ def test_a_live_job_runs_in_the_chat_asks_you_and_can_be_kept_as_a_brief(home, i
 
 
 def test_the_lead_names_the_folders_a_live_job_writes_to(home, in_thread, tmp_path, monkeypatch):
-    """The Lead names a shared folder in a live job's spec when the work writes there (finding M4)."""
+    """The Lead names a shared folder in a live job's spec when the work writes there."""
     from ombro import folders
     from ombro.chat import _offered_folders
 

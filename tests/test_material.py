@@ -1,4 +1,4 @@
-"""Untrusted material (specification 7.1): fenced on its way to a model, flagged for
+"""Untrusted material: fenced on its way to a model, flagged for
 the report, a brief that has read it stages its external calls, and a fetch cannot
 carry data out in its address. All invented; no network."""
 

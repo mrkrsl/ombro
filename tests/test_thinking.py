@@ -1,4 +1,4 @@
-"""One thinking preference, put to each provider in the form it takes (T11). No network."""
+"""One thinking preference, put to each provider in the form it takes. No network."""
 
 from __future__ import annotations
 

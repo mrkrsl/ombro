@@ -1,4 +1,4 @@
-"""Deleting a crew, a role or a skill (plan C4): never erased, always moved aside into
+"""Deleting a crew, a role or a skill: never erased, always moved aside into
 removed/, where it can be put back by hand.
 
 Each has a check first, which an interface shows before asking: what stops it (a job of

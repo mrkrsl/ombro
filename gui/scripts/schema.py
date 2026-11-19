@@ -1,4 +1,4 @@
-"""Write the JSON Schema of everything the app gets from `ombro serve` (plan 3.5).
+"""Write the JSON Schema of everything the app gets from `ombro serve`.
 
 From the view types (ombro.viewtypes), the socket's messages and replies
 (ombro.serve.protocol) and the core's events and fields (ombro.ui), to

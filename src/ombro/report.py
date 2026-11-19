@@ -487,7 +487,7 @@ def _sections(narrative: str) -> tuple[dict[str, str], str]:
 
 def render(facts: dict[str, Any], narrative: str | None, note: str | None = None) -> str:
     """The report: what the user reads first (summary, deliverables, decisions, what was and
-    was not done), then Ombro's own record of the job (specification 12)."""
+    was not done), then Ombro's own record of the job."""
     f = facts
     lim = f["limits"]
     sp = f["usage"]
@@ -726,7 +726,7 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
 
 def browser_lines(f: dict[str, Any], n: int = 40) -> list[str]:
     """Every site typed into, with what was typed, and every address opened, from the harness's own
-    record; and what was held back once the job had read private material (H1)."""
+    record; and what was held back once the job had read private material."""
     b = f.get("browser") or {}
     out: list[str] = []
 

@@ -8,7 +8,7 @@ import type { Conversation as C } from "../store/conversation";
 const NEAR_END = 48;
 
 /** While you're at the end of the conversation, it stays there when its box changes height: a long
- * message growing the input box (or the box shrinking again) never hides the latest line (T23).
+ * message growing the input box (or the box shrinking again) never hides the latest line.
  * Scrolled back to read something, you stay where you are. */
 export function useStayAtEnd(page: React.RefObject<HTMLElement | null>) {
   useEffect(() => {

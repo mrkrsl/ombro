@@ -1,7 +1,7 @@
 // Settings › Tools (designs 13–15): one list of the tools crews can use. The built-in web tools with
 // their provider and call limit; then each MCP server, online (an address, with its sign-in) or on
 // this computer (a command). Add, edit, delete, and sign in (the existing OAuth flow, in the browser).
-// The forms ask what the core needs (plan 2). Secrets are written, never read back: an edit shows
+// The forms ask what the core needs. Secrets are written, never read back: an edit shows
 // their names, and a value left empty keeps the one stored.
 
 import { useEffect, useState } from "react";
@@ -313,7 +313,7 @@ function ServerForm({ current, kind, onDone, onCancel }: {
 type Claim = { tool: string; description: string; claims: string | null; class: string; class_from: string };
 type Claims = { tools: Claim[]; unconfirmed: string[]; problem: string | null };
 
-/** What a server says each of its tools does (M1). Its word alone never makes a tool internal: one
+/** What a server says each of its tools does. Its word alone never makes a tool internal: one
  * it says stays inside your organisation counts as reaching outside, so each use waits for your
  * approval, until you confirm it here, once. Starts the server, so it may take a moment. */
 export function ClaimsPanel({ server, onClose }: { server: string; onClose: () => void }) {
@@ -513,7 +513,7 @@ export function Tools() {
     await openLink(r.url);
     await tools.reload();
     if (port !== null) {
-      // Only an answer that brings back this sign-in's state is handed over (security review L3).
+      // Only an answer that brings back this sign-in's state is handed over.
       const answer = await catchSignIn(port, r.url, r.state);
       if (answer) await handOver(server, answer);
     }

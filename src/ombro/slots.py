@@ -1,7 +1,7 @@
 """How many model calls may be in flight at once to one provider, across every Ombro process in a
 home (jobs, scheduled jobs, chats, the app's server). A provider that counts in-flight requests
 (OpenRouter reserves credit for each one) or limits them refuses the extra calls, and a scheduled job
-failed on it (T10). Each provider has a few slot files under the home's run/slots/; a call holds an
+failed on it. Each provider has a few slot files under the home's run/slots/; a call holds an
 exclusive lock on one for as long as it is in flight. Locks go when the process ends, however it ends.
 """
 

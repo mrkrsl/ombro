@@ -1,12 +1,12 @@
 #!/bin/sh
 # Lets the browser reach the public internet only (and Ombro's own proxy, below). Replies to Ombro's own connections to the browser
 # (port 9222) still pass, but the browser can't start a connection to Ombro, the host, the local
-# network or a cloud metadata address, whatever a page's name resolves to (H2, DNS rebinding).
+# network or a cloud metadata address, whatever a page's name resolves to (DNS rebinding).
 set -eu
 iptables -F OUTPUT
 iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-# Ombro's own proxy (H2): every page's connection goes through it, on Ombro's container, on these
+# Ombro's own proxy: every page's connection goes through it, on Ombro's container, on these
 # ports only. The proxy itself refuses private addresses, so this opens nothing further.
 if [ -n "${OMBRO_SERVICE:-}" ]; then
   ombro_ip=""

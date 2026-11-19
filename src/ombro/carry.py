@@ -1,5 +1,4 @@
-"""What a job carries to other sites through the browser, once it has read private material
-(H1, 18 Nov review).
+"""What a job carries to other sites through the browser, once it has read private material.
 
 A job (or a chat) that has only read the web is not held back here at all. Once it has read
 private material (a shared folder, memory, or anything through an MCP, API or Composio tool:
@@ -15,7 +14,7 @@ Notion, email, a spreadsheet) every site it types into or opens is someone else'
 Only then does the user decide: a held form waits in Approvals (in chat, the user is asked).
 Text typed and addresses opened are recorded, for the report.
 
-The material is the same the engine already marks as read (its taint, specification 7.1);
+The material is the same the engine already marks as read (its taint);
 this keeps the private part of it, as word runs, to check against.
 """
 
