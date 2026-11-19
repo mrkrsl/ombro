@@ -229,13 +229,16 @@ def job(home) -> Runner:
 
 
 def use_fake_mcp(home: Home, record: Path, *, server: str = "fake", tools: dict | None = None,
-                 server_settings: dict | None = None, **env) -> None:
+                 server_settings: dict | None = None, confirmed: tuple[str, ...] = ("add_row",), **env) -> None:
     """Point both web tools at the fake provider and add Ombro's fake MCP server
-    to tools.md. Everything the fake server would have done goes to `record`."""
+    to tools.md. Everything the fake server would have done goes to `record`.
+    `confirmed`: the tools whose claim to stay inside (openWorldHint false) the
+    user has confirmed, as `ombro server add` asks (M1); add_row by default."""
     import sys
 
     cfg = {"command": sys.executable, "args": ["-m", "ombro.fake_mcp"],
            "env": {"OMBRO_FAKE_MCP_RECORD": str(record), **{k: str(v) for k, v in env.items()}},
+           **({"confirmed_internal": list(confirmed)} if confirmed else {}),
            **(server_settings or {})}
     all_tools = {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}, **(tools or {})}
     mdfile.write(home.tools, {"tools": all_tools, "servers": {server: cfg}}, "Test tool settings.")

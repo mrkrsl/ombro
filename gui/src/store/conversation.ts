@@ -12,7 +12,7 @@ import type {
 } from "../api/types";
 
 export type Line =
-  | { key: string; kind: "lead"; text: string }
+  | { key: string; kind: "lead"; text: string; items?: string[] }
   | { key: string; kind: "you"; text: string }
   | { key: string; kind: "note"; text: string; items: string[]; level: string }
   | { key: string; kind: "progress"; text: string }
@@ -100,8 +100,9 @@ function eventLines(e: CoreEvent, key: string): Line[] {
       return [{ key, kind: e.who === "you" ? "you" : "lead", text: e.text }];
     case "note":
       if (!e.text && !(e.items ?? []).length) return [];
-      // Set-up's own lines are written in the Lead's voice.
-      if (e.level === "lead") return [{ key, kind: "lead", text: e.text }];
+      // Set-up's own lines are written in the Lead's voice, with what they list beneath (such as
+      // every argument of an action it asks you to approve) kept in full.
+      if (e.level === "lead") return [{ key, kind: "lead", text: e.text, ...((e.items ?? []).length ? { items: e.items } : {}) }];
       return [{ key, kind: "note", text: e.text, items: e.items ?? [], level: e.level ?? "info" }];
     case "progress":
       return [{ key, kind: "progress", text: e.text }];

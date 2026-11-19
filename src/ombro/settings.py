@@ -388,7 +388,7 @@ _TOOL_FIELDS = {"provider", "max_calls", "class", "permission"}
 # Accepted in tools.md from earlier versions, and ignored.
 _RETIRED_TOOL_FIELDS = {"cost_per_call"}
 _SERVER_FIELDS = {"command", "args", "env", "pass_env", "url", "headers", "timeout", "start_timeout", "class",
-                  "client_id"}
+                  "client_id", "confirmed_internal"}
 TOOL_CLASSES = ("read-only", "internal", "external")
 # A server-wide class covers its tools that are not read-only; reading stays reading.
 SERVER_CLASSES = ("internal", "external")
@@ -498,6 +498,10 @@ class ToolSettings:
                 if cfg["class"] not in SERVER_CLASSES:
                     raise SetupError(f"{where}: class for server {name} must be internal or external (it covers "
                                      "the server's tools that are not read-only)")
+            if "confirmed_internal" in cfg and (not isinstance(cfg["confirmed_internal"] or [], list) or not all(
+                    isinstance(n, str) and n for n in cfg["confirmed_internal"] or [])):
+                raise SetupError(f"{where}: `confirmed_internal` for server {name} must be a list of its tools' names "
+                                 "(those you confirmed stay inside your organisation)")
             for key in ("timeout", "start_timeout"):
                 if key in cfg:
                     try:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -479,8 +480,9 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
     print("\nClasses: read-only changes nothing. internal changes things in your organisation's own tools, "
           "even when\ncolleagues see it; it runs without approval because the role is trusted, which is not the "
           "same as harmless.\nexternal reaches people outside your organisation, or the public, or spends "
-          "money. FROM: marking (the\nserver's own claim), server or tool (set in tools.md), or default (a tool "
-          "that changes something and is not\nclassed counts as external).")
+          "money. FROM: marking (the\nserver's own claim), server or tool (set in tools.md), unconfirmed (the "
+          "server says internal, which you\nhaven't confirmed yet, so external) or default (a tool that changes "
+          "something and is not classed counts as external).")
     defaulted = [r["tool"] for r in rows if r["class_from"] == "default"]
     marked = [r for r in rows if r["class_from"] == "marking" and r["class"] != "read-only"]
     if defaulted:
@@ -494,5 +496,21 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
         else:
             print("This server marks some tools itself, so its tools are of mixed kinds: set them one by one, "
                   "not with `class:` on the server.")
+    waiting = [r["tool"].split(".", 2)[2] for r in rows if r["class_from"] == "unconfirmed"]
+    if waiting:
+        from ombro import server_cmd
+
+        claims = [{"tool": r["tool"].split(".", 2)[2], "description": r["description"], "class_from": r["class_from"]}
+                  for r in rows]
+        if getattr(args, "confirm", False):
+            server_cmd.confirm_internal(home, name, waiting)
+            print(f"\nConfirmed: {len(waiting)} tool(s) of {name} count as internal.")
+        elif sys.stdin.isatty():
+            from ombro.ui import ConsoleUI
+
+            server_cmd.confirm_flow(home, name, ConsoleUI(), claims)
+        else:
+            print("\n" + "\n".join(server_cmd.claims_text(name, claims)))
+            print(f"Confirm them with `ombro tools {name} --confirm`.")
     print("\nGive a role a tool by naming it in its config.md `tools:` list.")
     return 0

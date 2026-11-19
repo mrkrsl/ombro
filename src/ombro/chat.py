@@ -405,6 +405,7 @@ class Chat:
         self.pending_note = ""
         self.transcript = Transcript()
         self.refused = []
+        self.tainted = False  # set once the chat reads material (a page, an email...): see _act (M1)
         self.remembered = []
         self.specs = []
         self.saved_briefs: list[str] = []  # live jobs kept as briefs (not offered to start again)
@@ -520,6 +521,7 @@ class Chat:
         self.id = str(meta.get("id") or self.id)
         self.jobs = [str(j) for j in meta.get("jobs") or []]
         self.attached = [str(a) for a in meta.get("attached") or []]
+        self.tainted = bool(meta.get("tainted"))  # what it read may still steer the Lead's words
         # Everything said in it comes back, for the Lead too: its turns, the interviews held in it
         # (your answers and its questions), and Ombro's notices of what came back.
         notes = ""
@@ -1074,6 +1076,7 @@ class Chat:
                                           or FOLDER_TOOLS.get(tc.name) or NATIVE_TOOLS.get(tc.name)
                                           or (lookup.name if lookup else tc.name),
                                           tc.arguments)
+                    self.tainted = True  # this chat has read material from outside (7.1, M1)
                     signs = material.flags(result)
                     if signs:
                         # Ombro's own words, not the Lead's: what to check, never a block (7.1).
@@ -1238,7 +1241,12 @@ class Chat:
             return {"error": f"{tool.name} is refused by the user's settings."}
         if effect == "external" and tool.name not in (setting.get("allow") or []):
             decision = "stage"  # reaches people outside, or spends: never without the user's yes in chat
-        covered = decision == "stage" and self.scope.covered(tool.name, args)
+        held = (decision == "allow" and effect == "internal" and self.tainted
+                and tool.name not in (setting.get("allow") or [])
+                and outward.held_after_reading(tool.name, args) and not self.scope.own(args))
+        if held:
+            decision = "stage"  # after reading material, deleting or sharing asks, though other edits run (M1)
+        covered = decision == "stage" and not held and self.scope.covered(tool.name, args)
         if covered:
             decision = "allow"  # the same thing you already said yes to: one yes covers the related calls
         problem = outward.validation_error(tool.input_schema, args)
@@ -1271,7 +1279,10 @@ class Chat:
         if name == "browser.submit":
             return [f"Page: {args.get('url')}", *[f"{f.get('field') or f.get('selector')}: {f.get('value')}"
                                                   for f in args.get("fields") or []]]
-        return [_short(json.dumps(args, ensure_ascii=False), 400)] if args else []
+        from ombro import outward
+
+        # Every argument in full, who or where it reaches first: the user approves all of what is sent (H3).
+        return outward.argument_lines(args)
 
     # -- shared folders ------------------------------------------------------
 
@@ -1332,7 +1343,7 @@ class Chat:
         lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
         kept = " and keep the current version in Archive/" if what == "replace" else ""
         self._lead_says(f"I'd like to {what} {shown}{kept} ({lines:,} lines, {len(content):,} characters).",
-                    level="lead", items=[_short(content, 400)] if content else [])
+                    level="lead", items=[content] if content else [])  # in full; interfaces fold a long one
         if not self.ui.yes("folder_write", "Go ahead?", False, aside=True):
             self.transcript.note(f"The user said no to writing {shown}.")
             return {"declined": f"The user said no, so {shown} was not changed. Ask what they would like instead."}
@@ -1437,7 +1448,7 @@ class Chat:
             return {"error": f"`old` occurs {n} times in {path}; give text that occurs exactly once"}
         shown = native._display(ctx, target.resolve())
         self._lead_says(f"I'd like to change this in {shown} (the current version is kept in Archive/):",
-                        level="lead", items=[f"{_short(old, 300)}  →  {_short(new, 300)}"])
+                        level="lead", items=[f"Replace: {old}", f"With: {new}"])  # in full, as for a write
         if not self.ui.yes("folder_write", "Go ahead?", False, aside=True):
             self.transcript.note(f"The user said no to editing {shown}.")
             return {"declined": f"The user said no, so {shown} was not changed."}
@@ -2223,6 +2234,7 @@ class Chat:
             "id": self.id,
             "jobs": self.jobs,
             **({"attached": self.attached} if self.attached else {}),
+            **({"tainted": True} if self.tainted else {}),
             "refused_tools": sorted(set(self.refused)),
             "limits": {"max_tokens": self.limits.max_tokens, "tool_max_calls": self.limits.tool_max_calls},
             "usage": _add_usage(self.prior_usage, {k: s.get(k) for k in ("total_tokens", "input_tokens",
