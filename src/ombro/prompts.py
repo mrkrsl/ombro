@@ -583,11 +583,14 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
 - A skill needs a task that repeats. Propose one only when you can name,
   in `jobs`, at least one earlier job (from the earlier jobs listed below)
   that did the same kind of work as this one and would have followed the
-  same method: two jobs at least, this one included. Jobs on the same
-  subject are not enough; the work itself must be the same kind (two
-  competitor matrices, two daily briefings), not two pieces of writing
-  that share a source. One job shows how that job went, not what the next
-  will share: with no earlier job of its kind, call `no_skill`.
+  same method: two jobs at least, this one included. The work itself
+  must be the same kind, making the same kind of thing (two competitor
+  matrices, two daily briefings). Jobs that make different things (a
+  persona, a feature list, a home page) are different kinds, even when
+  they share a subject, sources, standards or care over claims; what they
+  share already belongs in the standards or the briefs. One job shows how
+  that job went, not what the next will share: with no earlier job of its
+  kind, call `no_skill`.
 - Write the general method that those jobs share, never one job's
   specifics: not this job's columns, headings, sections, word counts,
   products, files or sources, unless every job named used them. What the
