@@ -471,18 +471,14 @@ def _action_routes(s: Serve) -> list[Route]:
 
     def add_schedule(r: Request, data: dict[str, Any]) -> Any:
         """A new schedule: a saved spec, when (cron), and a name. Off until it is enabled, unless asked."""
-        from ombro import cron as cronmod
         from ombro import schedules
-        from ombro.roles import NAME
+        from ombro.settings import SetupError
 
         name, spec, cron_text = _need(data, "name"), _need(data, "spec"), _need(data, "cron")
-        if not NAME.match(name) or (home.schedules_dir / f"{name}.md").exists():
-            raise HttpError(400, "schedule names use lower-case letters, digits, - and _, and must be new")
-        if not (home.specs_dir / f"{spec.removesuffix('.md')}.md").is_file():
-            raise HttpError(400, f"there's no saved spec called {spec!r}")
-        cronmod.parse(cron_text)
-        schedules.write_schedule(home, name, " ".join(cron_text.split()), spec.removesuffix(".md"),
-                                 bool(data.get("enabled", True)))
+        try:
+            schedules.add_schedule(home, name, spec, cron_text, bool(data.get("enabled", True)))
+        except SetupError as e:
+            raise HttpError(400, str(e)) from None
         s.ensure_scheduler()
         return views.schedule_list(home)
 

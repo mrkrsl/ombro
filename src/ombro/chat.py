@@ -31,7 +31,7 @@ from typing import Any, Callable
 from ombro import keys, material, mdfile, memory, prompts, jobs, skills
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
-from ombro.home import Home, crew_title, find_crew, words_title
+from ombro.home import Home, crew_phrase, crew_phrases, crew_title, find_crew, words_title
 from ombro.ui import (UI, ChatCleared, PastTurn, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option,
                       SetAside, Usage)
 from ombro.journal import utc_now
@@ -108,7 +108,8 @@ NOT_NOW = r"(?i)(not now|no|n|nope|not yet|later)[.!]?"  # a choice's "not now",
 SET_ASIDE_RESULT = {"declined": "the user set this question aside and sent a new message instead, so nothing was done; "
                               "their message comes next. Do not reply now, and do not offer this again unless they "
                               "ask."}
-OFFERS = ("offer_brief", "offer_work", "offer_remember", "offer_start", "offer_skill", "offer_role")
+OFFERS = ("offer_brief", "offer_work", "offer_remember", "offer_start", "offer_skill", "offer_role",
+          "offer_schedule")
 
 HELP = """\
 Chat mode is a conversation with the Lead. It can look at every crew's reports,
@@ -604,11 +605,12 @@ class Chat:
         self._lead_says(f"I've got the brief '{name}'. What would you like to do with it? I can change it, "
                         "start it again (as it is, or changed), or you can put it on a schedule.")
         how = (f"It is saved as the spec `{spec}`: to start it again use offer_start with spec `{spec}`; to "
-               f"change it, offer_brief with revise `{spec}`; it can be put on a schedule on the Scheduled page "
-               f"(or `ombro schedule add {spec} --spec {spec} --cron \"…\"`)."
+               f"change it, offer_brief with revise `{spec}`; to put it on a schedule, offer_schedule with spec "
+               f"`{spec}`."
                if spec else
                "It has no saved spec (it was a live job, or its spec was removed): to run it again or change it, "
-               "use offer_brief with the brief as the starting point; once saved it can be scheduled.")
+               "use offer_brief with the brief as the starting point; once saved it can be scheduled with "
+               "offer_schedule.")
         self.pending_note += (f"[Ombro note: the user opened this chat from the Jobs page to discuss the brief of "
                               f"job {job_dir.name}, and you have asked what they would like to do with it. {how} "
                               f"The brief, as the job ran it, follows.]\n\n{text[:BRIEF_FOUND_CHARS]}\n\n"
@@ -769,7 +771,7 @@ class Chat:
             latest = jobs.job_time(all_jobs[-1])[:8] if all_jobs else ""
             when = f", latest {latest[:4]}-{latest[4:6]}-{latest[6:8]}" if latest else ""
             mark = ", the default crew" if c == self.crew else ""
-            lines.append(f"- the {crew_title(self.home, c)} (crew name `{c}` for tools{mark}): "
+            lines.append(f"- {crew_phrase(self.home, c)} (crew name `{c}` for tools{mark}): "
                          f"{meta.get('description', '')} Roles: {', '.join(roles) or 'none'}. "
                          f"Jobs: {len(all_jobs)}{when}.")
         lines.append("Speak of each crew by its title, never by its crew name.")
@@ -798,7 +800,8 @@ class Chat:
         system = prompts.chat_system(self.lead.soul, self.instructions, self._crews_text(), self._limits_line(),
                                      self.today, self._folders_text(),
                                      skills.listing(list(skills.library(self.home).values()),
-                                                    self.limits.skills_list_chars)[0])
+                                                    self.limits.skills_list_chars)[0],
+                                     self._schedules_text())
         if _size(self.exchanges) > self.limits.chat_history_chars:
             self._trim()
         return [{"role": "system", "content": system}] + [m for ex in self.exchanges for m in ex]
@@ -871,7 +874,7 @@ class Chat:
 
     def start(self) -> None:
         self.ui.say(
-            f"Chat with Ombro Lead (default crew: the {crew_title(self.home, self.crew)}). Mode: Chat. Nothing "
+            f"Chat with Ombro Lead (default crew: {crew_phrase(self.home, self.crew)}). Mode: Chat. Nothing "
             f"changes unless you say yes (a file in a shared folder, or a /remember). /brief turns this into a task "
             f"brief, /help lists commands, /quit ends. "
             f"(Up to {format_tokens(self.limits.max_tokens)} tokens.)\n"
@@ -1026,7 +1029,8 @@ class Chat:
             reply = self._model_call(self._messages())
             self.exchanges[-1].append(reply.as_message())
             said = (reply.content or "").strip()
-            offering = any(tc.name in ("offer_start", "offer_brief", "offer_work") for tc in reply.tool_calls or [])
+            offering = any(tc.name in ("offer_start", "offer_brief", "offer_work", "offer_schedule")
+                           for tc in reply.tool_calls or [])
             if said and offering:
                 # The offer says it in the Lead's voice; the same words twice read as a stutter.
                 self.transcript.note(f"The Lead's words with its offer, not shown: {_short(said, 300)}")
@@ -1138,6 +1142,8 @@ class Chat:
             return self._remember(str(args.get("text") or ""), crew, offered=True), None
         if name == "offer_skill":
             return self._offer_skill(args), None
+        if name == "offer_schedule":
+            return self._offer_schedule(args), None
         self.transcript.note(f"Lead used {internal}: {_short(json.dumps(args, ensure_ascii=False), 160)}")
         try:
             if internal == "memory.search":
@@ -1479,7 +1485,7 @@ class Chat:
         if revise and not crews:
             had = mdfile.read(self.home.specs_dir / f"{revise}.md")[0].get("crews") or []
             crews = [str(c) for c in ([had] if isinstance(had, str) else had) if str(c) in self.home.crews()]
-        which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
+        which = f" for {crew_phrases(self.home, crews)}" if crews else ""
         summary = summary.rstrip(".")
         if revise:
             self._lead_says(f"I can open your saved spec '{revise}' and change it: {summary}.", level="lead")
@@ -1502,7 +1508,7 @@ class Chat:
         title = " ".join(str(args.get("title") or "").split()) or None
         summary = _short(args.get("summary") or "", 300).rstrip(".")
         who = f"a {title}" if title else "a new crew member"
-        self._lead_says(f"I can set up {who} for the {crew_title(self.home, crew)}: {summary}.", level="lead")
+        self._lead_says(f"I can set up {who} for {crew_phrase(self.home, crew)}: {summary}.", level="lead")
         if self.ui.yes("start_role", "Shall we set it up now? You'll see it before anything is saved.", True,
                        mode="Chat", aside=True):
             self.transcript.note(f"The Lead offered a new crew member ({summary}); you accepted.")
@@ -1520,7 +1526,7 @@ class Chat:
         the list of chats to come back to, and again once the interview has ended, however it ended."""
         from ombro.interviews import RolePurpose, role_added, start
 
-        self.transcript.note(f"Role interview for the {crew_title(self.home, crew)}.")
+        self.transcript.note(f"Role interview for {crew_phrase(self.home, crew)}.")
         if not self.title:
             self.set_title(f"New crew member: {title}" if title else "New crew member", "ombro")  # saves
         else:
@@ -1588,7 +1594,7 @@ class Chat:
         crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
                  if str(c) in self.home.crews()]
         folder_access = _offered_folders(args.get("folders")) or self._live_folders(task, write_to)
-        which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
+        which = f" for {crew_phrases(self.home, crews)}" if crews else ""
         self._lead_says(f"This sounds like work{which}: {summary}.", level="lead")
         # Reporting back is Ombro's main way of working; live is the other choice, never pushed.
         answer = self.ui.ask(Field(
@@ -1665,6 +1671,100 @@ class Chat:
             self.ui.say(f"Saved as the brief '{brief}'. Start it again whenever you like, or schedule it.",
                         level="done")
 
+    # -- schedules ---------------------------------------------------------
+
+    def _schedules_text(self) -> str:
+        """For the Lead: the zone schedules run in, and the schedules there are."""
+        from ombro import cron as cronmod
+        from ombro import schedules
+
+        lines = [f"Schedules run in this machine's local time: {cronmod.local_zone()}. Give cron in that time. "
+                 "With the user, say times in plain words (every weekday at 9am), never as cron, and don't name "
+                 "the zone unless they ask or speak of another one."]
+        try:
+            every = schedules.all_schedules(self.home)
+        except (OSError, SetupError, mdfile.FrontMatterError):
+            every = []
+        for sch in every[:30]:
+            state = "on" if sch.enabled else "off"
+            lines.append(f"- {sch.name}: spec {sch.spec}, cron `{sch.cron_text}`, {state}")
+        if not every:
+            lines.append("No schedules yet.")
+        return "\n".join(lines)
+
+    def _offer_schedule(self, args: dict) -> dict[str, Any]:
+        """The Lead offers to put a saved spec on a schedule: Ombro says when it would run, in the zone
+        schedules use, and sets it up on a yes, as the Scheduled page does (testing log T5)."""
+        from datetime import datetime
+
+        from ombro import cron as cronmod
+        from ombro import scheduler, schedules
+
+        path = self._saved_spec(args.get("spec"))
+        if path is None:
+            from ombro.cli import saved_specs
+
+            names = [n for n, _ in saved_specs(self.home)][:15]
+            return {"error": f"there is no saved spec called {args.get('spec')!r}. Saved specs, newest first: "
+                             + (", ".join(names) or "none") + ". Work that isn't saved yet is briefed first."}
+        spec = path.stem
+        name = str(args.get("name") or spec).strip().lower()
+        try:
+            cron = cronmod.parse(str(args.get("cron") or ""))
+        except cronmod.CronError as e:
+            return {"error": f"cron: {e}"}
+        existing = self.home.schedules_dir / f"{name}.md"
+        if existing.exists():
+            try:
+                old = schedules.load_schedule(self.home, existing)
+                what = f" (spec {old.spec}, cron `{old.cron_text}`, {'on' if old.enabled else 'off'})"
+            except (OSError, SetupError, mdfile.FrontMatterError):
+                what = ""
+            return {"error": f"there is already a schedule called {name}{what}. Give another `name`, or tell the "
+                             "user it exists; changing its times is done on the Scheduled page."}
+        try:
+            schedules.prepare(self.home, schedules.Schedule(name=name, path=existing, cron_text=cron.text,
+                                                            cron=cron, spec=f"specs/{spec}.md", enabled=True))
+        except (SetupError, mdfile.FrontMatterError) as e:
+            return {"error": f"a scheduled job of this spec could not start: {e}"}
+        # Ombro's own words for the times when it has them (so they can't differ from the cron); the
+        # Lead's for anything more involved. No cron and no zone: schedules run in the machine's own time.
+        when = cronmod.in_words(cron) or " ".join(str(args.get("when") or "").split()).rstrip(".") \
+            or cronmod.describe(cron)
+        zone = cronmod.local_zone()
+        nxt = cronmod.next_in_words(cron, datetime.now(), 3)
+        self._lead_says(f"I can schedule '{spec}' to run {when}. The next runs would be "
+                        f"{', '.join(nxt[:-1])} and {nxt[-1]}." if len(nxt) > 1 else
+                        f"I can schedule '{spec}' to run {when}.")
+        answer = self.ui.ask(Field("schedule", "Shall I set it up?", "yesno", default=True, mode="Chat",
+                                   aside=True))
+        if not answer:
+            self.transcript.note(f"You said no: spec {spec!r} was not scheduled.")
+            return {"status": "the user said no, so nothing was scheduled. Carry on the conversation; do not offer "
+                              "it again unless they ask."}
+        try:
+            schedules.add_schedule(self.home, name, spec, cron.text, True)
+        except SetupError as e:
+            return {"error": str(e)}
+        self.transcript.note(f"Scheduled: {name} starts spec {spec!r} at cron `{cron.text}` ({zone}).")
+        try:
+            state = scheduler.schedule_turned_on(self.home)
+        except OSError as e:
+            state = {"ok": False, "message": f"Ombro couldn't check the scheduler service: {e}."}
+        line = f"Scheduled: '{spec}' runs {when}. It's on the Scheduled page, where you can change or pause it."
+        if not state.get("ok"):
+            line += f" {state.get('message') or ''} Install now on the Scheduled page puts that right."
+        self.ui.say(" ".join(line.split()), level="done")
+        out: dict[str, Any] = {"status": "scheduled", "schedule": name, "spec": spec, "cron": cron.text,
+                               "zone": zone, "next": nxt}
+        if not state.get("ok"):
+            out["scheduler"] = (f"{state.get('message')} Tell the user, in a sentence, that scheduled jobs won't "
+                                "run until it's put right with Install now on the Scheduled page.")
+        else:
+            out["note"] = ("Ombro has told the user it is set up; say nothing more than a short line, if anything, "
+                           "with no cron and no time zone.")
+        return out
+
     # -- remember ----------------------------------------------------------
 
     def _remember(self, text: str, crew: str, *, offered: bool) -> dict[str, Any]:
@@ -1675,7 +1775,7 @@ class Chat:
         entry = memory.remember_entry(text, self.today_date)
         who = "The Lead offers to remember this" if offered else "To remember"
         while True:
-            self.ui.say(f"{who} in the {crew_title(self.home, crew)}'s notes (From you):\n  {entry}", spaced=True)
+            self.ui.say(f"{who} in {crew_phrase(self.home, crew)}'s notes (From you):\n  {entry}", spaced=True)
             answer = self.ui.ask(Field(
                 "remember", "", "choice", mode="Chat",
                 options=[Option("y", "yes"), Option("e", "edit the wording", ("edit",)), Option("n", "no")],
@@ -1710,7 +1810,7 @@ class Chat:
                 return {"status": "saved", "crew": crew, "entry": entry}
             yours = notes.your_entries()
             self.ui.say(
-                f"That would make the {crew_title(self.home, crew)}'s notes.md {new.size:,} characters, "
+                f"That would make {crew_phrase(self.home, crew)}'s notes.md {new.size:,} characters, "
                 f"over the cap of {cap:,}. "
                 f"Your part is {len(notes.from_you):,} characters and the Lead's is {len(notes.from_jobs):,}."
             )

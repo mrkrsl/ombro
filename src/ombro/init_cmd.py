@@ -355,7 +355,7 @@ def _is_default_setup(home: Home) -> bool:
 def _crew_step(home: Home, ui: UI, crew: str) -> str:
     """After set-up: say what the crew is now, and offer to keep it, rename it or start a
     new one. Returns the crew roles are added to next."""
-    from ombro.home import crew_title, ensure_crew, set_crew_title
+    from ombro.home import crew_phrase, crew_title, ensure_crew, set_crew_title
     from ombro.roles import NAME, crew_roles, folder_name
     from ombro.settings import load_limits, set_preference
 
@@ -387,7 +387,7 @@ def _crew_step(home: Home, ui: UI, crew: str) -> str:
             ui.say(f"There's already a crew called that, so we'll keep using the {title}.", level="lead")
             return crew
         ensure_crew(home, name, f"The {new}.", new)
-        ui.say(f"Created the {crew_title(home, name)}.", level="done")
+        ui.say(f"Created {crew_phrase(home, name)}.", level="done")
         if ui.yes("default_crew", "Make it your default crew, so briefs use it unless you say otherwise?", True):
             set_preference(home, "default_crew", name)
         return name

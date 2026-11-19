@@ -76,6 +76,8 @@ class Record:
     transcript: str = ""
     error: str = ""
     after: dict[str, bytes] = field(default_factory=dict)  # shared/<name>/<path>: the text at the end
+    specs: dict[str, str] = field(default_factory=dict)  # specs/<name>.md at the end: name -> text
+    schedules: list[dict[str, Any]] = field(default_factory=list)  # schedules at the end: their front matter
 
     def calls(self, turn: int | None = None) -> list[tuple[str, dict]]:
         turns = self.turns if turn is None else [self.turns[turn]]
@@ -197,6 +199,7 @@ class Case:
     limits: dict[str, Any] = field(default_factory=dict)
     needs: Callable[[], str | None] = lambda: None  # why the case can't run on this code, or None
     live: bool = False
+    setup: Callable[[Any], None] | None = None  # more for the throwaway home: saved specs, skills
 
 
 PARAGRAPH = ("Lowtown Lanterns is an invented maker of paper lanterns, founded in 2019 by two "
@@ -426,6 +429,96 @@ class SetAsideAnswer:
         raise SetAside(f)
 
 
+# -- schedules (testing log T5) and briefs that use a skill (T4) -----------------------------------
+
+DIGEST_SPEC = """\
+---
+name: stall-digest
+crews:
+- default
+---
+
+# A weekly digest of the invented stall notes
+
+Read the stall notes and write a short digest of what sold and what didn't.
+"""
+
+LANTERN_SKILL = """\
+---
+name: lantern-stall-digest
+description: How to turn a week of invented lantern-stall notes into a short sales digest. Use for any
+  stall or market digest.
+---
+
+1. Read every note for the week, oldest first.
+2. Group what sold by lantern colour, then by size.
+3. Name the three best-selling colours, each with its count, in a table titled "Colour board".
+4. List the colours that sold nothing under "Quiet shelf".
+5. End with one line on the weather each day, marked "Sky line".
+"""
+
+SKILL_MARKERS = ("Colour board", "Quiet shelf", "Sky line", "by lantern colour, then by size")
+
+
+def add_saved_spec(home) -> None:
+    home.specs_dir.mkdir(parents=True, exist_ok=True)
+    (home.specs_dir / "stall-digest.md").write_text(DIGEST_SPEC)
+
+
+def add_lantern_skill(home) -> None:
+    folder = home.skills_dir / "lantern-stall-digest"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "SKILL.md").write_text(LANTERN_SKILL)
+
+
+def check_schedule(r: Record) -> list[str]:
+    fails = []
+    offers = [a for n, a in r.calls() if n == "offer_schedule"]
+    if not offers:
+        fails.append("the Lead did not call offer_schedule")
+    elif " ".join(str(offers[-1].get("cron") or "").split()) != "15 7 * * 1-5":
+        fails.append(f"the cron offered was {offers[-1].get('cron')!r}, not '15 7 * * 1-5'")
+    if not r.asked("schedule"):
+        fails.append("no 'Shall I set it up?' question")
+    if len(r.schedules) != 1 or r.schedules[0].get("spec") != "specs/stall-digest.md" \
+            or r.schedules[0].get("cron") != "15 7 * * 1-5":
+        fails.append(f"the schedule was not set up as asked: {r.schedules}")
+    said = " ".join(t for turn in r.turns for t in turn["texts"]).lower()
+    for words in ("ombro schedule add", "add it yourself", "set it up yourself", "you'll need to add",
+                  "can't see the time", "cannot see the time", "can't set a schedule", "cannot set a schedule"):
+        if words in said:
+            fails.append(f"the Lead said {words!r}: it sent the user elsewhere, or claimed not to know the zone")
+    if r.called("offer_work") or r.called("offer_brief") or r.jobs:
+        fails.append("offered work or started a job")
+    shown = "\n".join(e for e in r.events if not e.startswith("[You]"))
+    if "15 7 * * 1-5" in shown or "cron" in shown.lower():
+        fails.append("the user was shown cron")
+    if "UTC" in shown:
+        fails.append("the user was shown the time zone")
+    if "every weekday at 7:15am" not in shown:
+        fails.append("the offer doesn't say 'every weekday at 7:15am'")
+    return fails
+
+
+def check_brief_names_skill(r: Record) -> list[str]:
+    fails = []
+    if not r.specs:
+        return ["no spec was saved (the brief interview did not finish)"]
+    (name, text), = list(r.specs.items())[-1:]
+    body = text.split("---", 2)[-1]
+    if "lantern-stall-digest" not in body:
+        fails.append("the spec doesn't name the skill lantern-stall-digest")
+    copied = [m for m in SKILL_MARKERS if m.lower() in body.lower()]
+    if copied:
+        fails.append(f"the spec restates the skill: {copied}")
+    if len(body) > 1_500:
+        fails.append(f"the spec is {len(body):,} characters; a brief that points to a skill should be short")
+    asked = sum(1 for q in r.questions if q[0] == "answer")
+    if asked > 4:
+        fails.append(f"the interview asked {asked} times; the skill settles most of it")
+    return fails
+
+
 def cases() -> list[Case]:
     work = {"how": "not now"}
     research = {"access": "read", "files": {"interview-1.md": interview(1), "interview-2.md": interview(2)}}
@@ -485,6 +578,19 @@ def cases() -> list[Case]:
               "of the two, and save it as a new file in shared/drafts.",
               "Actually, first: who does the home page copy in shared/site say it's for?"],
              {"how": SetAsideAnswer(), "folder_write": SetAsideAnswer()}, set_aside_check, needs=needs_set_aside),
+        Case("schedule-offer", "Putting a saved spec on a schedule is offered and set up here (T5)",
+             {},
+             ["Can you run my saved stall-digest brief every weekday at 7.15am?"],
+             {"schedule": True}, check_schedule, setup=add_saved_spec),
+        Case("brief-names-skill", "A brief for work a skill covers names the skill and doesn't restate it (T4)",
+             {"notes": {"access": "write", "files": {"week-1.md": "Mon: 3 teal, 1 amber. Rain.\n"
+                                                                   "Tue: 5 teal, 2 red. Sun.\n"}}},
+             ["Brief a job for the crew: use the lantern-stall-digest skill on this week's notes in shared/notes "
+              "and save the digest there as digest.md. Report back, don't do it live."],
+             {"how": "report", "start_brief": True,
+              "answer": "That's all it needs: follow the skill as it is. Use your judgement.",
+              "decision": "a"},
+             check_brief_names_skill, setup=add_lantern_skill),
     ]
 
 
@@ -544,6 +650,8 @@ def make_home(root: Path, model: dict[str, Any], case: Case) -> tuple[Any, dict[
             (path / rel).write_text(text)
         folders.add(home, path, name, spec["access"])
         made[name] = path.resolve()
+    if case.setup:
+        case.setup(home)
     return home, made
 
 
@@ -624,6 +732,11 @@ def run_case(case: Case, model: dict[str, Any], keep: Path | None) -> Record:
             record.jobs.append(job_record(jobs.find_job(home, job_id)))
         if chat.path.exists():
             record.transcript = chat.path.read_text()
+        from ombro import mdfile
+
+        record.specs = {p.stem: p.read_text() for p in sorted(home.specs_dir.glob("*.md"))
+                        if not p.name.endswith(".previous.md")}
+        record.schedules = [mdfile.read(p)[0] for p in sorted(home.schedules_dir.glob("*.md"))]
     except Exception:
         record.error = traceback.format_exc()
     finally:

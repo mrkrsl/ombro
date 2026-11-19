@@ -237,3 +237,65 @@ def describe(cron: Cron) -> str:
 
 def describe_next(cron: Cron, now: datetime, n: int = 3) -> list[str]:
     return [w.strftime("%a %d %b %Y %H:%M") for w in next_slots(cron, now, n)]
+
+
+def zone_name() -> str:
+    """The machine's time zone by its IANA name (Europe/London), or "" when it can't be told."""
+    import os
+
+    tz = os.environ.get("TZ", "").lstrip(":")
+    if "/" in tz and not tz.startswith("/"):
+        return tz
+    import re
+
+    for link in (tz if tz.startswith("/") else "", "/etc/localtime"):
+        if not link:
+            continue
+        # The link itself first (macOS: /var/db/timezone/zoneinfo/Europe/London), then where it ends up
+        # (/usr/share/zoneinfo.default/Europe/London).
+        for path in ((os.readlink(link) if os.path.islink(link) else ""), os.path.realpath(link)):
+            m = re.search(r"zoneinfo[^/]*/(.+)$", path)
+            if m and "/" in m.group(1):
+                return m.group(1)
+    try:
+        with open("/etc/timezone", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def local_zone(now: datetime | None = None) -> str:
+    """The zone schedules run in (this machine's local time), in words: "Europe/London (GMT,
+    UTC+00:00)", or "GMT (UTC+00:00)" when the zone's name can't be told."""
+    aware = (now or datetime.now()).astimezone()
+    off = aware.strftime("%z") or "+0000"
+    offset = f"UTC{off[0]}{off[1:3]}:{off[3:5]}"
+    abbr = aware.tzname() or ""
+    name = zone_name()
+    if name:
+        return f"{name} ({abbr + ', ' if abbr and abbr != name else ''}{offset})"
+    return f"{abbr} ({offset})" if abbr else offset
+
+
+def in_words(cron: Cron) -> str:
+    """When a schedule runs, as words that follow "runs": "every weekday at 9am", "every Monday at
+    7:30am", "on the 1st of each month at noon". "" when it isn't one time a day (the caller then uses
+    its own words)."""
+    text = describe(cron)
+    if text == f"Runs at {cron.text}":
+        return ""
+    words = text.removeprefix("Runs ")
+    for plural, single in (("weekdays", "every weekday"), ("weekends", "every weekend"),
+                           *((d, "every " + d[:-1]) for d in DAY_NAMES)):
+        if words.startswith(plural + " ") or words.startswith(plural + ","):
+            words = single + words[len(plural):]
+            break
+    for d in DAY_NAMES:  # "every Monday, Wednesdays and Fridays" -> "every Monday, Wednesday and Friday"
+        words = words.replace(d, d[:-1]) if words.startswith("every ") else words
+    return words
+
+
+def next_in_words(cron: Cron, now: datetime, n: int = 3) -> list[str]:
+    """The next runs, as "Thu 19 Nov at 9am"."""
+    return [f"{w.strftime('%a')} {w.day} {w.strftime('%b')} at {_clock(w.hour, w.minute)}"
+            for w in next_slots(cron, now, n)]

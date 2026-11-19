@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from ombro import outbox, jobs, views
-from ombro.home import crew_title, find_crew
+from ombro.home import crew_phrase, crew_title, find_crew
 from ombro.ui import Failure, Note
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -128,7 +128,7 @@ class Flows:
                              f"{', '.join(crew_title(self.home, c) for c in self.home.crews())}.")
                     return
             if title and self.home.roles_dir(crew).joinpath(folder_name(title)).exists():
-                self.say(f"The {crew_title(self.home, crew)} already has a role called {title}.")
+                self.say(f"{crew_phrase(self.home, crew, start=True)} already has a role called {title}.")
                 return
             # Held in the chat, which starts from what it knows and is kept in the list of chats.
             self.session.ensure_chat().role_interview(crew, title)
@@ -492,7 +492,7 @@ class Flows:
                 self.say("Crew names use lower-case letters, digits, - and _, and must be new.")
                 return
             ensure_crew(self.home, name, "", " ".join(words[2:]))
-            self.say(f"Created the {crew_title(self.home, name)}. Add its roles with "
+            self.say(f"Created {crew_phrase(self.home, name)}. Add its roles with "
                      f"/role add <title> --crew {name}.", level="done")
             return
         if action == "use" and len(words) > 1:
@@ -501,7 +501,7 @@ class Flows:
                 self.say(f"There's no crew called {' '.join(words[1:])}.")
                 return
             set_preference(self.home, "default_crew", crew)
-            self.say(f"The default crew is now the {crew_title(self.home, crew)}.", level="done")
+            self.say(f"The default crew is now {crew_phrase(self.home, crew)}.", level="done")
             return
         self.usage("/crew, /crew add <name> [title], /crew use <name>")
 

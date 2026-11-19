@@ -477,6 +477,27 @@ def crew_title(home: "Home", crew: str) -> str:
     return title or f"{tidy_title(crew)} Crew"
 
 
+# A title that already says it is a group ("Marketing team", "Research Desk") is not followed by "crew".
+GROUP_WORDS = frozenset("""crew crews team teams squad group department dept unit desk office staff agency studio
+    collective club committee board council guild circle pod lab bureau taskforce force party band""".split())
+
+
+def crew_phrase(home: "Home", crew: str, start: bool = False) -> str:
+    """How a sentence names a crew: "the Ombro crew" for a crew titled Ombro, but "the Marketing
+    team" (never "the Marketing team crew") for one whose title already says it is a group."""
+    title = crew_title(home, crew)
+    if title[:4].lower() == "the ":
+        title = title[4:].lstrip() or title
+    last = re.sub(r"[^a-z]", "", title.split()[-1].lower()) if title.split() else ""
+    phrase = f"the {title}" if last in GROUP_WORDS else f"the {title} crew"
+    return "T" + phrase[1:] if start else phrase
+
+
+def crew_phrases(home: "Home", crews: list[str]) -> str:
+    """Several crews in one phrase: "the Ombro crew and the Marketing team"."""
+    return " and ".join(crew_phrase(home, c) for c in crews)
+
+
 def find_crew(home: "Home", text: str) -> str | None:
     """The crew someone means, by its name or its title ("marketing", "Marketing Team",
     "the marketing team"), or None. People see titles; names stay the crew's folder."""
@@ -488,7 +509,7 @@ def find_crew(home: "Home", text: str) -> str | None:
         return want
     for crew in names:
         title = crew_title(home, crew).lower()
-        if want in (title, title.removesuffix(" crew")):
+        if {want, want.removesuffix(" crew")} & {title, title.removesuffix(" crew")}:
             return crew
     return None
 

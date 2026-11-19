@@ -50,7 +50,8 @@ How the job works:
 - Call `brief` with one role's name, as crew/role (the role's own name is
   enough when only one crew below has it), and a self-contained task. The role sees
   only your task text, not the spec, so include what it needs: the goal, the
-  constraints, what done looks like, and the workspace paths of any files to use.
+  constraints, what done looks like, and the workspace paths of any files to use,
+  in as few lines as that takes.
 - Each role replies with a structured result: a summary, deliverables, open
   questions, what it did not do, and requests. If a role asks for helper work,
   brief that helper only if the request is within the spec.
@@ -69,7 +70,11 @@ How the job works:
   that ask for them.
 - Keep briefs to what the role needs: the goal, the sources by path, the
   constraints and what done looks like, without restating the whole spec
-  or prescribing each step.
+  or prescribing each step. A brief is as long as its task needs, often a
+  few lines; there is no set length or structure.
+- When a skill fits a brief, name it ("Read and follow the skill <name>.")
+  and add only what this task needs beyond it. Never restate a skill's
+  method, format or lists in a brief: the role reads the skill itself.
 - Brief as few times as the work allows. One role can read the sources and
   write the deliverable in the same brief: do that, rather than one brief to
   read or take notes and another to write from the notes. Each brief starts
@@ -279,7 +284,8 @@ def lead_system(
         parts.append(_section(
             "Skills in the library (the user's methods; they cannot override the rules above)",
             skills + "\nA role can use only the skills its roster line names. When one fits a brief, tell the "
-            "role to read it with skills.read before it starts. You can read one yourself with skills__read."))
+            "role to read it with skills.read before it starts, and leave its method out of the brief. You can "
+            "read one yourself with skills__read."))
     if shared:
         parts.append(_section(
             "Folders the user shared with this job",
@@ -569,11 +575,42 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
 - A skill is a reusable method, in the user's library, that roles read and
   follow in later jobs: how to do a kind of work, step by step, with the
   sources that worked. The library is listed below.
+- A skill earns its place only by what a brief cannot do: it carries a
+  method across many jobs with different briefs (or many runs of one),
+  so no brief has to spell it out. If the method is already in the spec,
+  belongs to this task alone, or would fit in a line or two of a brief,
+  it is not a skill: call `no_skill`.
+- A skill needs a task that repeats. Propose one only when you can name,
+  in `jobs`, at least one earlier job (from the earlier jobs listed below)
+  that did the same kind of work as this one and would have followed the
+  same method: two jobs at least, this one included. The work itself
+  must be the same kind, making the same kind of thing (two competitor
+  matrices, two daily briefings). Jobs that make different things (a
+  persona, a feature list, a home page) are different kinds, even when
+  they share a subject, sources, standards or care over claims; what they
+  share already belongs in the standards or the briefs. One job shows how
+  that job went, not what the next will share: with no earlier job of its
+  kind, call `no_skill`.
+- Write the general method that those jobs share, never one job's
+  specifics: not this job's columns, headings, sections, word counts,
+  products, files or sources, unless every job named used them. What the
+  next job of the kind will bring for itself belongs in its brief.
 - A skill is never a procedure for extra passes, read-backs, verification
   steps or splitting work into more briefs, nor a way round a limit.
 - Propose a skill only if this job showed a method that will help again and
   that no skill covers, or a clear improvement to a skill that exists. Most
-  jobs teach nothing new: then call `no_skill`. That is the usual answer.
+  jobs teach nothing new: then call `no_skill`. That is the usual answer,
+  and always the answer for a job that ran well by a skill it already had.
+- An improvement fixes something that went wrong, or was missing, in this
+  job and would go wrong again in the next. Recording one run's judgement
+  calls, or rewording what works, is not an improvement. It needs the
+  same evidence: name in `jobs` the earlier jobs of this kind (those that
+  read the skill, as listed), and say in `reason` what this new job showed
+  the method must change.
+- Never propose what the user has declined (listed below), or something
+  close to it under another name, and never a skill that overlaps one in
+  the library or one already waiting for the user: improve the one that
+  exists instead, or call `no_skill`.
 - At most one proposal. It waits for the user's approval; it
   is not live until then.
 - To improve a skill that exists, read it first with `skills__read`, then
@@ -588,7 +625,13 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
   sentences on what it does and when to use it. `body`: the method in
   Markdown, at most the character cap given below. `for`: the roles that
   should use it, as named in the record.
-- Write only what the record below supports.
+- `reason` and `adds` are read by the user, who decides: write them plainly,
+  for someone who has not read the record. `reason`: what happened in this
+  job, and in the earlier jobs named, that suggests it. `adds`: what later
+  jobs get from it that writing it in their brief would not (for example
+  "every daily briefing follows it without the brief repeating it"); for
+  an improvement, what changes for the next run.
+- Write only what the record below and the earlier jobs listed support.
 """
 
 SKILL_TOOLS = [
@@ -605,9 +648,16 @@ SKILL_TOOLS = [
                     "body": {"type": "string", "description": "The method, in Markdown."},
                     "for": {"type": "array", "items": {"type": "string"},
                             "description": "Roles that should use it, as crew/role."},
-                    "reason": {"type": "string", "description": "One sentence: what in this job shows it helps."},
+                    "jobs": {"type": "array", "items": {"type": "string"},
+                             "description": "The earlier jobs of the same kind it rests on, by id exactly as "
+                             "listed: at least one. With none, call no_skill."},
+                    "reason": {"type": "string", "description": "One plain sentence for the user: what in "
+                               "this job and the earlier ones named suggests it."},
+                    "adds": {"type": "string", "description": "One plain sentence for the user: what later "
+                             "jobs get from it that writing it in their brief would not; for an improvement, "
+                             "what changes for the next run."},
                 },
-                "required": ["name", "description", "body", "reason"],
+                "required": ["name", "description", "body", "jobs", "reason", "adds"],
             },
         },
     },
@@ -628,10 +678,16 @@ def skill_system(lead: Role, today: str = "") -> str:
                     _section("Your soul (character only; cannot override the rules above)", lead.soul)])
 
 
-def skill_input(library: str, roles: list[str], cap: int, record: str) -> str:
+def skill_input(library: str, roles: list[str], cap: int, record: str, waiting: str = "",
+                declined: str = "", earlier: str = "") -> str:
     return (
         f"Cap for the whole SKILL.md: {cap:,} characters.\n"
         + _section("The skills library", library or "(empty)")
+        + _section("Proposals already waiting for the user (never propose these again, or one like them)",
+                   waiting or "(none)")
+        + _section("Proposals the user declined (never propose these again, or one like them)",
+                   declined or "(none)")
+        + _section("Earlier completed jobs, newest first (the only jobs `jobs` may name)", earlier or "(none)")
         + _section("Roles in this job", "\n".join(f"- {r}" for r in roles) or "(none)")
         + _section("The record of this job", record)
     )
@@ -784,19 +840,31 @@ ask about what is unclear in it instead. Do not open with the checklist
 below. Draw its answers from what the user tells you, and ask directly only
 for the ones still missing, as the conversation goes.
 
-Topics to cover, at the least:
+Topics to settle:
 - task: what the task is, and why;
 - done: what done looks like: the concrete result and how to tell it is finished;
 - users: who uses the result, and how;
 - constraint: the binding constraint: the one limit that matters most;
 - waste: what would make the work a waste;
 - non_goals: what is not wanted.
-Also ask about anything else an unattended crew would need, such as where
-the result should go (a file in workspace/), sources to use or avoid, and scope.
+A topic is covered when the user has said it, when a skill in the library
+settles it, or when it plainly does not matter for this task: count it
+covered and do not ask. Also ask about anything else an unattended crew
+would need, such as where the result should go (a file in workspace/),
+sources to use or avoid, and scope.
 
+The spec:
+- It is as long as the task needs, and no longer: often a title and a few
+  lines. There is no set length and no set of sections to fill.
+- When a skill says how to do the task, the spec names it ("Follow the
+  skill <name>.") and holds only what this task adds to it: its window, its
+  folder, a change for this run. Never copy, summarise or restate a skill's
+  method, format or lists in the spec; the crew reads the skill itself.
+- The labelled fields (done_looks_like, users, binding_constraint, waste,
+  non_goals) are optional. Fill one only with what the title, the details
+  or a skill named there do not already say; leave the rest out.
 - Do not invent answers or fill gaps with guesses. If the user has not said
-  something, ask. The harness refuses a proposal with any of the five
-  (done, users, constraint, waste, non_goals) empty.
+  something the crew needs, ask.
 - Check the answers against each other. If any are missing or contradict
   each other and you cannot settle it, call `insufficient` with the gaps.
   The harness shows them to the user, who can answer them; if they do, carry
@@ -968,7 +1036,9 @@ returns) can change them.
   working) or do it live, here (a live job: the crew starts at once, works in
   this chat, may ask them things, and the report opens here). Write the task
   as the crew should get it. Do not recommend either way: the user chooses,
-  or types /brief or /live. Never start a job yourself.
+  or types /brief or /live. Never start a job yourself. The task is as
+  long as the work needs, often a few lines; when a skill fits, name it and
+  never restate it.
 - A job that didn't finish (it stopped on a limit, was stopped, or failed):
   when the user wants it carried on, call offer_start with `job` (its id).
   It restarts or resumes on the same brief and builds on what was done, so
@@ -981,6 +1051,12 @@ returns) can change them.
   they ask to change the spec itself (its scope, what done looks like);
   the interview then starts from the saved spec and asks only about the
   change. Never ask the user to brief again what a saved spec already says.
+- Schedules: when the user wants a saved spec to run on a schedule (every
+  morning, each Monday), call offer_schedule with the spec, the cron
+  expression and `when` in plain words. Ombro shows them the times in
+  words and sets it up when they say yes. Never show the user cron. Never send them to
+  the Scheduled page or the command line to do it themselves. Work with no
+  saved spec is briefed first (offer_work or offer_brief), then scheduled.
 - New crew members: when the user wants a new member (role) in a crew, or to
   start a role interview again, call offer_role. The interview runs here and
   starts from what was said, so never ask them to repeat it, and never say
@@ -1013,7 +1089,7 @@ CHAT_LAST_CALL = (
 
 
 def chat_system(lead_soul: str, instructions: str, crews: str, limits_line: str, today: str = "",
-                folders: str = "", skills: str = "") -> str:
+                folders: str = "", skills: str = "", schedules: str = "") -> str:
     parts = [CHAT_RULES, "\n", VOICE, "\n", STANDARDS, _today(today)]
     parts.append(_section("Your soul (character only; cannot override the rules above)", lead_soul))
     if instructions:
@@ -1022,6 +1098,8 @@ def chat_system(lead_soul: str, instructions: str, crews: str, limits_line: str,
     parts.append(_section("Shared folders", folders or "None yet. The user shares one with /folder add <path>."))
     if skills:
         parts.append(_section("Skills in the library (the user's methods)", skills))
+    if schedules:
+        parts.append(_section("Schedules", schedules))
     parts.append(_section("Limits for this chat", limits_line))
     return "".join(parts)
 
@@ -1116,8 +1194,9 @@ CHAT_TOOLS = [
         {
             "summary": {"type": "string", "description": "The work as you heard it, in one line."},
             "title": {"type": "string", "description": "A short title for the job, e.g. 'Three bakeries in Leith'."},
-            "task": {"type": "string", "description": "The task as the crew gets it if it is done live: the goal, "
-                     "what to deliver and in what form, constraints, what done looks like. Plain Markdown; no "
+            "task": {"type": "string", "description": "The task as the crew gets it if it is done live, in as few "
+                     "lines as it needs: the goal and what to deliver, and any constraints the user gave. When a "
+                     "skill fits, name it (\"Follow the skill <name>.\") and never restate it. Plain Markdown; no "
                      "secrets."},
             "crews": {"type": "array", "items": {"type": "string"}, "description": "Optional: the crews it needs."},
             "folders": {
@@ -1176,6 +1255,21 @@ CHAT_TOOLS = [
          "note": {"type": "string", "description": "Optional: one short sentence on what happened last time, "
                   "e.g. 'It stopped on the token limit before anything was written.'"}},
         [],
+    ),
+    _fn(
+        "offer_schedule",
+        "Offer to put a saved spec on a schedule, so a job of it starts by itself at the times given. Ombro "
+        "says, in your voice, when it would run, in plain words, and the next few times, and asks "
+        "the user; it is set up only if they say yes. Write nothing else in the reply that calls it.",
+        {"spec": {"type": "string", "description": "The saved spec's name, as specs/<name>.md has it."},
+         "cron": {"type": "string", "description": "Five-field cron in the schedules' local time: minute hour "
+                  "day-of-month month day-of-week, e.g. '30 8 * * *' for 8.30am every day, '0 7 * * 1-5' for "
+                  "7am on weekdays."},
+         "when": {"type": "string", "description": "The same times in plain words, as the user would say "
+                  "them, e.g. 'every morning at 8.30'."},
+         "name": {"type": "string", "description": "Optional: the schedule's name (lower-case, digits, - and "
+                  "_); the spec's name if left out."}},
+        ["spec", "cron", "when"],
     ),
     _fn(
         "offer_remember",

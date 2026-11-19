@@ -578,6 +578,26 @@ def write_schedule(home: Home, name: str, cron_text: str, spec_name: str, enable
     return path
 
 
+def add_schedule(home: Home, name: str, spec: str, cron_text: str, enabled: bool = True,
+                 limits: dict | None = None, grace: str | None = None) -> Path:
+    """A new schedule, checked, for the Scheduled page, `ombro schedule add` and the chat's offer:
+    a new name, a saved spec, and a cron expression. Raises SetupError with the reason."""
+    from ombro.roles import NAME
+
+    name, spec = str(name or "").strip(), str(spec or "").strip().removeprefix("specs/").removesuffix(".md")
+    if not NAME.match(name):
+        raise SetupError("schedule names use lower-case letters, digits, - and _")
+    if (home.schedules_dir / f"{name}.md").exists():
+        raise SetupError(f"there is already a schedule called {name}")
+    if not spec or "/" in spec or not (home.specs_dir / f"{spec}.md").is_file():
+        raise SetupError(f"there's no saved spec called {spec!r}")
+    try:
+        cron = cronmod.parse(cron_text)
+    except cronmod.CronError as e:
+        raise SetupError(f"cron: {e}") from None
+    return write_schedule(home, name, cron.text, spec, enabled, limits, grace)
+
+
 def set_timing(path: Path, cron_text: str) -> None:
     """Change when a schedule runs, in place, keeping the rest of its file (plan C7).
     The expression is checked first: a bad one changes nothing."""

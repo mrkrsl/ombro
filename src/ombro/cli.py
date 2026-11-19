@@ -935,11 +935,11 @@ def cmd_role(args) -> int:
         if outcome.confirmed:
             from ombro.init_cmd import _role_title
             from ombro.models import offer_role_model
-            from ombro.home import crew_title
+            from ombro.home import crew_phrase
             from ombro.ui import ConsoleUI
 
             added = outcome.proposal.data["name"]
-            print(f"\nAdded {added} to the {crew_title(home, crew)}.")
+            print(f"\nAdded {added} to {crew_phrase(home, crew)}.")
             offer_role_model(home, ConsoleUI(), f"{crew}/{added}", _role_title(home, crew, added))
             return 0
         return 1
@@ -1045,7 +1045,7 @@ def _set_default_crew(home: Home, crew: str) -> None:
 
 
 def cmd_crew(args) -> int:
-    from ombro.home import crew_title, ensure_crew
+    from ombro.home import crew_phrase, crew_title, ensure_crew
     from ombro.roles import NAME
 
     home = _home()
