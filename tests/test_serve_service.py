@@ -68,17 +68,20 @@ def test_later_codes_last_a_day_and_replace_the_last(home):
         d.pair(new, "x")
 
 
-def test_wrong_codes_lock_pairing_for_a_minute(home):
+def test_wrong_codes_lock_that_address_for_a_minute(home):
     clock = Clock()
     d = Devices(home, clock=clock)
     code = d.first_code()
+    wrong = "2222" if code != "2222" else "3333"
     for _ in range(pairing.MAX_WRONG):
         with pytest.raises(PairingError, match="isn't right"):
-            d.pair("2222" if code != "2222" else "3333", "x")
+            d.pair(wrong, "x", "10.0.0.1")
     with pytest.raises(PairingError, match="Too many"):
-        d.pair(code, "x")  # even the right one, while locked
+        d.pair(code, "x", "10.0.0.1")  # even the right one, while locked
+    assert d.pair(code, "x", "10.0.0.2")[1]  # another address is not held up
     clock.t += pairing.LOCKOUT_SECONDS
-    assert d.pair(code, "x")[1]
+    d.later_code()
+    assert not d.locked_out("10.0.0.1")
 
 
 def test_a_code_is_thrown_away_after_ten_wrong_tries(home):
@@ -86,14 +89,55 @@ def test_a_code_is_thrown_away_after_ten_wrong_tries(home):
     d = Devices(home, clock=clock)
     code = d.first_code()
     wrong = "2222" if code != "2222" else "3333"
-    for i in range(pairing.MAX_WRONG_PER_CODE):
-        clock.t += pairing.LOCKOUT_SECONDS  # slowly, so the minute lockout never starts
-        with pytest.raises(PairingError):
-            d.pair(wrong, "x")
+    for i in range(pairing.MAX_WRONG_PER_CODE - 1):
+        clock.t += pairing.LOCKOUT_SECONDS  # slowly, so no address is locked
+        with pytest.raises(PairingError, match="isn't right"):
+            d.pair(wrong, "x", f"10.0.{i}.1")
     clock.t += pairing.LOCKOUT_SECONDS
+    with pytest.raises(PairingError, match="someone may be guessing|Someone may be guessing"):
+        d.pair(wrong, "x", "10.9.9.9")
     with pytest.raises(PairingError, match="isn't right"):
-        d.pair(code, "x")  # the right code, too late
+        d.pair(code, "x", "10.8.8.8")  # the right code, too late
     assert Devices(home, clock=clock).first_code() != code  # a new one at the next start
+
+
+def test_the_hourly_cap_refuses_everyone_until_the_hour_is_up(home, monkeypatch):
+    monkeypatch.setattr(pairing, "MAX_WRONG_PER_CODE", 10_000)
+    clock = Clock()
+    d = Devices(home, clock=clock)
+    code = d.first_code()
+    wrong = "2222" if code != "2222" else "3333"
+    for i in range(pairing.MAX_WRONG_PER_HOUR):
+        clock.t += 20
+        with pytest.raises(PairingError, match="isn't right"):
+            d.pair(wrong, "x", f"10.0.{i}.1")
+    with pytest.raises(PairingError, match="Too many"):
+        d.pair(code, "x", "10.8.8.8")
+    clock.t += pairing.HOUR_SECONDS + 1
+    assert d.pair(code, "x", "10.8.8.8")[1]
+
+
+def test_pair_refuses_a_large_body_unread(home):
+    c, devices = service_client(home)
+    devices.first_code()
+    big = c.post("/pair", content=b"{" + b" " * 10000 + b"}", headers={"content-type": "application/json"})
+    assert big.status_code == 413
+    assert c.post("/pair", content=b'{"code": "x", "name": "' + b"a" * 5000 + b'"}').status_code == 413
+    assert c.post("/pair", json={"code": "WRONG"}).status_code == 403
+
+
+def test_serve_warns_about_every_address_and_clear_text(monkeypatch):
+    from ombro.serve import service_lines
+
+    monkeypatch.setattr("os.path.exists", lambda p: False)
+    assert "every address" in " ".join(service_lines("0.0.0.0", 1, None))
+    assert "every address" in " ".join(service_lines("::", 1, None))
+    assert "not a Tailscale" in " ".join(service_lines("192.168.1.5", 1, None))
+    assert "Warning" in " ".join(service_lines("8.8.8.8", 1, None))
+    for quiet in ("127.0.0.1", "100.101.102.103", "fd7a:115c:a1e0::1"):
+        assert "Warning" not in " ".join(service_lines(quiet, 1, None))
+    monkeypatch.setattr("os.path.exists", lambda p: p == "/.dockerenv")
+    assert "Warning" not in " ".join(service_lines("0.0.0.0", 1, None))
 
 
 def test_tokens_are_kept_only_as_hashes_owner_only(home):
