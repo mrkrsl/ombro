@@ -16,11 +16,14 @@ export async function quitApp(): Promise<void> {
   await invoke("quit");
 }
 
-/** Open a file with the app the system uses for its kind (for a .md file, say TextEdit). */
-export async function openFile(path: string): Promise<void> {
+/** Open a file (or folder) with the app the system uses for its kind (for a .md file, say
+ * TextEdit). The app opens only files in Ombro's folders and the shared folders, and a kind that
+ * runs code (a .command, an .app, a script…) is shown in Finder instead: then this returns the
+ * line saying why, to show. */
+export async function openFile(path: string): Promise<string | null> {
   if (!inTauri) throw new Error("Files open in the desktop app only.");
-  const opener = await import("@tauri-apps/plugin-opener");
-  await opener.openPath(path);
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string | null>("open_file", { path });
 }
 
 /** Show a file in Finder (or the file manager), picked. */
@@ -30,15 +33,36 @@ export async function revealFile(path: string): Promise<void> {
   await opener.revealItemInDir(path);
 }
 
-/** Open a link in the system browser, or a file:// link with the system's opener. */
-export async function openLink(href: string): Promise<void> {
+/** Open a link in the system browser, or a file:// link as openFile does (returning its line, if
+ * it was only shown). */
+export async function openLink(href: string): Promise<string | null> {
   if (!inTauri) {
     window.open(href, "_blank", "noopener");
-    return;
+    return null;
   }
+  if (href.startsWith("file:")) return openFile(decodeURIComponent(new URL(href).pathname));
   const opener = await import("@tauri-apps/plugin-opener");
-  if (href.startsWith("file:")) await opener.openPath(decodeURIComponent(new URL(href).pathname));
-  else await opener.openUrl(href);
+  await opener.openUrl(href);
+  return null;
+}
+
+/** The `state` a sign-in address carries (the answer must bring it back), or null. */
+export function signInState(url: string): string | null {
+  try {
+    return new URL(url).searchParams.get("state");
+  } catch {
+    return null;
+  }
+}
+
+/** Wait for the answer the app's listener on `port` catches for the sign-in at `url`: one that
+ * brings back its `state`. Answers with any other state are passed over. null if none came, or
+ * the address has no state to check by (then the address is pasted instead). App only. */
+export async function catchSignIn(port: number, url: string, state?: string | null): Promise<string | null> {
+  const want = state || signInState(url);
+  if (!want) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string | null>("sign_in_answer", { port, seconds: 600, state: want }).catch(() => null);
 }
 
 /** A system notification. In the app it asks once for permission; in a browser it uses the

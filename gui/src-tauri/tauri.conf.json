@@ -52,7 +52,6 @@
       "files": {
         "Resources/Assets.car": "icons/macos/Assets.car"
       },
-      "entitlements": "entitlements.plist",
       "hardenedRuntime": true
     }
   }

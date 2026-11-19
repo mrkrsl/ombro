@@ -4,6 +4,9 @@
 //! suggested (`X-Ombro-Save-As`, such as `<job id>/workspace/notes.md`). Nothing outside
 //! ~/Downloads/Ombro can be written or read back: a path with `..`, an absolute path or an empty
 //! part is refused. Reading back is for a draft edited by hand, sent back to the server on Done.
+//!
+//! On macOS each copy is quarantined (`com.apple.quarantine`), as a browser's downloads are: it
+//! came from another machine, so Gatekeeper checks it before anything in it runs (review M3).
 
 use std::path::{Component, Path, PathBuf};
 
@@ -69,7 +72,41 @@ pub fn save_download(app: tauri::AppHandle, request: Request<'_>) -> Result<Stri
         std::fs::create_dir_all(parent).map_err(|e| format!("couldn't make {}: {e}", parent.display()))?;
     }
     std::fs::write(&path, data).map_err(|e| format!("couldn't save {}: {e}", path.display()))?;
+    quarantine(&path).map_err(|e| format!("couldn't mark {} as downloaded: {e}", path.display()))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// What a browser writes: flags (0081: downloaded, not yet opened), when, and by what.
+#[cfg(target_os = "macos")]
+fn quarantine_value(now: std::time::SystemTime) -> String {
+    let secs = now.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    format!("0081;{secs:08x};Ombro;")
+}
+
+#[cfg(target_os = "macos")]
+fn quarantine(path: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = CString::new(path.as_os_str().as_bytes())?;
+    let value = quarantine_value(std::time::SystemTime::now());
+    // SAFETY: both strings are NUL-terminated and outlive the call; the value is passed with its length.
+    let rc = unsafe {
+        libc::setxattr(
+            c_path.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        )
+    };
+    if rc == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+/// Linux has no quarantine; files that run code are shown, not opened, either way (opening.rs).
+#[cfg(not(target_os = "macos"))]
+fn quarantine(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// The bytes of a copy saved earlier, by its relative path.
@@ -93,6 +130,20 @@ mod tests {
         assert!(inside(b, "/etc/passwd").is_err());
         assert!(inside(b, "").is_err());
         assert!(inside(b, "./a").is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn copies_are_quarantined() {
+        let d = std::env::temp_dir().join(format!("ombro-saved-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("Summary.command");
+        std::fs::write(&f, "echo hi").unwrap();
+        quarantine(&f).unwrap();
+        let out = std::process::Command::new("xattr").args(["-p", "com.apple.quarantine"]).arg(&f).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.starts_with("0081;") && text.trim_end().ends_with(";Ombro;"), "{text}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
