@@ -257,5 +257,6 @@ def offered_tools(tools: list[dict]) -> set[str]:
         f = t["function"]
         names.add(f["name"])
         if f["name"] == "tools__load":
-            names.update(re.findall(r"^- ([A-Za-z0-9_-]+):", f["description"], re.M))
+            for prefix, listed in re.findall(r"^- ([A-Za-z0-9_-]*): (.*)$", f["description"], re.M):
+                names.update(prefix + n.strip() for n in listed.split(",") if n.strip())
     return names

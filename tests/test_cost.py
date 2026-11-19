@@ -80,3 +80,22 @@ def test_outside_tools_are_not_named_twice_in_the_role_prompt():
     assert "composio.gmail.TOOL_7" not in text
     assert "workspace.read, web.search, and the 150 tools of outside services listed in tools__load" in text
     assert "Tools named mcp.* and composio.* reach outside services" in text
+
+
+def test_deferred_tools_are_listed_by_name_only_grouped_by_service():
+    from ombro.tools import Tool, load_tool_schema, load_tools
+
+    boiler = "Reaches outside the organisation, through Gmail, through Composio (an outside service). More."
+    tools = [Tool(name=f"composio.gmail.{n}", description=boiler, parameters={"type": "object"}, handler=None)
+             for n in ("FETCH_EMAILS", "CREATE_EMAIL_DRAFT")]
+    tools.append(Tool(name="mcp.notion.notion-fetch", description="Fetch a page.", parameters={"type": "object"},
+                      handler=None))
+    text = load_tool_schema(tools)["function"]["description"]
+    assert "- composio__gmail__: FETCH_EMAILS, CREATE_EMAIL_DRAFT" in text
+    assert "- mcp__notion__: notion-fetch" in text
+    assert "Reaches outside" not in text  # no per-tool sentence
+    deferred = {t.wire_name: t for t in tools}
+    loaded: set[str] = set()
+    out = load_tools({"names": ["composio__gmail__FETCH_EMAILS", "CREATE_EMAIL_DRAFT", "NOPE"]}, deferred, loaded)
+    assert out["loaded"] == ["composio__gmail__FETCH_EMAILS", "composio__gmail__CREATE_EMAIL_DRAFT"]
+    assert out["unknown"] == ["NOPE"]

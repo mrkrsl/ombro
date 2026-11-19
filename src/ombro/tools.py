@@ -179,38 +179,36 @@ class ToolRegistry:
 # asks for from the next call on.
 
 LOAD_NAME = "tools__load"
-LOAD_SHORT_CHARS = 90  # of each tool's description in the listing
 
 
 def is_deferred(tool: "Tool") -> bool:
     return tool.name.startswith(("mcp.", "composio."))
 
 
-def _first_sentence(text: str) -> str:
-    line = " ".join((text or "").split())
-    for end in (". ", "? ", "! "):
-        if end in line:
-            line = line.split(end, 1)[0] + end.strip()
-            break
-    return line if len(line) <= LOAD_SHORT_CHARS else line[: LOAD_SHORT_CHARS - 1].rstrip() + "…"
-
-
 def load_tool_schema(deferred: list["Tool"]) -> dict[str, Any]:
-    """The one tool that lists the deferred tools and loads the ones asked for."""
-    listing = "\n".join(f"- {t.wire_name}: {_first_sentence(t.description)}" for t in deferred)
+    """The one tool that lists the deferred tools and loads the ones asked for. Names only, grouped by
+    service: a line per tool with its first sentence cost a job with Gmail, Docs, Sheets and Notion
+    connected about 10,000 tokens on every call, and the sentence was mostly the same words (T9)."""
+    groups: dict[str, list[str]] = {}
+    for t in deferred:
+        prefix, _, short = t.wire_name.rpartition("__")
+        groups.setdefault(prefix + "__" if prefix else "", []).append(short)
+    listing = "\n".join(f"- {prefix}: {', '.join(names)}" for prefix, names in groups.items())
     return {
         "type": "function",
         "function": {
             "name": LOAD_NAME,
             "description": (
                 "Load the full definitions of tools that reach outside services, so you can call them. They are "
-                "listed here by name only, to keep each call small; load only the ones the task needs, then call "
-                "them from your next step. Tools you can load:\n" + listing
+                "listed here by name only, grouped by service, to keep each call small; load only the ones the "
+                "task needs, then call them from your next step. A tool's full name is its group and its name "
+                "together, e.g. " + (next(iter(groups)) + next(iter(groups.values()))[0] if groups else "x__y")
+                + ". Tools you can load:\n" + listing
             ),
             "parameters": {
                 "type": "object",
                 "properties": {"names": {"type": "array", "items": {"type": "string"},
-                                         "description": "The tool names to load, as listed."}},
+                                         "description": "The tools to load, by full name."}},
                 "required": ["names"],
             },
         },
@@ -227,6 +225,9 @@ def load_tools(arguments: dict | None, deferred: dict[str, "Tool"], loaded: set[
     done, unknown = [], []
     for n in names:
         key = wire_name(str(n))
+        if key not in deferred:  # the name alone, without its group: fine when only one tool has it
+            ends = [w for w in deferred if w.endswith("__" + key)]
+            key = ends[0] if len(ends) == 1 else key
         if key in deferred:
             loaded.add(key)
             done.append(key)
