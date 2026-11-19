@@ -920,6 +920,7 @@ export interface JobMessage {
 export interface CountsMessage {
   active: number;
   crews_ready: number;
+  running: string[];
   scheduled: number;
   type: "counts";
   unseen: number;
@@ -999,6 +1000,7 @@ export interface SubscribeMessage {
  * via the `definition` "Summary".
  */
 export interface Summary {
+  active_ids: string[];
   counts: Counts;
   crews: CrewRow[];
   lead: LeadView;

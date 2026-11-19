@@ -85,6 +85,7 @@ class JobMessage(TypedDict):
 class CountsMessage(TypedDict):
     type: Literal["counts"]
     active: int
+    running: list[str]  # the active jobs, by id: the sidebar's ring shows from the moment one starts
     scheduled: int
     waiting: int
     unseen: int

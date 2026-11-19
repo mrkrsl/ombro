@@ -992,6 +992,12 @@
         "crews_ready": {
           "type": "integer"
         },
+        "running": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "scheduled": {
           "type": "integer"
         },
@@ -1009,6 +1015,7 @@
       "required": [
         "type",
         "active",
+        "running",
         "scheduled",
         "waiting",
         "unseen",
@@ -3338,6 +3345,12 @@
     },
     "Summary": {
       "properties": {
+        "active_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "counts": {
           "$ref": "#/$defs/Counts"
         },
@@ -3384,6 +3397,7 @@
         "lead",
         "crews",
         "counts",
+        "active_ids",
         "unseen"
       ],
       "title": "Summary",

@@ -1,7 +1,7 @@
 // The inspector (design 06). Before a brief: the chat's own facts (title, mode, the Lead's model,
 // usage) and "Crew: Not assigned". Once the chat has started a job: that job's crew, schedule,
 // approvals, tools, folders, the crew's models and the job's own usage. Below, the background
-// work of every job, with the switch for showing it in the conversation too.
+// work of every job (each line with its time; a finished job's clear a minute on), with the switch for showing it in the conversation too.
 
 import { useEffect, useRef } from "react";
 import { usageText } from "../store/conversation";
@@ -107,6 +107,16 @@ export function Inspector() {
   );
 }
 
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+  "October", "November", "December"];
+
+/** When a background line came in, as "10:28 on 19 November" (local time). */
+export function stamp(at: number): string {
+  const d = new Date(at);
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${hm} on ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
 function Feed() {
   const { feed, prefs, setPref } = useStore();
   const on = prefs?.background_feed !== false;
@@ -125,7 +135,7 @@ function Feed() {
         {feed.length === 0 && <p className="muted">Nothing running just now.</p>}
         {feed.map((f) => (
           <p key={f.key} className={f.status === "running" ? "" : "ended-line"}>
-            {f.status === "running" ? f.line : `${f.name}: ${f.line}`}
+            {stamp(f.at)}: {f.status === "running" ? f.line : `${f.name}: ${f.line}`}
           </p>
         ))}
         <div ref={end} />
