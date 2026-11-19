@@ -285,6 +285,20 @@ Where Ombro runs. Choose a server, then:
 `ombro pair --list` shows the paired devices and how each paired;
 `ombro pair --forget NAME` (or an id, or `--forget-all`) stops one connecting.
 
+Two things to know about pairing:
+
+- **A paired device has full control of that server.** It can change every
+  setting, including adding a tool that runs a program there as Ombro's user
+  (in Docker, inside the container). Pairing a device is like giving it a shell
+  on the server: pair only your own, and check the list now and then.
+- **Pair straight after installing.** The first code doesn't run out, and it is
+  printed in the server's log (and `docker compose logs`) at each start until a
+  device pairs, so anyone who can read those logs first could pair first.
+  Wrong guesses are limited from each address and overall, and a code is thrown
+  away after ten wrong tries; pairing over SSH is never held up by this. The
+  server warns when it listens on every address, or on an address where the
+  key would cross the network unencrypted.
+
 Files a job made come to your computer only when you ask: **Save to this
 computer** copies them into `~/Downloads/Ombro/<job>/`. Shared folders are
 folders on the server. Signing in to an online tool (Notion, say) works as
@@ -297,7 +311,17 @@ the address your browser ends up on.
 
 Requires Docker: on a Mac, Docker Desktop, OrbStack or Colima (the lightest,
 command-line only: `brew install colima docker docker-compose`, then
-`colima start`); on Linux, Docker Engine. Then, in this folder:
+`colima start`); on Linux, Docker Engine. On a machine with AppArmor (Ubuntu
+and Debian, and Colima's VM, which is Ubuntu), load Ombro's container profile
+there once first, from this folder, or the container won't start. With Colima,
+put `colima ssh --` before each `sudo`:
+
+```bash
+sudo cp docker/apparmor-ombro-container /etc/apparmor.d/ombro-container
+sudo apparmor_parser -r /etc/apparmor.d/ombro-container
+```
+
+Then:
 
 ```bash
 docker compose up -d
@@ -315,10 +339,13 @@ under `/home/ombro/shared` (an example is in `compose.yaml`), then share
 
 Code a job writes runs in bubblewrap inside the container, as on any Linux
 server: no internet, and only that job's files, never Ombro's keys. bubblewrap
-needs Linux namespaces, which Docker's default filters block, so `compose.yaml`
-relaxes three of them (`security_opt`) for this one container. Ombro still runs
-as an ordinary user inside it. Remove those lines and everything else works,
-but jobs report that code can't run.
+needs Linux namespaces, which Docker's defaults block, so the container is set
+up for that and kept as tight as it can be while job code still runs: Docker's
+own seccomp and AppArmor profiles with just what bubblewrap needs added
+(`docker/seccomp.json`, `docker/apparmor-ombro-container`), no capabilities, no
+new privileges, and a read-only system with `/tmp` in memory. Ombro runs as an
+ordinary user inside it. Remove the `seccomp`, `apparmor` and `systempaths`
+lines and everything else works, but jobs report that code can't run.
 
 Ombro's image has no browser. `compose.yaml` has one as an optional service,
 a headless Chromium in a container of its own that never sees Ombro's keys or
@@ -330,21 +357,17 @@ docker compose --profile browser up -d
 
 Ombro reaches it by its name on the compose network (`http://browser:9222`),
 with no port published, and gives each job a new, empty profile in it, as on
-the desktop. Without it, web search works but pages can't be read, and
+the desktop. The browser sits behind a small guard on its own network, which
+lets it reach the public internet and Ombro's proxy for pages (see Browser),
+and nothing else: not the machine Docker runs on, your network, Ombro's server
+or a cloud's metadata address. Without it, web search works but pages can't be read, and
 Settings › General says so. On a server without Docker, install Chromium or
 Chrome there and it's used as on the desktop.
 
-If the machine running Docker restricts bubblewrap (Ubuntu 24.04 does), run one more command
-there, once, so jobs can run code: `docker compose exec ombro ombro sandbox`
-says whether it's needed and gives it. Without it, everything else works. A
-container can't do this for itself: it's a setting on the machine Docker runs
-on. With Colima on a Mac, that machine is Colima's VM, which is Ubuntu 24.04:
-
-```bash
-docker compose exec -T ombro ombro sandbox --apparmor | colima ssh -- sudo tee /etc/apparmor.d/ombro-bwrap >/dev/null
-colima ssh -- sudo apparmor_parser -r /etc/apparmor.d/ombro-bwrap
-docker compose restart
-```
+The container profile loaded above also lets bubblewrap make namespaces where
+the machine restricts them (Ubuntu 24.04 does), so in Docker no separate
+`ombro-bwrap` profile is needed. `docker compose exec ombro ombro sandbox` says
+whether jobs can run code.
 
 ## Interviews
 
@@ -742,9 +765,12 @@ Every crew member that reads the web has the browser (a role with
   removed when it ends: none of your sign-ins, cookies or saved passwords, and
   nothing kept from one to the next. A local browser ends with the job, even if
   the job is killed.
-- **Public addresses only.** Every request a page makes, not only the ones the
-  role asks for, is checked, so a page can't reach this computer or your
-  network. Downloads are refused, pop-up dialogs are dismissed, and an address
+- **Public addresses only.** Every connection a page makes, not only the ones
+  the role asks for, goes through Ombro's own proxy, which looks each name up
+  once, checks the address is public and connects to exactly that address. So a
+  page can't reach this computer or your network, even with DNS tricks (a name
+  that answers with a public address, then a private one). Service workers are
+  turned off. Downloads are refused, pop-up dialogs are dismissed, and an address
   a role opens may carry no more than `fetch_max_query` characters after `?`.
 - **Reading is reading.** Only text a person could see is read (text hidden on
   the page isn't), and it is material, like any page (see Untrusted material).
@@ -766,6 +792,15 @@ Every crew member that reads the web has the browser (a role with
   address: a basket or a sign-in isn't carried over. A spec can allow it by
   name (`outward: {allow: [browser.submit]}`), and then it's sent in the job.
   In chat, the Lead asks you there and then instead ("Go ahead?").
+- **After reading your private material.** Once a job or chat has read your
+  private material (shared folders, memory, Notion, email, anything through an
+  MCP, API or Composio tool), the browser limits what it can carry to other
+  sites: about 300 characters typed per site, short addresses with no encoded
+  parts, and nothing that copies what it read. A job is told why and goes on;
+  a form that would break those limits waits for your approval; in chat, you're
+  asked. The report's Browser section lists every site typed into, with what
+  was typed, and every address opened. A job that has only read the web isn't
+  limited this way.
 - **No passwords, no payment details.** Password, card, bank and one-time-code
   fields are never filled in, by a role or on approval. Ombro can't sign in or
   pay for you, by design.
@@ -926,6 +961,14 @@ noticing:
   `fetch_max_query` (200) characters after `?`, so a page cannot have a role
   send data out in a link. The browser reads only visible text, keeps pages
   off this computer and your network, and sends a form only with your approval.
+- Internal changes (editing your own documents, sheets and pages) can still
+  happen after a job or chat has read untrusted material such as a web page or
+  an email. Once it has, Ombro asks before anything that deletes or changes who
+  can see something. Shared folders are backed up for each job, and services
+  such as Notion keep page history. A tool counts as internal only when you've
+  said so, in `tools.md` or by confirming what the server claims when you add
+  it (`ombro tools <server>`, or Check its tools in Settings › Tools); until
+  then it counts as external.
 - Secrets never enter a prompt, code has no network, and nothing is deleted.
 - Common signs of injected instructions ("ignore previous instructions",
   text addressed to an AI, hidden characters, requests to send or delete
