@@ -16,6 +16,7 @@ use std::sync::Mutex;
 use connection::{Connection, Remote};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent, WindowEvent};
+use tauri_plugin_window_state::StateFlags;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::watch;
@@ -217,6 +218,33 @@ fn quit(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// The very first time Ombro opens (no size kept from before): most of the screen, not the config's
+/// fixed size, which looks small on a large display. After that the window-state plugin restores it.
+fn first_window_size(app: &tauri::AppHandle) {
+    use tauri_plugin_window_state::AppHandleExt;
+
+    let Some(window) = app.get_webview_window("main") else { return };
+    let kept = app
+        .path()
+        .app_config_dir()
+        .map(|dir| dir.join(app.filename()))
+        .ok()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .is_some_and(|v| v.get("main").is_some());
+    if kept {
+        return;
+    }
+    let Ok(Some(monitor)) = window.current_monitor() else { return };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area().size.to_logical::<f64>(scale);
+    // 80% of the width and 85% of the height, up to 1600 by 1100, and never under the minimum.
+    let width = (area.width * 0.8).min(1600.0).max(900.0);
+    let height = (area.height * 0.85).min(1100.0).max(520.0);
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    let _ = window.center();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -236,7 +264,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        // Size, place and maximised, kept when the window closes and when Ombro quits. Not whether
+        // it was showing: Ombro always opens with its window.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+                .build(),
+        )
         .setup(|app| {
+            first_window_size(app.handle());
             let (tx, rx) = watch::channel::<Ready>(None);
             app.manage(Serve { tx, ready: rx, child: Mutex::new(None), started: Mutex::new(None) });
             app.manage(Remote::default());

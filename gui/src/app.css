@@ -931,6 +931,18 @@ a:visited {
   text-align: center;
 }
 
+/* The logo above "Starting Ombro…". */
+.startup-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.startup-panel p {
+  margin: 0;
+}
+
 /* -- the inspector (design 06) ------------------------------------------------------ */
 
 .inspector-wrap {

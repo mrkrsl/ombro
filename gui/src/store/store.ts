@@ -60,6 +60,8 @@ export function screenFor(name: string): { screen: Screen; page?: SettingsPage }
 
 type State = {
   status: "starting" | "choose" | "connected" | "lost" | "failed";
+  /** The first load (summary, chats, preferences, set-up) is in: until then the starting panel shows. */
+  loaded: boolean;
   where: Where | null; // where Ombro runs (app only)
   problem: string;
   api: Client | null;
@@ -156,6 +158,31 @@ function systemTheme(): Theme {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+// The theme you chose, kept in this window's own storage as well as in your preferences, so the
+// app opens in it before the server has answered (not in the system's, then a jump).
+const THEME_KEY = "ombro.theme";
+
+export function keptThemeChoice(): ThemeChoice {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === "light" || v === "dark" ? v : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+export function themeFor(choice: ThemeChoice): Theme {
+  return choice === "auto" ? systemTheme() : choice;
+}
+
+function keepThemeChoice(choice: ThemeChoice) {
+  try {
+    localStorage.setItem(THEME_KEY, choice);
+  } catch {
+    // no storage: the preference from the server still applies once it answers
+  }
+}
+
 export const useStore = create<State & Actions>((set, get) => {
   /** Open a new session on serve, follow it on the socket, and put it on screen. */
   async function openSession(body: Record<string, unknown>, lines: Conversation["lines"] = [], stay = false): Promise<string> {
@@ -211,6 +238,7 @@ export const useStore = create<State & Actions>((set, get) => {
 
   return {
     status: "starting",
+    loaded: false,
     where: null,
     problem: "",
     api: null,
@@ -226,8 +254,8 @@ export const useStore = create<State & Actions>((set, get) => {
     conversations: {},
     titles: {},
     sidebar: true,
-    theme: systemTheme(),
-    themeChoice: "auto",
+    theme: themeFor(keptThemeChoice()),
+    themeChoice: keptThemeChoice(),
     settingsPage: "general",
     toasts: [],
     restarting: false,
@@ -322,6 +350,7 @@ export const useStore = create<State & Actions>((set, get) => {
           set({ welcome: true });
           await openSession({ flow: "setup" }, [], true);
         }
+        set({ loaded: true });
       } catch (e) {
         set({ status: "failed", problem: String(e instanceof Error ? e.message : e) });
       }
@@ -342,7 +371,8 @@ export const useStore = create<State & Actions>((set, get) => {
       if (Array.isArray(jobs)) set({ running: jobs.filter((j) => j.active).map((j) => j.job_id) });
       if (prefs) {
         const choice: ThemeChoice = prefs.theme === "light" || prefs.theme === "dark" ? prefs.theme : "auto";
-        set({ themeChoice: choice, theme: choice === "auto" ? systemTheme() : choice });
+        set({ themeChoice: choice, theme: themeFor(choice) });
+        keepThemeChoice(choice);
       }
     },
 
@@ -859,11 +889,15 @@ export const useStore = create<State & Actions>((set, get) => {
 
     setTheme(theme, save = true) {
       set({ theme, themeChoice: save ? theme : get().themeChoice });
-      if (save) void get().api?.put("/preferences", { theme });
+      if (save) {
+        keepThemeChoice(theme);
+        void get().api?.put("/preferences", { theme });
+      }
     },
 
     setThemeChoice(choice) {
-      set({ themeChoice: choice, theme: choice === "auto" ? systemTheme() : choice });
+      set({ themeChoice: choice, theme: themeFor(choice) });
+      keepThemeChoice(choice);
       void get().api?.put("/preferences", { theme: choice });
     },
 
