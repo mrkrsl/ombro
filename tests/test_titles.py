@@ -68,3 +68,36 @@ def test_name_and_theme_preferences(home):
     assert "default_crew" in mdfile.read(home.preferences_config)[0]  # the rest is kept
     set_preference(home, "theme", "purple")
     assert load_preferences(home).theme == "auto"
+
+
+def test_a_sentence_names_a_crew_the_way_it_reads(home):
+    """Testing log T22: a crew titled Ombro is "the Ombro crew", never "the Ombro"; a title that
+    already says it is a group is left alone, never "the Marketing team crew"."""
+    from ombro.home import crew_phrase, crew_phrases, ensure_crew, find_crew
+
+    ensure_crew(home, "ombro", title="Ombro")
+    ensure_crew(home, "marketing", title="Marketing team")
+    ensure_crew(home, "legal", title="The Legal Department")
+    assert crew_phrase(home, "ombro") == "the Ombro crew"
+    assert crew_phrase(home, "marketing") == "the Marketing team"
+    assert crew_phrase(home, "legal") == "the Legal Department"
+    assert crew_phrase(home, "default") == "the Default Crew"
+    assert crew_phrase(home, "ombro", start=True) == "The Ombro crew"
+    assert crew_phrases(home, ["ombro", "marketing"]) == "the Ombro crew and the Marketing team"
+    assert find_crew(home, "the Ombro crew") == "ombro" and find_crew(home, "the marketing team") == "marketing"
+
+
+def test_the_leads_offer_names_the_crew_the_way_it_reads(home):
+    from ombro import fake
+    from ombro.home import ensure_crew
+    from test_chat import ChatSession
+
+    ensure_crew(home, "ombro", title="Ombro")
+    ensure_crew(home, "marketing", title="Marketing team")
+    s = ChatSession(home)
+    s([fake.call("offer_brief", {"summary": "Define the launch plan", "crews": ["ombro"]}), fake.say("Fine."),
+       fake.call("offer_brief", {"summary": "Draft the launch post", "crews": ["marketing"]}), fake.say("Fine.")],
+      ["Define the launch plan", "n", "Draft the launch post", "n"])
+    assert "I can brief it for the Ombro crew: Define the launch plan." in s.output
+    assert "I can brief it for the Marketing team: Draft the launch post." in s.output
+    assert "the Marketing team crew" not in s.output

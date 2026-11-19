@@ -31,7 +31,7 @@ from typing import Any, Callable
 from ombro import keys, material, mdfile, memory, prompts, jobs, skills
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
-from ombro.home import Home, crew_title, find_crew, words_title
+from ombro.home import Home, crew_phrase, crew_phrases, crew_title, find_crew, words_title
 from ombro.ui import (UI, ChatCleared, PastTurn, ConsoleUI, Failure, Field, LeadSaid, ModeChanged, Note, Option,
                       SetAside, Usage)
 from ombro.journal import utc_now
@@ -771,7 +771,7 @@ class Chat:
             latest = jobs.job_time(all_jobs[-1])[:8] if all_jobs else ""
             when = f", latest {latest[:4]}-{latest[4:6]}-{latest[6:8]}" if latest else ""
             mark = ", the default crew" if c == self.crew else ""
-            lines.append(f"- the {crew_title(self.home, c)} (crew name `{c}` for tools{mark}): "
+            lines.append(f"- {crew_phrase(self.home, c)} (crew name `{c}` for tools{mark}): "
                          f"{meta.get('description', '')} Roles: {', '.join(roles) or 'none'}. "
                          f"Jobs: {len(all_jobs)}{when}.")
         lines.append("Speak of each crew by its title, never by its crew name.")
@@ -874,7 +874,7 @@ class Chat:
 
     def start(self) -> None:
         self.ui.say(
-            f"Chat with Ombro Lead (default crew: the {crew_title(self.home, self.crew)}). Mode: Chat. Nothing "
+            f"Chat with Ombro Lead (default crew: {crew_phrase(self.home, self.crew)}). Mode: Chat. Nothing "
             f"changes unless you say yes (a file in a shared folder, or a /remember). /brief turns this into a task "
             f"brief, /help lists commands, /quit ends. "
             f"(Up to {format_tokens(self.limits.max_tokens)} tokens.)\n"
@@ -1485,7 +1485,7 @@ class Chat:
         if revise and not crews:
             had = mdfile.read(self.home.specs_dir / f"{revise}.md")[0].get("crews") or []
             crews = [str(c) for c in ([had] if isinstance(had, str) else had) if str(c) in self.home.crews()]
-        which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
+        which = f" for {crew_phrases(self.home, crews)}" if crews else ""
         summary = summary.rstrip(".")
         if revise:
             self._lead_says(f"I can open your saved spec '{revise}' and change it: {summary}.", level="lead")
@@ -1508,7 +1508,7 @@ class Chat:
         title = " ".join(str(args.get("title") or "").split()) or None
         summary = _short(args.get("summary") or "", 300).rstrip(".")
         who = f"a {title}" if title else "a new crew member"
-        self._lead_says(f"I can set up {who} for the {crew_title(self.home, crew)}: {summary}.", level="lead")
+        self._lead_says(f"I can set up {who} for {crew_phrase(self.home, crew)}: {summary}.", level="lead")
         if self.ui.yes("start_role", "Shall we set it up now? You'll see it before anything is saved.", True,
                        mode="Chat", aside=True):
             self.transcript.note(f"The Lead offered a new crew member ({summary}); you accepted.")
@@ -1526,7 +1526,7 @@ class Chat:
         the list of chats to come back to, and again once the interview has ended, however it ended."""
         from ombro.interviews import RolePurpose, role_added, start
 
-        self.transcript.note(f"Role interview for the {crew_title(self.home, crew)}.")
+        self.transcript.note(f"Role interview for {crew_phrase(self.home, crew)}.")
         if not self.title:
             self.set_title(f"New crew member: {title}" if title else "New crew member", "ombro")  # saves
         else:
@@ -1594,7 +1594,7 @@ class Chat:
         crews = [str(c) for c in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else [])
                  if str(c) in self.home.crews()]
         folder_access = _offered_folders(args.get("folders")) or self._live_folders(task, write_to)
-        which = f" for the {' and the '.join(crew_title(self.home, c) for c in crews)}" if crews else ""
+        which = f" for {crew_phrases(self.home, crews)}" if crews else ""
         self._lead_says(f"This sounds like work{which}: {summary}.", level="lead")
         # Reporting back is Ombro's main way of working; live is the other choice, never pushed.
         answer = self.ui.ask(Field(
@@ -1775,7 +1775,7 @@ class Chat:
         entry = memory.remember_entry(text, self.today_date)
         who = "The Lead offers to remember this" if offered else "To remember"
         while True:
-            self.ui.say(f"{who} in the {crew_title(self.home, crew)}'s notes (From you):\n  {entry}", spaced=True)
+            self.ui.say(f"{who} in {crew_phrase(self.home, crew)}'s notes (From you):\n  {entry}", spaced=True)
             answer = self.ui.ask(Field(
                 "remember", "", "choice", mode="Chat",
                 options=[Option("y", "yes"), Option("e", "edit the wording", ("edit",)), Option("n", "no")],
@@ -1810,7 +1810,7 @@ class Chat:
                 return {"status": "saved", "crew": crew, "entry": entry}
             yours = notes.your_entries()
             self.ui.say(
-                f"That would make the {crew_title(self.home, crew)}'s notes.md {new.size:,} characters, "
+                f"That would make {crew_phrase(self.home, crew)}'s notes.md {new.size:,} characters, "
                 f"over the cap of {cap:,}. "
                 f"Your part is {len(notes.from_you):,} characters and the Lead's is {len(notes.from_jobs):,}."
             )

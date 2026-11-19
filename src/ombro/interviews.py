@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ombro import mdfile, prompts
-from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, LEAD_SOUL_FILE, Home, crew_title, soul_with, tidy_title, \
+from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, LEAD_SOUL_FILE, Home, crew_phrase, crew_phrases, crew_title, soul_with, tidy_title, \
     without_character
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
 from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role, tools_text
@@ -87,7 +87,7 @@ def crews_roster(home: Home, limits: Limits) -> str:
                 meta = mdfile.read(home.crew_dir(crew) / "crew.md")[0]
         except mdfile.FrontMatterError:
             meta = {}
-        out.append(f"Crew {crew} (called the {crew_title(home, crew)}; use that title when talking to the user): "
+        out.append(f"Crew {crew} (called {crew_phrase(home, crew)}; use that title when talking to the user): "
                    f"{str(meta.get('description') or '').strip() or '(no description)'}")
         try:
             roles = crew_roles(home, crew, limits)
@@ -229,8 +229,8 @@ class RolePurpose(Purpose):
         self.models = list(load_models(home))
 
     def opening(self) -> str:
-        start = (f"The user wants to add a role titled {self.name!r} to the {crew_title(self.home, self.crew)}."
-                 if self.name else f"The user wants to add a role to the {crew_title(self.home, self.crew)}.")
+        start = (f"The user wants to add a role titled {self.name!r} to {crew_phrase(self.home, self.crew)}."
+                 if self.name else f"The user wants to add a role to {crew_phrase(self.home, self.crew)}.")
         if self.task:
             return (f"{start}\n\n{self.task}\n\nBegin the interview. Count as covered what is already "
                     "answered above, and ask only about the rest.")
@@ -479,7 +479,7 @@ class BriefPurpose(Purpose):
             ("Crews and their roles (a job may brief roles only in the crews its spec names)",
              crews_roster(self.home, L)
              + (f"\nThe user started this brief for: {', '.join(self.suggested)}." if self.suggested else "")
-             + f"\nThe default crew is {self.crew} (the {crew_title(self.home, self.crew)})."),
+             + f"\nThe default crew is {self.crew} ({crew_phrase(self.home, self.crew)})."),
             ("Limits a job will have",
              f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.job_timeout)}\n"
              f"- tokens: {format_tokens(L.max_tokens)}"),
@@ -766,7 +766,7 @@ class BriefPurpose(Purpose):
             crews = jobs.spec_crews(self.home, meta)
         except SetupError as e:
             raise ProposalError(str(e)) from None
-        warnings.append("the job may brief roles in the " + " and the ".join(crew_title(self.home, c) for c in crews)
+        warnings.append("the job may brief roles in " + crew_phrases(self.home, crews)
                         + ("" if meta.get("crews") else " (the default crew: the spec names none)") + ".")
         if meta.get("roles"):
             try:
@@ -899,5 +899,5 @@ def role_added(home: Home, ui, crew: str, outcome) -> None:
     name = outcome.proposal.data["name"]
     title = _role_title(home, crew, name)
     offer_role_model(home, ui, f"{crew}/{name}", title)
-    ui.say(f"Thanks, all saved. Your new {title} is ready to take on jobs in the {crew_title(home, crew)}.",
+    ui.say(f"Thanks, all saved. Your new {title} is ready to take on jobs in {crew_phrase(home, crew)}.",
            spaced=True, level="lead")

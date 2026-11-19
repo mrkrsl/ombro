@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ombro import jobs, mdfile
-from ombro.home import Home, crew_title
+from ombro.home import Home, crew_phrase
 from ombro.settings import SetupError, load_preferences, set_preference
 
 
@@ -72,7 +72,7 @@ def check_crew(home: Home, crew: str) -> Check:
     c = Check()
     running = running_jobs(home, crew)
     if running:
-        c.blocked = (f"A job of the {crew_title(home, crew)} is still running ({', '.join(running)}). "
+        c.blocked = (f"A job of {crew_phrase(home, crew)} is still running ({', '.join(running)}). "
                      "Stop it, or wait for it to finish, then delete the crew.")
     elif len(home.crews()) == 1:
         c.blocked = "It's your only crew. Ombro needs at least one; add another crew first."
@@ -86,7 +86,7 @@ def check_crew(home: Home, crew: str) -> Check:
                           f"({', '.join(specs[:5])}{'…' if len(specs) > 5 else ''}).")
     if crew == load_preferences(home).default_crew and len(home.crews()) > 1:
         other = sorted(c for c in home.crews() if c != crew)[0]
-        c.warnings.append(f"It's your default crew; the {crew_title(home, other)} becomes the default.")
+        c.warnings.append(f"It's your default crew; {crew_phrase(home, other)} becomes the default.")
     return c
 
 
@@ -120,7 +120,7 @@ def check_role(home: Home, crew: str, role: str) -> Check:
     c = Check()
     running = running_jobs(home, crew)
     if running:
-        c.blocked = (f"A job of the {crew_title(home, crew)} is still running ({', '.join(running)}). "
+        c.blocked = (f"A job of {crew_phrase(home, crew)} is still running ({', '.join(running)}). "
                      "Stop it, or wait for it to finish, then delete the role.")
     return c
 
