@@ -47,7 +47,6 @@ LEGACY_VERSION = "2025-06-18"
 PROTOCOL_VERSION = LEGACY_VERSION  # what the legacy handshake asks for
 PROBE_TIMEOUT = 10.0  # a stdio server that says nothing this long is treated as legacy
 UNSUPPORTED_VERSION = -32022
-MODERN_ERRORS = {-32020, -32021, -32022}
 _HEADER_TOKEN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 START_TIMEOUT = 30.0
 CALL_TIMEOUT = 60.0

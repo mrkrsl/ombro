@@ -39,7 +39,6 @@ from ombro.tools import Tool, ToolContext, ToolError
 
 BASE = "https://backend.composio.dev/api/v3.1"
 KEY_NAME = "COMPOSIO_API_KEY"
-DASHBOARD = "https://dashboard.composio.dev"
 KEYS_PAGE = "https://dashboard.composio.dev/~/project/settings/api-keys"  # a project's API Keys tab
 # Where "Connect more in Composio" leads: the Toolkits page of whichever project the user has open.
 TOOLKITS_PAGE = "https://dashboard.composio.dev/~/project/toolkits"

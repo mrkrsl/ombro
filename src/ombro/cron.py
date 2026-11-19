@@ -129,21 +129,11 @@ def slot_name(when: datetime) -> str:
     return when.strftime(SLOT_FORMAT)
 
 
-def parse_slot(name: str) -> datetime:
-    return datetime.strptime(name, SLOT_FORMAT)
-
-
 def to_local(ts: float, tz: tzinfo | None = None) -> datetime:
     """A timestamp as naive local wall-clock time (the system's zone unless tz is given)."""
     if tz is None:
         return datetime.fromtimestamp(ts)
     return datetime.fromtimestamp(ts, tz).replace(tzinfo=None)
-
-
-def to_timestamp(when: datetime, tz: tzinfo | None = None) -> float:
-    if tz is None:
-        return when.timestamp()
-    return when.replace(tzinfo=tz).timestamp()
 
 
 def slots_between(cron: Cron, start: float, end: float, tz: tzinfo | None = None) -> list[tuple[datetime, float]]:

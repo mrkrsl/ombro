@@ -19,7 +19,6 @@ from ombro.ui import UI, ConsoleUI, Failure, Field, Form, Option, Progress
 
 ENDPOINTS = [*PRESETS,
              {"label": "Another OpenAI-compatible endpoint", "endpoint": None, "model": None, "key": None}]
-SEARCH_KEY = "FIRECRAWL_API_KEY"
 # How Ombro works, in the Lead's words: said at the end of set-up, and in the first chat.
 WELCOME_WORK = ("Okay. One thing worth knowing: most of what I do happens while you're away. You brief me, "
                 "the crew works in the background, and I report back. When you'd rather watch, we can do it "
@@ -332,18 +331,6 @@ def _offer_search_key(home: Home, ui: UI) -> None:
         provider, provider)
     ui.say(f"Web search uses {where} for now. You'll probably want to add a search provider of your own, or "
            "other tools such as email or documents, later on: /tools shows and adds them.", level="lead")
-
-
-def set_tool_providers(home: Home, providers: dict[str, str]) -> None:
-    """Set the provider for some tools in tools.md, keeping everything else in it."""
-    meta, body = mdfile.read(home.tools) if home.tools.is_file() else ({}, "")
-    tools = meta.get("tools") if isinstance(meta.get("tools"), dict) else {}
-    for tool, provider in providers.items():
-        entry = tools.get(tool) if isinstance(tools.get(tool), dict) else {}
-        entry["provider"] = provider
-        tools[tool] = entry
-    meta["tools"] = tools
-    mdfile.write(home.tools, meta, body)
 
 
 def _is_default_setup(home: Home) -> bool:

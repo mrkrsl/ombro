@@ -36,7 +36,6 @@ from ombro.ui import (UI, ChatCleared, Event, Failure, Field, JobEnded, JobProgr
 
 # The slash commands, as every interface lists them.
 SLASH = [(c.name, c.help) for c in core_commands.COMMANDS]
-CHAT_COMMANDS = ("/chat", "/new", "/chats", "/rename", "/brief", "/remember")  # handled by chat itself
 TUI_COMMANDS = ("/start", "/jobs", "/report", "/stop", "/open", "/approvals", "/schedule", "/crew", "/role", "/model",
                 "/models",
                 "/keys", "/folder", "/folders", "/limits",

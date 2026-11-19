@@ -112,11 +112,6 @@ def add_plan_models(home: Home, slugs: list[str]) -> list[str]:
     return names
 
 
-def plan_names(home: Home) -> list[str]:
-    _, _, models = _read(home)
-    return [n for n, e in models.items() if isinstance(e, dict) and e.get("api") == "chatgpt"]
-
-
 def set_default(home: Home, name: str) -> None:
     """Point `default` at a model entry. A default written out in full is first kept
     under its own name, so nothing it held is lost."""

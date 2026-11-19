@@ -64,10 +64,6 @@ def _dir(job_dir: Path) -> Path:
     return Path(job_dir) / "live"
 
 
-def is_live(meta: dict[str, Any]) -> bool:
-    return bool(meta.get("live"))
-
-
 # -- the job's side -------------------------------------------------------------------
 
 
