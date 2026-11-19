@@ -72,7 +72,6 @@ services:
     restart: unless-stopped
     init: true
     environment:
-      OMBRO_SERVICE: ombro
       OMBRO_PROXY_PORTS: "9300:9399"
     cap_drop: [ALL]
     cap_add: [NET_ADMIN]
