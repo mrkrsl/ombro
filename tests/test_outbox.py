@@ -271,6 +271,18 @@ def staged(job, record):
     return job
 
 
+def test_waiting_lists_the_newest_first(home, staged, job):
+    """Approvals read newest first, everywhere they are listed: a later job's before an earlier
+    job's, and within a job the later action first (staging times are only to the second)."""
+    older = outbox.actions(staged.job_dir)
+    for a in older:  # the first job's actions were staged long ago
+        meta, body = mdfile.read(a.path)
+        mdfile.write(a.path, {**meta, "staged_at": "2000-01-01T00:00:00Z"}, body)
+    job(script(post("four"), post("five")))
+    newer = outbox.actions(job.job_dir)
+    assert [a.long_ref for a in outbox.waiting(home)] == [a.long_ref for a in [*newer[::-1], *older[::-1]]]
+
+
 def test_approve_runs_only_the_named_action_once(home, staged, record):
     a1, a2, a3, hook = outbox.actions(staged.job_dir)
     done = outbox.approve(home, a2)
@@ -412,7 +424,7 @@ def test_an_action_left_executing_becomes_uncertain_and_is_settled_by_you(home, 
     a1 = outbox.actions(staged.job_dir)[0]
     meta, body = mdfile.read(a1.path)
     mdfile.write(a1.path, {**meta, "status": "executing", "executing_pid": 999999}, body)
-    assert [a.status for a in outbox.waiting(home)][:1] == ["uncertain"]
+    assert [a.status for a in outbox.waiting(home)][-1:] == ["uncertain"]  # the oldest, so last
     a1 = outbox.load(a1.path)
     with pytest.raises(outbox.OutboxError):
         outbox.approve(home, a1)
@@ -586,7 +598,7 @@ def test_whole_flow_on_the_command_line(home, record):
     r = ombro(home, "start", "--spec", str(spec))
     assert r.returncode == 0, r.stderr
     assert "Waiting for your approval (2)" in r.stdout and fake_sent(record) == []
-    first, second = outbox.waiting(home)
+    second, first = outbox.waiting(home)  # newest first
     assert ombro(home, "approvals", "approve", first.ref, "--yes").returncode == 0
     assert ombro(home, "approvals", "decline", second.ref, "--yes").returncode == 0
     assert [e["arguments"]["text"] for e in fake_sent(record)] == ["first"]
