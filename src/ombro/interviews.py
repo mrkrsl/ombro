@@ -206,7 +206,7 @@ class SetupPurpose(Purpose):
 class RolePurpose(Purpose):
     kind = "role"
     title = "Role interview"
-    intro = ("Role interview: a team member is reused across many tasks, so describe the kind of work you want "
+    intro = ("A team member is reused across many tasks, so describe the kind of work you want "
              "them to do, not one particular task. It's usually 3 to 5 questions. Type /quit to stop; nothing is "
              "written unless you accept it.")
     proposal_intro = ("Okay, here's my definition of the role you've described. Have a read through. You can "
@@ -393,10 +393,10 @@ SPEC_FIELDS = [
 class BriefPurpose(Purpose):
     kind = "brief"
     title = "Task brief: the Lead will ask about one task and write a spec for it."
-    intro = ("Task brief: I'll ask you about this one piece of work, then write a spec the crew can work from "
+    intro = ("I'll ask you about this one piece of work, then write a spec the crew can work from "
              "without needing to ask you anything. It's usually a few questions, fewer when a skill already says "
              "how. Type /quit to stop; nothing is written unless you accept it.")
-    stopped = "I've stopped the interview. Nothing was written, and we're back in Chat mode."
+    stopped = "Okay, I've stopped there. Nothing was written."
     proposal_intro = ("Here's the spec I've written for this task. Have a read through. You can then choose one "
                       "of the options at the end to save it, ask me to change it, or edit it yourself.")
     rules = prompts.BRIEF_INTERVIEW

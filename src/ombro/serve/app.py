@@ -526,6 +526,17 @@ def _action_routes(s: Serve) -> list[Route]:
     def restore(r: Request) -> Any:
         return {"restored": jobs.restore_job(jobs.find_job(home, r.path_params["job_id"]))}
 
+    def archive_chat(r: Request) -> Any:
+        """Delete a chat from the list: it moves to the chats folder's Archive/, unchanged. A session
+        that has it open ends first, so it is saved as it is and not written back to the list."""
+        name = r.path_params["name"]
+        for live in list(s.sessions.by_id.values()):
+            chat = live.session.chat
+            if chat is not None and chat.path.stem == name and chat.path.parent == home.chats_dir:
+                s.sessions.remove(live.id)
+        moved = views.archive_chat(home, name)
+        return {"moved_to": str(moved), "chats": views.chat_list(home)}
+
     def add_crew(r: Request, data: dict[str, Any]) -> Any:
         from ombro.home import ensure_crew
         from ombro.roles import NAME
@@ -655,6 +666,7 @@ def _action_routes(s: Serve) -> list[Route]:
         Route("/jobs/{job_id}/restore", _handler(restore, after=after), methods=["POST"]),
         Route("/schedules/{name}/enable", _handler(schedule(True), after=after), methods=["POST"]),
         Route("/schedules/{name}/disable", _handler(schedule(False), after=after), methods=["POST"]),
+        Route("/chats/{name}/archive", _handler(archive_chat), methods=["POST"]),
         Route("/crews", _handler(add_crew, status=201, with_body=True, after=after), methods=["POST"]),
         Route("/crews/{name}", _handler(retitle_crew, with_body=True), methods=["PUT"]),
         Route("/preferences", _handler(preferences, with_body=True), methods=["PUT"]),

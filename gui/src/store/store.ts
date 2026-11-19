@@ -114,6 +114,8 @@ type Actions = {
   interrupt: () => Promise<void>;
   doneEditing: () => Promise<void>;
   openChat: (name: string) => Promise<void>;
+  /** Delete a chat from the list: the server moves it to the chats folder's Archive/, unchanged. */
+  deleteChat: (name: string) => Promise<void>;
   setMode: (mode: "Chat" | "Brief") => Promise<void>;
   toggleSidebar: () => void;
   toggleInspector: () => void;
@@ -804,6 +806,27 @@ export const useStore = create<State & Actions>((set, get) => {
         const row = get().chats.find((c) => c.name === name);
         if (row) set((s) => ({ titles: { ...s.titles, [id]: row.title } }));
       } catch (e) {
+        get().say(e instanceof Error ? e.message : String(e), "error");
+      }
+    },
+
+    async deleteChat(name) {
+      const { api, chatOn, screen } = get();
+      if (!api) return;
+      const open = Object.values(get().conversations).filter((c) => chatOf(c.id) === name).map((c) => c.id);
+      const wasOn = chatOn === name || (screen === "chat" && open.includes(get().current ?? ""));
+      // Off the list at once; the server's list replaces it when it answers.
+      set((s) => ({ chats: s.chats.filter((c) => c.name !== name) }));
+      try {
+        const r = await api.post<{ moved_to: string; chats: ChatRow[] }>(`/chats/${encodeURIComponent(name)}/archive`);
+        for (const id of open) delete chatNames[id];
+        set({ chats: r.chats });
+        if (wasOn) {
+          get().say("");
+          set({ screen: "home", current: null, chatOn: null, report: null, opener: null });
+        }
+      } catch (e) {
+        void api.get<ChatRow[]>("/chats").then((chats) => set({ chats }), () => undefined);
         get().say(e instanceof Error ? e.message : String(e), "error");
       }
     },

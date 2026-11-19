@@ -115,13 +115,13 @@ OFFERS = ("offer_brief", "offer_work", "offer_remember", "offer_start", "offer_s
           "offer_schedule")
 
 HELP = """\
-Chat mode is a conversation with the Lead. It can look at every crew's reports,
+A chat is a conversation with the Lead. It can look at every crew's reports,
 notes, specs and deliverables, search the web, and work in your shared folders.
 It changes a file only after you say yes.
 
-  /brief [@crew] [text]     brief a task (Brief mode); the chat so far is its starting point
+  /brief [@crew] [text]     brief a task; the chat so far is its starting point
   /live [@crew] <text>      do some work live, here: the crew starts at once and reports in this chat
-  /chat                     back to Chat mode from a brief (nothing is written)
+  /chat                     stop a brief and keep chatting (nothing is written)
   /new                      save this chat and start a fresh one; nothing carries over
   /chats                    your past chats, newest first; reopen one and carry on
   /rename title             give this chat a title of your own
@@ -966,7 +966,7 @@ class Chat:
         if word == "/help":
             self.ui.say(HELP)
         elif word == "/chat":
-            self.ui.say("You are in Chat mode.")
+            self.ui.say("There's no brief open; we're just chatting.")
         elif word == "/new":
             self.new_chat()
         elif word == "/rename":
@@ -1732,9 +1732,16 @@ class Chat:
         self._lead_says(f"This sounds like work{which}: {summary}.", level="lead")
         # Reporting back is Ombro's main way of working; live is the other choice, never pushed.
         answer = self.ui.ask(Field(
-            "how", "Shall I take this away and report back, or shall we do it live, here?", "choice",
+            "how", "Shall I take this away and report back, shall we do it live, here, or shall we keep "
+                   "chatting for now?", "choice",
             default="report", mode="Chat", other="not now", pattern=NOT_NOW, aside=True,
-            options=[Option("report", "Report back"), Option("live", "Do it live")]))
+            options=[Option("report", "Report back"), Option("live", "Do it live"),
+                     Option("chat", "Let's keep chatting", ("keep chatting", "chat", "continue chatting"))]))
+        if answer == "chat":
+            self.transcript.note(f"The Lead offered work ({summary}); you chose to keep chatting.")
+            return ({"status": "the user chose to keep chatting rather than start any work yet. Carry on the "
+                               "conversation about it, without starting or briefing anything; do not offer the "
+                               "work again until they ask for it or the task clearly changes."}, None)
         if answer == "live" and task:
             self.transcript.note(f"The Lead offered work ({summary}); you chose to do it live.")
             return ({"status": "the user chose a live job; it starts now and its steps show in the chat, so do "
@@ -2105,8 +2112,7 @@ class Chat:
 
         self.mode = "Brief"
         which = f" (starting from crew{'s' if len(crews) > 1 else ''} {', '.join(crews)})" if crews else ""
-        self.ui.show(ModeChanged("Brief", f"── Brief mode: a task interview{which}. /chat goes back to Chat "
-                                          "with nothing written. ──"))
+        self.ui.show(ModeChanged("Brief"))  # one conversation: the brief carries on in the chat, unannounced
         self.transcript.note(f"Switched to Brief mode{which}.")
         try:
             outcome = start(
@@ -2143,9 +2149,8 @@ class Chat:
             self.pending_note += "[Ombro note: the user left Brief mode; no spec was saved.]\n"
             if outcome is not None:
                 self.pending_note += self.interview_back(outcome, "the brief")
-        # Stopped by you: the Lead has said so, back in Chat mode included, in one line.
-        stopped = outcome is not None and outcome.status == "quit"
-        self.ui.show(ModeChanged("Chat", "" if stopped else "Back in Chat mode."))
+        # One conversation: the chat carries on, with no line to say so.
+        self.ui.show(ModeChanged("Chat"))
 
     # -- transcript --------------------------------------------------------
 

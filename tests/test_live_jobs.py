@@ -55,10 +55,20 @@ def test_the_lead_asks_report_back_or_live_and_report_back_starts_a_brief(home):
     chat = ChatSession(home)
     chat([offer(), fake.say("Fine.")], ["Find me bakeries in Lowtown.", "report", "/quit"])
     asked = chat.answers.asked
-    how = next(a for a in asked if "take this away and report back, or shall we do it live" in a)
+    how = next(a for a in asked if "take this away and report back, shall we do it live, here, or shall we keep chatting" in a)
     assert "I'd" not in how  # the Lead doesn't push either way; report back is the default
     assert any(a.startswith("[Brief]") for a in asked)  # the brief interview began
     assert not list(home.jobs_dir.iterdir())  # nothing started yet
+
+
+def test_keep_chatting_starts_nothing_and_the_chat_carries_on(home):
+    chat = ChatSession(home)
+    chat([offer(), fake.say("Sure, let's talk it through.")],
+         ["Find me bakeries in Lowtown.", "keep chatting", "/quit"])
+    assert not list(home.jobs_dir.iterdir())
+    assert not any(a.startswith("[Brief]") for a in chat.answers.asked)  # no brief either
+    assert any("keep chatting" in r.get("status", "") for r in chat.tool_replies())
+    assert "Sure, let's talk it through." in chat.output
 
 
 def test_not_now_starts_nothing(home):

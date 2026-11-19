@@ -206,7 +206,7 @@ def test_writing_a_document_is_offered_as_work_not_written(chat, user):
     ], ["Write a one-page summary of the niches and save it in the niches folder.", "not now"])
     assert not (user / "Documents" / "Niches" / "summary.md").exists()
     asked = chat.answers.asked
-    assert any("take this away and report back, or shall we do it live" in a for a in asked)
+    assert any("take this away and report back, shall we do it live, here, or shall we keep chatting" in a for a in asked)
     assert not any("Go ahead?" in a for a in asked)
     (reply,) = chat.tool_replies()
     assert "folders.write was not run" in reply["note"] and "Do not call folders.write" in reply["note"]
