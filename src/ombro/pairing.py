@@ -11,11 +11,12 @@ pairing, in one of two ways:
   Later codes come from `ombro pair` and last a day.
 
 Codes are short (four characters, such as `34FA`) so they're easy to read off a log and type.
-Guessing is capped instead, without ever throwing a code away (so nobody who can reach the
-server can use up the code): after MAX_WRONG wrong tries in a minute from one address, that
-address is refused for a minute, and after MAX_WRONG_PER_HOUR wrong tries from anywhere, every
-code is refused until the hour is up. That allows a few thousand guesses a day among about 810,000
-codes. Pairing over SSH (`ombro pair --device`) is never held up by any of this.
+Guessing is capped three ways: after MAX_WRONG wrong tries in a minute from one address, that
+address is refused for a minute; after MAX_WRONG_PER_HOUR wrong tries from anywhere, every code is
+refused until the hour is up; and after MAX_WRONG_PER_CODE wrong tries in total a code is thrown
+away (a new first code is made at the next start, or run `ombro pair`). Someone else's guesses can
+therefore make you pair another way, which is the lesser harm. Pairing over SSH
+(`ombro pair --device`) is never held up by any of this.
 
 Everything is kept in secrets/devices.json (owner-only). Device tokens are kept only as hashes,
 so the file can't be used to connect. The code is kept as it is, since serve prints it at each
@@ -47,6 +48,7 @@ CODE_GROUP = 4
 LATER_CODE_SECONDS = 24 * 3600
 MAX_WRONG = 5  # from one address in a minute, then that address is refused for a minute
 LOCKOUT_SECONDS = 60
+MAX_WRONG_PER_CODE = 10  # in total, then the code is thrown away
 MAX_WRONG_PER_HOUR = 100  # from anywhere, then every address is refused until the hour is up
 HOUR_SECONDS = 3600
 MAX_CLIENTS = 1000  # addresses remembered at once
@@ -250,7 +252,7 @@ class Devices:
     def pair(self, code: str, name: str, client: str = "") -> tuple[Device, str]:
         """Swap a code for a new device and its token. A code works once. After MAX_WRONG wrong
         codes in a minute from one address, that address is refused for a minute, right codes
-        included; a wrong code never uses the code up."""
+        included. MAX_WRONG_PER_CODE wrong codes in total throw the code away."""
         if self.locked_out(client):
             raise PairingError("Too many wrong codes, from this address or from several. Wait a while, "
                                "then try again. If you didn't make these tries, someone else may be "
@@ -262,6 +264,15 @@ class Devices:
             given = normal_code(code).encode()
             if live is None or not secrets.compare_digest(given, normal_code(live["code"]).encode()):
                 self._note_wrong(client)
+                if live is not None:
+                    live["wrong"] = int(live.get("wrong") or 0) + 1
+                    if live["wrong"] >= MAX_WRONG_PER_CODE:
+                        data["code"] = None  # thrown away; the change is written as the error leaves
+                        self._write(data)
+                        raise PairingError("Too many wrong codes, so that code no longer works. Someone may "
+                                           "be guessing codes. Run `ombro pair` on the server for a new "
+                                           "one, or pair over SSH.")
+                    self._write(data)
                 raise PairingError("That code isn't right, or it has run out. "
                                    "Run `ombro pair` on the server for a new one.")
             data["code"] = None

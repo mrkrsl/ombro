@@ -84,22 +84,37 @@ def test_wrong_codes_lock_that_address_for_a_minute(home):
     assert not d.locked_out("10.0.0.1")
 
 
-def test_wrong_tries_never_throw_the_code_away(home):
+def test_a_code_is_thrown_away_after_ten_wrong_tries(home):
     clock = Clock()
     d = Devices(home, clock=clock)
     code = d.first_code()
     wrong = "2222" if code != "2222" else "3333"
-    for i in range(pairing.MAX_WRONG_PER_HOUR - 1):
-        clock.t += 20  # slowly enough that no address is locked
+    for i in range(pairing.MAX_WRONG_PER_CODE - 1):
+        clock.t += pairing.LOCKOUT_SECONDS  # slowly, so no address is locked
         with pytest.raises(PairingError, match="isn't right"):
             d.pair(wrong, "x", f"10.0.{i}.1")
-    clock.t += 1
-    with pytest.raises(PairingError, match="isn't right"):
+    clock.t += pairing.LOCKOUT_SECONDS
+    with pytest.raises(PairingError, match="someone may be guessing|Someone may be guessing"):
         d.pair(wrong, "x", "10.9.9.9")
-    with pytest.raises(PairingError, match="Too many"):  # everyone waits for the hour
+    with pytest.raises(PairingError, match="isn't right"):
+        d.pair(code, "x", "10.8.8.8")  # the right code, too late
+    assert Devices(home, clock=clock).first_code() != code  # a new one at the next start
+
+
+def test_the_hourly_cap_refuses_everyone_until_the_hour_is_up(home, monkeypatch):
+    monkeypatch.setattr(pairing, "MAX_WRONG_PER_CODE", 10_000)
+    clock = Clock()
+    d = Devices(home, clock=clock)
+    code = d.first_code()
+    wrong = "2222" if code != "2222" else "3333"
+    for i in range(pairing.MAX_WRONG_PER_HOUR):
+        clock.t += 20
+        with pytest.raises(PairingError, match="isn't right"):
+            d.pair(wrong, "x", f"10.0.{i}.1")
+    with pytest.raises(PairingError, match="Too many"):
         d.pair(code, "x", "10.8.8.8")
     clock.t += pairing.HOUR_SECONDS + 1
-    assert d.pair(code, "x", "10.8.8.8")[1]  # the code was still there
+    assert d.pair(code, "x", "10.8.8.8")[1]
 
 
 def test_pair_refuses_a_large_body_unread(home):
