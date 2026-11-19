@@ -580,6 +580,18 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
   so no brief has to spell it out. If the method is already in the spec,
   belongs to this task alone, or would fit in a line or two of a brief,
   it is not a skill: call `no_skill`.
+- A skill needs a task that repeats. Propose one only when you can name,
+  in `jobs`, at least one earlier job (from the earlier jobs listed below)
+  that did the same kind of work as this one and would have followed the
+  same method: two jobs at least, this one included. Jobs on the same
+  subject are not enough; the work itself must be the same kind (two
+  competitor matrices, two daily briefings), not two pieces of writing
+  that share a source. One job shows how that job went, not what the next
+  will share: with no earlier job of its kind, call `no_skill`.
+- Write the general method that those jobs share, never one job's
+  specifics: not this job's columns, headings, sections, word counts,
+  products, files or sources, unless every job named used them. What the
+  next job of the kind will bring for itself belongs in its brief.
 - A skill is never a procedure for extra passes, read-backs, verification
   steps or splitting work into more briefs, nor a way round a limit.
 - Propose a skill only if this job showed a method that will help again and
@@ -588,7 +600,10 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
   and always the answer for a job that ran well by a skill it already had.
 - An improvement fixes something that went wrong, or was missing, in this
   job and would go wrong again in the next. Recording one run's judgement
-  calls, or rewording what works, is not an improvement.
+  calls, or rewording what works, is not an improvement. It needs the
+  same evidence: name in `jobs` the earlier jobs of this kind (those that
+  read the skill, as listed), and say in `reason` what this new job showed
+  the method must change.
 - Never propose what the user has declined (listed below), or something
   close to it under another name, and never a skill that overlaps one in
   the library or one already waiting for the user: improve the one that
@@ -609,11 +624,11 @@ a method worth keeping as a skill. These are Ombro's fixed rules.
   should use it, as named in the record.
 - `reason` and `adds` are read by the user, who decides: write them plainly,
   for someone who has not read the record. `reason`: what happened in this
-  job that suggests it. `adds`: what later jobs get from it that writing it
-  in their brief would not (for example "every daily briefing follows it
-  without the brief repeating it"); for an improvement, what changes for
-  the next run.
-- Write only what the record below supports.
+  job, and in the earlier jobs named, that suggests it. `adds`: what later
+  jobs get from it that writing it in their brief would not (for example
+  "every daily briefing follows it without the brief repeating it"); for
+  an improvement, what changes for the next run.
+- Write only what the record below and the earlier jobs listed support.
 """
 
 SKILL_TOOLS = [
@@ -630,13 +645,16 @@ SKILL_TOOLS = [
                     "body": {"type": "string", "description": "The method, in Markdown."},
                     "for": {"type": "array", "items": {"type": "string"},
                             "description": "Roles that should use it, as crew/role."},
+                    "jobs": {"type": "array", "items": {"type": "string"},
+                             "description": "The earlier jobs of the same kind it rests on, by id exactly as "
+                             "listed: at least one. With none, call no_skill."},
                     "reason": {"type": "string", "description": "One plain sentence for the user: what in "
-                               "this job suggests it."},
+                               "this job and the earlier ones named suggests it."},
                     "adds": {"type": "string", "description": "One plain sentence for the user: what later "
                              "jobs get from it that writing it in their brief would not; for an improvement, "
                              "what changes for the next run."},
                 },
-                "required": ["name", "description", "body", "reason", "adds"],
+                "required": ["name", "description", "body", "jobs", "reason", "adds"],
             },
         },
     },
@@ -658,7 +676,7 @@ def skill_system(lead: Role, today: str = "") -> str:
 
 
 def skill_input(library: str, roles: list[str], cap: int, record: str, waiting: str = "",
-                declined: str = "") -> str:
+                declined: str = "", earlier: str = "") -> str:
     return (
         f"Cap for the whole SKILL.md: {cap:,} characters.\n"
         + _section("The skills library", library or "(empty)")
@@ -666,6 +684,7 @@ def skill_input(library: str, roles: list[str], cap: int, record: str, waiting: 
                    waiting or "(none)")
         + _section("Proposals the user declined (never propose these again, or one like them)",
                    declined or "(none)")
+        + _section("Earlier completed jobs, newest first (the only jobs `jobs` may name)", earlier or "(none)")
         + _section("Roles in this job", "\n".join(f"- {r}" for r in roles) or "(none)")
         + _section("The record of this job", record)
     )

@@ -92,6 +92,7 @@ class Engine:
         self.job_dir = Path(job_dir)
         meta, _ = jobs.read_job(self.job_dir)
         self.job_id = meta["job_id"]
+        self._skill_earlier: list[dict[str, Any]] = []  # earlier jobs a skill proposal may name
         self.crews = jobs.job_crews(meta)
         self.limits = Limits.from_dict(meta["limits"])  # fixed when the job was created
         self.live = bool(meta.get("live"))  # a live job: the user is watching, and the Lead may ask them
@@ -1183,6 +1184,11 @@ class Engine:
         if waiting >= self.limits.skill_proposals_waiting:
             return record("skipped", f"{waiting} skill proposals already wait for you, the most allowed; "
                           "no more are made until you decide some")
+        # A skill needs earlier jobs of the same kind (skills.MIN_JOBS); with none, there is nothing to ask.
+        self._skill_earlier = skills_mod.earlier_jobs(self.home, self.job_id)
+        if len(self._skill_earlier) < skills_mod.MIN_JOBS - 1:
+            return record("skipped", "no earlier completed job to compare this one with, so no skill was considered",
+                          quiet=True)
         self.gate.enter_report_phase("skills")
         facts = report.gather_facts(self.home, self.job_dir, status)
         cap = self.limits.skill_max_chars
@@ -1192,7 +1198,8 @@ class Engine:
                 self._skill_listing(None)[0], list(self.roles), cap, report.narrative_input(facts),
                 waiting="\n".join(f"- {n}: {d or '(no description)'}"
                                    for n, d, _ in outbox.skill_proposals_waiting(self.home)),
-                declined=skills_mod.declined_listing(self.home))},
+                declined=skills_mod.declined_listing(self.home),
+                earlier=skills_mod.history_listing(self._skill_earlier))},
         ]
         report_worst = estimate_tokens([{"role": "user", "content": report.narrative_input(facts)}]) + 2_000 \
             + self.limits.report_max_output_tokens
@@ -1254,6 +1261,10 @@ class Engine:
         if not adds:
             return {"error": "give `adds`: one sentence on what the skill gives later jobs that writing it in "
                              "their brief would not. If it adds nothing, call no_skill"}
+        evidence, short = skills_mod.check_evidence(args.get("jobs"), self._skill_earlier, self.job_id)
+        if short:
+            self.journal.write("harness", "skills_refused", _short(short, 300))
+            return {"error": short}
         blocked = skills_mod.declined_block(self.home, name)
         if blocked:
             self.journal.write("harness", "skills_refused", blocked)
@@ -1275,14 +1286,15 @@ class Engine:
         base = skills_mod.live_sha(self.home, name)
         try:
             action, duplicate = outbox.stage_skill(self.job_dir, name=name, text=text, for_roles=for_roles,
-                                                   reason=reason, base_sha=base, flags=signs, adds=adds)
+                                                   reason=reason, base_sha=base, flags=signs, adds=adds,
+                                                   jobs=evidence)
         except outbox.OutboxError as e:
             self.journal.write("harness", "skills", f"the proposal could not be staged: {e}", outcome="skipped")
             return {"ok": True, "note": "it could not be staged"}
         change = "a new version of" if base else "a new skill,"
         self.journal.write(
             "lead", "skills", f"proposed {change} {name}, waiting for you as {action.ref}", outcome="proposed",
-            ref=action.ref, skill=name, change="update" if base else "new", reason=reason, adds=adds, flags=signs,
+            ref=action.ref, skill=name, change="update" if base else "new", reason=reason, adds=adds, jobs=evidence, flags=signs,
             **({"for": for_roles} if for_roles else {}), **({"unknown_roles": unknown} if unknown else {}))
         if signs:
             self.journal.write("harness", "material_flag", f"the proposed skill {name}: {', '.join(signs)}",

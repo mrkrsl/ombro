@@ -150,8 +150,30 @@ def test_a_listed_skill_that_does_not_exist_is_a_warning(job, home):
 
 # -- proposals -------------------------------------------------------------------------
 
+EARLIER = "kettle-survey-of-another-town-20261101-0900"
+
+
+def add_past_job(home, job_id: str, brief: str, status: str = "completed", spec: str = "",
+                 skills_read: tuple[str, ...] = ()) -> None:
+    d = home.jobs_dir / job_id
+    d.mkdir(parents=True, exist_ok=True)
+    meta = {"job_id": job_id, "crews": ["default"], "status": status, "brief": brief,
+            "created_at": "2026-11-01T09:00:00Z", "finished_at": "2026-11-01T09:20:00Z"}
+    if spec:
+        meta["source"] = f"spec file {home.specs_dir / (spec + '.md')}"
+    mdfile.write(d / "job.md", meta, "")
+    (d / "journal.jsonl").write_text("".join(json.dumps({"action": "skill_read", "skill": n}) + "\n"
+                                             for n in skills_read))
+
+
+@pytest.fixture(autouse=True)
+def an_earlier_job_of_the_same_kind(home):
+    """Every proposal below rests on one earlier kettle survey (T19), unless a test says otherwise."""
+    add_past_job(home, EARLIER, "Survey invented kettle makers in another invented town.")
+
 
 def propose(name="kettle-survey", body="1. Search the invented directory.\n2. Check each workshop.", **kw):
+    kw.setdefault("jobs", [EARLIER])
     return fake.propose_skill(name, "Surveys invented kettle makers in a town.", body,
                               for_roles=kw.pop("for_roles", ["default/researcher"]), **kw)
 
@@ -528,3 +550,76 @@ def test_the_cli_says_what_a_proposal_adds_and_that_declining_is_final(job, home
     cli.main(["approvals", "show", a.ref])
     out = capsys.readouterr().out
     assert "Adds      Every survey follows it" in out and "won't suggest it again" in out
+
+
+# -- evidence: two jobs of a kind at least (testing log T19) ---------------------------------------
+
+
+def test_a_proposal_names_the_earlier_jobs_of_its_kind(job, home, capsys):
+    from ombro import cli
+
+    job(a_job(propose()))
+    (a,) = outbox.waiting(home)
+    assert outbox.skill_view(home, a)["jobs"] == [EARLIER]
+    assert f"Earlier jobs of its kind: Kettle survey of another town ({EARLIER})" in job.report
+    capsys.readouterr()
+    cli.main(["approvals", "show", a.ref])
+    assert f"Jobs      earlier jobs of its kind: {EARLIER}" in capsys.readouterr().out
+
+
+def test_the_lead_sees_the_earlier_completed_jobs_and_the_rule(job, home):
+    add_past_job(home, "teapot-survey-20261102-0900", "Survey invented teapot makers.", spec="teapot-survey",
+                 skills_read=("kettle-survey",))
+    add_past_job(home, "failed-survey-20261103-0900", "A survey that failed.", status="failed")
+    job(a_job(fake.no_skill("Nothing new.")))
+    system, prompt = (m["content"] for m in skill_calls(job)[-1]["messages"][:2])
+    earlier = prompt.split("Earlier completed jobs")[1].split("=== end")[0]
+    assert f"- {EARLIER} (2026-11-01; a one-off brief): Survey invented kettle makers in another" in earlier
+    assert "- teapot-survey-20261102-0900 (2026-11-01; saved spec teapot-survey; read skills kettle-survey): Survey invented teapot makers." in earlier
+    assert "failed-survey" not in earlier and job.meta["job_id"] not in earlier
+    assert earlier.index("teapot-survey-2026") < earlier.index(EARLIER)  # newest first
+    assert "A skill needs a task that repeats" in system and "never one job's\n  specifics" in system
+
+
+def test_a_proposal_from_one_job_alone_is_refused(job, home):
+    job(a_job(propose(jobs=[]), fake.no_skill("No earlier job of this kind.")))
+    refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
+    assert "at least 2 jobs of the same kind" in refusal["content"] and "call no_skill" in refusal["content"]
+    assert not outbox.waiting(home)
+    assert any(e.get("action") == "skills_refused" for e in job.events)
+
+
+def test_a_proposal_naming_an_unknown_or_unfinished_job_is_refused(job, home):
+    job(a_job(propose(jobs=["an-invented-job-20261105-0900"]), fake.no_skill("None.")))
+    refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
+    assert "not earlier completed jobs: an-invented-job-20261105-0900" in refusal["content"]
+    add_past_job(home, "failed-kettle-survey-20261104-0900", "Survey kettle makers.", status="failed")
+    job(a_job(propose(jobs=["failed-kettle-survey-20261104-0900"]), fake.no_skill("None.")))
+    refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
+    assert "not earlier completed jobs: failed-kettle-survey" in refusal["content"]
+    assert not outbox.waiting(home)
+
+
+def test_the_job_just_done_is_never_its_own_evidence():
+    earlier = [{"id": "kettle-survey-20261101-0900"}]
+    assert skills.check_evidence(["kettle-survey-20261119-0900"], earlier, "kettle-survey-20261119-0900")[1]
+    assert skills.check_evidence("kettle-survey-20261101-0900", earlier, "x") == (["kettle-survey-20261101-0900"], "")
+
+
+def test_an_improvement_needs_the_same_evidence(job, home):
+    add_skill(home, "kettle-survey")
+    job(a_job(propose(body="1. A changed invented step.", jobs=[]), fake.no_skill("No earlier job.")))
+    assert not outbox.waiting(home)
+    job(a_job(propose(body="1. A changed invented step.")))
+    (a,) = outbox.waiting(home)
+    assert a.meta["change"] == "update" and a.meta["jobs"] == [EARLIER]
+
+
+def test_with_no_earlier_completed_job_no_skill_is_considered(job, home):
+    import shutil
+
+    shutil.rmtree(home.jobs_dir / EARLIER)
+    job(a_job())
+    assert not skill_calls(job)
+    assert any(e.get("action") == "skills" and "no earlier completed job" in e.get("note", "") for e in job.events)
+    assert "## Skills" not in job.report

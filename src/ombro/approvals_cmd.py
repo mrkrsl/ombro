@@ -111,6 +111,8 @@ def _show_skill(a: outbox.Action, home: Home) -> None:
     print(f"  For       {', '.join(v['for']) or 'no role named'}; approving adds it to their skills: lines")
     if v.get("adds"):
         print(f"  Adds      {v['adds']}")
+    if v.get("jobs"):
+        print(f"  Jobs      earlier jobs of its kind: {', '.join(v['jobs'])}")
     print("  Declining it means the Lead won't suggest it again.")
     if v["flags"]:
         print(f"  Warning   signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")

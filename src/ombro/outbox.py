@@ -389,9 +389,10 @@ def skill_text(a: Action) -> str:
 
 
 def stage_skill(job_dir: Path, *, name: str, text: str, for_roles: list[str], reason: str, base_sha: str,
-                flags: list[str], adds: str = "") -> tuple[Action, bool]:
+                flags: list[str], adds: str = "", jobs: list[str] | None = None) -> tuple[Action, bool]:
     """Stage a skill the Lead proposes, keeping its SKILL.md beside the action. `reason` says why it
-    is suggested (what in the job showed it); `adds`, what it gives later jobs that a brief would not."""
+    is suggested (what in the job showed it); `adds`, what it gives later jobs that a brief would not;
+    `jobs`, the earlier jobs of the same kind it rests on."""
     job_dir = Path(job_dir)
     with lock(job_dir, wait=STAGE_WAIT):
         for a in actions(job_dir):
@@ -402,7 +403,8 @@ def stage_skill(job_dir: Path, *, name: str, text: str, for_roles: list[str], re
         keep = a.path.with_suffix("") / "SKILL.md"
         mdfile.write_atomic(keep, text)
         _save(a, file=keep.relative_to(job_dir).as_posix(), file_sha256=_text_sha(text), base_sha256=base_sha,
-              change="update" if base_sha else "new", flags=list(flags), **({"adds": adds} if adds else {}))
+              change="update" if base_sha else "new", flags=list(flags), **({"adds": adds} if adds else {}),
+              **({"jobs": list(jobs)} if jobs else {}))
     return a, False
 
 
@@ -418,7 +420,8 @@ def skill_view(home: Home, a: Action) -> dict[str, Any]:
     now = live.text if live else ""
     out: dict[str, Any] = {"name": name, "for": list(args.get("for") or []), "text": text,
                            "flags": list(a.meta.get("flags") or []), "live": bool(live),
-                           "why": str(a.meta.get("reason") or ""), "adds": str(a.meta.get("adds") or "")}
+                           "why": str(a.meta.get("reason") or ""), "adds": str(a.meta.get("adds") or ""),
+                           "jobs": [str(j) for j in a.meta.get("jobs") or []]}
     if live:
         out["diff"] = skills.diff(now, text, name)
     out["changed_since"] = (skills.sha(now) if now else "") != str(a.meta.get("base_sha256") or "")

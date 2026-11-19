@@ -82,7 +82,8 @@ describe("approvals", () => {
     const seen: [boolean, string[]][] = [];
     const detail = { ...row, ref: "ab12-2", tool: "skills.propose", arguments: { name: "invented" },
       skill: { name: "invented", text: "---\nname: invented\n---\n# Invented skill\n\nDo **this** first.",
-        adds: "Every invented job follows it without its brief repeating it." } };
+        adds: "Every invented job follows it without its brief repeating it.",
+        jobs: ["invented-survey-20261101-0900"] } };
     useStore.setState({
       approvals: [row, { ...row, ref: "ab12-2", long_ref: "invented-20261114-1200-2", tool: "skills.propose",
         arguments: { name: "invented" } }],
@@ -95,6 +96,8 @@ describe("approvals", () => {
     expect(screen.getByText("this").tagName).toBe("STRONG");
     expect(screen.getByText("What it adds over a brief:")).toBeInTheDocument();
     expect(screen.getByText(/Every invented job follows it/)).toBeInTheDocument();
+    expect(screen.getByText("Earlier jobs of its kind:")).toBeInTheDocument();
+    expect(screen.getByText(/invented-survey-20261101-0900/)).toBeInTheDocument();
     expect(screen.getByText("If you decline it, the Lead won't suggest it again.")).toBeInTheDocument();
     // Nothing ticked: the opened one's own buttons work all the same.
     const opened = within(document.querySelector(".approval-open") as HTMLElement);

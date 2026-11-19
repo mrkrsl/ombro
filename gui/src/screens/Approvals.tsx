@@ -128,7 +128,7 @@ function person(role: string): string {
 
 function Detail({ d }: { d: ApprovalDetail }) {
   const lines = argumentLines(d.arguments, d.tool);
-  const skill = d.skill as { diff?: string; text?: string; adds?: string } | null;
+  const skill = d.skill as { diff?: string; text?: string; adds?: string; jobs?: string[] } | null;
   const [changes, setChanges] = useState(false);
   return (
     <>
@@ -141,6 +141,11 @@ function Detail({ d }: { d: ApprovalDetail }) {
           {skill.adds ? (
             <>
               <b>What it adds over a brief:</b> {skill.adds.replace(/\.$/, "")}.{" "}
+            </>
+          ) : null}
+          {skill.jobs && skill.jobs.length > 0 ? (
+            <>
+              <b>Earlier jobs of its kind:</b> {skill.jobs.join(", ")}.{" "}
             </>
           ) : null}
           <span className="muted">If you decline it, the Lead won't suggest it again.</span>

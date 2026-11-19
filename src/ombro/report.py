@@ -789,6 +789,10 @@ def _skill_words(ev: dict[str, Any]) -> str:
         words += f", for {', '.join(ev['for'])}"
     if ev.get("adds"):
         words += f". What it adds: {str(ev['adds']).rstrip('.')}"
+    if ev.get("jobs"):
+        from ombro.jobs import job_name
+
+        words += f". Earlier jobs of its kind: {', '.join(f'{job_name(j)} ({j})' for j in ev['jobs'])}"
     return words
 
 

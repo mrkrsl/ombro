@@ -228,8 +228,10 @@ def no_skill(reason: str = "Nothing new to keep as a skill.", **extra) -> dict:
 def propose_skill(name: str, description: str, body: str, *, for_roles: list[str] | None = None,
                   reason: str = "It worked in this job.",
                   adds: str | None = "Later jobs of this kind follow it without their brief spelling it out.",
-                  **extra) -> dict:
+                  jobs: list[str] | None = None, **extra) -> dict:
     args = {"name": name, "description": description, "body": body, "reason": reason}
+    if jobs is not None:
+        args["jobs"] = jobs
     if adds is not None:
         args["adds"] = adds
     if for_roles is not None:
