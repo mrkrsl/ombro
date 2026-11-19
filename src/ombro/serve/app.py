@@ -96,7 +96,27 @@ def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
 
 
-async def _body(request: Request) -> dict[str, Any]:
+PAIR_BODY_LIMIT = 4096  # bytes; /pair needs no token, so it reads very little
+
+
+async def _limited_body(request: Request, limit: int) -> bytes:
+    """The request body, refused (413) as soon as it is more than `limit` bytes, before it is all read."""
+    try:
+        if int(request.headers.get("content-length") or 0) > limit:
+            raise HttpError(413, "that request is too large")
+    except ValueError:
+        raise HttpError(400, "bad Content-Length") from None
+    out = bytearray()
+    async for chunk in request.stream():
+        out += chunk
+        if len(out) > limit:
+            raise HttpError(413, "that request is too large")
+    return bytes(out)
+
+
+async def _body(request: Request, limit: int | None = None) -> dict[str, Any]:
+    if limit is not None:
+        request._body = await _limited_body(request, limit)  # so .body() and .json() reuse it
     if not (await request.body()).strip():
         return {}
     try:
@@ -697,16 +717,17 @@ def _pair_route(devices) -> Route:
     from ombro.pairing import PairingError
 
     async def pair(request: Request) -> Response:
+        client = request.client.host if request.client else ""
         try:
-            data = await _body(request)
+            data = await _body(request, PAIR_BODY_LIMIT)
             code = _need(data, "code")
             name = data.get("name") if isinstance(data.get("name"), str) else ""
         except HttpError as e:
             return _error(e.status, str(e))
         try:
-            device, token = await asyncio.to_thread(devices.pair, code, name)
+            device, token = await asyncio.to_thread(devices.pair, code, name, client)
         except PairingError as e:
-            status = 429 if devices.locked_out() else 403
+            status = 429 if devices.locked_out(client) else 403
             return _error(status, str(e))
         return JSONResponse({"token": token, "device": device.to_dict(), "version": __version__,
                              "protocol": PROTOCOL}, status_code=201)

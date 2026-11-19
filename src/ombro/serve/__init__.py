@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import secrets
 import socket
 import sys
@@ -108,6 +109,17 @@ def is_private(host: str) -> bool:
     return not ip.is_global  # includes Tailscale's 100.64.0.0/10, which is not global
 
 
+def is_tailscale(host: str) -> bool:
+    import ipaddress
+
+    try:
+        ip = ipaddress.ip_address(host)
+        return any(ip in ipaddress.ip_network(n) for n in ("100.64.0.0/10", "fd7a:115c:a1e0::/48")
+                   if ip.version == ipaddress.ip_network(n).version)
+    except ValueError:
+        return host.lower().endswith(".ts.net")
+
+
 def service_hosts(host: str, allow: list[str]) -> list[str]:
     """The Host header names a service accepts: 127.0.0.1, the address it listens on (unless that
     is every address), and any names given with --allow-host. A name not on the list is refused,
@@ -127,9 +139,18 @@ def service_lines(host: str, port: int, code: str | None) -> list[str]:
     from ombro import __version__
 
     lines = [f"Ombro {__version__} is serving on {host}:{port}."]
-    if not is_private(host) and host not in ("0.0.0.0", "::"):
+    if host in ("0.0.0.0", "::"):
+        if not os.path.exists("/.dockerenv"):
+            lines.append(f"Warning: listening on every address ({host}) puts Ombro, over plain HTTP, on every "
+                         "network this machine is on. Ombro is meant to be reached over SSH or Tailscale: "
+                         "listen on the Tailscale address instead, unless this is a container.")
+    elif not is_private(host):
         lines.append(f"Warning: {host} may be reachable from the internet. Ombro is meant to be reached "
                      "over SSH or Tailscale; anyone who can reach this address can try pairing codes.")
+    elif not is_loopback(host) and not is_tailscale(host):
+        lines.append(f"Warning: {host} is not a Tailscale address. In the app's By address mode the device "
+                     "token and everything else would cross this network unencrypted, where anyone on it "
+                     "could take the token. Use Tailscale, or SSH.")
     if code:
         lines += ["", "No device is paired yet. In the Ombro app, choose to run Ombro on a server,",
                   f"connect by address, and type this pairing code: {code}",
