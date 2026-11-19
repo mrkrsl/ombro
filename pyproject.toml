@@ -16,7 +16,7 @@ dependencies = [
     "starlette>=1.10.0",
     "websockets>=17.4",
     "uvicorn>=0.54.0",
-    "pypdf>=6",
+    "pypdf>=7.1.1",  # 6.x before 6.4 had denial-of-service fixes for crafted PDFs
 ]
 
 [project.scripts]

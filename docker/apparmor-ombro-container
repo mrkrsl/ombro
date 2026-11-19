@@ -1,0 +1,37 @@
+# AppArmor profile for Ombro's container (compose.yaml: apparmor=ombro-container). It is Docker's own
+# default profile (docker-default), with what bubblewrap, the sandbox for job code, needs on top:
+# user namespaces, mount, umount and pivot_root. It also stands in for the masked system paths that
+# compose.yaml has to unmask (sysrq-trigger, kcore and /sys stay out of reach), and on Ubuntu 24.04
+# it lets bubblewrap make namespaces, so the host needs no ombro-bwrap profile for Docker.
+# Docker's rule against writes under /proc/<name>/ is left out: bubblewrap writes /proc/self/uid_map.
+# Load it once on the machine running Docker (with Colima, put `colima ssh --` before each sudo):
+#   sudo cp docker/apparmor-ombro-container /etc/apparmor.d/ombro-container
+#   sudo apparmor_parser -r /etc/apparmor.d/ombro-container
+#include <tunables/global>
+
+profile ombro-container flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  network,
+  capability,
+  file,
+  userns,
+  mount,
+  umount,
+  pivot_root,
+  signal (receive) peer=unconfined,
+  signal (send,receive) peer=ombro-container,
+  deny @{PROC}/* w,
+  deny @{PROC}/sys/[^k]** w,
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+  ptrace (trace,read,tracedby,readby) peer=ombro-container,
+}

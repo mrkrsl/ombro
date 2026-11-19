@@ -242,7 +242,7 @@ requires-dist = [
     { name = "httpcore", specifier = ">=1.0.9" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonschema", specifier = ">=4.26.0" },
-    { name = "pypdf", specifier = ">=6" },
+    { name = "pypdf", specifier = ">=7.1.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "starlette", specifier = ">=1.10.0" },
     { name = "textual", specifier = ">=8.2.8" },

@@ -1,5 +1,7 @@
 # Ombro as a server in Docker. Start it with `docker compose up -d`; the pairing code is in
 # `docker compose logs ombro`. In the app, connect by address to 127.0.0.1:8765 with that code.
+# On a machine with AppArmor (Ubuntu, Debian; Colima's VM), load Ombro's profile there once first:
+# see the security settings below.
 
 name: ombro
 
@@ -21,30 +23,78 @@ services:
       # A folder to share with jobs: mount it under /home/ombro/shared, then share
       # /home/ombro/shared/<name> in Settings › Folders. Add :ro to keep it read-only.
       # - ~/Documents/Brand:/home/ombro/shared/brand
-    # Code a job writes runs inside bubblewrap, Ombro's sandbox: no internet, and only that job's
-    # files. bubblewrap needs Linux namespaces, which Docker's default filters block, so these
-    # three settings relax them for this container. Ombro still runs as an ordinary user here.
-    # Without them, everything else works and jobs say code can't run. On some Ubuntu hosts (24.04;
-    # Colima's VM is one), also load Ombro's AppArmor profile there once:
-    # `docker compose exec ombro ombro sandbox` says how.
     # The browser service below, when it runs: crews and chat read web pages in it.
     environment:
       OMBRO_BROWSER_ENDPOINT: http://browser:9222
+    # Code a job writes runs inside bubblewrap, Ombro's sandbox: no internet, and only that job's
+    # files. bubblewrap makes Linux namespaces, which Docker's defaults block, so this container is
+    # set up for that, and kept as tight as it can be while job code still runs:
+    #   - seccomp: Docker's default profile, plus the calls bubblewrap needs (docker/seccomp.json).
+    #   - AppArmor: Docker's default profile, plus namespaces and mounts (docker/apparmor-ombro-container).
+    #     On a machine with AppArmor, load it there once, from this folder, before starting:
+    #       sudo cp docker/apparmor-ombro-container /etc/apparmor.d/ombro-container
+    #       sudo apparmor_parser -r /etc/apparmor.d/ombro-container
+    #     With Colima, put `colima ssh --` before each sudo. Where there's no AppArmor, Docker skips it.
+    #   - systempaths: bubblewrap mounts a fresh /proc, which Linux refuses while Docker hides parts
+    #     of it, so they are shown; the AppArmor profile still keeps them out of reach.
+    #   - no capabilities, no new privileges, and a read-only system, with /tmp in memory.
+    # Ombro runs as an ordinary user here. Without the seccomp, apparmor and systempaths lines,
+    # everything else works and jobs say code can't run. `docker compose exec ombro ombro sandbox`
+    # says whether code can run.
     security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
+      - seccomp=docker/seccomp.json
+      - apparmor=ombro-container
       - systempaths=unconfined
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
 
   # A browser for crews and chat: a headless Chromium in a container of its own, which never sees
   # Ombro's keys or settings. Each job gets a new, empty profile in it. Optional: start it with
   #   docker compose --profile browser up -d
   # Without it, web search still works but web pages can't be read (Settings › General says so).
+  #
+  # "browser" is the browser's network: a small guard that owns it and refuses any new connection
+  # from the browser to private ranges (the local network, this machine, Ombro itself, a cloud's
+  # metadata address), whatever a page's name resolves to. Only the guard may change those rules
+  # (docker/browser-guard.sh). Chromium runs on that network, in the "chromium" service.
   browser:
-    image: chromedp/headless-shell:stable
+    build:
+      context: docker
+      dockerfile: browser-guard.Dockerfile
+    image: ombro-browser-guard:local
     profiles: [browser]
     restart: unless-stopped
+    init: true
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 2s
+      retries: 15
+    # No ports: only Ombro, on this compose network, reaches the browser (as browser:9222).
+
+  chromium:
+    # Pinned by digest; the tag says which Chromium it is.
+    image: chromedp/headless-shell:159.0.8154.13@sha256:381353d3530ab9d579d2fe8b9c0f4519c995617f5a71daf6bb649e2d12005bd9
+    profiles: [browser]
+    restart: unless-stopped
+    network_mode: service:browser
+    depends_on:
+      browser:
+        condition: service_healthy
+        restart: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     shm_size: 1gb
-    # No ports: only Ombro, on this compose network, reaches it.
 
 volumes:
   ombro-settings:
