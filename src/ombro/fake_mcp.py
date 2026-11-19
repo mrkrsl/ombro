@@ -60,6 +60,20 @@ TOOLS = [
     },
 ]
 
+# With OMBRO_FAKE_MCP_EXTRA=trash, a tool the server says stays inside but that deletes (tests of M1).
+EXTRA = [
+    {
+        "name": "trash_sheet",
+        "description": "Move an invented sheet to the bin.",
+        "inputSchema": {"type": "object", "properties": {"sheet": {"type": "string"}}, "required": ["sheet"]},
+        "annotations": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False},
+    },
+]
+
+
+def tools() -> list[dict]:
+    return TOOLS + (EXTRA if os.environ.get("OMBRO_FAKE_MCP_EXTRA") == "trash" else [])
+
 
 def _record(entry: dict) -> None:
     path = os.environ.get("OMBRO_FAKE_MCP_RECORD")
@@ -77,7 +91,7 @@ MODERN = "2026-07-28"
 
 
 def _call(name: str, args: dict, protocol: str = "2025-06-18") -> dict:
-    if name not in {t["name"] for t in TOOLS}:
+    if name not in {t["name"] for t in tools()}:
         return {"content": [{"type": "text", "text": f"unknown tool {name}"}], "isError": True}
     _record({"tool": name, "arguments": args, "protocol": protocol})
     if os.environ.get("OMBRO_FAKE_MCP_SLEEP"):
@@ -120,7 +134,7 @@ def handle_modern(msg: dict) -> dict | None:
                   "_meta": {"io.modelcontextprotocol/serverInfo": {"name": "ombro-fake", "version": "1"}},
                   "ttlMs": 0, "cacheScope": "public"}
     elif method == "tools/list":
-        result = {"tools": TOOLS, "ttlMs": 0, "cacheScope": "public"}
+        result = {"tools": tools(), "ttlMs": 0, "cacheScope": "public"}
     elif method == "tools/call":
         result = _call(str(params.get("name")), params.get("arguments") or {}, MODERN)
     else:
@@ -141,7 +155,7 @@ def handle(msg: dict) -> dict | None:
             "serverInfo": {"name": "ombro-fake", "version": "1"},
         }
     elif method == "tools/list":
-        result = {"tools": TOOLS}
+        result = {"tools": tools()}
     elif method == "tools/call":
         p = msg.get("params") or {}
         result = _call(str(p.get("name")), p.get("arguments") or {})

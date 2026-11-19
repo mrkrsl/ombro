@@ -7,8 +7,14 @@ never on the command line. Nothing is written until the user confirms what
 will be added. The checks are the same ones a job makes when it loads tools.md.
 
 The building blocks (`server_entry`, `pin_warning`, `add_server`,
-`remove_server`) take plain values, so an interface can ask the same
-questions in its own way.
+`remove_server`, `tool_claims`, `confirm_internal`) take plain values, so an
+interface can ask the same questions in its own way.
+
+What a server says of its tools is only its word (M1): a tool it marks
+`openWorldHint: false` (changes things, reaches no one outside) counts as
+external until the user has seen the claim and confirmed it, once, for that
+server. The confirmed tools are kept as `confirmed_internal:` on its entry,
+and dropped if its command or address changes.
 """
 
 from __future__ import annotations
@@ -122,11 +128,15 @@ def add_server(home: Home, name: str, entry: dict[str, Any]) -> None:
 
 def update_server(home: Home, name: str, entry: dict[str, Any]) -> None:
     """Replace one server's entry in tools.md, keeping its per-tool settings and everything else.
-    Checked as a job checks tools.md."""
+    Checked as a job checks tools.md. A new command or address is another server, as far as anyone
+    knows: what you confirmed of the old one's tools is dropped."""
     meta, body = _read_tools(home)
     servers = dict(meta.get("servers") or {})
     if name not in servers:
         raise ServerError(f"no server named {name!r} in tools.md")
+    old = servers[name] or {}
+    if any((old.get(k) or None) != (entry.get(k) or None) for k in ("command", "args", "url")):
+        entry = {k: v for k, v in entry.items() if k != "confirmed_internal"}
     servers[name] = entry
     new = {**meta, "servers": servers}
     ToolSettings.from_dict(new, str(home.tools))
@@ -149,6 +159,90 @@ def remove_server(home: Home, name: str) -> list[str]:
         del new["servers"]
     mdfile.write(home.tools, new, body)
     return dropped
+
+
+def tool_claims(home: Home, name: str) -> list[dict[str, Any]]:
+    """Each of a server's tools, what the server says of it, and the class it has now. Starts the
+    server (a remote one may need signing in first). Raises McpError if it can't be listed."""
+    from ombro import outward
+    from ombro.mcp import McpClient, ServerConfig
+    from ombro.settings import load_tool_settings
+
+    settings = load_tool_settings(home)
+    cfg = settings.servers.get(name)
+    if cfg is None:
+        raise ServerError(f"no server named {name!r} in tools.md")
+    with McpClient(home, ServerConfig.from_dict(name, cfg)) as c:
+        listed = c.list_tools()
+    rows = []
+    for t in listed:
+        a = t.annotations or {}
+        claim = "read-only" if a.get("readOnlyHint") is True else "internal" if outward.claims_internal(a) else None
+        effect, source = outward.tool_class(settings, f"mcp.{name}.{t.name}", a)
+        rows.append({"tool": t.name, "description": " ".join(str(t.description or "").split()),
+                     "claims": claim, "class": effect, "class_from": source})
+    return rows
+
+
+def unconfirmed(rows: list[dict[str, Any]]) -> list[str]:
+    """The tools the server says stay inside, which count as external until the user confirms it."""
+    return [r["tool"] for r in rows if r["class_from"] == "unconfirmed"]
+
+
+def confirm_internal(home: Home, name: str, tools: list[str]) -> list[str]:
+    """Keep the user's yes to what the server says of these tools (that they stay inside the
+    organisation), with the server's settings in tools.md. Returns all the server's confirmed tools."""
+    meta, body = _read_tools(home)
+    servers = dict(meta.get("servers") or {})
+    if name not in servers:
+        raise ServerError(f"no server named {name!r} in tools.md")
+    entry = dict(servers[name] or {})
+    confirmed = sorted({*(entry.get("confirmed_internal") or []), *(str(t) for t in tools if str(t).strip())})
+    if confirmed:
+        entry["confirmed_internal"] = confirmed
+    servers[name] = entry
+    new = {**meta, "servers": servers}
+    ToolSettings.from_dict(new, str(home.tools))
+    mdfile.write(home.tools, new, body)
+    return confirmed
+
+
+def claims_text(name: str, rows: list[dict[str, Any]]) -> list[str]:
+    """What the server says of the tools still to confirm, in words, for a terminal."""
+    waiting = [r for r in rows if r["class_from"] == "unconfirmed"]
+    out = [f"{len(waiting)} of {name}'s tools say they change things but stay inside your organisation, "
+           "reaching no one outside:"]
+    out += [f"  - mcp.{name}.{r['tool']}" + (f": {r['description'][:120]}" if r["description"] else "")
+            for r in waiting]
+    out.append("Ombro can't check what a server says about itself. Until you confirm it, these count as "
+               "external: each use waits for your approval. Once confirmed, they run without asking, as "
+               "internal changes do (deleting or sharing still asks once a job has read outside material).")
+    return out
+
+
+def confirm_flow(home: Home, name: str, ui: UI, rows: list[dict[str, Any]] | None = None) -> list[str]:
+    """Show what the server says of its tools and ask, once, whether to believe it. Returns the tools
+    confirmed (none if there was nothing to ask, or the answer was no)."""
+    from ombro.mcp import McpError
+
+    if rows is None:
+        try:
+            rows = tool_claims(home, name)
+        except McpError as e:
+            ui.say(f"Its tools could not be listed yet ({e}). Later, `ombro tools {name}` shows what each one "
+                   "says it does and asks you to confirm it.")
+            return []
+    waiting = unconfirmed(rows)
+    if not waiting:
+        return []
+    ui.say("\n" + "\n".join(claims_text(name, rows)))
+    if not ui.yes("confirm_internal", "Confirm these stay inside your organisation?", False):
+        ui.say("They count as external: each use waits for your approval. `ombro tools "
+               f"{name}` asks again.")
+        return []
+    confirm_internal(home, name, waiting)
+    ui.say(f"Confirmed: {len(waiting)} tool(s) of {name} count as internal.")
+    return waiting
 
 
 def roles_using(home: Home, name: str) -> list[str]:
@@ -262,9 +356,9 @@ def add_flow(home: Home, args, ui: UI) -> int:
     if url and not url.startswith("https://"):
         ui.say("\nWarning: the address is not https, so what is sent to it can be read on the way.")
     if not args.server_class:
-        ui.say("\nIts tools are classed by the server's own markings; a tool that changes something and is not "
-              "marked counts as external\n(it waits for your approval). After adding, `ombro tools "
-              f"{name}` shows each tool's class.")
+        ui.say("\nIts tools are classed by the server's own markings, but a tool it says stays inside your "
+              "organisation counts as\nexternal (it waits for your approval) until you confirm that. After "
+              f"adding, `ombro tools {name}` shows each tool's class.")
     ui.say("")
     if not args.yes and not ui.yes("add", "Add it?"):
         ui.say("Nothing added.")
@@ -275,6 +369,8 @@ def add_flow(home: Home, args, ui: UI) -> int:
     except SetupError as e:
         raise cli.CliError(str(e)) from None
     ui.say(f"Added {name} to {home.tools}.")
+    if command and not args.server_class and not args.yes:
+        confirm_flow(home, name, ui)  # starts it, to ask what it says of its tools
     if url:
         ui.say(f"If it asks you to sign in, connect it once with `ombro connect {name}`. Then see its tools with "
               f"`ombro tools {name}`.")

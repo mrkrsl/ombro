@@ -233,7 +233,7 @@ function Secrets({ rows, setRows, remote }: { rows: Secret[]; setRows: (r: Secre
 function ServerForm({ current, kind, onDone, onCancel }: {
   current: ServerRow | null;
   kind: "remote" | "local";
-  onDone: (t: ToolList, signIn: string | null, warning: string | null) => void;
+  onDone: (t: ToolList, signIn: string | null, warning: string | null, added: string | null) => void;
   onCancel: () => void;
 }) {
   const { run, problem, busy } = useAction();
@@ -258,7 +258,7 @@ function ServerForm({ current, kind, onDone, onCancel }: {
       : await run((api) => api.post<Reply>("/tools/servers", body));
     if (!t) return;
     const added = current ? current.server : t.added ?? null;
-    onDone(t, remote && !current ? added : null, t.warning ?? null);
+    onDone(t, remote && !current ? added : null, t.warning ?? null, current ? null : added);
   }
 
   return (
@@ -285,6 +285,67 @@ function ServerForm({ current, kind, onDone, onCancel }: {
         </button>
         <button className="secondary" onClick={onCancel}>
           Cancel
+        </button>
+      </div>
+      <Problem text={problem} />
+    </div>
+  );
+}
+
+type Claim = { tool: string; description: string; claims: string | null; class: string; class_from: string };
+type Claims = { tools: Claim[]; unconfirmed: string[]; problem: string | null };
+
+/** What a server says each of its tools does (M1). Its word alone never makes a tool internal: one
+ * it says stays inside your organisation counts as reaching outside, so each use waits for your
+ * approval, until you confirm it here, once. Starts the server, so it may take a moment. */
+export function ClaimsPanel({ server, onClose }: { server: string; onClose: () => void }) {
+  const { run, problem, busy } = useAction();
+  const [claims, setClaims] = useState<Claims | null>(null);
+  useEffect(() => {
+    void run((api) => api.get<Claims>(`/tools/servers/${server}/claims`)).then((c) => c && setClaims(c));
+  }, [run, server]);
+  async function confirm() {
+    const c = await run((api) => api.post<Claims>(`/tools/servers/${server}/claims`, { tools: claims?.unconfirmed ?? [] }));
+    if (c) setClaims(c);
+  }
+  const waiting = claims ? claims.tools.filter((t) => claims.unconfirmed.includes(t.tool)) : [];
+  return (
+    <div className="inline-form claims">
+      <h3>What {tidy(server)}'s tools say they do</h3>
+      {!claims && !problem && <p className="field-hint">Asking {tidy(server)} for its tools…</p>}
+      {claims?.problem && <p className="field-hint">{claims.problem}. If it needs signing in, sign in, then check again.</p>}
+      {claims && !claims.problem && waiting.length === 0 && (
+        <p className="field-hint">Nothing to confirm: each tool is classed by what it says it does and your settings.</p>
+      )}
+      {waiting.length > 0 && (
+        <>
+          <p>
+            {waiting.length === 1 ? "This tool says" : `These ${waiting.length} tools say`} they change things but stay inside your
+            organisation, reaching no one outside:
+          </p>
+          <ul className="line-items">
+            {waiting.map((t) => (
+              <li key={t.tool}>
+                <b>{t.tool}</b>
+                {t.description ? `: ${t.description}` : ""}
+              </li>
+            ))}
+          </ul>
+          <p className="field-hint">
+            Ombro can't check what a server says about itself. Until you confirm it, these count as reaching outside: each use
+            waits for your approval. Once confirmed, they run without asking, as changes in your own tools do (deleting or
+            sharing still asks once a job has read outside material).
+          </p>
+        </>
+      )}
+      <div className="form-actions">
+        {waiting.length > 0 && (
+          <button className="primary" disabled={busy} onClick={() => void confirm()}>
+            Confirm they stay inside
+          </button>
+        )}
+        <button className="secondary" onClick={onClose}>
+          {waiting.length > 0 ? "Keep asking each time" : "Close"}
         </button>
       </div>
       <Problem text={problem} />
@@ -393,6 +454,7 @@ export function Tools() {
   const [warning, setWarning] = useState<string | null>(null);
   const remote = useStore((st) => st.remote);
   const [pasting, setPasting] = useState<string | null>(null); // a server whose sign-in answer may be pasted
+  const [claims, setClaims] = useState<string | null>(null); // a server whose tools' claims are shown
   const [pasted, setPasted] = useState("");
   const t = tools.data;
   const waiting = !!t?.servers.some((s) => s.signing_in);
@@ -544,6 +606,9 @@ export function Tools() {
                           Sign in
                         </button>
                       )}
+                      <button className="text-button strong" onClick={() => setClaims(s.server)}>
+                        Check its tools
+                      </button>
                       <button className="text-button strong" onClick={() => { setEditing(s.server); setAdding(null); }}>
                         Edit
                       </button>
@@ -564,6 +629,7 @@ export function Tools() {
                     onDone={(x, _s, w) => { tools.set(x); setEditing(null); setWarning(w); }}
                   />
                 )}
+                {claims === s.server && <ClaimsPanel server={s.server} onClose={() => setClaims(null)} />}
                 {pasting === s.server && s.signing_in && (
                   <details className="more paste-answer">
                     <summary>Signed in, but Ombro is still waiting?</summary>
@@ -644,11 +710,13 @@ export function Tools() {
               current={null}
               kind={adding === "local" ? "local" : "remote"}
               onCancel={() => setAdding(null)}
-              onDone={(x, toSignIn, w) => {
+              onDone={(x, toSignIn, w, added) => {
                 tools.set(x);
                 setAdding(null);
                 setWarning(w);
                 if (toSignIn) void signIn(toSignIn);
+                // A program on this computer can be asked for its tools now: what they claim, to confirm.
+                else if (added) setClaims(added);
               }}
             />
           )}

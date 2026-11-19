@@ -13,10 +13,13 @@ organisation, not visibility:
   spends money (email sent, messages, social posts, publishing, public
   records, purchases). A tool that can reach either side counts as external.
 A tool's class comes from, each overriding the one before: the server's
-markings (readOnlyHint true: read-only; openWorldHint false: internal;
-otherwise external), `class:` on the server in tools.md (for its tools that
-are not read-only), then `class:` on the tool in tools.md. A tool that
-changes something and is not classed is external: the safe default."""
+markings (readOnlyHint true: read-only; openWorldHint false: internal, but
+only once the user has confirmed that claim for the tool, kept as
+`confirmed_internal:` on the server in tools.md; otherwise external),
+`class:` on the server in tools.md (for its tools that are not read-only),
+then `class:` on the tool in tools.md. A tool that changes something and is
+not classed is external: the safe default. A server's word alone never makes
+a tool internal (M1): it could say so of a tool that sends."""
 
 from __future__ import annotations
 
@@ -127,9 +130,10 @@ def describe(setting: dict[str, Any]) -> str:
 
 
 def classify_with_source(annotations: dict[str, Any] | None, override: str | None = None,
-                         server_class: str | None = None) -> tuple[str, str]:
+                         server_class: str | None = None, confirmed: bool = False) -> tuple[str, str]:
     """A tool's class and where it came from: tool (tools.md), server (tools.md),
-    marking (the server's own claim) or default."""
+    marking (the server's own claim; for internal, one the user confirmed), unconfirmed
+    (the server says internal, the user hasn't confirmed it, so external) or default."""
     if override in TOOL_CLASSES:
         return override, "tool"
     a = annotations or {}
@@ -138,20 +142,28 @@ def classify_with_source(annotations: dict[str, Any] | None, override: str | Non
     if server_class in TOOL_CLASSES:
         return server_class, "server"
     if a.get("openWorldHint") is False:
-        return "internal", "marking"
+        return ("internal", "marking") if confirmed else ("external", "unconfirmed")
     return "external", "default"
 
 
 def classify(annotations: dict[str, Any] | None, override: str | None = None,
-             server_class: str | None = None) -> str:
-    return classify_with_source(annotations, override, server_class)[0]
+             server_class: str | None = None, confirmed: bool = False) -> str:
+    return classify_with_source(annotations, override, server_class, confirmed)[0]
+
+
+def claims_internal(annotations: dict[str, Any] | None) -> bool:
+    """Whether a server says a tool changes things but reaches nothing outside (openWorldHint false)."""
+    a = annotations or {}
+    return a.get("readOnlyHint") is not True and a.get("openWorldHint") is False
 
 
 def tool_class(settings: ToolSettings, name: str, annotations: dict[str, Any] | None) -> tuple[str, str]:
     """The class of mcp.<server>.<tool> under these settings, and its source."""
     parts = split_name(name)
-    server_class = settings.servers.get(parts[0], {}).get("class") if parts else None
-    return classify_with_source(annotations, settings.tools.get(name, {}).get("class"), server_class)
+    server = settings.servers.get(parts[0], {}) if parts else {}
+    confirmed = bool(parts) and parts[1] in (server.get("confirmed_internal") or [])
+    return classify_with_source(annotations, settings.tools.get(name, {}).get("class"), server.get("class"),
+                                confirmed)
 
 
 def refused(name: str, tool_settings: ToolSettings) -> bool:
@@ -236,6 +248,46 @@ TAKE_AWAY_WORDS = frozenset({"DELETE", "REMOVE", "TRASH", "EMPTY", "PURGE", "DES
 MAKE_WORDS = frozenset({"CREATE", "NEW", "ADD", "COPY", "DUPLICATE", "UPLOAD", "MAKE"})
 
 
+# After a brief or chat has read material (a web page, an email...), an internal change still runs,
+# unless it deletes something or changes who can see or reach it (M1): those then wait for the user,
+# since an injected "trash this" or "make it public" is not undone by page history or a job's backup.
+SHARING_WORDS = frozenset({"SHARE", "UNSHARE", "INVITE", "PERMISSION", "PERMISSIONS", "PUBLISH", "UNPUBLISH",
+                           "PUBLIC", "ACCESS", "ACL", "COLLABORATOR", "COLLABORATORS", "GRANT", "REVOKE",
+                           "VISIBILITY"})
+_SHARING_KEYS = ("share", "permission", "public", "visib", "access", "invite", "collaborator", "acl", "anyone")
+_SHARING_VALUES = frozenset({"public", "anyone", "anyonewithlink", "anyone_with_link", "anyone-with-link",
+                             "domain", "everyone", "published"})
+
+
+def _sharing_args(args: Any, depth: int = 0) -> bool:
+    if not isinstance(args, dict) or depth > 4:
+        return False
+    for k, v in args.items():
+        key = str(k).lower()
+        if (any(p in key for p in _SHARING_KEYS) and "token" not in key and "key" not in key
+                and v not in (None, False, "", [], {})):
+            return True
+        if isinstance(v, str) and v.strip().lower() in _SHARING_VALUES:
+            return True
+        if isinstance(v, dict) and _sharing_args(v, depth + 1):
+            return True
+        if isinstance(v, list) and any(_sharing_args(x, depth + 1) for x in v):
+            return True
+    return False
+
+
+def held_after_reading(name: str, args: dict | None) -> str | None:
+    """Why an internal call waits once material has been read: "deletes" or "shares" (a change to who
+    can see or reach something), or None for an ordinary edit, which still runs."""
+    words = name_words(name)
+    method = str((args or {}).get("method") or "").upper()  # an API's request
+    if words & TAKE_AWAY_WORDS or method == "DELETE":
+        return "deletes"
+    if words & SHARING_WORDS or _sharing_args(args):
+        return "shares"
+    return None
+
+
 class Scope:
     """What one job or one chat is working on, so that related calls on the same thing are one piece
     of work: what it made itself, what the user said yes to, and what already waits for approval."""
@@ -258,6 +310,11 @@ class Scope:
             return "internal"
         return effect
 
+    def own(self, args: dict | None) -> bool:
+        """Whether a call works on something this job or chat made itself."""
+        target = target_of(args)
+        return bool(target and target in self.made)
+
     def covered(self, name: str, args: dict | None) -> bool:
         """The user already said yes to work on this same thing in this service, and this call is not risky."""
         k = self.key(name, args)
@@ -273,6 +330,57 @@ class Scope:
             self.made |= made
             if approved:
                 self.approved |= {(service_of(name), t) for t in made}
+
+
+# ---------------------------------------------------------------------------
+# What a call will send, as the person asked to approve it sees it (H3)
+
+# Argument names that say who or where a call reaches, or who can see what it changes: shown first, so
+# a long body can never push a recipient or a sharing setting out of sight.
+_REACH_WORDS = frozenset({"to", "cc", "bcc", "from", "recipient", "recipients", "user", "users", "group", "groups",
+                          "role", "target", "address", "addresses", "number", "audience", "owner", "owners"})
+_REACH_PARTS = ("recipient", "email", "mail", "url", "uri", "link", "href", "channel", "invite", "attendee",
+                "share", "permission", "visib", "public", "access", "webhook", "phone", "domain", "destination",
+                "member", "collaborator", "acl", "anyone")
+
+
+def reaches(key: str) -> bool:
+    """Whether an argument's name says who or where a call reaches, or who can see what it changes."""
+    words = [w.lower() for w in re.split(r"[^A-Za-z0-9]+|(?<=[a-z])(?=[A-Z])", key) if w]
+    return any(w in _REACH_WORDS for w in words) or any(p in key.lower() for p in _REACH_PARTS)
+
+
+def _flat(args: dict, prefix: str = "") -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for k, v in args.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict) and v:
+            out += _flat(v, key + ".")
+        else:
+            out.append((key, v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)))
+    return out
+
+
+def argument_lines(args: dict | None) -> list[str]:
+    """Every argument of a call, in full, one per line as `name: value`: those naming who or where it
+    reaches (to, cc, bcc, url, channel, sharing...) first, then the rest in the call's own order. Nothing
+    is cut: an interface that folds a long one says so, with a way to show it all."""
+    pairs = _flat(args or {})
+    first = [p for p in pairs if reaches(p[0])]
+    return [f"{k}: {v}" for k, v in first + [p for p in pairs if p not in first]]
+
+
+# Interfaces fold an approval's item past this, showing its start and a "Show all": never a silent cut.
+FOLD_CHARS = 600
+FOLD_LINES = 8
+
+
+def folded(item: str) -> str | None:
+    """The start of an item too long to show whole at first, or None if it is short enough."""
+    lines = item.split("\n")
+    if len(item) <= FOLD_CHARS and len(lines) <= FOLD_LINES:
+        return None
+    return "\n".join(lines[:FOLD_LINES])[:FOLD_CHARS // 2].rstrip()
 
 
 def split_name(name: str) -> tuple[str, str] | None:

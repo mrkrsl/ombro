@@ -24,20 +24,21 @@ function LineView({ line }: { line: Line }) {
   const feedOn = useStore((s) => s.prefs?.background_feed !== false);
   switch (line.kind) {
     case "lead":
-      return <Markdown className="line lead" text={line.text} />;
+      return line.items?.length ? (
+        <div className="line-with-items">
+          <Markdown className="line lead" text={line.text} />
+          <Items items={line.items} />
+        </div>
+      ) : (
+        <Markdown className="line lead" text={line.text} />
+      );
     case "you":
       return <div className="line you">{line.text}</div>;
     case "note":
       return (
         <div className={`line note ${line.level}`}>
           {line.text}
-          {line.items.length > 0 && (
-            <ul>
-              {line.items.map((item, i) => (
-                <li key={i}>{item}</li>
-              ))}
-            </ul>
-          )}
+          {line.items.length > 0 && <Items items={line.items} />}
         </div>
       );
     case "progress":
@@ -87,6 +88,43 @@ function LineView({ line }: { line: Line }) {
         </div>
       );
   }
+}
+
+// An item longer than this shows its start and "Show all", never cut silently (H3). As outward.folded.
+const FOLD_CHARS = 600;
+const FOLD_LINES = 8;
+
+/** The start of an item too long to show whole at first, or null if it is short enough. */
+export function folded(item: string): string | null {
+  const lines = item.split("\n");
+  if (item.length <= FOLD_CHARS && lines.length <= FOLD_LINES) return null;
+  return lines.slice(0, FOLD_LINES).join("\n").slice(0, FOLD_CHARS / 2).trimEnd();
+}
+
+/** A list beneath a line, such as every argument of an action you're asked to approve: each in full,
+ * a long one folded with a "Show all" that opens it. */
+export function Items({ items }: { items: string[] }) {
+  return (
+    <ul className="line-items">
+      {items.map((item, i) => (
+        <FoldItem key={i} item={item} />
+      ))}
+    </ul>
+  );
+}
+
+function FoldItem({ item }: { item: string }) {
+  const [open, setOpen] = useState(false);
+  const start = folded(item);
+  if (start === null) return <li>{item}</li>;
+  return (
+    <li>
+      {open ? item : `${start} …`}{" "}
+      <button className="link-button" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? "Show less" : `Show all (${item.length.toLocaleString("en-GB")} characters)`}
+      </button>
+    </li>
+  );
 }
 
 /** What a proposal changes in the current file: apart from the file itself, folded away until asked

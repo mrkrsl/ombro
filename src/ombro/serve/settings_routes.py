@@ -345,6 +345,36 @@ def settings_routes(s: Serve) -> list[Route]:
         s.signing.pop(name, None)
         return tools_view()
 
+    def server_claims(r: Request) -> Any:
+        """What each of a server's tools says it does, and which still wait for your confirmation
+        (M1): the same as `ombro tools <server>`. Starts the server, which may download it first."""
+        from ombro import server_cmd
+        from ombro.mcp import McpError
+        from ombro.settings import load_tool_settings
+
+        name = r.path_params["name"]
+        if name not in load_tool_settings(home).servers:
+            raise LookupError(f"no tool called {name!r}")
+        try:
+            rows = server_cmd.tool_claims(home, name)
+        except McpError as e:
+            return {"tools": [], "unconfirmed": [], "problem": f"Its tools could not be listed: {e}"}
+        return {"tools": rows, "unconfirmed": server_cmd.unconfirmed(rows), "problem": None}
+
+    def confirm_claims(r: Request, data: dict[str, Any]) -> Any:
+        """Your yes to what the server says of these tools (they stay inside your organisation)."""
+        from ombro import server_cmd
+
+        tools = data.get("tools")
+        if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
+            raise HttpError(400, "`tools` is a list of the server's tool names")
+        claims = server_claims(r)
+        if claims["problem"]:
+            raise HttpError(400, claims["problem"])
+        wanted = [t for t in tools if t in claims["unconfirmed"]]  # only a claim the server makes now
+        server_cmd.confirm_internal(home, r.path_params["name"], wanted)
+        return server_claims(r)
+
     def sign_in(r: Request, data: dict[str, Any]) -> Any:
         """Start the sign-in (the existing OAuth flow) on a thread, and hand back the page to open.
         The flow then waits for the browser; GET /tools shows when it has finished."""
@@ -617,6 +647,8 @@ def settings_routes(s: Serve) -> list[Route]:
         Route("/tools/servers/{name}", _handler(edit_server, with_body=True), methods=["PUT"]),
         Route("/tools/servers/{name}/check", _handler(check_server), methods=["GET"]),
         Route("/tools/servers/{name}", _handler(remove_server), methods=["DELETE"]),
+        Route("/tools/servers/{name}/claims", _handler(server_claims), methods=["GET"]),
+        Route("/tools/servers/{name}/claims", _handler(confirm_claims, with_body=True), methods=["POST"]),
         Route("/tools/servers/{name}/sign-in", _handler(sign_in, with_body=True), methods=["POST"]),
         Route("/tools/servers/{name}/sign-in/answer", _handler(sign_in_answer, with_body=True), methods=["POST"]),
         Route("/tools/servers/{name}/sign-in", _handler(sign_out), methods=["DELETE"]),

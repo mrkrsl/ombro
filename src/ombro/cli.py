@@ -1523,6 +1523,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("server", nargs="?", help="an MCP server named in tools.md, or a built-in tool such as "
                    "web.search to see or change it; or add or edit, for a web API")
     s.add_argument("name", nargs="?", help="for add and edit: the web API's name, e.g. podcasts")
+    s.add_argument("--confirm", action="store_true", help="for a server: confirm, without asking, that the tools "
+                   "it says stay inside your organisation do (until then they count as external)")
     s.add_argument("--provider", help="for a built-in tool: the provider to use (e.g. duckduckgo, firecrawl)")
     s.add_argument("--max-calls", type=int, help="for a built-in tool or an API: the most calls one job may make")
     s.add_argument("--url", help="for an API: its address, e.g. https://api.example.com/v2")

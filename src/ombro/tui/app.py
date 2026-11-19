@@ -27,6 +27,7 @@ from textual.widgets.option_list import Option as ListOption
 from ombro import commands as core_commands
 from ombro import jobs, views
 from ombro.home import Home
+from ombro.outward import folded
 from ombro.session import JobWatcher, Session, setup_needed  # noqa: F401 - setup_needed kept importable here
 from ombro.tui import look
 from ombro.ui import (UI, ChatCleared, Event, Failure, Field, JobEnded, JobProgress, JobStarted, LeadSaid,
@@ -230,7 +231,7 @@ class PromptArea(TextArea):
 
 
 class Line(Static):
-    DEFAULT_CSS = "Line { height: auto; margin: 1 0 0 0; }"
+    DEFAULT_CSS = "Line { height: auto; margin: 1 0 0 0; } Line.items { margin: 0; }"
 
     def __init__(self, text: Text, **kw: Any):
         super().__init__(text, **kw)
@@ -238,6 +239,39 @@ class Line(Static):
 
     def retheme(self, old: look.Palette, new: look.Palette) -> None:
         self.text = look.recolour(self.text, old, new)
+        self.update(self.text)
+
+
+class Fold(Line):
+    """One item too long to show whole at first, such as a long argument of an action you are asked
+    to approve: its start, then "Show all (N characters)", which opens it (a click, or Enter). Never a
+    silent cut (H3)."""
+
+    DEFAULT_CSS = "Fold { height: auto; margin: 0 0 0 0; } Fold:focus { text-style: bold; }"
+    can_focus = True
+    BINDINGS = [Binding("enter", "toggle", "Show all", show=False)]
+
+    def __init__(self, item: str, start: str, p: look.Palette, **kw: Any):
+        self.item, self.start, self.p, self.open = item, start, p, False
+        super().__init__(self.render_text(), **kw)
+
+    def render_text(self) -> Text:
+        if self.open:
+            return Text(f"  - {self.item}", style=self.p.text) + Text("\n    Show less", style=f"underline {self.p.muted}")
+        return (Text(f"  - {self.start} …", style=self.p.text)
+                + Text(f"\n    Show all ({len(self.item):,} characters)", style=f"underline {self.p.strong}"))
+
+    def on_click(self) -> None:
+        self.action_toggle()
+
+    def action_toggle(self) -> None:
+        self.open = not self.open
+        self.text = self.render_text()
+        self.update(self.text)
+
+    def retheme(self, old: look.Palette, new: look.Palette) -> None:
+        self.p = new
+        self.text = self.render_text()
         self.update(self.text)
 
 
@@ -628,8 +662,32 @@ class OmbroApp(App):
         kind = {LeadSaid: "lead", Progress: "progress", Failure: "error", ProposalShown: "proposal"}.get(
             type(event), "note")
         if isinstance(event, Note) and event.level == "lead":
-            event, kind = LeadSaid(event.text), "lead"  # set-up's own lines, in the Lead's voice
+            # Set-up's own lines, in the Lead's voice; what it lists beneath (what an action will send) kept.
+            self.add_line(LeadSaid(event.text), "lead")
+            self.add_items(event.items)
+            return
+        if isinstance(event, Note) and any(folded(i) for i in event.items):
+            self.add_line(Note(event.text, spaced=event.spaced, level=event.level), kind)
+            self.add_items(event.items)
+            return
         self.add_line(event, kind)
+
+    def add_items(self, items: list[str]) -> None:
+        """A list beneath a line, each item in full; one too long to show at once is folded, with a
+        "Show all" that opens it."""
+        short: list[str] = []
+        for item in items:
+            start = folded(item)
+            if start is None:
+                short.append(item)
+                continue
+            if short:
+                self.add_text(Text("\n".join(f"  - {i}" for i in short), style=self.colours.text), "note items")
+                short = []
+            self.query_one("#messages").mount(Fold(item, start, self.colours, classes="note items"))
+        if short:
+            self.add_text(Text("\n".join(f"  - {i}" for i in short), style=self.colours.text), "note items")
+        self.call_after_refresh(self._after_line)
 
     def begin_ask(self, pending: Pending) -> None:
         f = pending.field

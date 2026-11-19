@@ -401,6 +401,29 @@ describe("Settings › Folders, Tools and Skills", () => {
     opened.mockRestore();
   });
 
+  it("adds a program, then shows what its tools claim and keeps your yes (M1)", async () => {
+    useStore.setState({ settingsPage: "tools" });
+    const sheets: ServerRow = { server: "sheets", url: null, command: "uvx", args: ["invented-sheets==1.0.0"], secrets: [],
+      sign_in: null, signing_in: false, problem: null };
+    replies["POST /tools/servers"] = { ...tools, servers: [remote, sheets], added: "sheets" };
+    const claim = { tool: "add_row", description: "Add a row.", claims: "internal", class: "external", class_from: "unconfirmed" };
+    replies["GET /tools/servers/sheets/claims"] = { tools: [claim], unconfirmed: ["add_row"], problem: null };
+    replies["POST /tools/servers/sheets/claims"] = { tools: [{ ...claim, class: "internal", class_from: "marking" }],
+      unconfirmed: [], problem: null };
+    render(<Settings />);
+    expect(await screen.findByText("Up to 60 calls a job")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add a tool" }));
+    await userEvent.selectOptions(screen.getByLabelText("Type"), "local");
+    await userEvent.type(screen.getByLabelText(/^Name/), "sheets");
+    await userEvent.type(screen.getByLabelText(/^Command/), "uvx invented-sheets==1.0.0");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByText(/they change things but stay inside your/)).toBeInTheDocument();
+    expect(screen.getByText(/Until you confirm it, these count as reaching outside/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Confirm they stay inside" }));
+    expect(sent("POST", "/tools/servers/sheets/claims")).toEqual({ tools: ["add_row"] });
+    expect(await screen.findByText(/Nothing to confirm/)).toBeInTheDocument();
+  });
+
   it("lists a web API and adds another, key and all", async () => {
     useStore.setState({ settingsPage: "tools" });
     replies["POST /tools/apis"] = tools;

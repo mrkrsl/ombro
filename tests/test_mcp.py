@@ -304,7 +304,9 @@ def test_tools_md_servers_and_mcp_settings_are_checked(home):
 def test_classes_follow_markings_then_the_server_then_the_tool():
     c = outward.classify_with_source
     assert c({"readOnlyHint": True}) == ("read-only", "marking")
-    assert c({"openWorldHint": False}) == ("internal", "marking")  # the server says it reaches nothing outside
+    # The server says it reaches nothing outside: only its word, so external until the user confirms it (M1).
+    assert c({"openWorldHint": False}) == ("external", "unconfirmed")
+    assert c({"openWorldHint": False}, confirmed=True) == ("internal", "marking")
     assert c({}) == ("external", "default")  # changes something, not classed: the safe default
     assert c({"readOnlyHint": False, "destructiveHint": False}) == ("external", "default")  # destructive is not the test
     assert c({}, server_class="internal") == ("internal", "server")

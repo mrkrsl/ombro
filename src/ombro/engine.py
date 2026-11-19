@@ -1028,6 +1028,12 @@ class Engine:
             # Material taints a brief: after reading it, an external call waits for the user, even
             # under auto, unless the spec allows this tool by name (7.1).
             decision, tainted_stage = "stage", True
+        elif (decision == "allow" and effect == "internal" and getattr(self, "tainted", False)
+                and name not in ((self.outward or {}).get("allow") or [])
+                and outward.held_after_reading(name, args) and not self.scope.own(args)):
+            # An internal change still runs after reading, but not one that deletes something or changes
+            # who can see it (M1): an injected "trash it" or "make it public" waits for the user.
+            decision, tainted_stage = "stage", True
         if decision == "refuse":
             self.journal.write(role.name, "tool_refused", f"{name}: refused by tools.md", tool=name,
                                permission="refuse")

