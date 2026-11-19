@@ -196,8 +196,9 @@ class Serve:
             self.send_counts()
 
     def counts(self) -> dict[str, Any]:
-        c = views.summary(self.home)["counts"]
-        return {"type": "counts", "active": c["active_jobs"], "scheduled": c["scheduled_jobs"],
+        s = views.summary(self.home)
+        c = s["counts"]
+        return {"type": "counts", "active": c["active_jobs"], "running": list(s["active_ids"]), "scheduled": c["scheduled_jobs"],
                 "waiting": c["waiting"], "unseen": c["unseen_jobs"], "crews_ready": c["crews_ready"]}
 
     def send_counts(self, force: bool = False) -> None:

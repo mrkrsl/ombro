@@ -523,6 +523,7 @@ def summary(home: Home) -> vt.Summary:
             "waiting": sum(r["waiting"] for r in job_rows),
             "unseen_jobs": len(unseen := [r for r in job_rows if is_unseen(r)]),
         },
+        "active_ids": [r["job_id"] for r in job_rows if r["active"]],
         "unseen": [{"job_id": r["job_id"], "status": r["status"], "brief": r["brief"],
                     "finished_at": r["finished_at"], "waiting": r["waiting"]} for r in unseen],
     }

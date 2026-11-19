@@ -37,7 +37,11 @@ export const NOTICE_MS = 6000;
 /** How long "Restarting…" shows before the app restarts, so the switch doesn't look like a crash. */
 export const RESTART_PAUSE_MS = 900;
 
-export type FeedLine = { key: number; jobId: string; name: string; line: string; status: string };
+/** How long a finished job's lines stay in the side panel's background work (they stay in its record). */
+export const FEED_CLEAR_MS = 60_000;
+
+// at: when the line came in (ms), shown in front of it in the side panel.
+export type FeedLine = { key: number; jobId: string; name: string; line: string; status: string; at: number };
 
 export type Screen = "home" | "chat" | "jobs" | "approvals" | "scheduled" | "settings" | "report" | "brief";
 export type Theme = "light" | "dark";
@@ -343,14 +347,25 @@ export const useStore = create<State & Actions>((set, get) => {
     receive(m) {
       if (m.type === "counts") {
         const before = get().counts;
-        set({ counts: m });
+        // The jobs running now come with the counts, so a chat's ring shows from the moment its job
+        // starts (not at its first step), and for a live job too, whose chat stays busy until it ends.
+        const running = Array.isArray(m.running) ? m.running : get().running;
+        set({ counts: m, running });
+        const known = new Set(get().chats.flatMap((c) => c.jobs));
+        const api = get().api;
+        if (api && running.some((id) => !known.has(id))) {
+          // A job the sidebar doesn't know the chat of: the chat's record names it by now.
+          void api.get<ChatRow[]>("/chats").then((chats) => set({ chats }), () => undefined);
+        }
         if (before && (before.waiting !== m.waiting || before.active !== m.active || before.scheduled !== m.scheduled)) {
           void get().load();
         }
         return;
       }
       if (m.type === "job") {
-        const line: FeedLine = { key: ++feedKey, jobId: m.job_id, name: m.name, line: m.line, status: m.status };
+        const line: FeedLine = {
+          key: ++feedKey, jobId: m.job_id, name: m.name, line: m.line, status: m.status, at: Date.now(),
+        };
         set((s) => ({
           feed: [...s.feed, line].slice(-FEED_KEEP),
           running:
@@ -366,6 +381,12 @@ export const useStore = create<State & Actions>((set, get) => {
         }
         if (m.event.type === "job_ended") {
           const e = m.event;
+          // A minute on, the panel lets go of the finished job: its lines up to the ending, unless
+          // it is going again by then (carried on under the same id).
+          setTimeout(() => {
+            if (get().running.includes(m.job_id)) return;
+            set((s) => ({ feed: s.feed.filter((f) => f.jobId !== m.job_id || f.key > line.key) }));
+          }, FEED_CLEAR_MS);
           if (get().prefs?.notifications !== false) {
             const waiting = e.waiting ? ` ${e.waiting} waiting for your approval.` : "";
             void notify(e.name, `${e.text}${waiting}`);

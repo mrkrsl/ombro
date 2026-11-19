@@ -382,6 +382,7 @@ class Summary(TypedDict):
     lead: LeadView
     crews: list[CrewRow]
     counts: Counts
+    active_ids: list[str]  # the jobs running now
     unseen: list[UnseenJob]
 
 

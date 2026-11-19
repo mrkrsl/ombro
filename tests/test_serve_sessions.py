@@ -585,3 +585,21 @@ def test_an_answer_to_the_open_question_still_answers_it(serve):
     tool = next(m for m in serve.client.calls[-1]["messages"] if m["role"] == "tool")
     assert "said not now" in tool["content"]
     ws.close()
+
+
+def test_the_counts_name_the_running_jobs_so_the_sidebar_ring_shows_at_once(home):
+    """T17/T18: the counts carry the running jobs' ids, before any step, live or not."""
+    from ombro.serve.app import Serve
+
+    import os
+
+    from ombro.jobs import new_job_id
+
+    jid = new_job_id("invented-report")
+    mdfile.write(home.jobs_dir / jid / "job.md", {"status": "running", "pid": os.getpid(), "crews": ["default"],
+                                                   "brief": "Invented", "created_at": "2026-11-14T09:00:00"})
+    counts = Serve(home).counts()
+    assert counts["running"] == [jid] and counts["active"] == 1
+    mdfile.write(home.jobs_dir / jid / "job.md", {"status": "completed", "crews": ["default"], "brief": "Invented",
+                                                   "created_at": "2026-11-14T09:00:00"})
+    assert Serve(home).counts()["running"] == []
