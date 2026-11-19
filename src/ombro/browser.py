@@ -17,6 +17,10 @@ What a role can do, and what keeps it safe (specification 7.1):
   Service workers can't be registered.
 - No data carried out in addresses. An address the role opens may carry no more after its '?'
   than web.fetch allows (fetch_max_query), and text typed into a field is held to the same cap.
+  Once the job has read private material (shared folders, memory, anything through an MCP,
+  API or Composio tool), ombro.carry holds back more: a budget of text typed into each site,
+  a cap on an address's path, no encoded-looking parts, and no copy of what it read. A form
+  that trips it waits for approval; in chat, you are asked.
 - What a page says is material. Only text a person could see is read (hidden text is not),
   it is fenced and checked for injected instructions like any page, and reading it marks the
   brief, so anything outward after it waits for approval.
@@ -49,6 +53,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from ombro.carry import ask_or_hold, site_of
 from ombro.tools import Tool, ToolContext, ToolError, ToolInputError
 
 # Where Chrome and its relatives usually are; tools.md `providers: browser: path:` or $OMBRO_BROWSER wins.
@@ -879,6 +884,24 @@ def _check_address(url: str, ctx: ToolContext) -> None:
                              "so it was not opened. Open the page without them.")
 
 
+def check_carried(url: str, ctx: ToolContext, verb: str = "opened") -> None:
+    """An address the role made up (browser.open, web.fetch), once the job holds private material:
+    its path capped, no encoded-looking part, no copy of what it read (H1). Links on a page are the
+    page's own, and are not checked here."""
+    carry = ctx.carry
+    why = carry.address(url) if carry is not None else []
+    if why and not ask_or_hold(ctx, f"open {_short(url, 300)}", [f"Address: {url}"], why, url=url):
+        raise ToolInputError(carry.held(f"{_short(url, 160)} was not {verb}", why) + " Open the page the "
+                             "address is on and click its link, or say in did_not_do what you could not open.")
+
+
+def _carry_typing(ctx: ToolContext, where: str, text: str, what: str, items: list[str]) -> bool:
+    """Whether `text` may go to site `where` now. False: held (in a job), or the user said no (in chat)."""
+    carry = ctx.carry
+    why = carry.typing(where, text) if carry is not None else []
+    return not why or ask_or_hold(ctx, what, items, why, site=where, typed=text)
+
+
 def _page_result(page: Page, max_chars: int, what: str = "") -> dict[str, Any]:
     out = page.snapshot(max_chars)
     out["note"] = PAGE_NOTE + (" " + what if what else "")
@@ -927,9 +950,10 @@ def browser_tools(browser: Browser) -> list[Tool]:
     def open_(args: dict, ctx: ToolContext) -> dict[str, Any]:
         url = str(args["url"]).strip()
         _check_address(url, ctx)
+        check_carried(url, ctx)
         p = page(ctx)
         p.open(url, ctx.timeout)
-        ctx.record("browser", f"opened {_short(url, 160)}", url=url)
+        ctx.record("browser", f"opened {_short(url, 160)}", url=url, kind="opened")
         return _page_result(p, int(args.get("max_chars") or TEXT_DEFAULT))
 
     def click(args: dict, ctx: ToolContext) -> dict[str, Any]:
@@ -966,8 +990,20 @@ def browser_tools(browser: Browser) -> list[Tool]:
         if len(text) > cap:
             raise ToolInputError(f"at most {cap} characters can be typed into a field; for a longer message, "
                                  "give it to browser.submit, which waits for the user's approval")
+        # A page's script sees each character as it is typed: once the job holds private material,
+        # typing counts as sending to that site (H1).
+        where = site_of(el.get("url") or "")
+        label = _short(el.get("label"), 60)
+        if not _carry_typing(ctx, where, text, f"type into \"{label}\" on {where}",
+                             [f"Page: {el.get('url')}", f"Field: {label}", f"Text: {text}"]):
+            raise ToolInputError(ctx.carry.held(f"Not typed into {where}", ctx.carry.typing(where, text))
+                                 + " If the user needs it sent, give it to browser.submit as a field: the form then "
+                                 "waits for the user's approval. Otherwise say in did_not_do what you could not type.")
+        if ctx.carry is not None and ctx.carry.private:
+            ctx.carry.spend(where, len(text))
         p.fill(el["selector"], text)
-        ctx.record("browser", f"typed into {el['ref']} \"{_short(el.get('label'), 60)}\"")
+        ctx.record("browser", f"typed into {el['ref']} \"{label}\" on {where}", kind="typed", site=where,
+                   url=el.get("url"), field=label, typed=text)
         return {"ref": el["ref"], "value": text, "note": "Typed, not sent."}
 
     def shot(args: dict, ctx: ToolContext) -> dict[str, Any]:
@@ -1009,10 +1045,23 @@ def browser_tools(browser: Browser) -> list[Tool]:
                 fields.append(extra)
         why = form_check(p, button["selector"], {f["selector"]: f["value"] for f in fields},
                          min(TYPE_MAX, _query_cap(ctx)))
+        carry, carried = ctx.carry, False
+        if carry is not None and carry.private:
+            # Once the job holds private material, a form that would carry it, or more than the site's
+            # budget, waits for the user like one that carries their details (H1).
+            where = site_of(button["url"])
+            new = sum(len(str(v)) for v in (args.get("fields") or {}).values())
+            held = carry.typing(where, "\n".join(f["value"] for f in fields), count=new)
+            if held:
+                why.append(f"this job has read private material ({carry.what()}), and " + "; ".join(held))
+                carried = True
+            elif not why:
+                carry.spend(where, new)
         # The harness reads `_effect` and takes it out: external waits for approval, internal is sent now.
         return {"url": button["url"], "form": button.get("form") or "", "fields": fields,
                 "button": {"label": button.get("label") or "", "selector": button["selector"]},
-                "_effect": "external" if why else "internal", **({"_why": "; ".join(why)} if why else {})}
+                "_effect": "external" if why else "internal", **({"_why": "; ".join(why)} if why else {}),
+                **({"_carry": True} if carried else {})}
 
     def submit_now(args: dict, ctx: ToolContext) -> dict[str, Any]:
         """Allowed by name in the spec: submitted on the role's own page."""

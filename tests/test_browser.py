@@ -417,3 +417,110 @@ def test_the_browser_setting_is_auto_one_browser_or_off(home):
     assert "browser" not in load_tool_settings(home).providers
     with pytest.raises(SetupError):
         tool_cmd.set_browser(home, "/usr/bin/invented-browser")
+
+
+# -- once a job has read private material (H1) ----------------------------------------
+
+PRIVATE = ("Invented client notes: the agreed fee for Halloway is forty thousand pounds, paid in two parts, "
+           "reference HX4471920033.")
+
+
+def _private_job(job, home, site, monkeypatch, tmp_path, calls, outward="auto"):
+    import base64 as b64
+
+    from conftest import write_role
+
+    from ombro import folders
+
+    me = tmp_path / "user"
+    (me / "Documents" / "Clients").mkdir(parents=True)
+    (me / "Documents" / "Clients" / "halloway.md").write_text(PRIVATE)
+    monkeypatch.setenv("HOME", str(me))
+    folders.add(home, me / "Documents" / "Clients", "clients", "read")
+    monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
+    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}},
+                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    write_role(home, "researcher", max_steps=12,
+               tools=["workspace.read", "browser.open", "browser.type", "browser.submit"])
+    job([
+        fake.brief("researcher", "Look up loaves for the client."),
+        *calls(b64),
+        fake.result("Done."), fake.finish("Done."), fake.keep_notes(), fake.say("## Summary\nDone."),
+    ], spec_meta={"folders": ["clients"], "outward": outward})
+    from ombro import material
+
+    # The role's tool replies, as its last model call had them (the call with the most of them).
+    calls = [[m for m in c["messages"] if m.get("role") == "tool"] for c in job.client.calls]
+    return [json.loads(material.unfence(m["content"])) for m in max(calls, key=len)]
+
+
+def test_a_job_that_read_private_material_cannot_type_or_open_it_out(job, home, site, monkeypatch, tmp_path):
+    secret = "the agreed fee for Halloway is forty thousand pounds"
+    replies = _private_job(job, home, site, monkeypatch, tmp_path, lambda b64: [
+        fake.call("workspace__read", {"path": "shared/clients/halloway.md"}),
+        fake.call("browser__open", {"url": site.url}),
+        fake.call("browser__type", {"ref": "e3", "text": "rye loaves"}),  # ordinary searching still works
+        fake.call("browser__type", {"ref": "e3", "text": secret}),
+        fake.call("browser__open", {"url": site.url + "t/" + b64.b64encode(secret.encode()).decode()}),
+    ])
+    read, opened, typed, held, refused = replies[-5:]
+    assert typed["value"] == "rye loaves"
+    assert "Not typed into shop.test" in held["error"] and "shared/clients/halloway.md" in held["error"]
+    assert "browser.submit" in held["error"]
+    assert "was not opened" in refused["error"] and "encoded" in refused["error"]
+    assert not [r for r in site.requests if "/t/" in r[1]]
+    assert sum(e["action"] == "carry_held" for e in job.events) == 2
+    report = job.report
+    assert "## Browser" in report and 'shop.test, "Search loaves": "rye loaves"' in report
+    assert f"Addresses opened (1):\n- {site.url}" in report
+    assert "Held back, because the job had read private material (2)" in report
+
+
+def test_a_job_that_only_read_the_web_types_as_before(job, home, site, monkeypatch, tmp_path):
+    secret = "the agreed fee for Halloway is forty thousand pounds"
+    replies = _private_job(job, home, site, monkeypatch, tmp_path, lambda b64: [
+        fake.call("browser__open", {"url": site.url}),
+        fake.call("browser__type", {"ref": "e3", "text": secret}),
+    ])
+    assert replies[-1]["value"] == secret
+    assert not any(e["action"] == "carry_held" for e in job.events)
+
+
+def test_a_form_carrying_private_material_waits_for_approval(job, home, site, monkeypatch, tmp_path):
+    # A form of choices would be sent in the job; carrying the client's reference, it waits.
+    _private_job(job, home, site, monkeypatch, tmp_path, lambda b64: [
+        fake.call("workspace__read", {"path": "shared/clients/halloway.md"}),
+        fake.call("browser__open", {"url": site.url}),
+        fake.call("browser__submit", {"button": "e10", "fields": {"e8": "Friday", "e9": "HX4471920033"},
+                                      "reason": "To see what's in stock."}),
+    ], outward={"preset": "balanced", "allow": ["browser.submit"]})
+    [a] = outbox.actions(job.job_dir)
+    assert a.status == "pending" and "private material" in a.arguments["_why"]
+    assert not [r for r in site.requests if r[0] == "POST"]
+
+
+@pytest.mark.parametrize("yes", [True, False])
+def test_in_chat_typing_private_material_asks_you_first(home, site, monkeypatch, tmp_path, yes):
+    from ombro import folders
+
+    me = tmp_path / "user"
+    (me / "Documents" / "Clients").mkdir(parents=True)
+    (me / "Documents" / "Clients" / "halloway.md").write_text(PRIVATE)
+    monkeypatch.setenv("HOME", str(me))
+    folders.add(home, me / "Documents" / "Clients", "clients", "read")
+    secret = "the agreed fee for Halloway is forty thousand pounds"
+    session = _chat_with_site(home, site, monkeypatch, [
+        fake.call("folders__read", {"path": "shared/clients/halloway.md"}),
+        fake.call("browser__open", {"url": site.url}),
+        fake.call("browser__type", {"ref": "e3", "text": "rye"}),  # ordinary: no question
+        fake.call("browser__type", {"ref": "e3", "text": secret}),
+        fake.say("Done." if yes else "Not typed."),
+    ], ["Look up loaves for Halloway.", "y" if yes else "n"])
+    *_, plain, typed = session.tool_replies()
+    assert plain["value"] == "rye"
+    assert "I'd like to type into" in session.output and f"Text: {secret}" in session.output
+    assert "words from folders.read shared/clients/halloway.md" in session.output
+    if yes:
+        assert typed["value"] == secret
+    else:
+        assert "Not typed into shop.test" in typed["error"]

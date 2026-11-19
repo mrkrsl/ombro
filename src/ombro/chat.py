@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ombro import keys, material, mdfile, memory, prompts, jobs, skills
+from ombro import carry as carry_mod
 from ombro.client import ChatClient, ModelError, estimate_tokens, make_client
 from ombro.gate import BriefLimit, Gate, LimitReached, ToolRefused
 from ombro.home import Home, crew_phrase, crew_phrases, crew_title, find_crew, words_title
@@ -386,6 +387,7 @@ class Chat:
         self.pending_note = ""
         self.transcript = Transcript()
         self.scope = None  # outward.Scope: what this chat made and what you said yes to (see _act)
+        self.carry = carry_mod.Carry()  # private material read in this chat, against what the browser carries (H1)
         self.refused: list[str] = []
         self.remembered: list[dict[str, str]] = []
         self.specs: list[str] = []
@@ -1070,10 +1072,13 @@ class Chat:
                                                              "browser__screenshot") and not (
                         isinstance(result, dict) and ("error" in result or "declined" in result)):
                     lookup = (self._lookups or {}).get(tc.name)
-                    src = material.source(MEMORY_TOOLS.get(tc.name) or WEB_TOOLS.get(tc.name)
-                                          or FOLDER_TOOLS.get(tc.name) or NATIVE_TOOLS.get(tc.name)
-                                          or (lookup.name if lookup else tc.name),
-                                          tc.arguments)
+                    used = (MEMORY_TOOLS.get(tc.name) or WEB_TOOLS.get(tc.name) or FOLDER_TOOLS.get(tc.name)
+                            or NATIVE_TOOLS.get(tc.name) or (lookup.name if lookup else tc.name))
+                    src = material.source(used, tc.arguments)
+                    if carry_mod.is_private(used, outward=bool(lookup is not None and lookup.outward),
+                                            args=tc.arguments,
+                                            shared=tc.name == "code__run" and bool(self._shared()[0].shared)):
+                        self.carry.saw(src, result)
                     signs = material.flags(result)
                     if signs:
                         # Ombro's own words, not the Lead's: what to check, never a block (7.1).
@@ -1214,7 +1219,16 @@ class Chat:
             (folder / area).mkdir(parents=True, exist_ok=True)
         shared, _ = self._shared()
         timeout = self.limits.code_timeout if tool == "code.run" else 60.0
-        return ToolContext(folder, "lead", timeout=timeout, shared=shared.shared, limits=self.limits)
+        return ToolContext(folder, "lead", timeout=timeout, shared=shared.shared, limits=self.limits,
+                           carry=self.carry, ask=self._carry_ask)
+
+    def _carry_ask(self, what: str, items: list[str]) -> bool:
+        """The browser would carry what may be private material to a site (ombro.carry): you decide."""
+        self._lead_says(f"I'd like to {what}.", level="lead", items=items)
+        if self.ui.yes("tool_act", "Go ahead?", False, aside=True):
+            return True
+        self.transcript.note(f"The user said no to: {what}.")
+        return False
 
     def _act(self, tool, args: dict) -> dict[str, Any]:
         """A tool that changes or sends something, used by the Lead in chat. The job's rules, with you
@@ -1231,14 +1245,15 @@ class Chat:
         if tool.prepare is not None:  # browser.submit: the page's refs become its address and fields
             args = tool.prepare(args, ctx)
         effect = str(args.pop("_effect", "") or tool.effect or "external")
+        carried = bool(args.pop("_carry", False))  # would carry private material to a site: always asks (H1)
         effect = self.scope.effect(tool.name, args, effect)  # deleting in what this chat made is its own work
         setting = outward.resolve(self.home, None)
         decision = outward.decide(setting, tool.name, effect, settings)
         if decision == "refuse":
             return {"error": f"{tool.name} is refused by the user's settings."}
-        if effect == "external" and tool.name not in (setting.get("allow") or []):
+        if effect == "external" and (carried or tool.name not in (setting.get("allow") or [])):
             decision = "stage"  # reaches people outside, or spends: never without the user's yes in chat
-        covered = decision == "stage" and self.scope.covered(tool.name, args)
+        covered = decision == "stage" and not carried and self.scope.covered(tool.name, args)
         if covered:
             decision = "allow"  # the same thing you already said yes to: one yes covers the related calls
         problem = outward.validation_error(tool.input_schema, args)

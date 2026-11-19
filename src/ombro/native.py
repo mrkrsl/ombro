@@ -571,8 +571,10 @@ def web_fetch_tool(provider: FetchProvider) -> Tool:
             # A long query string is how a page would have a role carry data out (7.1).
             raise ToolInputError(f"this address carries {len(query):,} characters after '?', over the "
                                  f"{cap:,} allowed, so it was not fetched. Fetch the page without them.")
+        browser_mod.check_carried(url, ctx, "fetched")  # once the job holds private material (H1)
         _with_record_dir(provider, ctx)
         page = provider.fetch(url, int(args.get("max_chars") or FETCH_DEFAULT_CHARS), ctx.timeout)
+        ctx.record("browser", f"fetched {url[:160]}", url=url, kind="opened")
         page["note"] = WEB_NOTE
         if page.get("truncated"):
             page["note"] += " The page was cut short."
