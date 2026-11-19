@@ -1,8 +1,10 @@
 [project]
 name = "ombro"
-version = "0.1.0"
+dynamic = ["version"]  # from src/ombro/__init__.py; tests/test_version.py checks the app matches
 description = "A small local harness for briefing a crew of AI roles and getting bounded, reported work back."
 readme = "README.md"
+license = "AGPL-3.0-only"
+authors = [{ name = "Heliotrope Atelier Ltd" }]
 requires-python = ">=3.11"
 # Minimums are the versions tested in uv.lock. `uv tool install` does not read the
 # lock, so these are what keep an install off older releases with known holes.
@@ -34,6 +36,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/ombro/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ombro"]

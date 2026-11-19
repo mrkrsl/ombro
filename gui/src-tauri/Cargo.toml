@@ -2,6 +2,8 @@
 name = "ombro-gui"
 version = "0.1.0"
 description = "Ombro desktop app"
+license = "AGPL-3.0-only"
+authors = ["Heliotrope Atelier Ltd"]
 edition = "2021"
 publish = false
 
