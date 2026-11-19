@@ -101,7 +101,14 @@ RETIRED_LIMITS = ("budget_usd", "tool_cost_per_call")
 CHANGED_DEFAULTS = {"chat_history_chars": (30_000, 200_000), "code_output_chars": (8_000, 30_000)}
 # The same for model calls per brief, by kind (17 Nov 2026: 15 calls left a specialist four to write a document
 # with after reading its sources, and the job split into six briefs; tokens and time bound a brief anyway).
-CHANGED_STEPS = {"specialist": (15, 40), "helper": (8, 20)}
+# 19 Nov 2026: the Lead 6 to 40 and a helper 20 to 30, so a job isn't cut short by its step count.
+CHANGED_STEPS = {"lead": ((6,), 40), "specialist": ((15,), 40), "helper": ((8, 20), 30)}
+
+
+def upgraded_steps(kind: str, value: Any) -> Any:
+    """max_steps for a kind as written in a file: an old built-in default becomes today's."""
+    old, new = CHANGED_STEPS.get(kind, ((), None))
+    return new if not isinstance(value, bool) and value in old else value
 # Limits that were renamed: read under their old names too (jobs were once called runs).
 RENAMED_LIMITS = {"run_timeout": "job_timeout"}
 
@@ -348,8 +355,7 @@ def load_limits(
             per_tool["tool_max_calls"][name] = WORKSPACE_CALLS[level]
     steps = merged.get("max_steps")
     if isinstance(steps, dict):
-        merged["max_steps"] = {k: (CHANGED_STEPS[k][1] if k in CHANGED_STEPS and v == CHANGED_STEPS[k][0] else v)
-                               for k, v in steps.items()}
+        merged["max_steps"] = {k: upgraded_steps(k, v) for k, v in steps.items()}
     from ombro.apitool import DEFAULT_CALLS, tool_names
 
     for api, cfg in tools.apis.items():  # each of a web API's tools gets its call limit
