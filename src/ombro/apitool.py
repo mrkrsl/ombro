@@ -255,7 +255,7 @@ def address(base: str, path: str, query: dict[str, Any] | None = None) -> str:
 
 def _reply_text(r: httpx.Response, secret: str | None) -> str:
     try:
-        text = json.dumps(r.json(), indent=1, ensure_ascii=False)
+        text = json.dumps(r.json(), ensure_ascii=False, separators=(",", ":"))
     except ValueError:
         text = r.text
     if secret:

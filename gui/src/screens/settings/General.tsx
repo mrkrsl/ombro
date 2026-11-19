@@ -25,6 +25,14 @@ export const MODES: [string, string, string][] = [
   ["auto", "Hands-off", "Crews do everything without asking. Use with care."],
 ];
 
+export const THINKING: [string, string][] = [
+  ["off", "No thinking"],
+  ["low", "Low"],
+  ["medium", "Medium"],
+  ["high", "High"],
+  ["xhigh", "Extra high"],
+];
+
 const THEMES: [ThemeChoice, string][] = [
   ["auto", "Same as the system"],
   ["light", "Light"],
@@ -475,6 +483,28 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
             ))}
           </select>
           <Saved when={saved.limit ?? 0} />
+        </span>
+      </Field>
+      <Field
+        label="Thinking"
+        hint="How much models think before they answer. More is slower and costs more; models that don't think are left alone. A model can have its own level in models.md."
+      >
+        <span className="form-row tight">
+          <select
+            aria-label="Thinking"
+            value={prefs.data?.thinking ?? "medium"}
+            onChange={async (e) => {
+              const p = await run((api) => api.put<Preferences>("/preferences", { thinking: e.target.value }));
+              if (p) { prefs.set(p); mark("thinking"); }
+            }}
+          >
+            {THINKING.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <Saved when={saved.thinking ?? 0} />
         </span>
       </Field>
     </section>

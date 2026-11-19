@@ -364,7 +364,7 @@ def run(home: Home, cfg: dict[str, Any], slug: str, arguments: dict, account: di
         said = str(out.get("error") or "no detail").replace(key, "[key removed]")
         raise ToolError(f"{slug} didn't work. Composio said: {said[:2000]}")
     try:
-        text = json.dumps(out.get("data"), indent=1, ensure_ascii=False)
+        text = json.dumps(out.get("data"), ensure_ascii=False, separators=(",", ":"))
     except (TypeError, ValueError):
         text = str(out.get("data"))
     text = text.replace(key, "[key removed]")

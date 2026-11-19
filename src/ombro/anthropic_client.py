@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import nullcontext
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
 
-from ombro.client import RETRYABLE, ModelError, ModelReply, ToolCall, Usage, allowed_max_tokens
+from ombro.client import (RETRYABLE, BUSY_RETRIES, ModelError, ModelReply, ToolCall, Usage, allowed_max_tokens,
+                          busy_pause, busy_wait, no_slot_error)
+from ombro.slots import NoSlot
 
 API_VERSION = "2026-10-21"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -48,7 +51,10 @@ class AnthropicClient:
         retries: int = 2,
         sleep: Callable[[float], None] = time.sleep,
         effort: str | None = None,
+        slots=None,
+        thinking: str | None = None,
     ):
+        self.slots = slots  # ombro.slots.ProviderSlots: how many calls may be in flight to Anthropic at once
         self.base = endpoint.rstrip("/")
         self.url = self.base + "/messages"
         self.host = urlparse(endpoint).netloc or endpoint
@@ -61,6 +67,8 @@ class AnthropicClient:
         effort = _EFFORT_ALIASES.get((effort or "").lower(), (effort or "").lower())
         self.effort = effort if effort in EFFORTS else None  # "none" and unknown words: the model's default
         self.effort_refused = False
+        self.thinking = thinking  # a level (ombro.thinking) when models.md gives no effort word of its own
+        self.thinking_refused = False
         self.fallback_refused = False  # a model or account that doesn't take server-side fallbacks
         self.stale_thinking: set[str] = set()  # signatures of thinking blocks Anthropic no longer accepts
 
@@ -91,12 +99,22 @@ class AnthropicClient:
             body["tools"] = to_anthropic_tools(tools)
         if self.effort and not self.effort_refused:
             body["output_config"] = {"effort": self.effort}
+        elif self.thinking and not self.effort:
+            from ombro.thinking import anthropic_fields
+
+            fields = anthropic_fields(self.thinking, self.model, int(body["max_tokens"]))
+            if self.thinking_refused:
+                fields.pop("thinking", None)
+            if self.effort_refused:
+                fields.pop("output_config", None)
+            body.update(fields)
         if not self.fallback_refused:
             # If Claude's safety checks decline a request, Anthropic tries another Claude model.
             body["fallbacks"] = "default"
 
         deadline = time.monotonic() + timeout
         attempt = 0
+        busy = 0
         lost = 0
         stripped = False
         while True:
@@ -107,9 +125,15 @@ class AnthropicClient:
                 raise err
             retryable = False
             try:
-                with httpx.Client(transport=self.transport,
-                                  timeout=httpx.Timeout(remaining, connect=min(remaining, 15.0))) as http:
+                with self.slots.hold(deadline) if self.slots else nullcontext(), httpx.Client(
+                        transport=self.transport,
+                        timeout=httpx.Timeout(max(0.1, deadline - time.monotonic()),
+                                              connect=min(remaining, 15.0))) as http:
                     resp = http.post(self.url, json=body, headers=self._headers(key, "fallbacks" in body))
+            except NoSlot:
+                err = no_slot_error(self.host)
+                err.lost_attempts = lost
+                raise err from None
             except httpx.TimeoutException:
                 err = ModelError("the model call ran out of time", timed_out=True)
                 retryable = True
@@ -129,6 +153,10 @@ class AnthropicClient:
                         self.fallback_refused = True  # this model doesn't take them: carry on without
                         del body["fallbacks"]
                         continue
+                    if "thinking" in low and "thinking" in body and "signature" not in low:
+                        self.thinking_refused = True  # this model doesn't take that thinking setting
+                        del body["thinking"]
+                        continue
                     if "effort" in low and "output_config" in body:
                         self.effort_refused = True
                         del body["output_config"]
@@ -147,7 +175,14 @@ class AnthropicClient:
                     body["max_tokens"] = allowed
                     continue
                 err = ModelError(f"{self.host} returned HTTP {resp.status_code}: {detail}", status=resp.status_code)
-                retryable = resp.status_code in RETRYABLE
+                wait = busy_wait(resp, detail)
+                if wait is not None and busy < BUSY_RETRIES:
+                    busy += 1
+                    pause = busy_pause(wait, busy)
+                    if pause < deadline - time.monotonic() - 1:
+                        self.sleep(pause)
+                        continue
+                retryable = resp.status_code in RETRYABLE and wait is None
             if not retryable or attempt >= self.retries:
                 err.lost_attempts = lost
                 raise err

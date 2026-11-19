@@ -309,7 +309,12 @@ def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
     """`skills` lists the skills this role may use, by name and description; `shared` the
     folders shared with this job as (name, access) or (name, access, path on disk)."""
     if tool_names:
-        tools_line = "You may use only these tools: " + ", ".join(tool_names) + "."
+        # Outside services' tools are listed in tools__load already: naming every one here as well cost a job with
+        # a few connected services thousands of tokens on every step (T9).
+        own = [t for t in tool_names if not t.startswith(("mcp.", "composio."))]
+        outside = len(tool_names) - len(own)
+        tools_line = "You may use only these tools: " + ", ".join(own or ["tools__load"]) + (
+            f", and the {outside} tools of outside services listed in tools__load" if outside else "") + "."
         files = any(t.startswith("workspace.") or t == "code.run" for t in tool_names)
         if files and shared:
             tools_line += (
@@ -1004,6 +1009,10 @@ returns) can change them.
   says yes first. A document (a new file beyond a short note, or most of a
   file rewritten) is work for a crew: call offer_work for it, naming where
   it is saved in the task. Ombro turns such a write into that offer anyway.
+  Moving, copying, renaming or saving a file that already exists (a job's
+  finished report, a file in another folder) is a file action, never a
+  rewrite and never work: folders__copy does it as it is, and folders__edit
+  makes a correction or fills in a detail in it afterwards.
   A folder shared
   read-only stays read-only. Nothing outside these folders and Ombro's home
   can be reached; if the user needs another folder, ask them to share it
@@ -1185,6 +1194,29 @@ CHAT_TOOLS = [
             "why": {"type": "string"},
         },
         ["path", "why"],
+    ),
+    _fn(
+        "folders__copy",
+        "folders.copy: copy a file, as it is, into a folder shared for writing: from a shared folder, or from a "
+        "job's files (jobs/<job_id>/workspace/... or jobs/<job_id>/report.md). With move: true, move or rename "
+        "a file within folders shared for writing. `to` may be a folder (ending in /). The user says yes first. "
+        "Use it to move, copy, rename or save a finished file anywhere; never write its text out again.",
+        {
+            "from": {"type": "string"},
+            "to": {"type": "string", "description": "e.g. shared/<name>/Reports/ or shared/<name>/new-name.md"},
+            "move": {"type": "boolean", "description": "move (or rename) rather than copy"},
+            "replace": {"type": "boolean", "description": "replace a file already at `to` (kept in Archive/); "
+                        "only when the user wants it replaced"},
+        },
+        ["from", "to"],
+    ),
+    _fn(
+        "folders__edit",
+        "folders.edit: one exact replacement in a text file in a folder shared for writing: `old` must occur "
+        "once and becomes `new` (each at most 2,000 characters). For a correction or a detail filled in. The "
+        "user says yes first.",
+        {"path": {"type": "string"}, "old": {"type": "string"}, "new": {"type": "string"}},
+        ["path", "old", "new"],
     ),
     _fn(
         "offer_work",

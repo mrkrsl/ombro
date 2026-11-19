@@ -234,6 +234,8 @@ class Preferences(TypedDict):
     instructions: str  # the profile, as the Lead is given it
     background_feed: bool
     notifications: bool
+    thinking: str  # off, low, medium, high or xhigh: what models use unless models.md gives their own
+    thinking_set: bool  # false while it is the built-in default
     files: dict[str, str]
 
 

@@ -20,7 +20,7 @@ type Call = [string, string, unknown?];
 const prefs: Preferences = {
   name: "Ada", theme: "auto", default_crew: "default", default_crew_title: "Default Crew", editor: "",
   outward: "balanced", instructions_set: true, instructions: "I run an invented bakery.", background_feed: true,
-  notifications: true, files: {},
+  notifications: true, thinking: "medium", thinking_set: false, files: {},
 };
 const models: ModelList = {
   default: "invented-chat",
@@ -158,6 +158,19 @@ describe("Settings › General", () => {
     replies["PUT /preferences"] = { ...prefs, outward: "manual" };
     await userEvent.selectOptions(screen.getByLabelText("Approval mode"), "manual");
     expect(sent("PUT", "/preferences")).toEqual({ outward: "manual" });
+  });
+});
+
+describe("Settings › General: thinking", () => {
+  it("offers the five levels and saves the choice as a preference", async () => {
+    render(<Settings />);
+    const picker = await screen.findByLabelText("Thinking");
+    expect([...(picker as HTMLSelectElement).options].map((o) => o.text))
+      .toEqual(["No thinking", "Low", "Medium", "High", "Extra high"]);
+    expect((picker as HTMLSelectElement).value).toBe("medium");
+    replies["PUT /preferences"] = { ...prefs, thinking: "low", thinking_set: true };
+    await userEvent.selectOptions(picker, "low");
+    expect(sent("PUT", "/preferences")).toEqual({ thinking: "low" });
   });
 });
 

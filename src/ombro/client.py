@@ -4,11 +4,16 @@ anthropic_client.py. Messages are kept in the OpenAI shape everywhere else in Om
 from __future__ import annotations
 
 import json
+import random
 import re
+from contextlib import nullcontext
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 from urllib.parse import urlparse
+
+from ombro.slots import NoSlot
 
 import httpx
 
@@ -101,6 +106,43 @@ def parse_tool_arguments(raw: Any) -> dict | None:
 
 
 RETRYABLE = {408, 409, 429, 500, 502, 503, 504, 529}  # 529: Anthropic is overloaded
+BUSY_RETRIES = 6  # tries again when a provider is busy (429, or OpenRouter's in-flight 402), up to the call's time
+BUSY_MAX_PAUSE = 60.0
+_IN_FLIGHT = ("in-flight", "in_flight", "in flight")
+
+
+THINKING_KEYS = ("reasoning_effort", "reasoning", "thinking")
+# An endpoint's refusal of a field it doesn't take, or of a value it doesn't know.
+_REFUSED_FIELD = re.compile(r"reason|think|effort|unrecogni[sz]ed|unknown|extra|not permitted|not allowed|"
+                            r"unsupported|not supported|invalid param", re.IGNORECASE)
+
+
+def busy_wait(resp: httpx.Response, detail: str) -> float | None:
+    """Seconds the provider asks Ombro to wait before trying again when it is busy rather than refusing the
+    request: 429 (too many requests), 529 (overloaded) and OpenRouter's 402 for credit held by requests still in
+    flight. 0 when it gives no Retry-After; None when this is not that kind of refusal (T10)."""
+    status = resp.status_code
+    if status == 402:
+        low = (detail + " " + resp.text[:2000]).lower()
+        if not any(w in low for w in _IN_FLIGHT):
+            return None  # out of credit: trying again will not help
+    elif status not in (429, 529):
+        return None
+    try:
+        return max(0.0, min(float(resp.headers.get("retry-after") or 0), BUSY_MAX_PAUSE))
+    except ValueError:
+        return 0.0
+
+
+def busy_pause(wait: float, busy: int) -> float:
+    """How long to wait before the `busy`th try again: what the provider asked, or a growing pause, with a little
+    jitter so calls that were turned away together don't come back together."""
+    return max(wait, min(BUSY_MAX_PAUSE, 2.0 ** busy)) + random.uniform(0, 0.5)
+
+
+def no_slot_error(host: str) -> ModelError:
+    return ModelError(f"every connection Ombro allows to {host} stayed busy until the model call ran out of time",
+                      timed_out=True)
 
 
 def public(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -139,8 +181,11 @@ class OpenAICompatibleClient:
         retries: int = 2,
         sleep: Callable[[float], None] = time.sleep,
         reasoning_effort: str | None = None,
+        slots=None,
+        thinking: str | None = None,
     ):
         self.url = endpoint.rstrip("/") + "/chat/completions"
+        self.slots = slots  # ombro.slots.ProviderSlots: how many calls may be in flight to this provider at once
         self.host = urlparse(endpoint).netloc or endpoint
         self.model = model
         self.key_getter = key_getter
@@ -150,8 +195,16 @@ class OpenAICompatibleClient:
         self.sleep = sleep
         self.learned_max: int | None = None  # the most the endpoint allows per reply, learned from its refusal
         # How hard a thinking model thinks, from models.md. An endpoint that refuses the field gets calls without it.
-        self.reasoning_effort = reasoning_effort
+        self.reasoning_effort = reasoning_effort  # a provider's own word, sent as it is
+        self.thinking = thinking  # else a level (ombro.thinking), sent in the form this endpoint takes
+        self.endpoint = endpoint
         self.effort_refused = False
+        # OpenRouter serves Claude without caching unless the request asks for it; with it, each step of a job
+        # reads the steps before it at a small part of the price. One session id per client keeps the calls on the same
+        # provider behind OpenRouter, where the cache is.
+        self.openrouter = is_openrouter(endpoint)
+        self.cache = self.openrouter and is_claude_model(model)
+        self.session_id = uuid.uuid4().hex if self.openrouter else None
 
     def complete(self, messages, *, tools=None, max_output_tokens, timeout) -> ModelReply:
         key = self.key_getter()
@@ -163,15 +216,21 @@ class OpenAICompatibleClient:
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
-        if self.reasoning_effort and not self.effort_refused:
-            body["reasoning_effort"] = self.reasoning_effort
+        if not self.effort_refused:
+            body.update(self._thinking_fields(self.thinking))
+        if self.cache:
+            body["cache_control"] = {"type": "ephemeral"}  # the conversation so far: tools, system and messages
+        if self.session_id:
+            body["session_id"] = self.session_id
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
 
         deadline = time.monotonic() + timeout
         attempt = 0
+        busy = 0
         lost = 0
+        tried: set[str] = set()
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -180,11 +239,15 @@ class OpenAICompatibleClient:
                 raise err
             retryable = False
             try:
-                with httpx.Client(
+                with self.slots.hold(deadline) if self.slots else nullcontext(), httpx.Client(
                     transport=self.transport,
-                    timeout=httpx.Timeout(remaining, connect=min(remaining, 15.0)),
+                    timeout=httpx.Timeout(max(0.1, deadline - time.monotonic()), connect=min(remaining, 15.0)),
                 ) as http:
                     resp = http.post(self.url, json=body, headers=headers)
+            except NoSlot:
+                err = no_slot_error(self.host)
+                err.lost_attempts = lost
+                raise err from None
             except httpx.TimeoutException:
                 err = ModelError("the model call ran out of time", timed_out=True)
                 retryable = True
@@ -198,19 +261,36 @@ class OpenAICompatibleClient:
                     reply.lost_attempts = lost
                     return reply
                 detail = self._error_text(resp, key)
-                if resp.status_code in (400, 422) and "reasoning_effort" in body and "reasoning" in detail.lower():
-                    # The endpoint does not take reasoning_effort (or not this value): carry on without it.
-                    self.effort_refused = True
-                    del body["reasoning_effort"]
-                    continue
                 allowed = allowed_max_tokens(detail) if resp.status_code in (400, 422) else None
                 if allowed and allowed < body["max_tokens"] and not self.learned_max:
                     # The endpoint allows fewer output tokens than asked: use its maximum from now on.
                     self.learned_max = allowed
                     body["max_tokens"] = allowed
                     continue
+                sent = [k for k in THINKING_KEYS if k in body]
+                if resp.status_code in (400, 422) and sent and _REFUSED_FIELD.search(detail):
+                    for k in sent:
+                        del body[k]
+                    if self.thinking == "off" and not self.reasoning_effort and "low" not in tried:
+                        # A model that must think (OpenRouter's "mandatory" reasoning): the least it takes.
+                        tried.add("low")
+                        self.thinking = "low"
+                        body.update(self._thinking_fields("low"))
+                        continue
+                    # The endpoint does not take these fields (or not this value): carry on without them.
+                    self.effort_refused = True
+                    continue
                 err = ModelError(f"{self.host} returned HTTP {resp.status_code}: {detail}", status=resp.status_code)
-                retryable = resp.status_code in RETRYABLE
+                wait = busy_wait(resp, detail)
+                if wait is not None and busy < BUSY_RETRIES:
+                    busy += 1
+                    if resp.status_code == 402 and body["max_tokens"] > 8192:
+                        body["max_tokens"] = max(8192, body["max_tokens"] // 2)  # a smaller reservation of credit
+                    pause = busy_pause(wait, busy)
+                    if pause < deadline - time.monotonic() - 1:
+                        self.sleep(pause)
+                        continue
+                retryable = resp.status_code in RETRYABLE and wait is None
             if not retryable or attempt >= self.retries:
                 err.lost_attempts = lost
                 raise err
@@ -218,6 +298,15 @@ class OpenAICompatibleClient:
             pause = min(2.0**attempt, max(0.0, deadline - time.monotonic() - 1))
             if pause > 0:
                 self.sleep(pause)
+
+    def _thinking_fields(self, level: str | None) -> dict[str, Any]:
+        from ombro.thinking import openai_fields
+
+        if self.reasoning_effort:
+            if self.openrouter:
+                return {"reasoning": {"effort": self.reasoning_effort}}  # OpenRouter's form of reasoning_effort
+            return {"reasoning_effort": self.reasoning_effort}
+        return openai_fields(level, self.endpoint, self.model)
 
     def list_models(self, timeout: float = 20.0) -> list[str]:
         """The models this endpoint offers to this key (GET {endpoint}/models), sorted.
@@ -310,6 +399,17 @@ def is_anthropic(endpoint: str | None) -> bool:
     return (urlparse(endpoint or "").hostname or "").lower() == "api.anthropic.com"
 
 
+def is_openrouter(endpoint: str | None) -> bool:
+    host = (urlparse(endpoint or "").hostname or "").lower()
+    return host == "openrouter.ai" or host.endswith(".openrouter.ai")
+
+
+def is_claude_model(model: str | None) -> bool:
+    """A Claude model as an OpenAI-compatible router names it (anthropic/claude-opus-5.5, ~anthropic/...)."""
+    m = (model or "").lower().lstrip("~")
+    return m.startswith("anthropic/") or m.startswith("claude-")
+
+
 def api_for(endpoint: str | None) -> str:
     """The `api:` a new models.md entry for this address gets."""
     return "anthropic" if is_anthropic(endpoint) else "openai"
@@ -323,24 +423,43 @@ def make_client(spec, home) -> ChatClient:
     if spec.api == "fake":
         return ScriptedClient.shared(spec.script, base=home.root)
     key_name = spec.key
+    from ombro import thinking as thinking_mod
+
+    level, raw = thinking_mod.for_spec(spec, home)
     if spec.api == "chatgpt":
         from ombro.chatgpt import Session
         from ombro.responses_client import ChatGPTClient
 
-        return ChatGPTClient(spec.model, Session(home), effort=getattr(spec, "reasoning_effort", None))
+        return ChatGPTClient(spec.model, Session(home), effort=raw or thinking_mod.responses_effort(level))
     if spec.api == "anthropic" or (spec.api == "openai" and is_anthropic(spec.endpoint)):
         from ombro.anthropic_client import AnthropicClient
 
+        endpoint = spec.endpoint or ANTHROPIC_ENDPOINT
         return AnthropicClient(
-            spec.endpoint or ANTHROPIC_ENDPOINT,
+            endpoint,
             spec.model,
             (lambda: keys.get_key(home, key_name)) if key_name else (lambda: None),
-            effort=getattr(spec, "reasoning_effort", None),
+            effort=raw,
+            thinking=level,
+            slots=_slots(home, endpoint, spec),
         )
     return OpenAICompatibleClient(
         spec.endpoint,
         spec.model,
         (lambda: keys.get_key(home, key_name)) if key_name else (lambda: None),
         key_required=bool(key_name),
-        reasoning_effort=getattr(spec, "reasoning_effort", None),
+        reasoning_effort=raw,
+        thinking=level,
+        slots=_slots(home, spec.endpoint, spec),
     )
+
+
+def _slots(home, endpoint: str | None, spec):
+    """The calls in flight to this provider at once, for every Ombro process in the home: `max_concurrent` in
+    models.md, or a few. None for an address that isn't a provider's (a local model)."""
+    from ombro.slots import for_provider
+
+    host = (urlparse(endpoint or "").hostname or "").lower()
+    if not host or host in ("localhost", "127.0.0.1", "::1") or home is None:
+        return None
+    return for_provider(home, host, getattr(spec, "max_concurrent", None))

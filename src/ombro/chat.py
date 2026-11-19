@@ -21,6 +21,7 @@ loaded into later chats or jobs, and never searched.
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
 import time
@@ -96,7 +97,9 @@ class BriefLookups:
 MEMORY_TOOLS = {"memory__search": "memory.search", "memory__read": "memory.read", "memory__list": "memory.list"}
 WEB_TOOLS = {"web__search": "web.search", "web__fetch": "web.fetch"}
 FOLDER_TOOLS = {"folders__list": "folders.list", "folders__read": "folders.read", "folders__write": "folders.write",
-                "folders__set_aside": "folders.set_aside"}
+                "folders__set_aside": "folders.set_aside", "folders__copy": "folders.copy",
+                "folders__edit": "folders.edit"}
+EDIT_MAX_CHARS = 2_000  # folders.edit is a correction or a filled-in detail, not new writing
 SKILL_TOOLS = {"skills__read": "skills.read"}
 # The crew's own tools the Lead uses in chat too, from the registry: the browser and code.run. They work
 # in a folder of the chat's own (Files/chats/<id>/workspace), next to the shared folders.
@@ -1052,7 +1055,8 @@ class Chat:
                     except SetAside as e:
                         aside, result = e, dict(SET_ASIDE_RESULT)
                 src = None
-                if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside", LOAD_NAME,
+                if tc.name not in OFFERS and tc.name not in ("folders__write", "folders__set_aside", "folders__copy",
+                                                             "folders__edit", LOAD_NAME,
                                                              "skills__read", "browser__type",
                                                              "browser__screenshot") and not (
                         isinstance(result, dict) and ("error" in result or "declined" in result)):
@@ -1278,7 +1282,12 @@ class Chat:
         if not ctx.shared:
             return {"error": "No folders are shared yet. The user shares one with /folder add <path>."
                              + (" " + " ".join(left) if left else "")}
+        if internal == "folders.copy":
+            return self._folder_copy(ctx, args)
         path = str(args.get("path") or "").strip()
+        if internal == "folders.edit":
+            self._chat_path(ctx, path)
+            return self._folder_edit(ctx, path, args)
         if internal == "folders.list":
             if not path or path.strip("/") == "shared":
                 out = native._list({"path": "shared"}, ctx)
@@ -1325,6 +1334,108 @@ class Chat:
         self.transcript.note(f"{done}, with the user's yes.")
         self.ui.say(f"Saved {shown}.", level="done")
         return out
+
+    def _copy_source(self, ctx: ToolContext, path: str) -> tuple[Path, str]:
+        """The file to copy or move: in a shared folder, this chat's own workspace/ or scratch/, or a job's
+        files and reports as memory.read reaches them (jobs/<id>/...)."""
+        from ombro import native
+
+        if path.startswith(("shared/", "workspace/", "scratch/")):
+            real = native.resolve_path(ctx, path)
+            shown = native._display(ctx, real.resolve())
+        else:
+            try:
+                real = memory.resolve_readable(self.home, path)
+            except memory.ReadRefused as e:
+                raise ToolError(str(e)) from None
+            shown = self.home.rel(real)
+        if real.is_symlink() or not real.is_file():
+            raise ToolError(f"{path} is not a file Ombro can copy")
+        return real, shown
+
+    def _folder_copy(self, ctx: ToolContext, args: dict) -> dict[str, Any]:
+        """Copy a file into a folder shared for writing, or move or rename one within such folders: a file
+        operation, byte for byte, with the user's yes. Never a rewrite and never work for a crew (T20)."""
+        import shutil
+
+        from ombro import native
+
+        src_arg, dst_arg = str(args.get("from") or "").strip(), str(args.get("to") or "").strip()
+        if not src_arg or not dst_arg:
+            return {"error": "give from (the file) and to (where it goes, shared/<name>/...)"}
+        src, src_shown = self._copy_source(ctx, src_arg)
+        self._chat_path(ctx, dst_arg)
+        target = native.resolve_path(ctx, dst_arg, write=True)
+        if dst_arg.endswith("/") or target.is_dir():
+            target = native.resolve_path(ctx, dst_arg.rstrip("/") + "/" + src.name, write=True)
+        if target.is_symlink():
+            return {"error": f"{dst_arg} is a symlink; Ombro never writes through one"}
+        move = bool(args.get("move"))
+        if move:
+            folder = _folder_of(ctx, src)
+            if not folder or ctx.shared[folder].access != "write":
+                return {"error": f"only a file in a folder shared for writing can be moved; {src_shown} can be "
+                        "copied instead (leave out move)"}
+        if src.resolve() == target.resolve():
+            return {"error": "from and to are the same file"}
+        shown = native._display(ctx, target.resolve())
+        replacing = target.exists()
+        if replacing and not args.get("replace"):
+            return {"error": f"{shown} exists already. Ask the user; to replace it, call again with replace: true "
+                    "(the current version is kept in Archive/)."}
+        verb = "move" if move else "copy"
+        kept_note = " and keep the current version in Archive/" if replacing else ""
+        size = src.stat().st_size
+        self._lead_says(f"I'd like to {verb} {src_shown} to {shown}{kept_note} ({size:,} bytes, as it is).",
+                        level="lead")
+        if not self.ui.yes("folder_write", "Go ahead?", False, aside=True):
+            self.transcript.note(f"The user said no to {verb}ing {src_shown} to {shown}.")
+            return {"declined": f"The user said no, so nothing was {'moved' if move else 'copied'}."}
+        kept = native.archive_before_replacing(ctx, target) if replacing else None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if move:
+            os.replace(src, target)
+        else:
+            shutil.copy2(src, target)
+        done = f"{'Moved' if move else 'Copied'} {src_shown} to {shown}"
+        self.transcript.note(f"{done}, with the user's yes.")
+        self.ui.say(f"{done}.", level="done")
+        out: dict[str, Any] = {"from": src_shown, "to": shown, "bytes": target.stat().st_size, "moved": move}
+        if kept:
+            out["archived"] = f"The version before this one is kept in {kept}."
+        return out
+
+    def _folder_edit(self, ctx: ToolContext, path: str, args: dict) -> dict[str, Any]:
+        """One exact replacement in a text file in a folder shared for writing: a correction or a detail
+        filled in, with the user's yes. The file is not sent again, and this is never work for a crew (T20)."""
+        from ombro import native
+
+        old, new = args.get("old"), args.get("new")
+        if not isinstance(old, str) or not old or not isinstance(new, str):
+            return {"error": "give path, old (the exact text to replace) and new"}
+        if len(old) > EDIT_MAX_CHARS or len(new) > EDIT_MAX_CHARS:
+            return {"error": f"an edit is a small correction, at most {EDIT_MAX_CHARS:,} characters each way; "
+                    "make several edits, or for a new document call offer_work"}
+        target = native.resolve_path(ctx, path, write=True)
+        if target.is_symlink() or not target.is_file():
+            return {"error": f"{path} is not a file in a shared folder"}
+        try:
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return {"error": f"{path} can't be read as text"}
+        n = text.count(old)
+        if n != 1:
+            return {"error": f"`old` occurs {n} times in {path}; give text that occurs exactly once"}
+        shown = native._display(ctx, target.resolve())
+        self._lead_says(f"I'd like to change this in {shown} (the current version is kept in Archive/):",
+                        level="lead", items=[f"{_short(old, 300)}  →  {_short(new, 300)}"])
+        if not self.ui.yes("folder_write", "Go ahead?", False, aside=True):
+            self.transcript.note(f"The user said no to editing {shown}.")
+            return {"declined": f"The user said no, so {shown} was not changed."}
+        out = native._write({"path": path, "content": text.replace(old, new, 1)}, ctx)
+        self.transcript.note(f"Edited {shown}, with the user's yes.")
+        self.ui.say(f"Saved {shown}.", level="done")
+        return {**out, "replaced": 1}
 
     @staticmethod
     def _chat_path(ctx: ToolContext, path: str) -> None:
@@ -1593,7 +1704,9 @@ class Chat:
         result, request = self._offer_work({"summary": f"write {title} and save it as {shown}", "title": title,
                                             "task": task}, write_to=folder)
         result = {**result, "note": f"folders.write was not run: writing a document and saving it ({shown}) is "
-                  "work for the crew, so Ombro offered it as work instead. Do not call folders.write for it again."}
+                  "work for the crew, so Ombro offered it as work instead. Do not call folders.write for it again. "
+                  "If the file already exists somewhere (a job's workspace, a shared folder), it was not needed: "
+                  "folders__copy puts it there as it is, and folders__edit corrects a line."}
         return result, request
 
     def _offer_work(self, args: dict, write_to: str | None = None) -> tuple[dict, tuple | None]:
