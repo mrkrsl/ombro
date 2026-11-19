@@ -350,7 +350,8 @@ def tool_list(home: Home, settings=None, signing: dict | None = None, fresh: boo
     from ombro import apitool
 
     apis: list[vt.ApiRow] = [{"name": n, "url": c["url"], "about": c.get("about") or "", "how_to": c.get("how_to") or "",
-                              "access": c.get("class") or "external", "send_key": c.get("send_key") or "bearer",
+                              "access": c.get("class") or "external",
+                              "get_looks_up": apitool.gets_look_up(c), "send_key": c.get("send_key") or "bearer",
                               "key": c.get("key"), "key_set": bool(c.get("key") and keys.get_key(home, c["key"])),
                               "calls": c.get("max_calls") or apitool.DEFAULT_CALLS}
                              for n, c in settings.apis.items()]

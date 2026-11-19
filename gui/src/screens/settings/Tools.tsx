@@ -54,13 +54,14 @@ function ApiForm({ current, onDone, onCancel }: { current: ApiRow | null; onDone
   const [about, setAbout] = useState(current?.about ?? "");
   const [howTo, setHowTo] = useState(current?.how_to ?? "");
   const [access, setAccess] = useState(current?.access ?? "external");
+  const [getsLookUp, setGetsLookUp] = useState(current?.get_looks_up ?? true);
   const [calls, setCalls] = useState(String(current?.calls ?? 30));
   const plain = url.trim().startsWith("http://");
   async function save() {
     const n = Number(calls);
     const body = {
       name, url: url.trim(), key: key || undefined, send_key: how, key_param: how === "bearer" ? undefined : param.trim(),
-      about, how_to: howTo, access, max_calls: Number.isInteger(n) && n > 0 ? n : undefined,
+      about, how_to: howTo, access, get_looks_up: access === "read-only" ? undefined : getsLookUp, max_calls: Number.isInteger(n) && n > 0 ? n : undefined,
     };
     const t = current
       ? await run((api) => api.put<ToolList>(`/tools/apis/${current.name}`, body))
@@ -121,6 +122,23 @@ function ApiForm({ current, onDone, onCancel }: { current: ApiRow | null; onDone
           </select>
         </span>
       </Field>
+      {access !== "read-only" && (
+        <Field
+          label="Do GET requests to this API only look things up?"
+          hint="Most APIs only look things up with GET. Some send or change things with it, such as a bot's sendMessage or a webhook: then say no, and its GETs follow your answer above."
+        >
+          <span className="form-row tight">
+            <select
+              aria-label="Do GET requests to this API only look things up?"
+              value={getsLookUp ? "yes" : "no"}
+              onChange={(e) => setGetsLookUp(e.target.value === "yes")}
+            >
+              <option value="yes">Yes, they only look things up</option>
+              <option value="no">No, they can send or change things</option>
+            </select>
+          </span>
+        </Field>
+      )}
       <Field label="Calls a job may make">
         <input className="text-input number" type="number" min={1} aria-label="Calls a job may make" value={calls} onChange={(e) => setCalls(e.target.value)} />
       </Field>

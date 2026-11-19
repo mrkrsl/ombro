@@ -117,6 +117,7 @@ def test_an_api_is_added_by_answering_questions(home):
 
     ui = ScriptedUI(["https://api.podcasts.invalid/v2", "Invented podcasts.",
                      lambda f: next(o.key for o in f.options if o.label.startswith("internal")),
+                     True,  # its GETs only look things up
                      "pk-INVENTED-podcasts-0000",
                      lambda f: next(o.key for o in f.options if o.label.startswith("in the address")),
                      "api_key", "y"])
