@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
-# Build Ombro's Linux app (.deb) in Docker, from macOS or Linux.
+# Build Ombro's Linux app (.deb).
 #
-# Run from gui/: scripts/build_linux.sh            (x86_64, the usual PC)
-#                OMBRO_ARCH=arm64 scripts/build_linux.sh
+# On Linux (the route that works), run from gui/:  scripts/build_linux.sh
+#   It builds natively for this machine's architecture. Needs Node 22, Rust (rustup), uv, and
+#   the -dev libraries Tauri needs (Ubuntu/Debian):
+#     sudo apt install build-essential pkg-config file libwebkit2gtk-4.1-dev libxdo-dev \
+#       libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev
+#   A clean build takes about 10 minutes, mostly Rust. Build on the oldest Ubuntu the package
+#   should run on (24.04): a binary built against its glibc runs on later releases.
 #
-# Needs Docker. On an Apple silicon Mac with Colima, an x86_64 build runs far faster under
-# Rosetta (softwareupdate --install-rosetta, then
-# colima start -p ombro-linux --vm-type vz --vz-rosetta --cpu 6 --memory 8 --disk 60);
-# without it, Colima's QEMU emulation works but takes much longer.
+# In Docker (OMBRO_DOCKER=1, or any non-Linux machine): KNOWN TO FAIL from an Apple silicon
+#   Mac without Rosetta. Colima falls back to QEMU emulation, and the VM crashed during the
+#   Rust link (18 Nov 2026). It may work under Rosetta
+#   (softwareupdate --install-rosetta, then
+#   colima start -p ombro-linux --vm-type vz --vz-rosetta --cpu 6 --memory 8 --disk 60),
+#   but that hasn't been proven end to end. Prefer a native build on a Linux machine.
+#     OMBRO_ARCH=arm64 OMBRO_DOCKER=1 scripts/build_linux.sh
 #
-# The package lands in gui/build/linux/out/. The sidecar is frozen in the container for the
-# target, as PyInstaller can't cross-build. Caches (cargo, target, npm, uv) live in Docker volumes,
+# The package lands in gui/build/linux/out/. The sidecar is frozen for the target, as
+# PyInstaller can't cross-build. In Docker, caches (cargo, target, npm, uv) live in volumes,
 # so later builds are quicker; `docker volume rm` the ombro-linux-* ones to start clean.
 set -euo pipefail
 
@@ -20,6 +28,20 @@ GUI=$(pwd)
 REPO=$(cd .. && pwd)
 WORK="$GUI/build/linux"
 IMAGE="ombro-linux-build:$ARCH"
+
+if [ "$(uname -s)" = Linux ] && [ -z "${OMBRO_DOCKER:-}" ]; then
+  echo "== Native build on $(uname -m)"
+  export UV_PYTHON_PREFERENCE=only-managed
+  mkdir -p "$WORK/out"
+  uv python install 3.14
+  npm ci --no-audit --no-fund
+  npm run sidecar
+  npx tauri build --bundles deb
+  rm -f "$WORK/out"/*.deb
+  cp src-tauri/target/release/bundle/deb/*.deb "$WORK/out/"
+  ls -la "$WORK/out"
+  exit 0
+fi
 
 echo "== Source (tracked and new files, nothing ignored)"
 rm -rf "$WORK/src" && mkdir -p "$WORK/src" "$WORK/out"

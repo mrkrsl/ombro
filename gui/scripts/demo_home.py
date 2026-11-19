@@ -205,8 +205,8 @@ def demo_providers(home) -> None:
     if not models.provider_names(home, "https://api.deepseek.com"):
         models.add_models(home, "https://api.deepseek.com", "DEEPSEEK_API_KEY", ["deepseek-chat", "deepseek-reasoner"])
         keys.set_key(home, "DEEPSEEK_API_KEY", "demo-not-a-real-key")
-    if not models.provider_names(home, "http://192.168.1.100:1234/v1"):
-        models.add_models(home, "http://192.168.1.100:1234/v1", None, ["local-model"])
+    if not models.provider_names(home, "http://localhost:1234/v1"):
+        models.add_models(home, "http://localhost:1234/v1", None, ["local-model"])
 
 
 def demo_api(home) -> None:

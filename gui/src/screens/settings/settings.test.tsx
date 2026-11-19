@@ -27,7 +27,7 @@ const models: ModelList = {
   connections: [
     { api: "openai", label: "Invented", endpoint: "https://api.invented.invalid", key: "INVENTED_API_KEY",
       models: [{ name: "invented-chat", model: "invented-chat", default: true, used_by: [] }] },
-    { api: "openai", label: "Local", endpoint: "http://192.168.1.100:1234/v1", key: null,
+    { api: "openai", label: "Local", endpoint: "http://localhost:1234/v1", key: null,
       models: [{ name: "local-model", model: "local-model", default: false, used_by: [] }] },
   ],
   presets: [
@@ -139,7 +139,7 @@ describe("Settings › General", () => {
     replies["POST /models/providers/check"] = { blocked: "Your default model comes from this provider.", warnings: [] };
     render(<Settings />);
     expect(await screen.findByText("Invented")).toBeInTheDocument();
-    expect(screen.getByText("http://192.168.1.100:1234/v1")).toBeInTheDocument();
+    expect(screen.getByText("http://localhost:1234/v1")).toBeInTheDocument();
     await userEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]);
     expect(await screen.findByRole("alert")).toHaveTextContent("Your default model comes from this provider.");
     expect(sent("POST", "/models/providers/check")).toEqual({ endpoint: "https://api.invented.invalid" });
@@ -409,14 +409,14 @@ describe("Settings › Folders, Tools and Skills", () => {
     await userEvent.click(screen.getByRole("button", { name: "Add a tool" }));
     await userEvent.selectOptions(screen.getByLabelText("Type"), "api");
     await userEvent.type(screen.getByLabelText(/^Name/), "weather");
-    await userEvent.type(screen.getByLabelText(/^Address/), "http://192.168.1.20/api");
+    await userEvent.type(screen.getByLabelText(/^Address/), "http://127.0.0.1:8080/api");
     expect(screen.getByText(/the key travels unencrypted/)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Key"), "wk-INVENTED");
     await userEvent.selectOptions(screen.getByLabelText("How the key is sent"), "header");
     await userEvent.type(screen.getByLabelText("Header name"), "X-API-Key");
     await userEvent.type(screen.getByLabelText(/^What it's for/), "Invented weather.");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(sent("POST", "/tools/apis")).toEqual({ name: "weather", url: "http://192.168.1.20/api", key: "wk-INVENTED",
+    expect(sent("POST", "/tools/apis")).toEqual({ name: "weather", url: "http://127.0.0.1:8080/api", key: "wk-INVENTED",
       send_key: "header", key_param: "X-API-Key", about: "Invented weather.", how_to: "", access: "external", max_calls: 30 });
   });
 

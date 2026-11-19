@@ -9,15 +9,17 @@ you start a job from it, walk away, and read a report later. The Lead plans
 the job and briefs the crew's roles. Every job ends in a report, whether it
 finished, hit a limit or failed.
 
-**Status: early, not yet released.** Ombro is a Python core with two ways in:
-the terminal (`ombro`) and a desktop app for macOS (see The desktop app). The
+**Status: 0.2.0, the first public release.** Expect rough edges. Ombro is a
+Python core with two ways in: the terminal (`ombro`) and a desktop app (see
+The desktop app). The
 core has the home directory, roles and crews, model connections, the set-up,
 role and task interviews, the Lead loop, the guardrail gate, the result
 contract, the journal, reports, web search and fetch, workspace files,
 secrets, the job index, standing notes, memory search, chat, schedules,
 outside services through MCP and web APIs with permissions and approvals,
 skills, and Python scripts in the operating system's sandbox, with folders
-you share. The app runs on macOS; Linux is next, and Windows is further off.
+you share. The app runs on macOS (Apple silicon) and Linux (amd64 and arm64);
+Windows is further off.
 
 ## Install
 
@@ -204,13 +206,14 @@ Building it needs Node, Rust and uv. From `gui/`:
 ```bash
 npm ci
 npm run sidecar                     # freezes ombro serve into src-tauri/binaries
-npx tauri build --bundles app       # the app, unsigned for now
+npx tauri build --bundles app       # the app, unsigned: fine on the Mac that built it
 ```
 
 The app is then at
 `gui/src-tauri/target/release/bundle/macos/Ombro.app`. Open it from Finder,
 or drag it to Applications. Run `npm run sidecar` again after any change to
-the Python core, or the app runs the old one.
+the Python core, or the app runs the old one. Release builds are signed and
+notarised by `gui/scripts/release_macos.sh`, which needs a Developer ID.
 
 To try it without a model or your own home, make the demo profile, which is
 all invented and sends nothing anywhere:
@@ -1262,3 +1265,55 @@ Code is tested in the real sandbox of the system the tests run on, with
 invented files in temporary folders; the network test only tries to reach a
 listener on the machine's own loopback address. The other system's sandbox
 tests are skipped.
+
+## For developers
+
+Ombro is one Python package, `src/ombro`, with three ways in on top of it:
+the terminal (`cli.py` and the `*_cmd.py` modules, plus the Textual interface
+in `tui/`), the server (`serve/`, which the desktop app and remote devices
+talk to) and the desktop app (`gui/`: Tauri in `gui/src-tauri`, React and
+TypeScript in `gui/src`). The app runs the core as a sidecar: a frozen
+`ombro serve`, built by `npm run sidecar`.
+
+**A job.** `ombro start` (in `cli.py`) makes the job's folder and starts it
+in a process of its own (`jobs.py`, `start_detached`). That process runs
+`engine.py`, the Lead loop: every model call and tool call passes the
+guardrail gate (`gate.py`), results are checked against the result contract
+(`contract.py`), everything is written to the job's journal (`journal.py`),
+and the job always ends in a report (`report.py`). Live jobs, the ones you
+stay for, are in `livejob.py`.
+
+**A conversation.** `session.py` runs one live conversation, the same way for
+the terminal and the app. `chat.py` is the chat with the Lead; `interview.py`
+and `interviews.py` are the set-up, add-a-role and brief interviews; the
+commands that act inside a conversation (adding a tool, starting a job) are
+flows in `flows.py`.
+
+**Tools.** `tools.py` is the registry. Native tools (search, fetch,
+workspace files) are in `native.py`; outward tools, their class and the
+permission each call gets in `outward.py`; MCP servers in `mcp.py`; web APIs
+in `apitool.py`; Composio in `composio.py`; the browser in `browser.py`;
+staged actions waiting for approval in `outbox.py`. Text that came from
+outside (web pages, tool answers) is marked as material in `material.py`.
+
+**Code and folders.** `coderun.py` is code.run, run through `sandbox.py`
+(sandbox-exec on macOS, bubblewrap on Linux). Shared folders are in
+`folders.py`.
+
+**Everything else.** Settings and limits: `settings.py`, `home.py`,
+`models.py`. Model clients: `client.py`, `anthropic_client.py`,
+`responses_client.py`, `chatgpt.py`. Memory and skills: `memory.py`,
+`skills.py`. Schedules: `schedules.py` (the files and `ombro tick`),
+`scheduler.py` (the one system entry that calls it) and `service.py`
+(`ombro serve install`). What an interface shows: `views.py` and
+`viewtypes.py`, from which the app's TypeScript types are generated.
+
+**Tests.** `uv run pytest` runs the core's tests in `tests/`, with no network
+and no paid calls (see Testing without a model); the fakes are `fake.py`,
+`fake_mcp.py` and `providers/fake.py`. `npm test` in `gui/` runs the app's
+tests, and `cargo test` in `gui/src-tauri` the Rust side's.
+
+## Licence
+
+Ombro is free software under the GNU Affero General Public License, version 3
+(see `LICENSE`). Copyright © 2026 Heliotrope Atelier Ltd.
