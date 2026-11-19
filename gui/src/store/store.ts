@@ -780,14 +780,20 @@ export const useStore = create<State & Actions>((set, get) => {
       // Here: the file itself. From a server: a copy kept in ~/Downloads/Ombro, opened or shown.
       const { api, remote } = get();
       try {
+        // A kind that runs code is shown in Finder instead of opened (security review M3): say why.
+        const go = async (p: string) => {
+          if (how === "reveal") return revealFile(p);
+          const why = await openFile(p);
+          if (why) get().say(why);
+        };
         if (!remote) {
-          await (how === "open" ? openFile(path) : revealFile(path));
+          await go(path);
           return;
         }
         if (!api) return;
         const copy = await saveCopy(api, path);
         set((s) => ({ copies: { ...s.copies, [path]: copy.saveAs } }));
-        if (copy.local) await (how === "open" ? openFile(copy.local) : revealFile(copy.local));
+        if (copy.local) await go(copy.local);
       } catch (e) {
         get().say(e instanceof Error ? e.message : String(e), "error");
         throw e;
@@ -798,13 +804,17 @@ export const useStore = create<State & Actions>((set, get) => {
       const { api, remote } = get();
       try {
         if (!remote) {
-          await openLink("file://" + path.split("/").map(encodeURIComponent).join("/"));
+          const why = await openFile(path);
+          if (why) get().say(why);
           return;
         }
         if (!api) return;
         const saved = await saveFolder(api, path);
         if (saved.count === 0) get().say("That job made no files.");
-        else if (saved.local) await openFile(saved.local);
+        else if (saved.local) {
+          const why = await openFile(saved.local);
+          if (why) get().say(why);
+        }
       } catch (e) {
         get().say(e instanceof Error ? e.message : String(e), "error");
       }
@@ -815,7 +825,13 @@ export const useStore = create<State & Actions>((set, get) => {
         await get().openPath(decodeURIComponent(new URL(href).pathname), "open").catch(() => undefined);
         return;
       }
-      await openLink(href);
+      try {
+        const why = await openLink(href);
+        if (why) get().say(why);
+      } catch (e) {
+        // Such as a file outside Ombro's folders and the shared folders, which the app won't open.
+        get().say(e instanceof Error ? e.message : String(e), "error");
+      }
     },
 
     async interrupt() {

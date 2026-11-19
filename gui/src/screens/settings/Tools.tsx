@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import type { ApiRow, ComposioAccount, KeyList, NativeTool, ServerRow, ToolList } from "../../api/types";
 import { inTauri } from "../../api/serve";
-import { openLink } from "../../platform";
+import { catchSignIn, openLink } from "../../platform";
 import { useStore } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, shortPath, tidy, useAction, useRemoval, useView, type Check } from "./common";
 
@@ -451,8 +451,8 @@ export function Tools() {
     await openLink(r.url);
     await tools.reload();
     if (port !== null) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const answer = await invoke<string | null>("sign_in_answer", { port, seconds: 600 }).catch(() => null);
+      // Only an answer that brings back this sign-in's state is handed over (security review L3).
+      const answer = await catchSignIn(port, r.url, r.state);
       if (answer) await handOver(server, answer);
     }
   }

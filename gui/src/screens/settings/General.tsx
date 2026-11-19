@@ -7,7 +7,7 @@ import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 import { ServerForm } from "../Connect";
 import { describe, useThisComputer } from "../../where";
-import { appVersion, openLink } from "../../platform";
+import { appVersion, catchSignIn, openLink } from "../../platform";
 import { inTauri } from "../../api/serve";
 import { ModelOptions } from "../../components/ModelOptions";
 import { modelChoices } from "../../store/models";
@@ -128,8 +128,8 @@ function usePlanSignIn(onChange: (m: ModelList) => void) {
     }
     await reload();
     if (port !== null && r?.url) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const answer = await invoke<string | null>("sign_in_answer", { port, seconds: 600 }).catch(() => null);
+      // Only an answer that brings back this sign-in's state is handed over (security review L3).
+      const answer = await catchSignIn(port, r.url);
       if (answer) await handOver(answer);
     }
   }

@@ -6,6 +6,7 @@
 mod connection;
 #[cfg(target_os = "macos")]
 mod menu;
+mod opening;
 mod saved;
 mod signin;
 mod skillfolder;
@@ -305,6 +306,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             handshake,
             tray::set_tray,
+            opening::open_file,
             saved::save_download,
             saved::read_saved,
             connection_state,

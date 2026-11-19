@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Hardened-runtime exceptions for Ombro and its sidecar (ombro-serve, a PyInstaller
-  one-file binary). The sidecar unpacks Python and its extension modules into a
-  temporary folder at start and loads them from there, so it needs library
-  validation off; the app shares this file because Tauri signs both with it.
+  Hardened-runtime exceptions for the sidecar only (ombro-serve, a PyInstaller
+  one-file binary). It unpacks Python and its extension modules into a temporary
+  folder at start and loads them from there, so it needs library validation off.
+  The app itself has no exceptions (security review L4): Tauri signs it, and the
+  sidecar inside it, with none, and scripts/release_macos.sh then signs the
+  sidecar again with this file and seals the app again.
 -->
 <plist version="1.0">
 <dict>
