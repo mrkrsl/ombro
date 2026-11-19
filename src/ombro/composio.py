@@ -5,13 +5,16 @@ API key. Ombro keeps the key in secrets/keys.env and the connection in tools.md:
 
     composio:
       key: COMPOSIO_API_KEY    # its name in keys.env; never the value
-      class: external          # internal or external: what its tools that change things count as
+      class: external          # internal or external: what its other tools that change things count as
 
 Each toolkit with an active connected account is offered to every crew member, as one tool per
 Composio tool: composio.<toolkit>.<tool>, such as composio.googledocs.CREATE_DOCUMENT. Like an MCP
 server's tools, they are listed by name in tools__load and sent in full only once loaded. A tool
 Composio marks read-only (or whose name says it only looks things up, where Composio says nothing)
-is a lookup; any other follows the outward presets and may wait in Approvals.
+is a lookup. A tool whose name sends to other people, deletes or spends is external and waits
+in Approvals; any other change in the organisation's own document tools (Sheets, Docs, Drive,
+Notion and the like, OWN_TOOLKITS) or to a draft is internal, so a brief that asks for a sheet gets
+it made and formatted without asking. Anything else follows `class:` above.
 
 Ombro talks to Composio's REST API (v3.1) directly. Usage, limits and costs are the user's, on
 their Composio account: when Composio says no (a limit, a quota, a lost connection), the tool's
@@ -48,6 +51,11 @@ _TOOLKIT = re.compile(r"[^a-z0-9_-]+")
 # The first word of a tool's name, when Composio gives no marking, that says it only looks things up.
 READ_VERBS = {"GET", "LIST", "SEARCH", "FETCH", "FIND", "READ", "RETRIEVE", "QUERY", "LOOKUP", "DESCRIBE",
               "COUNT", "VIEW"}
+# Toolkits that are the organisation's own documents, sheets, pages and boards. Making and editing
+# things in them is the work a brief asks for (internal), unless the name is risky (see classify).
+OWN_TOOLKITS = frozenset({"googlesheets", "googledocs", "googledrive", "googleslides", "googletasks", "notion",
+                          "airtable", "linear", "asana", "trello", "clickup", "jira", "confluence", "coda",
+                          "excel", "onedrive", "sharepoint", "dropbox", "box", "monday"})
 TRANSPORT: httpx.BaseTransport | None = None  # tests put a fake Composio here; nothing else sets it
 
 
@@ -312,9 +320,13 @@ def toolkit_tools(home: Home, cfg: dict[str, Any], slug: str, fresh: bool = Fals
         if t.get("slug") and not t.get("is_deprecated")], fresh)
 
 
-def classify(tool: dict[str, Any], short: str, server_class: str, override: str | None = None) -> str:
-    """read-only, internal or external, from tools.md's class for the tool, Composio's markings, or
-    (where it says nothing) the first word of its name; anything else takes composio's class."""
+def classify(tool: dict[str, Any], short: str, server_class: str, override: str | None = None,
+             toolkit: str = "") -> str:
+    """read-only, internal or external. In order: tools.md's class for the tool; Composio's read-only
+    marking, or (where it says nothing) the first word of its name; a name that sends to other people,
+    deletes or spends (outward.RISKY_WORDS) is external; any other change in one of the organisation's
+    own document tools (OWN_TOOLKITS), or to a draft, is internal; anything else takes composio's class."""
+    from ombro.outward import name_words, risky
     from ombro.settings import TOOL_CLASSES
 
     if override in TOOL_CLASSES:
@@ -325,6 +337,10 @@ def classify(tool: dict[str, Any], short: str, server_class: str, override: str 
     marked = tags & {"destructivehint", "openworldhint", "idempotenthint"}
     if not marked and short.split("_", 1)[0].upper() in READ_VERBS:
         return "read-only"
+    if risky(short):
+        return "external"
+    if toolkit in OWN_TOOLKITS or "DRAFT" in name_words(short) or "DRAFTS" in name_words(short):
+        return "internal"
     return server_class
 
 
@@ -394,7 +410,8 @@ def tools(home: Home, settings: Any) -> tuple[list[Tool], list[str]]:
             if wire_name(name) in seen:
                 continue  # two names that read the same to a model: keep the first
             seen.add(wire_name(name))
-            effect = classify(t, short, cfg.get("class") or "external", settings.tools.get(name, {}).get("class"))
+            effect = classify(t, short, cfg.get("class") or "external", settings.tools.get(name, {}).get("class"),
+                              kit["name"])
             schema = t.get("input_parameters") if isinstance(t.get("input_parameters"), dict) else {}
             schema = {"type": "object", "properties": {}, **schema}
             if effect == "read-only":

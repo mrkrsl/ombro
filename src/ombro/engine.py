@@ -95,6 +95,7 @@ class Engine:
         self.crews = jobs.job_crews(meta)
         self.limits = Limits.from_dict(meta["limits"])  # fixed when the job was created
         self.live = bool(meta.get("live"))  # a live job: the user is watching, and the Lead may ask them
+        self.scope = outward.Scope()  # what the job made and what waits, so related calls are one piece of work
         self.clock = clock
         self.journal = Journal(self.job_dir / "journal.jsonl", echo=echo)
         # Tool settings, like limits, were fixed when the job was created.
@@ -1010,6 +1011,7 @@ class Engine:
         # A tool may say what this one call is (browser.submit: a form of filters is internal, one with the
         # user's details external); otherwise its class.
         effect = str(args.pop("_effect", "") or tool.effect or "external")
+        effect = self.scope.effect(name, args, effect)  # deleting in what this job made is its own work
         decision = outward.decide(self.outward, name, effect, self.tool_settings)
         tainted_stage = False
         if (decision == "allow" and effect == "external" and getattr(self, "tainted", False)
@@ -1030,6 +1032,16 @@ class Engine:
             self.journal.write(role.name, "tool_refused", f"{name}: {problem}", tool=name)
             return {"error": problem}
         args_note = _short(_canonical(args, ""), 120)
+        key = outward.Scope.key(name, args)
+        if decision == "stage" and key in self.scope.waiting:
+            # One approval per thing worked on: later calls on it are not staged one by one.
+            ref = self.scope.waiting[key]
+            self.journal.write(role.name, "staged_grouped", f"{name}: waits with {ref}", tool=name, ref=ref,
+                               reason=reason, arguments=args)
+            return {"status": "not_staged", "waits_with": ref,
+                    "note": f"An earlier call on this same item ({ref}) already waits for the user's approval, "
+                    "so this one was not staged and has not happened. Stage nothing more on it. In your summary, "
+                    "list what is still to do on it once that is approved, as not done."}
         if decision == "stage":
             try:
                 action, duplicate = outbox.stage(self.job_dir, tool=name, effect=effect,
@@ -1048,9 +1060,13 @@ class Engine:
             self.journal.write(role.name, "staged", f"{action.ref} {name} {args_note}", tool=name, ref=action.ref,
                                path=rel, effect=effect, reason=reason, arguments=args,
                                **({"tainted": True} if tainted_stage else {}))
-            return {"status": "staged", "outbox": rel,
-                    "note": "Not done yet. It waits for the user's decision. Do not stage it "
-                    "again; mention it in your summary as waiting for the user's approval, not done."}
+            if key:
+                self.scope.waiting[key] = action.ref
+            return {"status": "staged", "outbox": rel, "ref": action.ref,
+                    "note": "Not done: it waits in Approvals for the user's decision, and this job does not wait "
+                    "for it. Do not stage it again, and do not stage further calls that need its result. Finish "
+                    "everything that does not need it; in your summary say it waits for approval and list, as "
+                    "not done, each step that needed it. Approving it later runs only this one call."}
         # allowed: it runs now
         ctx = self._context(role, name)
         try:
@@ -1067,6 +1083,7 @@ class Engine:
             return _error(tool, e)
         self.journal.write(role.name, "outward_done", f"{name} {args_note}", tool=name, effect=effect,
                            reason=reason, arguments=args)
+        self.scope.done(name, args, out)
         return {"status": "done", **(out if isinstance(out, dict) else {"result": out})}
 
     def _tool_timeout(self, tool: str = "") -> float:

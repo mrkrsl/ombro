@@ -21,6 +21,8 @@ changes something and is not classed is external: the safe default."""
 from __future__ import annotations
 
 import copy
+import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -173,6 +175,104 @@ def decide(setting: dict[str, Any] | None, name: str, effect: str, tool_settings
 
 # ---------------------------------------------------------------------------
 # MCP tools as Ombro tools
+
+
+# ---------------------------------------------------------------------------
+# What a call does, from its name and arguments: risky words, and the thing it works on
+
+# Words in a tool's name that mean a call is risky whatever service it is in: it reaches other people,
+# deletes, or spends. Such a call always asks, even in a service whose other changes are the user's own work.
+RISKY_WORDS = frozenset({
+    "SEND", "REPLY", "FORWARD", "SHARE", "INVITE", "PUBLISH", "POST", "PERMISSION", "PERMISSIONS",
+    "DELETE", "TRASH", "REMOVE", "PURGE", "EMPTY", "DESTROY",
+    "PAY", "PAYMENT", "PURCHASE", "BUY", "CHARGE", "REFUND", "TRANSFER", "ORDER", "SUBSCRIBE",
+})
+# Argument names that say which document, sheet, page or file a call works on.
+TARGET_KEYS = ("spreadsheet_id", "spreadsheetid", "document_id", "documentid", "file_id", "fileid",
+               "presentation_id", "presentationid", "page_id", "pageid", "database_id", "databaseid",
+               "doc_id", "docid", "sheet_file_id")
+# A result's text is often JSON inside JSON, so its quotes may come escaped.
+_ID_IN_RESULT = re.compile(r'\\?"(' + "|".join(TARGET_KEYS) + r'|id)\\?"\s*:\s*\\?"([A-Za-z0-9_-]{10,})\\?"',
+                           re.IGNORECASE)
+
+
+def name_words(name: str) -> set[str]:
+    """The words of a tool's own part of its name: composio.googlesheets.FORMAT_CELL -> {FORMAT, CELL}."""
+    last = name.rsplit(".", 1)[-1]
+    return {w.upper() for w in re.split(r"[^A-Za-z0-9]+|(?<=[a-z])(?=[A-Z])", last) if w}
+
+
+def risky(name: str) -> bool:
+    """Whether a call's name says it sends to other people, deletes, or spends."""
+    return bool(name_words(name) & RISKY_WORDS)
+
+
+def service_of(name: str) -> str:
+    """The service a tool belongs to: composio.<toolkit>, mcp.<server> or api.<name>."""
+    return ".".join(name.split(".")[:2])
+
+
+def target_of(args: dict | None) -> str | None:
+    """The document, sheet, page or file a call works on, from its arguments, or None."""
+    for k, v in (args or {}).items():
+        if str(k).lower() in TARGET_KEYS and isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def targets_made(result: Any) -> set[str]:
+    """Ids a call's result names: what a create call made, so later calls on it count as the same work."""
+    text = result if isinstance(result, str) else json.dumps(result, default=str)
+    found = [(m.group(1).lower(), m.group(2)) for m in _ID_IN_RESULT.finditer(text or "")]
+    named = {v for k, v in found if k != "id"}
+    # A bare "id" is taken only when nothing more exact is named, and only the first: a result can also
+    # name other things by id (the folder it went in), which this call did not make.
+    return named or {v for k, v in found[:1] if k == "id"}
+
+
+# Risky words that only take something away. On a thing this job or chat made itself, that is editing
+# its own work, so it is in scope; sending, sharing and spending never are.
+TAKE_AWAY_WORDS = frozenset({"DELETE", "REMOVE", "TRASH", "EMPTY", "PURGE", "DESTROY"})
+MAKE_WORDS = frozenset({"CREATE", "NEW", "ADD", "COPY", "DUPLICATE", "UPLOAD", "MAKE"})
+
+
+class Scope:
+    """What one job or one chat is working on, so that related calls on the same thing are one piece
+    of work: what it made itself, what the user said yes to, and what already waits for approval."""
+
+    def __init__(self) -> None:
+        self.made: set[str] = set()  # ids a create call of this job or chat gave back
+        self.approved: set[tuple[str, str]] = set()  # (service, target) the user said yes to, in a chat
+        self.waiting: dict[tuple[str, str], str] = {}  # (service, target) -> ref of a call staged on it
+
+    @staticmethod
+    def key(name: str, args: dict | None) -> tuple[str, str] | None:
+        target = target_of(args)
+        return (service_of(name), target) if target else None
+
+    def effect(self, name: str, args: dict | None, effect: str) -> str:
+        """A call's class for this job or chat: deleting inside something it made itself is internal."""
+        target = target_of(args)
+        words = name_words(name) & RISKY_WORDS
+        if effect == "external" and target and target in self.made and words and words <= TAKE_AWAY_WORDS:
+            return "internal"
+        return effect
+
+    def covered(self, name: str, args: dict | None) -> bool:
+        """The user already said yes to work on this same thing in this service, and this call is not risky."""
+        k = self.key(name, args)
+        return bool(k and k in self.approved and not risky(name))
+
+    def done(self, name: str, args: dict | None, out: Any, approved: bool = False) -> None:
+        """Note what a call that ran made, and (with the user's yes) the thing it worked on."""
+        k = self.key(name, args)
+        if approved and k:
+            self.approved.add(k)
+        if k is None and name_words(name) & MAKE_WORDS:
+            made = targets_made(out)
+            self.made |= made
+            if approved:
+                self.approved |= {(service_of(name), t) for t in made}
 
 
 def split_name(name: str) -> tuple[str, str] | None:
