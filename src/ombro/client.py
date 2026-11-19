@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 from urllib.parse import urlparse
@@ -152,6 +153,12 @@ class OpenAICompatibleClient:
         # How hard a thinking model thinks, from models.md. An endpoint that refuses the field gets calls without it.
         self.reasoning_effort = reasoning_effort
         self.effort_refused = False
+        # OpenRouter serves Claude without caching unless the request asks for it; with it, each step of a job
+        # reads the steps before it at a small part of the price. One session id per client keeps the calls on the same
+        # provider behind OpenRouter, where the cache is.
+        self.openrouter = is_openrouter(endpoint)
+        self.cache = self.openrouter and is_claude_model(model)
+        self.session_id = uuid.uuid4().hex if self.openrouter else None
 
     def complete(self, messages, *, tools=None, max_output_tokens, timeout) -> ModelReply:
         key = self.key_getter()
@@ -165,6 +172,10 @@ class OpenAICompatibleClient:
             body["tool_choice"] = "auto"
         if self.reasoning_effort and not self.effort_refused:
             body["reasoning_effort"] = self.reasoning_effort
+        if self.cache:
+            body["cache_control"] = {"type": "ephemeral"}  # the conversation so far: tools, system and messages
+        if self.session_id:
+            body["session_id"] = self.session_id
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
@@ -308,6 +319,17 @@ ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1"
 def is_anthropic(endpoint: str | None) -> bool:
     """Anthropic's own address: its models go through its own API, not the OpenAI-compatible one."""
     return (urlparse(endpoint or "").hostname or "").lower() == "api.anthropic.com"
+
+
+def is_openrouter(endpoint: str | None) -> bool:
+    host = (urlparse(endpoint or "").hostname or "").lower()
+    return host == "openrouter.ai" or host.endswith(".openrouter.ai")
+
+
+def is_claude_model(model: str | None) -> bool:
+    """A Claude model as an OpenAI-compatible router names it (anthropic/claude-opus-5.5, ~anthropic/...)."""
+    m = (model or "").lower().lstrip("~")
+    return m.startswith("anthropic/") or m.startswith("claude-")
 
 
 def api_for(endpoint: str | None) -> str:

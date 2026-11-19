@@ -42,7 +42,14 @@ def _canonical(args: dict | None, raw: str) -> str:
 
 def _tool_message(call_id: str, payload: Any, src: str | None = None) -> dict[str, Any]:
     """A tool's result for the model; fenced as material when it came from outside (7.1)."""
-    content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    long_text = isinstance(payload, dict) and isinstance(payload.get("result"), str) and len(payload["result"]) > 500
+    if long_text:
+        # An outside service's long text answer goes as it is, after the rest: inside JSON every quote and line
+        # break in it would be escaped again, which costs tokens on every later step (T9).
+        rest = {k: v for k, v in payload.items() if k != "result"}
+        content = json.dumps(rest, ensure_ascii=False) + "\nresult:\n" + payload["result"]
+    else:
+        content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     if len(content) > TOOL_RESULT_CAP:
         content = content[:TOOL_RESULT_CAP] + "…[truncated]"
     if src:
@@ -513,6 +520,7 @@ class Engine:
             + f", {out_tokens:,} out" + (f" ({'about ' if getattr(usage, 'reasoning_estimated', False) else ''}{thought:,} thinking)"
                                          if thought else "") + f", {seconds:g}s",
             model=spec.name,
+            **({"provider_model": spec.model} if getattr(spec, "model", None) and spec.model != spec.name else {}),
             input_tokens=in_tokens,
             output_tokens=out_tokens,
             seconds=seconds,

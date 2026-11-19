@@ -303,7 +303,12 @@ def role_system(role: Role, skills: str, tool_names: list[str], today: str = "",
     """`skills` lists the skills this role may use, by name and description; `shared` the
     folders shared with this job as (name, access) or (name, access, path on disk)."""
     if tool_names:
-        tools_line = "You may use only these tools: " + ", ".join(tool_names) + "."
+        # Outside services' tools are listed in tools__load already: naming every one here as well cost a job with
+        # a few connected services thousands of tokens on every step (T9).
+        own = [t for t in tool_names if not t.startswith(("mcp.", "composio."))]
+        outside = len(tool_names) - len(own)
+        tools_line = "You may use only these tools: " + ", ".join(own or ["tools__load"]) + (
+            f", and the {outside} tools of outside services listed in tools__load" if outside else "") + "."
         files = any(t.startswith("workspace.") or t == "code.run" for t in tool_names)
         if files and shared:
             tools_line += (
