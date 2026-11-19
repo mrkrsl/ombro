@@ -585,3 +585,53 @@ def test_an_answer_to_the_open_question_still_answers_it(serve):
     tool = next(m for m in serve.client.calls[-1]["messages"] if m["role"] == "tool")
     assert "said not now" in tool["content"]
     ws.close()
+
+
+def test_a_new_chat_is_saved_from_its_first_message_and_survives_clicking_away(serve, home):
+    """T21: a new chat, an opening message, the Lead still answering, a look at another chat: the new
+    chat is on disk and in the list from its first message, before any reply, with a title from its
+    first words; it is still there after the reply, and after the app closes mid-reply."""
+    gate = threading.Event()
+    real = serve.client.complete
+
+    def slow(*args, **kwargs):
+        assert gate.wait(10), "the test never let the Lead answer"
+        return real(*args, **kwargs)
+
+    serve.client.complete = slow
+    _script(serve.client, [fake.say("An invented answer about the garden survey.")])
+    ws = serve.socket()
+    ws.send({"type": "subscribe", "all": True})
+    new = serve.post("/sessions", status=201)["session"]["id"]
+    serve.post(f"/sessions/{new}/input", {"text": "Help me brief an invented garden survey"})
+
+    saved = ws.until(lambda m: m.get("type") == "chat_saved" and m["session"] == new)
+    name = saved["chat"]
+    assert (home.chats_dir / f"{name}.md").exists()
+    assert serve.get(f"/sessions/{new}")["state"] == "working"  # no reply yet
+    rows = {c["name"]: c for c in serve.get("/chats")}
+    assert name in rows and rows[name]["title"] == "Brief an invented garden survey"
+    assert serve.get(f"/chats/{name}")["turns"][0] == {"who": "you",
+                                                        "text": "Help me brief an invented garden survey"}
+
+    # Looking at another chat meanwhile: the new one stays listed, and comes back when clicked.
+    other = serve.post("/sessions", status=201)["session"]["id"]
+    assert serve.get(f"/sessions/{other}")["chat"] is None
+    assert name in {c["name"] for c in serve.get("/chats")}
+    gate.set()
+    ws.until(state("idle", new))
+    assert serve.get(f"/sessions/{new}")["chat"] == name
+    turns = serve.get(f"/chats/{name}")["turns"]
+    assert [t["who"] for t in turns] == ["you", "lead"]
+
+    # The app closing while the Lead is answering a new chat's first message keeps that message.
+    gate.clear()
+    _script(serve.client, [fake.say("Never seen: the app closed first.")])
+    closing = serve.post("/sessions", status=201)["session"]["id"]
+    serve.post(f"/sessions/{closing}/input", {"text": "An invented second opener"})
+    second = ws.until(lambda m: m.get("type") == "chat_saved" and m["session"] == closing)["chat"]
+    threading.Timer(0.5, gate.set).start()
+    serve.app.state.serve.sessions.close_all()  # what serve does as it shuts down
+    body = mdfile.read(home.chats_dir / f"{second}.md")[1]
+    assert "An invented second opener" in body
+    ws.close()

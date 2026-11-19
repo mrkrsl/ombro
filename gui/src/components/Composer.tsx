@@ -1,12 +1,12 @@
 // The foot of the conversation: the thinking line, quick answers, the input with its slash
-// menu, and the footer (Chat/Brief, the model, usage). Questions from the Lead are answered
+// menu, and the footer (Chat/Brief, the commands hint, the model). Questions from the Lead are answered
 // here, as in the terminal; a secret switches the input to hidden.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, CircleDashed, FileText, FolderOpen, Paperclip, X } from "lucide-react";
 import type { CommandView } from "../api/types";
 import type { Attachment } from "../api/serve";
-import { listAnswers, quickAnswers, usageText, type Conversation } from "../store/conversation";
+import { listAnswers, quickAnswers, type Conversation } from "../store/conversation";
 import { useStore } from "../store/store";
 import { modelLabel } from "../store/models";
 import { fileManager } from "../platform";
@@ -377,11 +377,11 @@ export function Composer({ conversation }: { conversation: Conversation | null }
               Brief
             </button>
           </div>
+          {/* No usage line here (T14): what a chat costs is small; briefed work is where the spend is. */}
+          <span className="hint">/ for commands</span>
           <span className="model" title="The model the Lead uses in this chat. A job's crew may use others: see the inspector.">
             {summary?.model ? `Lead: ${modelLabel(summary.model, models)}` : "No model"}
           </span>
-          <span className="hint">/ for commands</span>
-          <span className="usage">{usageText(conversation?.usage ?? null) || "Usage: 0%"}</span>
         </div>
       </div>
     </div>

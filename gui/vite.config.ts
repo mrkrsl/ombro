@@ -7,5 +7,6 @@ export default defineConfig({
   clearScreen: false,
   server: { port: 5173, strictPort: true, host: "localhost" },
   build: { target: "safari15", outDir: "dist" },
-  test: { environment: "jsdom", setupFiles: ["src/test-setup.ts"] },
+  // css: app.css as text (?raw) for the test of the Markdown heading scale; it is not applied to pages.
+  test: { environment: "jsdom", setupFiles: ["src/test-setup.ts"], css: { include: [/app\.css/] } },
 });

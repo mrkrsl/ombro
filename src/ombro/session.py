@@ -413,6 +413,7 @@ class Session:
         self.started: list[str] = []
         self._start_job = start_job or self.start_job
         self.on_started = on_started or (lambda job_id: None)
+        self.on_chat_saved: Callable[[Path], None] = lambda path: None  # the chat's file was written or renamed
         # Messages sent while a question was open, which set it aside: the chat takes them next.
         self.queued: list[tuple[str, list[Path] | None]] = []
 
@@ -427,6 +428,7 @@ class Session:
 
             kw = {"client_factory": self.client_factory} if self.client_factory else {}
             self.chat = Chat(self.home, ui=self.ui, titles=self.titles, **kw)
+            self.chat.on_saved = self.on_chat_saved
         return self.chat
 
     def job_ended(self, e: JobEnded) -> bool:

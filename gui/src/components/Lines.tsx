@@ -76,7 +76,7 @@ function LineView({ line }: { line: Line }) {
                 {f.label} ({f.replaces ? "updates the current file" : "new file"})
               </h4>
               <MarkdownFile text={f.text.trimEnd()} />
-              {f.diff && f.diff.length > 0 && <pre className="diff">{f.diff.join("\n")}</pre>}
+              {f.diff && f.diff.length > 0 && <Changes lines={f.diff} />}
             </div>
           ))}
           {line.warnings.map((w, i) => (
@@ -87,6 +87,29 @@ function LineView({ line }: { line: Line }) {
         </div>
       );
   }
+}
+
+/** What a proposal changes in the current file: apart from the file itself, folded away until asked
+ * for, wrapped, with no diff headers (T25). Before, a raw diff under the rendered brief read as part
+ * of it, and its long lines widened the page. */
+export function Changes({ lines }: { lines: string[] }) {
+  return (
+    <details className="changes">
+      <summary>Changes from the current file</summary>
+      <div className="diff">
+        {lines
+          .filter((l) => !l.startsWith("@@"))
+          .map((l, i) => {
+            const kind = l.startsWith("+") ? "added" : l.startsWith("-") ? "removed" : l === "⋯" ? "gap" : "same";
+            return (
+              <div key={i} className={kind}>
+                {kind === "added" || kind === "removed" ? l.slice(1) || " " : l.replace(/^ /, "") || " "}
+              </div>
+            );
+          })}
+      </div>
+    </details>
+  );
 }
 
 /** The Lead's offer to restart or resume a job that didn't finish: a button sends the command, once. */

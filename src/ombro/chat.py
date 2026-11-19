@@ -385,6 +385,9 @@ class Chat:
         self.remembered: list[dict[str, str]] = []
         self.specs: list[str] = []
         self.start_offers: list[str] = []  # saved specs the Lead offered to start; the interface asks the user
+        # Called with the chat's file when it is first written or renamed: a window lists it at once.
+        self.on_saved: Callable[[Path], None] = lambda path: None
+        self._announced: Path | None = None
         self._fresh()
 
     def _fresh(self) -> None:
@@ -912,6 +915,7 @@ class Chat:
         if self.titles and (not self.title or self.titled_by == "first words") and self.exchanges \
                 and self.mode == "Chat":
             self._auto_title()
+        self._save()  # the reply and the title are on record before any brief or job begins
         try:
             if request and request[0] == "live":
                 self._live(*request[1:])
@@ -1022,6 +1026,11 @@ class Chat:
     def _answer_turn(self, text: str) -> tuple[list[str], str] | None:
         self.user_said.append(text)
         self.transcript.user(text, self.mode)
+        # On record before any reply (T21): a chat whose Lead is still answering, or asking a
+        # question, is in the list of chats, so clicking away or quitting never loses it.
+        if not self.title and self.mode == "Chat":
+            self.set_title(words_title(text), "first words")  # a model title follows after the reply
+        self._save()
         for _ in range(self.limits.chat_calls_per_message):
             reply = self._model_call(self._messages())
             self.exchanges[-1].append(reply.as_message())
@@ -1995,3 +2004,9 @@ class Chat:
         text, _ = keys.scrub(self.home, mdfile.dump(meta, body))
         mdfile.write_atomic(self.path, text)
         self.last_used, self.turns_seen = updated, said
+        if self.path != self._announced:  # first written, or renamed with its title
+            self._announced = self.path
+            try:
+                self.on_saved(self.path)
+            except Exception:  # noqa: BLE001 - telling a window must never stop a save
+                pass

@@ -377,6 +377,14 @@ export const useStore = create<State & Actions>((set, get) => {
       }
       if (!("session" in m) || !m.session) return;
       const id = m.session;
+      if (m.type === "chat_saved") {
+        // The chat is on disk from its first message (T21): it joins the list of chats at once, so
+        // clicking away while the Lead answers, or asks a question, never loses it.
+        chatNames[id] = m.chat;
+        if (get().current === id) set({ chatOn: m.chat });
+        void afterIdle(id);
+        return;
+      }
       const c = get().conversations[id];
       if (!c) return;
       const next = apply(c, m);

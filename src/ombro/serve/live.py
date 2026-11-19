@@ -170,6 +170,9 @@ class LiveSession:
         self.session = Session(sessions.home, self.ui, client_factory=sessions.client_factory,
                                titles=sessions.titles, on_started=sessions.watch_job)
         self.flows = Flows(self.session)
+        # The chat is on disk (its first message, or a new name with its title): windows list it now,
+        # while the Lead is still answering (T21).
+        self.session.on_chat_saved = lambda path: self.emit({"type": "chat_saved", "chat": path.stem})
 
     # -- the log ------------------------------------------------------------------
 

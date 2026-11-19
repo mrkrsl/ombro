@@ -65,6 +65,14 @@ class SessionMessage(TypedDict):
     kind: str
 
 
+class ChatSavedMessage(TypedDict):
+    """A session's chat was written for the first time, or renamed with its title: list it now."""
+    type: Literal["chat_saved"]
+    session: str
+    seq: int
+    chat: str  # the chat's file name, without .md
+
+
 class JobMessage(TypedDict):
     type: Literal["job"]
     job_id: str
@@ -84,7 +92,7 @@ class CountsMessage(TypedDict):
 
 
 ServerMessage = (EventMessage | QuestionMessage | QuestionClosedMessage | EditFilesMessage | SessionMessage
-                 | JobMessage | CountsMessage)
+                 | ChatSavedMessage | JobMessage | CountsMessage)
 
 
 class SubscribeMessage(TypedDict, total=False):

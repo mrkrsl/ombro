@@ -28,6 +28,7 @@ export type ServerMessage =
   | QuestionClosedMessage
   | EditFilesMessage
   | SessionMessage
+  | ChatSavedMessage
   | JobMessage
   | CountsMessage;
 
@@ -83,6 +84,7 @@ export interface Api {
     | QuestionClosedMessage
     | EditFilesMessage
     | SessionMessage
+    | ChatSavedMessage
     | JobMessage
     | CountsMessage;
   session: SessionView;
@@ -884,6 +886,18 @@ export interface SessionMessage {
   session: string;
   state: "working" | "waiting" | "idle" | "ended";
   type: "session";
+}
+/**
+ * A session's chat was written for the first time, or renamed with its title: list it now.
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "ChatSavedMessage".
+ */
+export interface ChatSavedMessage {
+  chat: string;
+  seq: number;
+  session: string;
+  type: "chat_saved";
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

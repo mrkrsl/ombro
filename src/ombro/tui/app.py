@@ -441,6 +441,11 @@ class OmbroApp(App):
     def on_mount(self) -> None:
         self.query_one("#messages").styles.height = "auto"
         self.set_interval(THINKING_SECONDS, self.tick_thinking)
+        # Whether you were at the end of the conversation when you last scrolled (or it did): by the time
+        # the input says it changed, the conversation's box has already shrunk, so it is kept from here.
+        self.conv_at_end = True
+        conv = self.query_one("#conversation")
+        self.watch(conv, "scroll_y", lambda y: setattr(self, "conv_at_end", y >= conv.max_scroll_y - 1), init=False)
         self.draw_rules()
         self.update_footer()
         if self.setup_needed:
@@ -506,14 +511,15 @@ class OmbroApp(App):
     def update_footer(self) -> None:
         p = self.colours
         model = self.summary.get("model") or "no model"
-        left = Text(f"Model: {model}", style=p.muted)
-        if self.size.width >= 70:
-            left += Text("   / for commands", style=p.dim)
-        right = Text()
+        # No usage line (T14): briefed work is where the spend is. The model and the hint sit on the right.
+        left = Text()
         if self.mode == "Brief":
-            right.append("Brief   ", style=f"bold {p.strong}")
-        right.append(str(self.summary.get("outward") or "balanced").title() + "   ", style=p.dim)
-        right.append(look.usage_text(*self.usage), style=p.muted)
+            left.append("Brief   ", style=f"bold {p.strong}")
+        left.append(str(self.summary.get("outward") or "balanced").title(), style=p.dim)
+        right = Text()
+        if self.size.width >= 70:
+            right.append("/ for commands   ", style=p.dim)
+        right.append(f"Model: {model}", style=p.muted)
         self.query_one("#footer-left", Static).update(left)
         self.query_one("#footer-right", Static).update(right)
         placeholder = "Complete the brief interview, or /chat" if self.mode == "Brief" else "Chat or /brief"
@@ -678,6 +684,14 @@ class OmbroApp(App):
         self.query_one("#slash-rule").display = bool(matches)
         if matches:
             menu.highlighted = 0
+        # The input grows with a long message (and the slash menu opens): if the conversation was at its
+        # end before, it stays there once laid out, so the latest line is never hidden behind the input (T23).
+        if self.conv_at_end:
+            self.call_after_refresh(self._keep_at_end)
+
+    def _keep_at_end(self) -> None:
+        self.fit_spacer()
+        self.query_one("#conversation").scroll_end(animate=False)
 
     def slash_open(self) -> bool:
         return bool(self.query_one("#slash", OptionList).display)
