@@ -1,11 +1,11 @@
 /* Ombro blues 100–700 (tui/look.py), as light and dark tokens. The window follows the
    preference (data-theme on <html>), else the system. */
 :root {
-  --ombro-100: #edf8fb;
-  --ombro-200: #c7ebf4;
-  --ombro-300: #8cc2d0;
-  --ombro-400: #2f8196;
-  --ombro-500: #1c5665;
+  --ombro-100: #ebf5f7;
+  --ombro-200: #c7e3eb;
+  --ombro-300: #93c4d0;
+  --ombro-400: #3f8395;
+  --ombro-500: #205360;
   --ombro-600: #0e2c33;
   --ombro-700: #031216;
 
@@ -18,7 +18,7 @@
   --accent: var(--ombro-500);
   --link: var(--ombro-500); /* every link, read or not */
   --greeting: var(--ombro-500);
-  --you-bg: #d6eef5;
+  --you-bg: #e0eff3;
   --you-text: var(--ombro-500);
   --border: var(--ombro-500);
   --rule: #e6eef0;
@@ -26,7 +26,7 @@
   --hover: #eef6f8;
   --menu-bg: #ffffff;
   --menu-pick: #d6eef5;
-  --fade: #d4ebf2; /* the blue of the arc behind the foot of the window */
+  --fade: #cae2e9; /* the blue of the arc behind the foot of the window */
   --feed-text: var(--ombro-600); /* background work in the side panel: a shade softer than text */
   --input-border: #286e80; /* the design's input stroke */
   --report-head: #f3f3f3;
