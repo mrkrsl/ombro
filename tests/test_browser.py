@@ -7,6 +7,7 @@ is exercised, not switched off. Skipped where no Chrome, Chromium, Edge or Brave
 from __future__ import annotations
 
 import json
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
@@ -20,11 +21,25 @@ from ombro.tools import ToolContext, ToolInputError
 pytestmark = pytest.mark.skipif(not browser_mod.installed(), reason="no browser installed")
 
 
+PUBLIC = "93.184.215.14"  # what the address check is told shop.test resolves to
+_connect = socket.socket.connect  # before conftest's no_network: only dial below may use it
+
+
 @pytest.fixture(autouse=True)
 def a_browser(monkeypatch):
     monkeypatch.delenv("OMBRO_BROWSER", raising=False)
 
-PUBLIC = "93.184.215.14"  # what the address check is told shop.test resolves to
+    # Every connection goes through Ombro's proxy, which connects to the address it checked: the
+    # invented public address is this machine, for these tests only. Any other address is refused.
+    def dial(address, port, timeout):
+        if address != PUBLIC:
+            raise OSError(f"the tests reach only {PUBLIC}")
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        _connect(s, ("127.0.0.1", port))
+        return s
+
+    monkeypatch.setattr("ombro.proxy.dial", dial)
 
 
 def page(port: int) -> str:
@@ -97,8 +112,8 @@ class Site:
 
     @property
     def settings(self) -> dict:
-        # Chrome finds shop.test here and nothing else at all.
-        return {"args": [f"--host-resolver-rules=MAP shop.test 127.0.0.1, MAP * ~NOTFOUND"]}
+        # Chrome itself finds nothing at all but its proxy: every name is looked up by Ombro's proxy.
+        return {"args": ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"]}
 
 
 def resolver(host: str, port: int) -> list[str]:
@@ -146,6 +161,26 @@ def test_a_page_cannot_reach_this_machine(tools, site):
         t["browser.open"].handler({"url": f"http://127.0.0.1:{site.port}/"}, ctx)
     with pytest.raises(ToolInputError, match="after '\\?'"):
         t["browser.open"].handler({"url": site.url + "?d=" + "x" * 300}, ctx)
+
+
+def test_a_name_that_rebinds_to_this_machine_is_never_reached(site):
+    # H2: the page's check sees a public address; a moment later the same name is this machine.
+    asked: list[str] = []
+
+    def rebinding(host: str, port: int) -> list[str]:
+        if host != "rebind.test":  # shop.test, or the browser's own background requests
+            return [PUBLIC] if host == "shop.test" else []
+        asked.append(host)
+        return [PUBLIC] if len(asked) == 1 else ["127.0.0.1"]
+
+    b = browser_mod.Browser(site.settings, resolver=rebinding)
+    try:
+        with pytest.raises(browser_mod.BrowserError, match="private network"):
+            b.page("researcher", 20).open(f"http://rebind.test:{site.port}/", 20)
+    finally:
+        b.close()
+    assert len(asked) >= 2  # checked by the page, then by the proxy, which refused (Chrome may try twice)
+    assert site.requests == []
 
 
 def ref(out: dict, text: str) -> str:

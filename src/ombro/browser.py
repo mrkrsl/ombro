@@ -11,7 +11,10 @@ What a role can do, and what keeps it safe (specification 7.1):
 - Public addresses only. Every request the page makes, not only the ones the role asks for,
   is checked as web.fetch checks its address: a page can't reach this machine or the local
   network. WebSockets to private addresses are refused too, downloads are refused, and pop-up
-  dialogs are dismissed.
+  dialogs are dismissed. Chrome never looks a name up itself: every connection goes through
+  Ombro's own proxy (ombro.proxy), which resolves the name once, checks the address and
+  connects to that address, so a name that changes its answer (DNS rebinding) gets nowhere.
+  Service workers can't be registered.
 - No data carried out in addresses. An address the role opens may carry no more after its '?'
   than web.fetch allows (fetch_max_query), and text typed into a field is held to the same cap.
 - What a page says is material. Only text a person could see is read (hidden text is not),
@@ -273,6 +276,11 @@ class _Socket:
     def send(self, text: str) -> None:
         self.ws.send(text)
 
+    def addresses(self) -> tuple[str, str]:
+        """(this end, the browser's end) of the connection: where the browser can reach Ombro's proxy."""
+        s = self.ws.socket
+        return s.getsockname()[0], s.getpeername()[0]
+
     def recv(self) -> str | None:
         try:
             msg = self.ws.recv()
@@ -372,7 +380,7 @@ class Browser:
     """One browser for a job (or an approval), with a new, empty profile, started on first use."""
 
     def __init__(self, settings: dict[str, Any] | None = None, *, resolver: Any = None,
-                 profiles: Path | None = None):
+                 profiles: Path | None = None, dial: Any = None):
         from ombro.providers.addresses import system_resolver
 
         self.settings = dict(settings or {})
@@ -380,6 +388,8 @@ class Browser:
         # which a snap browser (Ubuntu's chromium) has its own copy of and can't see.
         self.profiles = profiles
         self.resolver = resolver or system_resolver
+        self.dial = dial  # tests only: how the proxy connects to an address it has checked
+        self.proxy: Any = None  # ombro.proxy.Proxy: every connection the pages make goes through it
         self.cdp: Cdp | None = None
         self.profile: str | None = None
         self.context: str | None = None
@@ -394,13 +404,24 @@ class Browser:
             if not found:
                 raise BrowserUnavailable("no browser is installed for Ombro to use (Chrome, Chromium, Edge or Brave)."
                                          " Use web.fetch instead, and say in did_not_do that a browser was needed.")
+            from ombro.proxy import Proxy
+
             if "endpoint" in found:
                 transport: Any = _Socket(found["endpoint"], min(timeout, START_TIMEOUT))
+                # The browser elsewhere reaches the proxy at the address Ombro reaches it from, and only it may.
+                try:
+                    here, there = transport.addresses()
+                    self.proxy = Proxy(self.resolver, host=here, peers={there}, dial_to=self.dial)
+                except OSError as e:
+                    transport.close()
+                    raise BrowserUnavailable(f"the browser's proxy could not be started: {e}") from None
             else:
+                self.proxy = Proxy(self.resolver, dial_to=self.dial)
                 if self.profiles is not None:
                     self.profiles.mkdir(parents=True, exist_ok=True)
                 self.profile = tempfile.mkdtemp(prefix="ombro-browser-", dir=self.profiles)
                 args = [*FLAGS, f"--user-data-dir={self.profile}", "--remote-debugging-pipe",
+                        f"--proxy-server={self.proxy.address}", "--proxy-bypass-list=<-loopback>",
                         *[str(a) for a in self.settings.get("args") or []], "about:blank"]
                 transport = _Pipe(found["path"], args)
             self.cdp = Cdp(transport)
@@ -408,8 +429,11 @@ class Browser:
             try:
                 self.cdp.send("Browser.getVersion", timeout=min(timeout, START_TIMEOUT))
                 # A context of its own, like a private window: nothing shared with other jobs on the same browser.
-                self.context = self.cdp.send("Target.createBrowserContext", {"disposeOnDetach": True})[
-                    "browserContextId"]
+                # Everything it fetches goes through the proxy, which looks each name up once and connects to
+                # the address it checked (H2): Chrome never resolves a name itself.
+                self.context = self.cdp.send("Target.createBrowserContext", {
+                    "disposeOnDetach": True, "proxyServer": self.proxy.address, "proxyBypassList": "<-loopback>",
+                })["browserContextId"]
                 self.cdp.send("Browser.setDownloadBehavior", {"behavior": "deny", "browserContextId": self.context})
             except BrowserError as e:
                 self.close()
@@ -447,10 +471,24 @@ class Browser:
                     pass
             self.cdp.close()
             self.cdp = None
+        if self.proxy is not None:
+            self.proxy.close()
+            self.proxy = None
         if self.profile:
             shutil.rmtree(self.profile, ignore_errors=True)
             self.profile = None
 
+
+# Run before any of a page's own scripts, in every frame: service workers can't be registered.
+NO_WORKERS_JS = """(() => {
+  try {
+    const sw = navigator.serviceWorker;
+    if (sw) {
+      const no = () => Promise.reject(new DOMException('Service workers are turned off here', 'SecurityError'));
+      Object.defineProperty(sw, 'register', {value: no, configurable: false, writable: false});
+    }
+  } catch (e) {}
+})();"""
 
 PRIVATE_WS = ["ws://localhost*", "wss://localhost*", "ws://127.*", "wss://127.*", "ws://10.*", "wss://10.*",
               "ws://192.168.*", "wss://192.168.*", "ws://169.254.*", "wss://169.254.*", "ws://[*", "wss://[*",
@@ -474,7 +512,11 @@ class Page:
         cdp.send("Fetch.enable", {"patterns": [{"urlPattern": "*"}]}, s)
         cdp.send("Network.enable", {}, s)
         cdp.send("Network.setBlockedURLs", {"urls": PRIVATE_WS}, s)
+        # No service workers: a worker's requests would not pass this page's checks (H2). The proxy still
+        # checks them, but none is registered, and none already there answers for the page.
+        cdp.send("Network.setBypassServiceWorker", {"bypass": True}, s)
         cdp.send("Page.enable", {}, s)
+        cdp.send("Page.addScriptToEvaluateOnNewDocument", {"source": NO_WORKERS_JS}, s)
         cdp.send("Page.setInterceptFileChooserDialog", {"enabled": True}, s)
         cdp.send("Runtime.enable", {}, s)
 
@@ -542,6 +584,10 @@ class Page:
         if out.get("errorText"):
             if "BLOCKED_BY_CLIENT" in out["errorText"] and self.blocked:
                 raise BrowserError(f"{url} was not opened: {self.blocked[-1]}")
+            proxy = self.browser.proxy
+            if (any(w in out["errorText"] for w in ("TUNNEL", "PROXY", "EMPTY_RESPONSE")) and proxy is not None
+                    and proxy.refused):
+                raise BrowserError(f"{url} was not opened: {proxy.refused[-1]}")
             raise BrowserError(f"{url} could not be opened ({out['errorText']})")
         self._wait_load(*before, timeout=timeout, expect=True)
 
