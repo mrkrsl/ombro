@@ -199,7 +199,7 @@ LIMITS_META = {
     "max_output_tokens": 32000,
     "report_reserve": 0.10,
     "loop_threshold": 3,
-    "max_steps": {"lead": 6, "specialist": 40, "helper": 20},
+    "max_steps": {"lead": 40, "specialist": 40, "helper": 30},
     "tool_max_calls": {"default": 20, "memory.search": 8},
     "report_max_output_tokens": 2000,
     "report_timeout": "2m",

@@ -351,6 +351,27 @@ def test_editing_files_by_hand_waits_for_the_window(serve):
     ws.close()
 
 
+def test_deleting_a_chat_moves_it_to_the_archive_and_ends_its_session(serve, home):
+    _script(serve.client, [fake.say("An invented answer.")])
+    ws = serve.socket()
+    ws.send({"type": "subscribe", "all": True})
+    sid = serve.post("/sessions", status=201)["session"]["id"]
+    serve.post(f"/sessions/{sid}/input", {"text": "An invented question to delete"})
+    ws.until(state("idle", sid))
+    name = serve.get(f"/sessions/{sid}")["chat"]
+    text = (home.chats_dir / f"{name}.md").read_text(encoding="utf-8")
+
+    out = serve.post(f"/chats/{name}/archive")
+    assert name not in {c["name"] for c in out["chats"]} and name not in {c["name"] for c in serve.get("/chats")}
+    assert not (home.chats_dir / f"{name}.md").exists()
+    archived = home.chats_dir / "Archive" / f"{name}.md"
+    assert out["moved_to"] == str(archived) and archived.read_text(encoding="utf-8").startswith(text[:200])
+    assert serve.http.get(f"/sessions/{sid}").status_code == 404  # the open session ended first
+    assert not (home.chats_dir / f"{name}.md").exists()  # and didn't write the chat back
+    assert serve.http.post("/chats/no-such-chat/archive").status_code == 404
+    ws.close()
+
+
 def test_reopening_a_saved_chat_shows_it_again(serve):
     _script(serve.client, [fake.say("An invented first answer.")])
     ws = serve.socket()

@@ -106,6 +106,45 @@
   text-overflow: ellipsis;
 }
 
+/* A chat's delete cross: hidden until the row is hovered (or the cross has focus), then over the
+   end of the title, on the row's highlight. */
+.chat-row {
+  position: relative;
+}
+
+.chat-row .chat-delete {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-row:hover .chat-delete,
+.chat-row .chat-delete:focus-visible {
+  display: flex;
+}
+
+.chat-row:hover .chat-link {
+  background: var(--hover);
+  padding-right: 36px;
+}
+
+.chat-row .chat-delete:hover {
+  color: var(--text);
+  background: var(--sidebar, var(--bg));
+}
+
 /* A chat with a job running: the dotted ring before its title (design 01). */
 .chat-link .working {
   vertical-align: -3px;
@@ -890,6 +929,18 @@ a:visited {
   place-items: center;
   color: var(--muted);
   text-align: center;
+}
+
+/* The logo above "Starting Ombro…". */
+.startup-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.startup-panel p {
+  margin: 0;
 }
 
 /* -- the inspector (design 06) ------------------------------------------------------ */

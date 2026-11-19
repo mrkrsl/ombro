@@ -9,6 +9,7 @@ import { Restarting, Toasts } from "./components/Toasts";
 import { Conversation } from "./screens/Conversation";
 import { Home, HomeGreeting } from "./screens/Home";
 import { Inspector } from "./components/Inspector";
+import { Logo } from "./components/Logo";
 import { Approvals } from "./screens/Approvals";
 import { Connect } from "./screens/Connect";
 import { Jobs } from "./screens/Jobs";
@@ -88,8 +89,17 @@ export default function App() {
   if (status === "choose") {
     return <Connect onReady={() => void s.connectNow()} />;
   }
-  if (status === "starting" && !s.summary) {
-    return <div className="startup">{s.where && s.where.mode !== "local" ? "Connecting to the server…" : "Starting Ombro…"}</div>;
+  // Until the first load is in (your name, chats, preferences, set-up), the starting panel stays:
+  // otherwise the window shows a first-run welcome for a moment, then jumps to yours.
+  if ((status === "starting" || status === "connected" || status === "lost") && !s.loaded) {
+    return (
+      <div className="startup">
+        <div className="startup-panel">
+          <Logo size={34} />
+          <p>{s.where && s.where.mode !== "local" ? "Connecting to the server…" : "Starting Ombro…"}</p>
+        </div>
+      </div>
+    );
   }
   if (status === "failed" && s.where && (s.where.mode === "ssh" || s.where.mode === "direct")) {
     return (

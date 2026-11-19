@@ -453,6 +453,26 @@ def role(home: Home, crew: str, name: str) -> vt.RoleDetail:
             "all_skills": r.all_skills, "soul": r.soul, "path": str(r.path)}
 
 
+CHAT_ARCHIVE = "Archive"  # under the chats folder: chats removed from the list, kept as they were
+
+
+def archive_chat(home: Home, name: str) -> Path:
+    """Move a saved chat out of the list into the chats folder's Archive/, as it is. Never replaces
+    a chat already there (a second one of the same name gets -2, -3…). Returns where it went."""
+    path = home.chats_dir / f"{name}.md"
+    if "/" in name or "\\" in name or name.startswith(".") or not path.is_file():
+        raise LookupError(f"no chat called {name!r}")
+    folder = home.chats_dir / CHAT_ARCHIVE
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / path.name
+    n = 2
+    while target.exists():
+        target = folder / f"{name}-{n}.md"
+        n += 1
+    path.rename(target)
+    return target
+
+
 def chat(home: Home, name: str) -> vt.ChatDetail:
     """One saved chat: its title, the jobs it started, and its turns (yours and the Lead's)."""
     from ombro.chat import parse_entries, turns

@@ -31,7 +31,7 @@ class Command:
 
 
 COMMANDS = [
-    Command("/chat", "back to Chat from a brief", "chat"),
+    Command("/chat", "stop a brief and keep chatting", "chat"),
     Command("/new", "save this chat and start a fresh one", "chat"),
     Command("/chats", "your past chats; reopen one and carry on", "chat"),
     Command("/rename", "give this chat a title", "chat"),

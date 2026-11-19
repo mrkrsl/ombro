@@ -60,6 +60,8 @@ export function screenFor(name: string): { screen: Screen; page?: SettingsPage }
 
 type State = {
   status: "starting" | "choose" | "connected" | "lost" | "failed";
+  /** The first load (summary, chats, preferences, set-up) is in: until then the starting panel shows. */
+  loaded: boolean;
   where: Where | null; // where Ombro runs (app only)
   problem: string;
   api: Client | null;
@@ -114,6 +116,8 @@ type Actions = {
   interrupt: () => Promise<void>;
   doneEditing: () => Promise<void>;
   openChat: (name: string) => Promise<void>;
+  /** Delete a chat from the list: the server moves it to the chats folder's Archive/, unchanged. */
+  deleteChat: (name: string) => Promise<void>;
   setMode: (mode: "Chat" | "Brief") => Promise<void>;
   toggleSidebar: () => void;
   toggleInspector: () => void;
@@ -152,6 +156,31 @@ const FEED_KEEP = 300;
 
 function systemTheme(): Theme {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+// The theme you chose, kept in this window's own storage as well as in your preferences, so the
+// app opens in it before the server has answered (not in the system's, then a jump).
+const THEME_KEY = "ombro.theme";
+
+export function keptThemeChoice(): ThemeChoice {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === "light" || v === "dark" ? v : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+export function themeFor(choice: ThemeChoice): Theme {
+  return choice === "auto" ? systemTheme() : choice;
+}
+
+function keepThemeChoice(choice: ThemeChoice) {
+  try {
+    localStorage.setItem(THEME_KEY, choice);
+  } catch {
+    // no storage: the preference from the server still applies once it answers
+  }
 }
 
 export const useStore = create<State & Actions>((set, get) => {
@@ -209,6 +238,7 @@ export const useStore = create<State & Actions>((set, get) => {
 
   return {
     status: "starting",
+    loaded: false,
     where: null,
     problem: "",
     api: null,
@@ -224,8 +254,8 @@ export const useStore = create<State & Actions>((set, get) => {
     conversations: {},
     titles: {},
     sidebar: true,
-    theme: systemTheme(),
-    themeChoice: "auto",
+    theme: themeFor(keptThemeChoice()),
+    themeChoice: keptThemeChoice(),
     settingsPage: "general",
     toasts: [],
     restarting: false,
@@ -320,6 +350,7 @@ export const useStore = create<State & Actions>((set, get) => {
           set({ welcome: true });
           await openSession({ flow: "setup" }, [], true);
         }
+        set({ loaded: true });
       } catch (e) {
         set({ status: "failed", problem: String(e instanceof Error ? e.message : e) });
       }
@@ -340,7 +371,8 @@ export const useStore = create<State & Actions>((set, get) => {
       if (Array.isArray(jobs)) set({ running: jobs.filter((j) => j.active).map((j) => j.job_id) });
       if (prefs) {
         const choice: ThemeChoice = prefs.theme === "light" || prefs.theme === "dark" ? prefs.theme : "auto";
-        set({ themeChoice: choice, theme: choice === "auto" ? systemTheme() : choice });
+        set({ themeChoice: choice, theme: themeFor(choice) });
+        keepThemeChoice(choice);
       }
     },
 
@@ -808,6 +840,27 @@ export const useStore = create<State & Actions>((set, get) => {
       }
     },
 
+    async deleteChat(name) {
+      const { api, chatOn, screen } = get();
+      if (!api) return;
+      const open = Object.values(get().conversations).filter((c) => chatOf(c.id) === name).map((c) => c.id);
+      const wasOn = chatOn === name || (screen === "chat" && open.includes(get().current ?? ""));
+      // Off the list at once; the server's list replaces it when it answers.
+      set((s) => ({ chats: s.chats.filter((c) => c.name !== name) }));
+      try {
+        const r = await api.post<{ moved_to: string; chats: ChatRow[] }>(`/chats/${encodeURIComponent(name)}/archive`);
+        for (const id of open) delete chatNames[id];
+        set({ chats: r.chats });
+        if (wasOn) {
+          get().say("");
+          set({ screen: "home", current: null, chatOn: null, report: null, opener: null });
+        }
+      } catch (e) {
+        void api.get<ChatRow[]>("/chats").then((chats) => set({ chats }), () => undefined);
+        get().say(e instanceof Error ? e.message : String(e), "error");
+      }
+    },
+
     async setMode(mode) {
       const { current, conversations } = get();
       const c = current ? conversations[current] : null;
@@ -836,11 +889,15 @@ export const useStore = create<State & Actions>((set, get) => {
 
     setTheme(theme, save = true) {
       set({ theme, themeChoice: save ? theme : get().themeChoice });
-      if (save) void get().api?.put("/preferences", { theme });
+      if (save) {
+        keepThemeChoice(theme);
+        void get().api?.put("/preferences", { theme });
+      }
     },
 
     setThemeChoice(choice) {
-      set({ themeChoice: choice, theme: choice === "auto" ? systemTheme() : choice });
+      set({ themeChoice: choice, theme: themeFor(choice) });
+      keepThemeChoice(choice);
       void get().api?.put("/preferences", { theme: choice });
     },
 
