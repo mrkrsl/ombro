@@ -550,6 +550,15 @@ class ModelSpec:
     script: str | None = None
     max_output_tokens: int | None = None  # the most this model may write in one reply, if less than the limit
     reasoning_effort: str | None = None  # how hard a thinking model thinks (sent as reasoning_effort), e.g. low
+    max_concurrent: int | None = None  # calls in flight to this model's provider at once, across Ombro (T10)
+
+
+def _positive_int(value, name: str, field: str, home: Home) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise SetupError(f"{home.models}: model {name!r} has {field} {value!r}; use a whole number, 1 or more")
+    return value
 
 
 def load_models(home: Home) -> dict[str, ModelSpec]:
@@ -594,6 +603,7 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
             script=entry.get("script"),
             max_output_tokens=int(entry["max_output_tokens"]) if entry.get("max_output_tokens") else None,
             reasoning_effort=effort.lower() if effort else None,
+            max_concurrent=_positive_int(entry.get("max_concurrent"), name, "max_concurrent", home),
         )
 
     return {name: resolve(name) for name in raw}

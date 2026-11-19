@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import nullcontext
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
 
-from ombro.client import RETRYABLE, ModelError, ModelReply, ToolCall, Usage, allowed_max_tokens
+from ombro.client import (RETRYABLE, BUSY_RETRIES, ModelError, ModelReply, ToolCall, Usage, allowed_max_tokens,
+                          busy_pause, busy_wait, no_slot_error)
+from ombro.slots import NoSlot
 
 API_VERSION = "2026-10-21"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -48,7 +51,9 @@ class AnthropicClient:
         retries: int = 2,
         sleep: Callable[[float], None] = time.sleep,
         effort: str | None = None,
+        slots=None,
     ):
+        self.slots = slots  # ombro.slots.ProviderSlots: how many calls may be in flight to Anthropic at once
         self.base = endpoint.rstrip("/")
         self.url = self.base + "/messages"
         self.host = urlparse(endpoint).netloc or endpoint
@@ -97,6 +102,7 @@ class AnthropicClient:
 
         deadline = time.monotonic() + timeout
         attempt = 0
+        busy = 0
         lost = 0
         stripped = False
         while True:
@@ -107,9 +113,15 @@ class AnthropicClient:
                 raise err
             retryable = False
             try:
-                with httpx.Client(transport=self.transport,
-                                  timeout=httpx.Timeout(remaining, connect=min(remaining, 15.0))) as http:
+                with self.slots.hold(deadline) if self.slots else nullcontext(), httpx.Client(
+                        transport=self.transport,
+                        timeout=httpx.Timeout(max(0.1, deadline - time.monotonic()),
+                                              connect=min(remaining, 15.0))) as http:
                     resp = http.post(self.url, json=body, headers=self._headers(key, "fallbacks" in body))
+            except NoSlot:
+                err = no_slot_error(self.host)
+                err.lost_attempts = lost
+                raise err from None
             except httpx.TimeoutException:
                 err = ModelError("the model call ran out of time", timed_out=True)
                 retryable = True
@@ -147,7 +159,14 @@ class AnthropicClient:
                     body["max_tokens"] = allowed
                     continue
                 err = ModelError(f"{self.host} returned HTTP {resp.status_code}: {detail}", status=resp.status_code)
-                retryable = resp.status_code in RETRYABLE
+                wait = busy_wait(resp, detail)
+                if wait is not None and busy < BUSY_RETRIES:
+                    busy += 1
+                    pause = busy_pause(wait, busy)
+                    if pause < deadline - time.monotonic() - 1:
+                        self.sleep(pause)
+                        continue
+                retryable = resp.status_code in RETRYABLE and wait is None
             if not retryable or attempt >= self.retries:
                 err.lost_attempts = lost
                 raise err

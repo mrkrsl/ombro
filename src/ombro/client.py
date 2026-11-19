@@ -4,12 +4,16 @@ anthropic_client.py. Messages are kept in the OpenAI shape everywhere else in Om
 from __future__ import annotations
 
 import json
+import random
 import re
+from contextlib import nullcontext
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 from urllib.parse import urlparse
+
+from ombro.slots import NoSlot
 
 import httpx
 
@@ -102,6 +106,37 @@ def parse_tool_arguments(raw: Any) -> dict | None:
 
 
 RETRYABLE = {408, 409, 429, 500, 502, 503, 504, 529}  # 529: Anthropic is overloaded
+BUSY_RETRIES = 6  # tries again when a provider is busy (429, or OpenRouter's in-flight 402), up to the call's time
+BUSY_MAX_PAUSE = 60.0
+_IN_FLIGHT = ("in-flight", "in_flight", "in flight")
+
+
+def busy_wait(resp: httpx.Response, detail: str) -> float | None:
+    """Seconds the provider asks Ombro to wait before trying again when it is busy rather than refusing the
+    request: 429 (too many requests), 529 (overloaded) and OpenRouter's 402 for credit held by requests still in
+    flight. 0 when it gives no Retry-After; None when this is not that kind of refusal (T10)."""
+    status = resp.status_code
+    if status == 402:
+        low = (detail + " " + resp.text[:2000]).lower()
+        if not any(w in low for w in _IN_FLIGHT):
+            return None  # out of credit: trying again will not help
+    elif status not in (429, 529):
+        return None
+    try:
+        return max(0.0, min(float(resp.headers.get("retry-after") or 0), BUSY_MAX_PAUSE))
+    except ValueError:
+        return 0.0
+
+
+def busy_pause(wait: float, busy: int) -> float:
+    """How long to wait before the `busy`th try again: what the provider asked, or a growing pause, with a little
+    jitter so calls that were turned away together don't come back together."""
+    return max(wait, min(BUSY_MAX_PAUSE, 2.0 ** busy)) + random.uniform(0, 0.5)
+
+
+def no_slot_error(host: str) -> ModelError:
+    return ModelError(f"every connection Ombro allows to {host} stayed busy until the model call ran out of time",
+                      timed_out=True)
 
 
 def public(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -140,8 +175,10 @@ class OpenAICompatibleClient:
         retries: int = 2,
         sleep: Callable[[float], None] = time.sleep,
         reasoning_effort: str | None = None,
+        slots=None,
     ):
         self.url = endpoint.rstrip("/") + "/chat/completions"
+        self.slots = slots  # ombro.slots.ProviderSlots: how many calls may be in flight to this provider at once
         self.host = urlparse(endpoint).netloc or endpoint
         self.model = model
         self.key_getter = key_getter
@@ -182,6 +219,7 @@ class OpenAICompatibleClient:
 
         deadline = time.monotonic() + timeout
         attempt = 0
+        busy = 0
         lost = 0
         while True:
             remaining = deadline - time.monotonic()
@@ -191,11 +229,15 @@ class OpenAICompatibleClient:
                 raise err
             retryable = False
             try:
-                with httpx.Client(
+                with self.slots.hold(deadline) if self.slots else nullcontext(), httpx.Client(
                     transport=self.transport,
-                    timeout=httpx.Timeout(remaining, connect=min(remaining, 15.0)),
+                    timeout=httpx.Timeout(max(0.1, deadline - time.monotonic()), connect=min(remaining, 15.0)),
                 ) as http:
                     resp = http.post(self.url, json=body, headers=headers)
+            except NoSlot:
+                err = no_slot_error(self.host)
+                err.lost_attempts = lost
+                raise err from None
             except httpx.TimeoutException:
                 err = ModelError("the model call ran out of time", timed_out=True)
                 retryable = True
@@ -221,7 +263,16 @@ class OpenAICompatibleClient:
                     body["max_tokens"] = allowed
                     continue
                 err = ModelError(f"{self.host} returned HTTP {resp.status_code}: {detail}", status=resp.status_code)
-                retryable = resp.status_code in RETRYABLE
+                wait = busy_wait(resp, detail)
+                if wait is not None and busy < BUSY_RETRIES:
+                    busy += 1
+                    if resp.status_code == 402 and body["max_tokens"] > 8192:
+                        body["max_tokens"] = max(8192, body["max_tokens"] // 2)  # a smaller reservation of credit
+                    pause = busy_pause(wait, busy)
+                    if pause < deadline - time.monotonic() - 1:
+                        self.sleep(pause)
+                        continue
+                retryable = resp.status_code in RETRYABLE and wait is None
             if not retryable or attempt >= self.retries:
                 err.lost_attempts = lost
                 raise err
@@ -353,11 +404,13 @@ def make_client(spec, home) -> ChatClient:
     if spec.api == "anthropic" or (spec.api == "openai" and is_anthropic(spec.endpoint)):
         from ombro.anthropic_client import AnthropicClient
 
+        endpoint = spec.endpoint or ANTHROPIC_ENDPOINT
         return AnthropicClient(
-            spec.endpoint or ANTHROPIC_ENDPOINT,
+            endpoint,
             spec.model,
             (lambda: keys.get_key(home, key_name)) if key_name else (lambda: None),
             effort=getattr(spec, "reasoning_effort", None),
+            slots=_slots(home, endpoint, spec),
         )
     return OpenAICompatibleClient(
         spec.endpoint,
@@ -365,4 +418,16 @@ def make_client(spec, home) -> ChatClient:
         (lambda: keys.get_key(home, key_name)) if key_name else (lambda: None),
         key_required=bool(key_name),
         reasoning_effort=getattr(spec, "reasoning_effort", None),
+        slots=_slots(home, spec.endpoint, spec),
     )
+
+
+def _slots(home, endpoint: str | None, spec):
+    """The calls in flight to this provider at once, for every Ombro process in the home: `max_concurrent` in
+    models.md, or a few. None for an address that isn't a provider's (a local model)."""
+    from ombro.slots import for_provider
+
+    host = (urlparse(endpoint or "").hostname or "").lower()
+    if not host or host in ("localhost", "127.0.0.1", "::1") or home is None:
+        return None
+    return for_provider(home, host, getattr(spec, "max_concurrent", None))

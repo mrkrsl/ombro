@@ -330,6 +330,9 @@ endpoints. Any OpenAI-compatible chat endpoint with tool calling works.
   `low`; DeepSeek takes none, low, high and max, and thinks at high when it
   is not set). Thinking is most of a thinking model's time, so `low` makes
   jobs much faster. An endpoint that refuses it is called without it.
+- max_concurrent (optional): how many calls may be in flight at once to this
+  model's provider, across every job, chat and schedule (4 when not set).
+  A provider that is busy (too many requests) is waited out and tried again.
 - key: the name of the variable in secrets/keys.env that holds the API key. Keys never go in this file.
 - A name can point at another name, as `cheap: default` does.
 """
