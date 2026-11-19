@@ -171,3 +171,33 @@ def test_no_address_at_all_is_refused():
 
     with pytest.raises(NotCalled):
         check_url("https://nowhere.test/", nothing)
+
+
+def test_proxy_ports_from_the_environment():
+    from ombro.browser import proxy_ports
+
+    assert proxy_ports({}) is None
+    assert proxy_ports({"OMBRO_BROWSER_PROXY_PORTS": "9300-9302"}) == range(9300, 9303)
+    assert proxy_ports({"OMBRO_BROWSER_PROXY_PORTS": "9400"}) == range(9400, 9401)
+    for bad in ("80-90", "x-y", "9399-9300", "70000"):
+        assert proxy_ports({"OMBRO_BROWSER_PROXY_PORTS": bad}) is None
+
+
+def test_proxy_takes_the_next_free_port_in_its_range():
+    import socket
+
+    from ombro.proxy import Proxy
+
+    held = socket.socket()
+    held.bind(("127.0.0.1", 0))
+    port = held.getsockname()[1]
+    try:
+        p = Proxy(lambda host, port: [], ports=range(port, port + 50))
+        try:
+            assert port < p.port < port + 50
+        finally:
+            p.close()
+        with pytest.raises(OSError):
+            Proxy(lambda host, port: [], ports=range(port, port + 1))
+    finally:
+        held.close()

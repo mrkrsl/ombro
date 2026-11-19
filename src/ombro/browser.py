@@ -100,6 +100,22 @@ PERSONAL = re.compile(
 LOOKS_PERSONAL = re.compile(r"[^@\s]+@[^@\s]+\.[a-z]{2,}|\+?\d[\d\s().-]{7,}\d", re.IGNORECASE)
 
 
+def proxy_ports(env: dict[str, str] | None = None) -> range | None:
+    """The ports the proxy may listen on for a browser elsewhere, from OMBRO_BROWSER_PROXY_PORTS
+    ("9300-9399"), or None for any. In Docker the browser's network guard lets it reach Ombro's
+    container on those ports only (compose.yaml)."""
+    raw = (os.environ if env is None else env).get("OMBRO_BROWSER_PROXY_PORTS", "").strip()
+    if not raw:
+        return None
+    first, _, last = raw.partition("-")
+    try:
+        lo, hi = int(first), int(last or first)
+    except ValueError:
+        return None
+    if not 1024 <= lo <= hi <= 65535:
+        return None
+    return range(lo, hi + 1)
+
 class BrowserError(ToolError):
     """The browser could not do what was asked. The message is shown to the role."""
 
@@ -416,7 +432,8 @@ class Browser:
                 # The browser elsewhere reaches the proxy at the address Ombro reaches it from, and only it may.
                 try:
                     here, there = transport.addresses()
-                    self.proxy = Proxy(self.resolver, host=here, peers={there}, dial_to=self.dial)
+                    self.proxy = Proxy(self.resolver, host=here, peers={there}, dial_to=self.dial,
+                                       ports=proxy_ports())
                 except OSError as e:
                     transport.close()
                     raise BrowserUnavailable(f"the browser's proxy could not be started: {e}") from None

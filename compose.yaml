@@ -26,6 +26,9 @@ services:
     # The browser service below, when it runs: crews and chat read web pages in it.
     environment:
       OMBRO_BROWSER_ENDPOINT: http://browser:9222
+      # Ombro's proxy for the browser (every page's connection passes it, H2) listens on these ports;
+      # the browser's guard lets it reach Ombro on them and nothing else on the local network.
+      OMBRO_BROWSER_PROXY_PORTS: "9300-9399"
     # Code a job writes runs inside bubblewrap, Ombro's sandbox: no internet, and only that job's
     # files. bubblewrap makes Linux namespaces, which Docker's defaults block, so this container is
     # set up for that, and kept as tight as it can be while job code still runs:
@@ -68,6 +71,9 @@ services:
     profiles: [browser]
     restart: unless-stopped
     init: true
+    environment:
+      OMBRO_SERVICE: ombro
+      OMBRO_PROXY_PORTS: "9300:9399"
     cap_drop: [ALL]
     cap_add: [NET_ADMIN]
     security_opt:

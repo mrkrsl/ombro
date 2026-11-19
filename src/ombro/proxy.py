@@ -46,7 +46,7 @@ class Proxy:
     elsewhere, the address Ombro reaches it from), taking connections only from `peers`."""
 
     def __init__(self, resolver: Resolver, *, host: str = "127.0.0.1", peers: set[str] | None = None,
-                 dial_to: Dial | None = None):
+                 dial_to: Dial | None = None, ports: range | None = None):
         self.resolver = resolver
         self.peers = set(peers or {"127.0.0.1", "::1"})
         self._dial = dial_to
@@ -54,13 +54,28 @@ class Proxy:
         family = socket.AF_INET6 if ":" in host else socket.AF_INET
         self.sock = socket.socket(family, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind((host, 0))
+        self._bind(host, ports)
         self.sock.listen(64)
         self.host = host
         self.port = self.sock.getsockname()[1]
         self.closed = False
         self._thread = threading.Thread(target=self._accept, name="ombro-proxy", daemon=True)
         self._thread.start()
+
+    def _bind(self, host: str, ports: range | None) -> None:
+        """Any free port, or the first free one in `ports`: a browser in Docker sits behind a guard that
+        lets it reach Ombro's container on those ports only (compose.yaml, OMBRO_BROWSER_PROXY_PORTS)."""
+        if not ports:
+            self.sock.bind((host, 0))
+            return
+        for port in ports:
+            try:
+                self.sock.bind((host, port))
+                return
+            except OSError:
+                continue
+        self.sock.close()
+        raise OSError(f"no free port for the browser's proxy in {ports.start}-{ports.stop - 1}")
 
     @property
     def address(self) -> str:
