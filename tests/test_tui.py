@@ -18,24 +18,51 @@ from ombro.tui.detect import is_dark, parse_background
 
 def test_the_fresh_install_chart():
     assert look.team_chart("Lead", [("Default Crew", ["General Assistant"])]) == [
-        "Lead", "└ Default Crew", "  └ General Assistant"]
+        "Lead",
+        "└ Default Crew",
+        "  └ General Assistant",
+    ]
 
 
 def test_three_crews_all_shown_with_consistent_glyphs():
-    chart = look.team_chart("Lead", [("Legal Crew", ["Legal Researcher", "Legal Assistant"]),
-                                     ("Marketing Crew", ["Market Researcher", "Marketing Associate", "Fact Checker"]),
-                                     ("Ops Crew", ["Finance Assistant"])])
-    assert chart == ["Lead", "└ Legal Crew", "│ └ Legal Researcher", "│ └ Legal Assistant", "└ Marketing Crew",
-                     "│ └ Market Researcher", "│ └ Marketing Associate", "│ └ Fact Checker", "└ Ops Crew",
-                     "  └ Finance Assistant"]
+    chart = look.team_chart(
+        "Lead",
+        [
+            ("Legal Crew", ["Legal Researcher", "Legal Assistant"]),
+            ("Marketing Crew", ["Market Researcher", "Marketing Associate", "Fact Checker"]),
+            ("Ops Crew", ["Finance Assistant"]),
+        ],
+    )
+    assert chart == [
+        "Lead",
+        "└ Legal Crew",
+        "│ └ Legal Researcher",
+        "│ └ Legal Assistant",
+        "└ Marketing Crew",
+        "│ └ Market Researcher",
+        "│ └ Marketing Associate",
+        "│ └ Fact Checker",
+        "└ Ops Crew",
+        "  └ Finance Assistant",
+    ]
     assert len(chart) == 10  # exactly ten still fits
 
 
 def test_over_ten_lines_collapses_every_crew():
     crews = [(f"Crew {i}", [f"R{j}" for j in range(n)]) for i, n in enumerate([2, 3, 1, 3, 2, 1, 2, 1, 1])]
     chart = look.team_chart("Lead", crews)
-    assert chart == ["Lead", "└ Crew 0", "│ └ 2 roles", "└ Crew 1", "│ └ 3 roles", "└ Crew 2", "│ └ 1 role",
-                     "└ Crew 3", "│ └ 3 roles", "+ 5 additional crews"]
+    assert chart == [
+        "Lead",
+        "└ Crew 0",
+        "│ └ 2 roles",
+        "└ Crew 1",
+        "│ └ 3 roles",
+        "└ Crew 2",
+        "│ └ 1 role",
+        "└ Crew 3",
+        "│ └ 3 roles",
+        "+ 5 additional crews",
+    ]
 
 
 def test_eleven_lines_with_few_crews_collapses_without_hiding_any():
@@ -51,27 +78,49 @@ def test_five_crews_show_four_and_one_more():
 # -- stats, greeting, footer, width tiers, logo ------------------------------------------------
 
 
-SUMMARY = {"name": "Ada", "version": "0.1.0", "counts": {"crews_ready": 1, "active_jobs": 0, "scheduled_jobs": 2,
-                                                        "waiting": 1}}
+SUMMARY = {
+    "name": "Ada",
+    "version": "0.1.0",
+    "counts": {"crews_ready": 1, "active_jobs": 0, "scheduled_jobs": 2, "waiting": 1},
+}
 
 
 def test_stats_greeting_and_footer():
-    assert look.stats_lines(SUMMARY) == ["Working with Ada", "", "1 crew ready to work", "0 active jobs",
-                                         "2 scheduled jobs", "1 item to approve", "", "Ombro v0.1.0"]
+    assert look.stats_lines(SUMMARY) == [
+        "Working with Ada",
+        "",
+        "1 crew ready to work",
+        "0 active jobs",
+        "2 scheduled jobs",
+        "1 item to approve",
+        "",
+        "Ombro v0.1.0",
+    ]
     assert look.stats_line(SUMMARY) == "1 crew ready · 0 active jobs · 2 scheduled jobs · 1 to approve"
     assert look.welcome("Ada", first=False) == "Hey Ada, welcome back to Ombro"
     assert look.welcome("", first=True) == "Hey there, welcome to Ombro"
-    assert look.greeting("Ada", datetime(2026, 11, 12, 9)) == \
-        "Good morning Ada. What would you like to get done today?"
+    assert look.greeting("Ada", datetime(2026, 11, 12, 9)) == "Good morning Ada. What would you like to get done today?"
     assert look.greeting("", datetime(2026, 11, 12, 19)).startswith("Good evening. ")
     assert look.part_of_day(datetime(2026, 11, 12, 12)) == "afternoon"
-    assert look.since_line({"finished": 2, "waiting": 3}) == "Since you were last here: 2 jobs finished, 3 actions waiting."
+    assert (
+        look.since_line({"finished": 2, "waiting": 3})
+        == "Since you were last here: 2 jobs finished, 3 actions waiting."
+    )
     assert look.since_line({"finished": 0, "waiting": 0}) is None
     assert look.usage_text(1_500, 150_000) == "Usage: 1%" and look.usage_text(10, None) == "Usage: 10 tokens"
 
 
-@pytest.mark.parametrize("w, h, expected", [(120, 40, "wide"), (100, 30, "wide"), (99, 40, "medium"),
-                                            (70, 40, "medium"), (69, 40, "narrow"), (120, 29, "narrow")])
+@pytest.mark.parametrize(
+    "w, h, expected",
+    [
+        (120, 40, "wide"),
+        (100, 30, "wide"),
+        (99, 40, "medium"),
+        (70, 40, "medium"),
+        (69, 40, "narrow"),
+        (120, 29, "narrow"),
+    ],
+)
 def test_width_tiers(w, h, expected):
     assert look.tier(w, h) == expected
 
@@ -184,8 +233,11 @@ def test_opens_with_the_header_and_the_greeting(home):
             # No usage line under the input; the hint and the model are on its right.
             assert "Usage:" not in shot
             foot = next(line for line in shot.splitlines() if "/ for commands" in line)
-            assert "Model:" in foot and foot.index("/ for commands") > foot.index("Balanced") \
+            assert (
+                "Model:" in foot
+                and foot.index("/ for commands") > foot.index("Balanced")
                 and foot.index("Model:") > foot.index("/ for commands")
+            )
 
     drive(go())
 
@@ -406,9 +458,21 @@ def test_adding_a_role_is_the_same_interview(home):
     from ombro.roles import crew_roles
     from ombro.settings import load_limits
 
-    app, _ = _app(home, [fake.call("propose", {
-        "title": "Invented Writer", "kind": "specialist", "description": "Writes invented copy and returns a file.",
-        "tools": ["workspace.read", "workspace.write", "workspace.list"], "soul": "You write short, clear copy."})])
+    app, _ = _app(
+        home,
+        [
+            fake.call(
+                "propose",
+                {
+                    "title": "Invented Writer",
+                    "kind": "specialist",
+                    "description": "Writes invented copy and returns a file.",
+                    "tools": ["workspace.read", "workspace.write", "workspace.list"],
+                    "soul": "You write short, clear copy.",
+                },
+            )
+        ],
+    )
 
     async def go():
         async with app.run_test(size=(120, 40)) as pilot:
@@ -423,13 +487,21 @@ def test_adding_a_role_is_the_same_interview(home):
 
 
 def test_a_confirmed_brief_offers_to_start_it(home, monkeypatch):
-    spec = {"name": "invented-teapots", "title": "Find invented teapot makers", "crews": ["default"],
-            "done_looks_like": "A list of three.", "users": "Me, to pick one.", "binding_constraint": "Lowtown only.",
-            "waste": "Makers outside Lowtown.", "non_goals": "No prices."}
+    spec = {
+        "name": "invented-teapots",
+        "title": "Find invented teapot makers",
+        "crews": ["default"],
+        "done_looks_like": "A list of three.",
+        "users": "Me, to pick one.",
+        "binding_constraint": "Lowtown only.",
+        "waste": "Makers outside Lowtown.",
+        "non_goals": "No prices.",
+    }
     app, _ = _app(home, [fake.call("propose", spec)])
     started = []
-    monkeypatch.setattr(app.commands, "start_job",
-                        lambda name, roles=None: started.append(name) or "20261112-000000-abcd")
+    monkeypatch.setattr(
+        app.commands, "start_job", lambda name, roles=None: started.append(name) or "20261112-000000-abcd"
+    )
     monkeypatch.setattr("ombro.tui.app.jobs.find_job", lambda h, rid: home.root / "jobs" / rid)
 
     async def go():
@@ -451,10 +523,16 @@ def test_a_job_ending_posts_a_notice_and_marks_it_seen(home, job):
     from ombro.journal import Follower
 
     write_role(home, "writer", tools=["workspace.write"])
-    job([fake.brief("writer", "Write an invented note."),
-         fake.call("workspace__write", {"path": "workspace/note.md", "content": "Invented.\n"}),
-         fake.result("Wrote it.", deliverables=[{"name": "The note", "path": "workspace/note.md"}]),
-         fake.finish(), fake.keep_notes(), LEAD_REPORT])
+    job(
+        [
+            fake.brief("writer", "Write an invented note."),
+            fake.call("workspace__write", {"path": "workspace/note.md", "content": "Invented.\n"}),
+            fake.result("Wrote it.", deliverables=[{"name": "The note", "path": "workspace/note.md"}]),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     job_id = job.job_dir.name
     app, _ = _app(home)
 
@@ -482,8 +560,15 @@ def test_a_job_ending_posts_a_notice_and_marks_it_seen(home, job):
 def test_jobs_and_report_commands(home, job):
     from conftest import LEAD_REPORT
 
-    job([fake.brief("researcher", "Look into an invented thing."), fake.result("Done."), fake.finish(),
-         fake.keep_notes(), LEAD_REPORT])
+    job(
+        [
+            fake.brief("researcher", "Look into an invented thing."),
+            fake.result("Done."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     app, _ = _app(home)
 
     async def go():
@@ -504,11 +589,24 @@ def test_declining_from_the_outbox(home, job):
     from conftest import LEAD_REPORT
     from ombro import outbox
 
-    job([fake.brief("researcher", "Do an invented thing."), fake.result("Done."), fake.finish(),
-         fake.keep_notes(), LEAD_REPORT])
-    a, _ = outbox.stage(job.job_dir, tool="mcp.fake.post_message", effect="external",
-                        arguments={"channel": "news", "text": "Invented."}, reason="Invented.", role="researcher",
-                        input_schema={})
+    job(
+        [
+            fake.brief("researcher", "Do an invented thing."),
+            fake.result("Done."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
+    a, _ = outbox.stage(
+        job.job_dir,
+        tool="mcp.fake.post_message",
+        effect="external",
+        arguments={"channel": "news", "text": "Invented."},
+        reason="Invented.",
+        role="researcher",
+        input_schema={},
+    )
     app, _ = _app(home)
 
     async def go():
@@ -732,8 +830,11 @@ def test_slash_start_offers_a_saved_spec_again(home, monkeypatch):
     from ombro import mdfile
 
     (home.specs_dir).mkdir(parents=True, exist_ok=True)
-    mdfile.write(home.specs_dir / "old-task.md", {"name": "old-task", "crews": ["default"],
-                                                   "roles": ["general-assistant"]}, "# An invented old task\n")
+    mdfile.write(
+        home.specs_dir / "old-task.md",
+        {"name": "old-task", "crews": ["default"], "roles": ["general-assistant"]},
+        "# An invented old task\n",
+    )
     mdfile.write(home.specs_dir / "new-task.md", {"name": "new-task", "crews": ["default"]}, "# An invented task\n")
     app, _ = _app(home)
     started = []
@@ -762,9 +863,18 @@ def test_the_leads_words_and_reports_render_as_markdown(home, job):
     from ombro.tui.app import MdLine
 
     write_role(home, "researcher")
-    job([fake.brief("researcher", "Do it."), fake.result("Done."), fake.finish(), fake.keep_notes(),
-         fake.say("## Summary\nAll **done**.\n\n## What was done\nIt.\n\n## What was not done and why\nNothing."
-                  "\n\n## Decisions for you\nNone.")])
+    job(
+        [
+            fake.brief("researcher", "Do it."),
+            fake.result("Done."),
+            fake.finish(),
+            fake.keep_notes(),
+            fake.say(
+                "## Summary\nAll **done**.\n\n## What was done\nIt.\n\n## What was not done and why\nNothing."
+                "\n\n## Decisions for you\nNone."
+            ),
+        ]
+    )
     app, _ = _app(home, [fake.say("Here is **bold** and a list:\n\n- one\n- two")])
 
     async def go():
@@ -809,8 +919,9 @@ def test_tools_changes_a_built_in_tool(home):
 def test_skills_lists_the_library_and_gives_a_skill(home):
     folder = home.skills_dir / "kettle-survey"
     folder.mkdir(parents=True)
-    (folder / "SKILL.md").write_text("---\nname: kettle-survey\ndescription: Surveys invented kettle makers.\n---\n"
-                                     "1. Search.\n")
+    (folder / "SKILL.md").write_text(
+        "---\nname: kettle-survey\ndescription: Surveys invented kettle makers.\n---\n1. Search.\n"
+    )
     app, _ = _app(home)
 
     async def go():
@@ -832,8 +943,9 @@ def test_skills_lists_the_library_and_gives_a_skill(home):
 def test_skills_add_imports_after_yes(home, tmp_path):
     src = tmp_path / "Downloads" / "kettle-survey"
     src.mkdir(parents=True)
-    (src / "SKILL.md").write_text("---\nname: kettle-survey\ndescription: Surveys invented kettle makers.\n---\n"
-                                  "1. Search.\n")
+    (src / "SKILL.md").write_text(
+        "---\nname: kettle-survey\ndescription: Surveys invented kettle makers.\n---\n1. Search.\n"
+    )
     app, _ = _app(home)
 
     async def go():
@@ -854,8 +966,11 @@ def test_clicking_read_the_report_opens_it_at_its_top(home, job):
     from ombro.tui.commands import notice_text
 
     write_role(home, "researcher")
-    long = "## Summary\n" + "\n\n".join(f"Paragraph {i} of an invented summary." for i in range(40)) + \
-        "\n\n## What was done\nIt.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone."
+    long = (
+        "## Summary\n"
+        + "\n\n".join(f"Paragraph {i} of an invented summary." for i in range(40))
+        + "\n\n## What was done\nIt.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone."
+    )
     job([fake.brief("researcher", "Do it."), fake.result("Done."), fake.finish(), fake.keep_notes(), fake.say(long)])
     app, _ = _app(home)
 
@@ -863,8 +978,11 @@ def test_clicking_read_the_report_opens_it_at_its_top(home, job):
         async with app.run_test(size=(120, 30)) as pilot:
             await pilot.pause()
             text = notice_text(app, job.job_dir.name)
-            action = next(s.style.meta["@click"] for s in text.spans
-                          if not isinstance(s.style, str) and s.style.meta.get("@click"))
+            action = next(
+                s.style.meta["@click"]
+                for s in text.spans
+                if not isinstance(s.style, str) and s.style.meta.get("@click")
+            )
             assert action == f"app.run_command('/report {job.job_dir.name}')"
             app.add_text(text, "notice")
             await pilot.pause()

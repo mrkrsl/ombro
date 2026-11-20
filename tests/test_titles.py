@@ -45,15 +45,30 @@ def test_crew_add_takes_a_title_as_typed(home, capsys):
 
 
 def test_the_role_interview_makes_the_folder_from_the_title(home):
-    client = ScriptedClient([fake.call("propose", {
-        "title": "Marketing Assistant", "kind": "specialist",
-        "description": "Drafts invented marketing copy and returns it as a file.",
-        "tools": ["workspace.read", "workspace.write", "workspace.list", "code.run"],
-        "soul": "You draft clear, short marketing copy.",
-    })])
+    client = ScriptedClient(
+        [
+            fake.call(
+                "propose",
+                {
+                    "title": "Marketing Assistant",
+                    "kind": "specialist",
+                    "description": "Drafts invented marketing copy and returns it as a file.",
+                    "tools": ["workspace.read", "workspace.write", "workspace.list", "code.run"],
+                    "soul": "You draft clear, short marketing copy.",
+                },
+            )
+        ]
+    )
     answers = iter(["a"])
-    out = start(home, RolePurpose(home, "default", load_limits(home)), "default", load_limits(home),
-                ask=lambda p: next(answers), say=lambda t: None, client_factory=lambda s: client)
+    out = start(
+        home,
+        RolePurpose(home, "default", load_limits(home)),
+        "default",
+        load_limits(home),
+        ask=lambda p: next(answers),
+        say=lambda t: None,
+        client_factory=lambda s: client,
+    )
     assert out.confirmed and out.proposal.data["name"] == "marketing-assistant"
     role = crew_roles(home, "default", load_limits(home))["marketing-assistant"]
     assert role.title == "Marketing Assistant" and "code.run" in role.tools
@@ -95,9 +110,15 @@ def test_the_leads_offer_names_the_crew_the_way_it_reads(home):
     ensure_crew(home, "ombro", title="Ombro")
     ensure_crew(home, "marketing", title="Marketing team")
     s = ChatSession(home)
-    s([fake.call("offer_brief", {"summary": "Define the launch plan", "crews": ["ombro"]}), fake.say("Fine."),
-       fake.call("offer_brief", {"summary": "Draft the launch post", "crews": ["marketing"]}), fake.say("Fine.")],
-      ["Define the launch plan", "n", "Draft the launch post", "n"])
+    s(
+        [
+            fake.call("offer_brief", {"summary": "Define the launch plan", "crews": ["ombro"]}),
+            fake.say("Fine."),
+            fake.call("offer_brief", {"summary": "Draft the launch post", "crews": ["marketing"]}),
+            fake.say("Fine."),
+        ],
+        ["Define the launch plan", "n", "Draft the launch post", "n"],
+    )
     assert "I can brief it for the Ombro crew: Define the launch plan." in s.output
     assert "I can brief it for the Marketing team: Draft the launch post." in s.output
     assert "the Marketing team crew" not in s.output

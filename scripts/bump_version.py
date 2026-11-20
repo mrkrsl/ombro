@@ -40,7 +40,7 @@ def bump(new: str, root: Path = ROOT) -> list[str]:
         if len(matches) != expected:
             raise SystemExit(f"{name}: found the version {len(matches)} times, expected {expected}; nothing changed")
         for m in reversed(matches):
-            text = text[:m.start("v")] + new + text[m.end("v"):]
+            text = text[: m.start("v")] + new + text[m.end("v") :]
         edits.append((path, text))
     changed = []
     for path, text in edits:

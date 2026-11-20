@@ -29,25 +29,45 @@ class Answers:
 @pytest.fixture
 def typed(monkeypatch):
     """What the user types: `input` answers, and hidden answers for secrets."""
+
     def setup(*answers, hidden=()):
         a, h = Answers(*answers), Answers(*hidden)
         monkeypatch.setattr("builtins.input", a)
         monkeypatch.setattr(getpass, "getpass", h)
         return a, h
+
     return setup
 
 
 def test_a_local_server_is_added_with_its_secret_kept_out_of_tools_md(home, typed, capsys):
     mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}}}, "My notes on tools.\n")
     _, hidden = typed("y", hidden=(SECRET,))
-    assert cli.main(["server", "add", "notes", "--command", "uvx invented-notes-mcp==1.2.3 --read-only",
-                     "--secret", "NOTES_TOKEN", "--env", "NOTES_REGION=eu", "--class", "internal"]) == 0
+    assert (
+        cli.main(
+            [
+                "server",
+                "add",
+                "notes",
+                "--command",
+                "uvx invented-notes-mcp==1.2.3 --read-only",
+                "--secret",
+                "NOTES_TOKEN",
+                "--env",
+                "NOTES_REGION=eu",
+                "--class",
+                "internal",
+            ]
+        )
+        == 0
+    )
     out = capsys.readouterr().out
     meta, body = mdfile.read(home.tools)
     assert body.strip() == "My notes on tools." and meta["tools"] == {"web.search": {"provider": "fake"}}
     assert meta["servers"]["notes"] == {
-        "command": "uvx", "args": ["invented-notes-mcp==1.2.3", "--read-only"],
-        "env": {"NOTES_REGION": "eu", "NOTES_TOKEN": "${NOTES_NOTES_TOKEN}"}, "class": "internal",
+        "command": "uvx",
+        "args": ["invented-notes-mcp==1.2.3", "--read-only"],
+        "env": {"NOTES_REGION": "eu", "NOTES_TOKEN": "${NOTES_NOTES_TOKEN}"},
+        "class": "internal",
     }
     assert keys.get_key(home, "NOTES_NOTES_TOKEN") == SECRET
     assert SECRET not in home.tools.read_text() and SECRET not in out
@@ -58,8 +78,7 @@ def test_a_local_server_is_added_with_its_secret_kept_out_of_tools_md(home, type
 
 def test_the_added_server_starts_and_lists_its_tools(home, typed, capsys):
     typed("y", "n")  # add it; don't yet confirm what it says of add_row
-    assert cli.main(["server", "add", "fake", "--command", f"{sys.executable} -m ombro.fake_mcp",
-                     "--no-prompt"]) == 0
+    assert cli.main(["server", "add", "fake", "--command", f"{sys.executable} -m ombro.fake_mcp", "--no-prompt"]) == 0
     capsys.readouterr()
     assert cli.main(["tools", "fake"]) == 0
     assert "mcp.fake.post_message" in capsys.readouterr().out
@@ -67,8 +86,20 @@ def test_the_added_server_starts_and_lists_its_tools(home, typed, capsys):
 
 def test_a_remote_server_keeps_its_token_in_a_header(home, typed, capsys):
     typed("y", hidden=(SECRET,))
-    assert cli.main(["server", "add", "tracker", "--url", "https://mcp.tracker.invalid/mcp",
-                     "--secret", "Authorization=TRACKER_TOKEN"]) == 0
+    assert (
+        cli.main(
+            [
+                "server",
+                "add",
+                "tracker",
+                "--url",
+                "https://mcp.tracker.invalid/mcp",
+                "--secret",
+                "Authorization=TRACKER_TOKEN",
+            ]
+        )
+        == 0
+    )
     entry = mdfile.read(home.tools)[0]["servers"]["tracker"]
     assert entry == {"url": "https://mcp.tracker.invalid/mcp", "headers": {"Authorization": "Bearer ${TRACKER_TOKEN}"}}
     assert keys.get_key(home, "TRACKER_TOKEN") == SECRET
@@ -94,18 +125,20 @@ def test_nothing_is_written_unless_confirmed(home, typed):
 def test_an_existing_key_can_be_kept(home, typed):
     keys.set_key(home, "SHARED_TOKEN", SECRET)
     typed("y", hidden=("",))
-    assert cli.main(["server", "add", "notes", "--command", "uvx invented==1.0", "--secret",
-                     "TOKEN=SHARED_TOKEN"]) == 0
+    assert cli.main(["server", "add", "notes", "--command", "uvx invented==1.0", "--secret", "TOKEN=SHARED_TOKEN"]) == 0
     assert mdfile.read(home.tools)[0]["servers"]["notes"]["env"] == {"TOKEN": "${SHARED_TOKEN}"}
     assert keys.get_key(home, "SHARED_TOKEN") == SECRET
 
 
-@pytest.mark.parametrize("argv, message", [
-    (["server", "add", "Bad Name", "--command", "x"], "Server names use"),
-    (["server", "add", "notes", "--command", "uvx x==1 --token ${TOKEN}", "--yes"], "process list"),
-    (["server", "add", "notes", "--url", "ftp://x.invalid", "--yes"], "must start with https://"),
-    (["server", "add", "notes", "--command", "x", "--url", "https://x.invalid", "--yes"], "either a command"),
-])
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        (["server", "add", "Bad Name", "--command", "x"], "Server names use"),
+        (["server", "add", "notes", "--command", "uvx x==1 --token ${TOKEN}", "--yes"], "process list"),
+        (["server", "add", "notes", "--url", "ftp://x.invalid", "--yes"], "must start with https://"),
+        (["server", "add", "notes", "--command", "x", "--url", "https://x.invalid", "--yes"], "either a command"),
+    ],
+)
 def test_bad_servers_are_refused(home, typed, capsys, argv, message):
     typed()
     before = home.tools.read_text()
@@ -152,8 +185,22 @@ def test_pin_warning_and_entries():
 def test_tools_add_adds_an_mcp_server_as_server_add_does(home, typed, capsys):
     mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}}}, "")
     typed("y")
-    assert cli.main(["tools", "add", "notes", "--mcp", "--command", "uvx invented-notes-mcp==1.2.3",
-                     "--class", "internal", "--no-prompt"]) == 0
+    assert (
+        cli.main(
+            [
+                "tools",
+                "add",
+                "notes",
+                "--mcp",
+                "--command",
+                "uvx invented-notes-mcp==1.2.3",
+                "--class",
+                "internal",
+                "--no-prompt",
+            ]
+        )
+        == 0
+    )
     assert load_tool_settings(home).servers["notes"]["class"] == "internal"
 
 
@@ -171,9 +218,14 @@ def test_a_server_class_must_be_internal_or_external(home, capsys):
 
 
 def test_tools_remove_removes_an_api_or_a_server(home, typed, capsys):
-    mdfile.write(home.tools, {"servers": {"notes": {"command": "uvx", "args": ["invented-notes-mcp==1.2.3"]}},
-                              "apis": {"weather": {"url": "https://api.weather.invalid/v1", "about": "Invented."}}},
-                 "")
+    mdfile.write(
+        home.tools,
+        {
+            "servers": {"notes": {"command": "uvx", "args": ["invented-notes-mcp==1.2.3"]}},
+            "apis": {"weather": {"url": "https://api.weather.invalid/v1", "about": "Invented."}},
+        },
+        "",
+    )
     assert cli.main(["tools", "remove", "weather", "--yes"]) == 0
     assert "weather" not in load_tool_settings(home).apis
     assert cli.main(["tools", "remove", "notes", "--yes"]) == 0

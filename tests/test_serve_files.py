@@ -37,8 +37,14 @@ def setup(tmp_path):
     outside = tmp_path / "private.txt"
     outside.write_text("not for jobs")
     app = build_app(TOKEN, home=home)
-    return SimpleNamespace(home=home, job=job, shared=shared, outside=outside,
-                           c=TestClient(app, base_url="http://127.0.0.1"), serve=app.state.serve)
+    return SimpleNamespace(
+        home=home,
+        job=job,
+        shared=shared,
+        outside=outside,
+        c=TestClient(app, base_url="http://127.0.0.1"),
+        serve=app.state.serve,
+    )
 
 
 def get(setup, path: str, endpoint: str = "/files"):
@@ -85,6 +91,7 @@ def test_only_a_draft_out_for_editing_can_be_written_back(setup):
     draft = setup.home.root / "crews" / "default" / "roles" / "writer" / "soul.md"
     draft.parent.mkdir(parents=True, exist_ok=True)
     draft.write_text("before")
+
     def put(p, body):
         return setup.c.put(f"/files?path={urllib.parse.quote(str(p))}", content=body, headers=AUTH)
 

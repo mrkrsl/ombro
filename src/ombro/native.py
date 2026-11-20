@@ -25,8 +25,16 @@ from ombro.providers.duckduckgo import DuckDuckGoProvider
 from ombro.providers.fake import FakeProvider
 from ombro.providers.firecrawl import DEFAULT_ENDPOINT, FirecrawlProvider
 from ombro.settings import ToolSettings
-from ombro.tools import (NotGranted, Tool, ToolContext, ToolError, ToolInputError, ToolRegistry, area_path,
-                         checked_shared)
+from ombro.tools import (
+    NotGranted,
+    Tool,
+    ToolContext,
+    ToolError,
+    ToolInputError,
+    ToolRegistry,
+    area_path,
+    checked_shared,
+)
 
 AREAS = ("workspace", "scratch")
 WRITE_MAX_CHARS = 1_000_000
@@ -53,15 +61,18 @@ WEB_NOTE = (
 def _names(ctx: ToolContext) -> str:
     if not ctx.shared:
         return "No folders are shared with this job."
-    return "Folders shared with this job: " + ", ".join(
-        f"shared/{f.name} ({f.access})" for f in ctx.shared.values()) + "."
+    return (
+        "Folders shared with this job: " + ", ".join(f"shared/{f.name} ({f.access})" for f in ctx.shared.values()) + "."
+    )
 
 
 def _not_granted(path: str, ctx: ToolContext) -> NotGranted:
     return NotGranted(
         f"{path} is not in a folder shared with this job, so it cannot be reached. {_names(ctx)} "
         "Only the user can share a folder. To save a file somewhere else, write it in workspace/ and use "
-        "workspace.place; to read from somewhere else, say in did_not_do which folder you needed.", path)
+        "workspace.place; to read from somewhere else, say in did_not_do which folder you needed.",
+        path,
+    )
 
 
 def _absolute(ctx: ToolContext, p: str, write: bool) -> Path:
@@ -103,15 +114,19 @@ def resolve_path(ctx: ToolContext, path: Any, *, write: bool = False) -> Path:
         if f is None:
             raise _not_granted(p, ctx)
         if write and not f.writable:
-            raise ToolInputError(f"shared/{f.name} is shared read-only with this job, so nothing in it can be "
-                                 "changed. To save a file there, write it in workspace/ and use workspace.place.")
+            raise ToolInputError(
+                f"shared/{f.name} is shared read-only with this job, so nothing in it can be "
+                "changed. To save a file there, write it in workspace/ and use workspace.place."
+            )
         root, rest, label = checked_shared(f), parts[2:], f"shared/{f.name}"
     elif parts and parts[0] in AREAS:
         # The fixed path, never followed: see ombro.tools.area_path.
         root, rest, label = ctx.area(parts[0]), parts[1:], parts[0]
     else:
-        raise ToolInputError("paths must start with workspace/ (deliverables), scratch/ (working notes)"
-                             + (" or shared/<name>/ (a shared folder)" if ctx.shared else ""))
+        raise ToolInputError(
+            "paths must start with workspace/ (deliverables), scratch/ (working notes)"
+            + (" or shared/<name>/ (a shared folder)" if ctx.shared else "")
+        )
     target = root.joinpath(*rest)
     real = target.resolve()  # follows any symlinks on the way
     if real != root and not real.is_relative_to(root):
@@ -201,8 +216,12 @@ def _write(args: dict, ctx: ToolContext) -> dict[str, Any]:
 
 def _list(args: dict, ctx: ToolContext) -> dict[str, Any]:
     if str(args.get("path") or "").strip().strip("/") == "shared":
-        return {"entries": [{"path": f"shared/{f.name}", "type": "folder", "access": f.access}
-                            for f in ctx.shared.values()], "note": _names(ctx)}
+        return {
+            "entries": [
+                {"path": f"shared/{f.name}", "type": "folder", "access": f.access} for f in ctx.shared.values()
+            ],
+            "note": _names(ctx),
+        }
     paths = [args["path"]] if args.get("path") else list(AREAS)
     entries: list[dict[str, Any]] = []
     truncated = False
@@ -246,8 +265,10 @@ def _list(args: dict, ctx: ToolContext) -> dict[str, Any]:
     return out
 
 
-PATH_DOC = ("A path starting with workspace/ (deliverables) or scratch/ (working notes), e.g. workspace/leads.csv, "
-            "or shared/<name>/... for a folder shared with this job.")
+PATH_DOC = (
+    "A path starting with workspace/ (deliverables) or scratch/ (working notes), e.g. workspace/leads.csv, "
+    "or shared/<name>/... for a folder shared with this job."
+)
 
 
 SET_ASIDE = {"for-deletion": "For deletion", "archive": "Archive"}
@@ -287,8 +308,9 @@ def _shelve(root: Path, kind: str, real: Path, why: str, *, copy: bool) -> Path:
     note = shelf / "README.md"
     line = f"- {dest.name}: from {real.relative_to(root).as_posix()}. {why}\n"
     if not note.exists():
-        line = (f"# {SET_ASIDE[kind]}\n\nFiles Ombro set aside rather than delete or lose. Only you empty "
-                "this folder.\n\n") + line
+        line = (
+            f"# {SET_ASIDE[kind]}\n\nFiles Ombro set aside rather than delete or lose. Only you empty this folder.\n\n"
+        ) + line
     with open(note, "a", encoding="utf-8") as f:
         f.write(line)
     return dest
@@ -311,13 +333,15 @@ def archive_before_replacing(ctx: ToolContext, target: Path) -> str | None:
     key = str(real)
     if ctx.archived is not None and key in ctx.archived:
         return None
-    dest = _shelve(root, "archive", real, f"The version before {ctx.role} replaced it on {date.today():%d %B %Y}.",
-                   copy=True)
+    dest = _shelve(
+        root, "archive", real, f"The version before {ctx.role} replaced it on {date.today():%d %B %Y}.", copy=True
+    )
     if ctx.archived is not None:
         ctx.archived.add(key)
     shown = f"{label}/{SET_ASIDE['archive']}/{dest.name}"
-    ctx.record("archived", f"{label}/{real.relative_to(root).as_posix()} -> {shown}: the version before it "
-               "was replaced")
+    ctx.record(
+        "archived", f"{label}/{real.relative_to(root).as_posix()} -> {shown}: the version before it was replaced"
+    )
     return shown
 
 
@@ -402,8 +426,14 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
             except OSError as e:
                 raise ToolError(f"{_display(ctx, final)} could not be written: {e.strerror or e}") from None
             shown = _display(ctx, final)
-            ctx.record("placed", f"{shown_src} -> {shown}", tool="workspace.place", source=shown_src,
-                       destination=str(final), reason=reason)
+            ctx.record(
+                "placed",
+                f"{shown_src} -> {shown}",
+                tool="workspace.place",
+                source=shown_src,
+                destination=str(final),
+                reason=reason,
+            )
             return {"status": "done", "path": shown, "bytes": final.stat().st_size}
     # Anywhere else: staged for the user, if it is a place a file could ever go.
     home = Home(_home_root(ctx))
@@ -413,22 +443,43 @@ def _place(args: dict, ctx: ToolContext) -> dict[str, Any]:
         raise ToolInputError(f"{to} cannot be a destination: {e}") from None
     shown_dest = folders.display_path(final)
     try:
-        action, duplicate = outbox.stage_placement(ctx.job_dir, source=src.resolve(), shown_source=shown_src,
-                                                   to=shown_dest, overwrite=overwrite, reason=reason, role=ctx.role)
+        action, duplicate = outbox.stage_placement(
+            ctx.job_dir,
+            source=src.resolve(),
+            shown_source=shown_src,
+            to=shown_dest,
+            overwrite=overwrite,
+            reason=reason,
+            role=ctx.role,
+        )
     except outbox.OutboxBusy:
-        raise ToolError("the outbox is busy with a decision the user is making, so this was not staged; "
-                        "try it once more later") from None
+        raise ToolError(
+            "the outbox is busy with a decision the user is making, so this was not staged; try it once more later"
+        ) from None
     rel = f"outbox/{action.path.name}"
     if duplicate:
-        ctx.record("staged_duplicate", f"workspace.place: same as {action.ref}", tool="workspace.place",
-                   ref=action.ref)
-        return {"status": "already_staged", "outbox": rel,
-                "note": "The same file is already staged for that place. Do not stage it again."}
-    ctx.record("staged", f"{action.ref} workspace.place {shown_src} -> {shown_dest}", tool="workspace.place",
-               ref=action.ref, path=rel, effect="internal", reason=reason, arguments=action.arguments)
-    return {"status": "staged", "outbox": rel,
-            "note": f"Not copied yet: {shown_dest} is not in a folder shared with this job for writing, so the "
-            "copy waits for the user to approve after the job. Mention it in your summary as waiting for the user's approval, not done."}
+        ctx.record("staged_duplicate", f"workspace.place: same as {action.ref}", tool="workspace.place", ref=action.ref)
+        return {
+            "status": "already_staged",
+            "outbox": rel,
+            "note": "The same file is already staged for that place. Do not stage it again.",
+        }
+    ctx.record(
+        "staged",
+        f"{action.ref} workspace.place {shown_src} -> {shown_dest}",
+        tool="workspace.place",
+        ref=action.ref,
+        path=rel,
+        effect="internal",
+        reason=reason,
+        arguments=action.arguments,
+    )
+    return {
+        "status": "staged",
+        "outbox": rel,
+        "note": f"Not copied yet: {shown_dest} is not in a folder shared with this job for writing, so the "
+        "copy waits for the user to approve after the job. Mention it in your summary as waiting for the user's approval, not done.",
+    }
 
 
 def workspace_tools() -> list[Tool]:
@@ -490,8 +541,11 @@ def workspace_tools() -> list[Tool]:
                 "required": ["path", "why"],
                 "properties": {
                     "path": {"type": "string", "description": PATH_DOC},
-                    "as": {"type": "string", "enum": ["for-deletion", "archive"],
-                           "description": "for-deletion (default) or archive."},
+                    "as": {
+                        "type": "string",
+                        "enum": ["for-deletion", "archive"],
+                        "description": "for-deletion (default) or archive.",
+                    },
                     "why": {"type": "string", "maxLength": 300, "description": "One sentence on why."},
                 },
             },
@@ -508,9 +562,12 @@ def workspace_tools() -> list[Tool]:
                 "required": ["from", "to", "reason"],
                 "properties": {
                     "from": {"type": "string", "description": "A file in workspace/ or scratch/."},
-                    "to": {"type": "string", "maxLength": 1000,
-                           "description": "Where it should go: shared/<name>/file.md, or a full path such as "
-                           "~/Documents/Reports/file.md. A path ending in / keeps the file's name."},
+                    "to": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "Where it should go: shared/<name>/file.md, or a full path such as "
+                        "~/Documents/Reports/file.md. A path ending in / keeps the file's name.",
+                    },
                     "overwrite": {"type": "boolean", "description": "Replace a file already there. Default false."},
                     "reason": {"type": "string", "maxLength": 300, "description": "One sentence on why."},
                 },
@@ -569,8 +626,10 @@ def web_fetch_tool(provider: FetchProvider) -> Tool:
         query = urlsplit(url).query
         if len(query) > cap:
             # A long query string is how a page would have a role carry data out.
-            raise ToolInputError(f"this address carries {len(query):,} characters after '?', over the "
-                                 f"{cap:,} allowed, so it was not fetched. Fetch the page without them.")
+            raise ToolInputError(
+                f"this address carries {len(query):,} characters after '?', over the "
+                f"{cap:,} allowed, so it was not fetched. Fetch the page without them."
+            )
         browser_mod.check_carried(url, ctx, "fetched")  # once the job holds private material
         _with_record_dir(provider, ctx)
         page = provider.fetch(url, int(args.get("max_chars") or FETCH_DEFAULT_CHARS), ctx.timeout)
@@ -589,7 +648,12 @@ def web_fetch_tool(provider: FetchProvider) -> Tool:
             "required": ["url"],
             "properties": {
                 "url": {"type": "string", "minLength": 8, "maxLength": 2000},
-                "max_chars": {"type": "integer", "minimum": 500, "maximum": FETCH_MAX_CHARS, "description": "Default 12000."},
+                "max_chars": {
+                    "type": "integer",
+                    "minimum": 500,
+                    "maximum": FETCH_MAX_CHARS,
+                    "description": "Default 12000.",
+                },
             },
         },
         handler=handler,
@@ -654,8 +718,9 @@ def make_provider(
     if name == "duckduckgo":
         return DuckDuckGoProvider(transport=transport)
     if name == "browser":
-        return browser_mod.BrowserFetch(browser or browser_mod.Browser(settings.providers.get("browser"),
-                                                                       resolver=resolver))
+        return browser_mod.BrowserFetch(
+            browser or browser_mod.Browser(settings.providers.get("browser"), resolver=resolver)
+        )
     raise ValueError(f"unknown provider {name!r}")
 
 
@@ -676,14 +741,18 @@ def native_registry(
     fake = fake or FakeProvider()
     shared: dict[str, Any] = {}
     # One browser for the job, started only when a role first uses it (ombro.browser).
-    browser = browser_mod.Browser(settings.providers.get("browser"), resolver=resolver,
-                                  profiles=browser_mod.profiles_dir(home) if home is not None else None)
+    browser = browser_mod.Browser(
+        settings.providers.get("browser"),
+        resolver=resolver,
+        profiles=browser_mod.profiles_dir(home) if home is not None else None,
+    )
 
     def provider(tool: str) -> Any:
         name = settings.provider_for(tool)
         if name not in shared:
-            shared[name] = make_provider(name, home, settings, transport=transport, resolver=resolver, fake=fake,
-                                         browser=browser)
+            shared[name] = make_provider(
+                name, home, settings, transport=transport, resolver=resolver, fake=fake, browser=browser
+            )
         return shared[name]
 
     from ombro.coderun import code_tool
@@ -700,4 +769,3 @@ def native_registry(
     registry = ToolRegistry([_validated(t) for t in tools])
     registry.on_close(browser.close)
     return registry
-

@@ -30,12 +30,14 @@ _getaddrinfo = socket.getaddrinfo
 @pytest.fixture
 def loopback(monkeypatch):
     """These tests talk to a serve they started, so they may reach 127.0.0.1 and nothing else."""
+
     def only_loopback(real):
         def call(*args, **kwargs):
             address = kwargs.get("address") or next((a for a in args if isinstance(a, tuple)), None)
             if not address or address[0] != "127.0.0.1":
                 raise AssertionError("a test tried to use the network")
             return real(*args, **kwargs)
+
         return call
 
     def resolve(host, *args, **kwargs):
@@ -52,8 +54,9 @@ class Served:
     def __init__(self, port: int):
         self.base = f"http://127.0.0.1:{port}"
         self.ws_url = f"ws://127.0.0.1:{port}/events"
-        self.http = httpx.Client(base_url=self.base, headers={"Authorization": f"Bearer {TOKEN}", "Origin": APP},
-                                 timeout=10)
+        self.http = httpx.Client(
+            base_url=self.base, headers={"Authorization": f"Bearer {TOKEN}", "Origin": APP}, timeout=10
+        )
 
     def get(self, path: str):
         r = self.http.get(path)
@@ -123,8 +126,9 @@ def serve(home, loopback):
     client = ScriptedClient([])
     app = build_app(TOKEN, home=home, client_factory=lambda spec: client, titles=False, poll_seconds=0.2)
     sock = bind(0)
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", loop="asyncio", http="h11",
-                                           ws="websockets-sansio", lifespan="on"))
+    server = uvicorn.Server(
+        uvicorn.Config(app, log_level="warning", loop="asyncio", http="h11", ws="websockets-sansio", lifespan="on")
+    )
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
     for _ in range(200):
@@ -161,7 +165,9 @@ def test_a_chat_over_http_and_the_socket(serve):
 def test_a_screen_command_is_routed_not_run(serve):
     sid = serve.post("/sessions", status=201)["session"]["id"]
     assert serve.post(f"/sessions/{sid}/input", {"text": "/approvals"}) == {
-        "handled": False, "route": {"where": "screen", "command": "/approvals", "screen": "approvals", "args": ""}}
+        "handled": False,
+        "route": {"where": "screen", "command": "/approvals", "screen": "approvals", "args": ""},
+    }
     assert serve.post(f"/sessions/{sid}/input", {"text": "/theme"})["route"]["where"] == "app"
     names = [c["name"] for c in serve.get("/commands")]
     assert "/brief" in names and "/approvals" in names and "/setup" not in names
@@ -170,8 +176,11 @@ def test_a_screen_command_is_routed_not_run(serve):
 def test_a_question_survives_a_reconnect_and_a_bad_answer(serve):
     from ombro import mdfile as md
 
-    md.write(serve.app.state.serve.home.specs_dir / "old-task.md", {"name": "old-task", "crews": ["default"]},
-             "# An invented old task\n")
+    md.write(
+        serve.app.state.serve.home.specs_dir / "old-task.md",
+        {"name": "old-task", "crews": ["default"]},
+        "# An invented old task\n",
+    )
     ws = serve.socket()
     sid = serve.post("/sessions", status=201)["session"]["id"]
     ws.send({"type": "subscribe", "sessions": {sid: 0}})
@@ -200,8 +209,11 @@ def test_a_question_survives_a_reconnect_and_a_bad_answer(serve):
 def test_interrupting_a_question_stops_the_work(serve):
     from ombro import mdfile as md
 
-    md.write(serve.app.state.serve.home.specs_dir / "old-task.md", {"name": "old-task", "crews": ["default"]},
-             "# An invented old task\n")
+    md.write(
+        serve.app.state.serve.home.specs_dir / "old-task.md",
+        {"name": "old-task", "crews": ["default"]},
+        "# An invented old task\n",
+    )
     ws = serve.socket()
     sid = serve.post("/sessions", status=201)["session"]["id"]
     ws.send({"type": "subscribe", "sessions": {sid: 0}})
@@ -216,10 +228,17 @@ def test_interrupting_a_question_stops_the_work(serve):
     ws.close()
 
 
-SPEC = {"name": "invented-news", "title": "Post invented reservoir news", "crews": ["default"],
-        "done_looks_like": "One post in the news channel.", "users": "Me, to see it went out.",
-        "binding_constraint": "Invented news only.", "waste": "More than one post.", "non_goals": "No replies.",
-        "outward_preset": "balanced"}
+SPEC = {
+    "name": "invented-news",
+    "title": "Post invented reservoir news",
+    "crews": ["default"],
+    "done_looks_like": "One post in the news channel.",
+    "users": "Me, to see it went out.",
+    "binding_constraint": "Invented news only.",
+    "waste": "More than one post.",
+    "non_goals": "No replies.",
+    "outward_preset": "balanced",
+}
 ALL = ["mcp.fake.find_rows", "mcp.fake.add_row", "mcp.fake.post_message", "mcp.fake.fire_hook"]
 
 
@@ -228,10 +247,17 @@ def test_brief_job_progress_and_approval_end_to_end(serve, home, tmp_path):
     record = tmp_path / "fake-sent.jsonl"
     use_fake_mcp(home, record)
     write_role(home, "poster", kind="helper", tools=ALL, max_steps=12)
-    job_script = [fake.brief("poster", "Post the news."),
-                  fake.call("mcp__fake__post_message", {"channel": "news", "text": "Invented reservoir news.",
-                                                        "reason": "The spec asks for one post."}),
-                  fake.result("Asked to post it."), fake.finish(), fake.keep_notes(), LEAD_REPORT]
+    job_script = [
+        fake.brief("poster", "Post the news."),
+        fake.call(
+            "mcp__fake__post_message",
+            {"channel": "news", "text": "Invented reservoir news.", "reason": "The spec asks for one post."},
+        ),
+        fake.result("Asked to post it."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     (home.root / "script.json").write_text(json.dumps(job_script))
     mdfile.write(home.models, {"models": {"default": {"api": "fake", "script": "script.json"}, "cheap": "default"}})
     _script(serve.client, [fake.call("propose", SPEC)])  # the brief interview, in this process
@@ -251,8 +277,9 @@ def test_brief_job_progress_and_approval_end_to_end(serve, home, tmp_path):
     assert serve.get(f"/sessions/{sid}")["jobs"] == [job_id]
 
     # Progress, to every window and to the session that started it; then the notice.
-    progress = ws.until(lambda m: m.get("type") == "job" and m["job_id"] == job_id and "approval" in m["line"],
-                        timeout=60)
+    progress = ws.until(
+        lambda m: m.get("type") == "job" and m["job_id"] == job_id and "approval" in m["line"], timeout=60
+    )
     assert progress["status"] == "running" and progress["event"]["role"] == "poster"
     ended = ws.until(event("job_ended", sid), timeout=60)["event"]
     assert ended["job_id"] == job_id and ended["waiting"] == 1
@@ -291,9 +318,26 @@ def test_brief_job_progress_and_approval_end_to_end(serve, home, tmp_path):
 
 def test_views_answer_and_keys_never_show(serve, home):
     keys.set_key(home, "INVENTED_KEY", "sk-INVENTED-never-shown-0000")
-    for path in ("/summary", "/chats", "/jobs", "/approvals", "/schedules", "/scheduler", "/specs", "/crews", "/preferences",
-                 "/models", "/limits", "/keys", "/folders", "/tools", "/skills", "/sessions",
-                 "/roles/default/researcher", "/roles/default/lead"):
+    for path in (
+        "/summary",
+        "/chats",
+        "/jobs",
+        "/approvals",
+        "/schedules",
+        "/scheduler",
+        "/specs",
+        "/crews",
+        "/preferences",
+        "/models",
+        "/limits",
+        "/keys",
+        "/folders",
+        "/tools",
+        "/skills",
+        "/sessions",
+        "/roles/default/researcher",
+        "/roles/default/lead",
+    ):
         r = serve.http.get(path)
         assert r.status_code == 200, (path, r.text)
         assert "sk-INVENTED" not in r.text and "sk-test-INVENTED" not in r.text
@@ -313,7 +357,9 @@ def test_actions_change_the_home(serve, home):
     assert serve.http.put("/crews/legal", json={"title": "The Legal Crew"}).status_code == 200
     assert crew_title(home, "legal") == "The Legal Crew"
     assert serve.http.put("/keys/ANOTHER_KEY", json={"value": "sk-INVENTED-1111"}).json() == {
-        "name": "ANOTHER_KEY", "set": True}
+        "name": "ANOTHER_KEY",
+        "set": True,
+    }
     assert keys.get_key(home, "ANOTHER_KEY") == "sk-INVENTED-1111"
     assert serve.http.delete("/keys/ANOTHER_KEY").json()["removed"] is True
     assert serve.http.put("/limits", json={"allowance": "generous"}).json()["allowance"] == "generous"
@@ -329,9 +375,11 @@ def test_two_processes_writing_preferences_keep_both_changes(home):
     import subprocess
     import sys
 
-    code = ("import sys; from ombro.home import Home; from ombro.settings import set_preference\n"
-            "h = Home()\n"
-            "for i in range(40): set_preference(h, sys.argv[1], f'{sys.argv[1]}-{i}')\n")
+    code = (
+        "import sys; from ombro.home import Home; from ombro.settings import set_preference\n"
+        "h = Home()\n"
+        "for i in range(40): set_preference(h, sys.argv[1], f'{sys.argv[1]}-{i}')\n"
+    )
     procs = [subprocess.Popen([sys.executable, "-c", code, key]) for key in ("name", "editor")]
     assert [p.wait(timeout=60) for p in procs] == [0, 0]
     meta, _ = mdfile.read(home.preferences_config)  # parses: never half-written
@@ -394,15 +442,24 @@ def test_reopening_a_saved_chat_shows_it_again(serve):
 
 def test_schedules_over_http(serve, home):
     mdfile.write(home.specs_dir / "invented-news.md", {"name": "invented-news"}, "# Invented news\n\nCheck it.\n")
-    rows = serve.post("/schedules", {"name": "news-briefing", "spec": "invented-news", "cron": "0 6 * * 1-5"},
-                      status=201)
+    rows = serve.post(
+        "/schedules", {"name": "news-briefing", "spec": "invented-news", "cron": "0 6 * * 1-5"}, status=201
+    )
     assert rows[0]["when"] == "Runs weekdays at 6am" and rows[0]["enabled"] is True
-    assert serve.http.post("/schedules", json={"name": "news-briefing", "spec": "invented-news",
-                                                "cron": "0 6 * * 1-5"}).status_code == 400  # not new
-    assert serve.http.post("/schedules", json={"name": "bad", "spec": "invented-news",
-                                                "cron": "61 * * * *"}).status_code == 400
-    assert serve.http.put("/schedules/news-briefing", json={"cron": "0 18 * * 4"}).json()[0]["when"] == \
-        "Runs Thursdays at 6pm"
+    assert (
+        serve.http.post(
+            "/schedules", json={"name": "news-briefing", "spec": "invented-news", "cron": "0 6 * * 1-5"}
+        ).status_code
+        == 400
+    )  # not new
+    assert (
+        serve.http.post("/schedules", json={"name": "bad", "spec": "invented-news", "cron": "61 * * * *"}).status_code
+        == 400
+    )
+    assert (
+        serve.http.put("/schedules/news-briefing", json={"cron": "0 18 * * 4"}).json()[0]["when"]
+        == "Runs Thursdays at 6pm"
+    )
     assert serve.http.post("/schedules/news-briefing/disable").json() == {"name": "news-briefing", "enabled": False}
     gone = serve.http.delete("/schedules/news-briefing").json()
     assert gone["schedules"] == [] and "/removed/schedules/" in gone["moved_to"]
@@ -505,8 +562,14 @@ def test_discussing_a_jobs_brief_starts_a_chat_where_the_lead_has_it(serve, home
     spec = home.specs_dir / "invented-teapots.md"
     spec.parent.mkdir(parents=True, exist_ok=True)
     mdfile.write(spec, {"crews": ["default"]}, "# Invented teapots\n\nCount the invented teapots.")
-    d = jobs.create_job(home, ["default"], {"crews": ["default"]}, "# Invented teapots\n\nCount the invented teapots.",
-                        load_limits(home), source=f"spec file {spec}")
+    d = jobs.create_job(
+        home,
+        ["default"],
+        {"crews": ["default"]},
+        "# Invented teapots\n\nCount the invented teapots.",
+        load_limits(home),
+        source=f"spec file {spec}",
+    )
     jobs.update_job(d, status="completed", brief="Invented teapots")
 
     _script(serve.client, [fake.say("Let's change it.")])
@@ -546,7 +609,9 @@ def test_a_file_attached_in_the_app_goes_to_the_lead_with_the_message(serve, hom
     asked = [m["content"] for m in serve.client.calls[-1]["messages"] if m["role"] == "user"][-1]
     assert "Three invented teapots" in asked and asked.endswith("What's in it?")
     # Only a file attached here is taken: a path elsewhere on the machine is refused.
-    outside = serve.http.post(f"/sessions/{sid}/input", json={"text": "Hi", "attachments": [str(home.root / "keys.md")]})
+    outside = serve.http.post(
+        f"/sessions/{sid}/input", json={"text": "Hi", "attachments": [str(home.root / "keys.md")]}
+    )
     assert outside.status_code == 400 and "attach it again" in outside.json()["error"]
     assert serve.http.post("/attachments", content=b"x").status_code == 400  # no name
     ws.close()
@@ -555,11 +620,20 @@ def test_a_file_attached_in_the_app_goes_to_the_lead_with_the_message(serve, hom
 def test_a_new_message_sets_the_open_question_aside(serve):
     """Report back or live is waiting, and Mark writes something else: the question goes unanswered
     ("not now"), the transcript says so, and the message goes to the Lead as an ordinary one."""
-    _script(serve.client, [
-        fake.call("offer_work", {"summary": "Three invented bakeries in Lowtown", "title": "Bakeries",
-                                 "task": "List three invented bakeries in Lowtown."}),
-        fake.say("Of course: it's invented, so call it sunny."),
-    ])
+    _script(
+        serve.client,
+        [
+            fake.call(
+                "offer_work",
+                {
+                    "summary": "Three invented bakeries in Lowtown",
+                    "title": "Bakeries",
+                    "task": "List three invented bakeries in Lowtown.",
+                },
+            ),
+            fake.say("Of course: it's invented, so call it sunny."),
+        ],
+    )
     ws = serve.socket()
     sid = serve.post("/sessions", status=201)["session"]["id"]
     ws.send({"type": "subscribe", "sessions": {sid: 0}})
@@ -580,8 +654,9 @@ def test_a_new_message_sets_the_open_question_aside(serve):
     last = serve.client.calls[-1]["messages"]
     tool = next(m for m in last if m["role"] == "tool")
     assert "set this question aside" in tool["content"]
-    assert last[-1] == {"role": "user", "content": "What's the weather like?"} or \
-        last[-1]["content"].endswith("What's the weather like?")
+    assert last[-1] == {"role": "user", "content": "What's the weather like?"} or last[-1]["content"].endswith(
+        "What's the weather like?"
+    )
     chat = serve.get(f"/sessions/{sid}")["chat"]
     text = (serve.app.state.serve.home.chats_dir / f"{chat}.md").read_text()
     assert "You set the question aside (Shall I take this away" in text
@@ -591,10 +666,13 @@ def test_a_new_message_sets_the_open_question_aside(serve):
 
 def test_an_answer_to_the_open_question_still_answers_it(serve):
     """Typed answers are still answers: "not now" declines, and nothing is queued."""
-    _script(serve.client, [
-        fake.call("offer_work", {"summary": "Invented work", "title": "Invented", "task": "Do invented work."}),
-        fake.say("Fine, another time."),
-    ])
+    _script(
+        serve.client,
+        [
+            fake.call("offer_work", {"summary": "Invented work", "title": "Invented", "task": "Do invented work."}),
+            fake.say("Fine, another time."),
+        ],
+    )
     ws = serve.socket()
     sid = serve.post("/sessions", status=201)["session"]["id"]
     ws.send({"type": "subscribe", "sessions": {sid: 0}})
@@ -632,8 +710,7 @@ def test_a_new_chat_is_saved_from_its_first_message_and_survives_clicking_away(s
     assert serve.get(f"/sessions/{new}")["state"] == "working"  # no reply yet
     rows = {c["name"]: c for c in serve.get("/chats")}
     assert name in rows and rows[name]["title"] == "Brief an invented garden survey"
-    assert serve.get(f"/chats/{name}")["turns"][0] == {"who": "you",
-                                                        "text": "Help me brief an invented garden survey"}
+    assert serve.get(f"/chats/{name}")["turns"][0] == {"who": "you", "text": "Help me brief an invented garden survey"}
 
     # Looking at another chat meanwhile: the new one stays listed, and comes back when clicked.
     other = serve.post("/sessions", status=201)["session"]["id"]
@@ -667,10 +744,20 @@ def test_the_counts_name_the_running_jobs_so_the_sidebar_ring_shows_at_once(home
     from ombro.jobs import new_job_id
 
     jid = new_job_id("invented-report")
-    mdfile.write(home.jobs_dir / jid / "job.md", {"status": "running", "pid": os.getpid(), "crews": ["default"],
-                                                   "brief": "Invented", "created_at": "2026-11-14T09:00:00"})
+    mdfile.write(
+        home.jobs_dir / jid / "job.md",
+        {
+            "status": "running",
+            "pid": os.getpid(),
+            "crews": ["default"],
+            "brief": "Invented",
+            "created_at": "2026-11-14T09:00:00",
+        },
+    )
     counts = Serve(home).counts()
     assert counts["running"] == [jid] and counts["active"] == 1
-    mdfile.write(home.jobs_dir / jid / "job.md", {"status": "completed", "crews": ["default"], "brief": "Invented",
-                                                   "created_at": "2026-11-14T09:00:00"})
+    mdfile.write(
+        home.jobs_dir / jid / "job.md",
+        {"status": "completed", "crews": ["default"], "brief": "Invented", "created_at": "2026-11-14T09:00:00"},
+    )
     assert Serve(home).counts()["running"] == []

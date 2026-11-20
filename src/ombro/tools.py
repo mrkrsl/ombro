@@ -65,8 +65,10 @@ def _check_root(root: Path, label: str) -> Path:
     except FileNotFoundError:
         return root  # not made yet; nothing can lead out through it
     if not stat.S_ISDIR(st.st_mode):  # lstat: a symlink is never a folder here
-        raise LayoutChanged(f"{label}/ is no longer a real folder (it has been replaced, for example by a "
-                            "symlink), so it cannot be used. Nothing was done. Say so in did_not_do.")
+        raise LayoutChanged(
+            f"{label}/ is no longer a real folder (it has been replaced, for example by a "
+            "symlink), so it cannot be used. Nothing was done. Say so in did_not_do."
+        )
     return root
 
 
@@ -175,7 +177,6 @@ class ToolRegistry:
         return sorted(self._tools)
 
 
-
 # -- deferred tools ----------------------------------------------------------
 # An outside service's tools (mcp.*) are not sent with every model call: their definitions can run to
 # tens of thousands of tokens (Notion's 77 came to about 57,000) and most briefs never use them. The
@@ -206,13 +207,20 @@ def load_tool_schema(deferred: list["Tool"]) -> dict[str, Any]:
                 "Load the full definitions of tools that reach outside services, so you can call them. They are "
                 "listed here by name only, grouped by service, to keep each call small; load only the ones the "
                 "task needs, then call them from your next step. A tool's full name is its group and its name "
-                "together, e.g. " + (next(iter(groups)) + next(iter(groups.values()))[0] if groups else "x__y")
-                + ". Tools you can load:\n" + listing
+                "together, e.g. "
+                + (next(iter(groups)) + next(iter(groups.values()))[0] if groups else "x__y")
+                + ". Tools you can load:\n"
+                + listing
             ),
             "parameters": {
                 "type": "object",
-                "properties": {"names": {"type": "array", "items": {"type": "string"},
-                                         "description": "The tools to load, by full name."}},
+                "properties": {
+                    "names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The tools to load, by full name.",
+                    }
+                },
                 "required": ["names"],
             },
         },

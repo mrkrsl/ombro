@@ -25,8 +25,9 @@ OUT = Path(__file__).resolve().parent.parent / "src" / "api" / "schema.json"
 def events() -> list[type]:
     from ombro import ui
 
-    found = [c for c in vars(ui).values()
-             if isinstance(c, type) and issubclass(c, ui.Event) and c is not ui.Event and c.kind]
+    found = [
+        c for c in vars(ui).values() if isinstance(c, type) and issubclass(c, ui.Event) and c is not ui.Event and c.kind
+    ]
     return sorted(found, key=lambda c: c.__name__)
 
 
@@ -39,8 +40,15 @@ def build() -> dict:
     from ombro.serve.protocol import Api
 
     kinds = events()
-    everything = TypedDict("OmbroApi", {"api": Api, "core_event": Union[tuple(kinds)],  # noqa: UP007
-                                        "field": ui.Field, "form": ui.Form})
+    everything = TypedDict(
+        "OmbroApi",
+        {
+            "api": Api,
+            "core_event": Union[tuple(kinds)],  # noqa: UP007
+            "field": ui.Field,
+            "form": ui.Form,
+        },
+    )
     schema = TypeAdapter(everything).json_schema(ref_template="#/$defs/{model}")
     defs = schema.setdefault("$defs", {})
     # An event's to_dict() starts with its type, which the dataclass holds as a ClassVar.
@@ -104,8 +112,10 @@ def main(argv: list[str]) -> int:
     new = text()
     if "--check" in argv:
         if not OUT.is_file() or OUT.read_text() != new:
-            print(f"{OUT} is out of date: run `uv run python gui/scripts/schema.py`, then `npm run types` in gui/",
-                  file=sys.stderr)
+            print(
+                f"{OUT} is out of date: run `uv run python gui/scripts/schema.py`, then `npm run types` in gui/",
+                file=sys.stderr,
+            )
             return 1
         return 0
     OUT.parent.mkdir(parents=True, exist_ok=True)

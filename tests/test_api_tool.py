@@ -32,8 +32,9 @@ class FakeApi:
         if request.url.path.endswith("/missing"):
             return httpx.Response(404, json={"error": "no such episode"})
         if request.method == "GET":
-            return httpx.Response(200, json={"episodes": [{"title": "Invented reservoir talk"}],
-                                             "echo_key": KEY})  # an API that echoes the key back
+            return httpx.Response(
+                200, json={"episodes": [{"title": "Invented reservoir talk"}], "echo_key": KEY}
+            )  # an API that echoes the key back
         return httpx.Response(201, json={"saved": json.loads(request.content or b"null")})
 
 
@@ -43,9 +44,16 @@ def api(home, monkeypatch):
     monkeypatch.setattr(apitool, "TRANSPORT", httpx.MockTransport(fake_api))
     keys.set_key(home, "PODCASTS_API_KEY", KEY)
     meta, body = mdfile.read(home.tools)
-    meta["apis"] = {"podcasts": {"url": BASE, "key": "PODCASTS_API_KEY", "about": "Our invented podcast list.",
-                                 "how_to": "GET /episodes?q=… searches episodes.", "class": "external",
-                                 "max_calls": 5}}
+    meta["apis"] = {
+        "podcasts": {
+            "url": BASE,
+            "key": "PODCASTS_API_KEY",
+            "about": "Our invented podcast list.",
+            "how_to": "GET /episodes?q=… searches episodes.",
+            "class": "external",
+            "max_calls": 5,
+        }
+    }
     mdfile.write(home.tools, meta, body)
     return fake_api
 
@@ -56,9 +64,13 @@ def api(home, monkeypatch):
 def test_the_settings_are_checked():
     ok = apitool.check_apis({"podcasts": {"url": BASE + "/"}})
     assert ok["podcasts"] == {"url": BASE, "send_key": "bearer", "about": "", "class": "external"}
-    for bad, words in [({"url": "ftp://x"}, "https"), ({"url": BASE, "key": KEY}, "never the key itself"),
-                       ({"url": BASE, "class": "anything"}, "class"), ({"url": BASE + "?k=1"}, "just the address"),
-                       ({"url": BASE, "send_key": "cookie"}, "send_key")]:
+    for bad, words in [
+        ({"url": "ftp://x"}, "https"),
+        ({"url": BASE, "key": KEY}, "never the key itself"),
+        ({"url": BASE, "class": "anything"}, "class"),
+        ({"url": BASE + "?k=1"}, "just the address"),
+        ({"url": BASE, "send_key": "cookie"}, "send_key"),
+    ]:
         with pytest.raises(SetupError, match=words):
             apitool.check_apis({"podcasts": bad})
     # Any address is allowed, including one on your own network.
@@ -110,12 +122,24 @@ def test_the_key_is_added_and_never_comes_back(home, api):
 
 def test_every_crew_member_gets_it_lookups_run_and_changes_wait(home, api, job):
     look = fake.call("api__podcasts__get", {"path": "/episodes", "query": {"q": "reservoir"}})
-    save = fake.call("api__podcasts__request", {"method": "POST", "path": "/playlists",
-                                                "body": {"title": "Invented list"},
-                                                "reason": "The brief asks for a playlist."})
-    script = [fake.brief("researcher", "Find reservoir episodes and save a playlist."), look, save,
-              fake.result("Found one; the playlist waits for approval."), fake.finish(), fake.keep_notes(),
-              LEAD_REPORT]
+    save = fake.call(
+        "api__podcasts__request",
+        {
+            "method": "POST",
+            "path": "/playlists",
+            "body": {"title": "Invented list"},
+            "reason": "The brief asks for a playlist.",
+        },
+    )
+    script = [
+        fake.brief("researcher", "Find reservoir episodes and save a playlist."),
+        look,
+        save,
+        fake.result("Found one; the playlist waits for approval."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     assert job(script) == "completed"
     assert [r.method for r in api.seen] == ["GET"]  # the lookup ran; the change did not
     [a] = outbox.actions(job.job_dir)
@@ -132,9 +156,15 @@ def test_every_crew_member_gets_it_lookups_run_and_changes_wait(home, api, job):
 
 # -- in the brief ---------------------------------------------------------------------------
 
-BRIEF = {"name": "podcast-playlist", "title": "Save a reservoir playlist", "done_looks_like": "One playlist.",
-         "users": "Me.", "binding_constraint": "Invented episodes only.", "waste": "Duplicates.",
-         "non_goals": "No new episodes."}
+BRIEF = {
+    "name": "podcast-playlist",
+    "title": "Save a reservoir playlist",
+    "done_looks_like": "One playlist.",
+    "users": "Me.",
+    "binding_constraint": "Invented episodes only.",
+    "waste": "Duplicates.",
+    "non_goals": "No new episodes.",
+}
 
 
 def test_the_brief_asks_what_an_external_api_may_do_without_you(home, api):
@@ -171,11 +201,23 @@ def test_an_api_that_only_reads_or_changes_your_own_things_is_not_asked_about(ho
 
 def test_the_briefs_answer_lets_an_api_change_run_in_the_job(home, api, job):
     """Allowed in the brief, the API's change runs at once rather than waiting in Approvals."""
-    save = fake.call("api__podcasts__request", {"method": "POST", "path": "/playlists",
-                                                "body": {"title": "Invented list"},
-                                                "reason": "The brief asks for a playlist."})
-    script = [fake.brief("researcher", "Save a playlist."), save, fake.result("Saved it."), fake.finish(),
-              fake.keep_notes(), LEAD_REPORT]
+    save = fake.call(
+        "api__podcasts__request",
+        {
+            "method": "POST",
+            "path": "/playlists",
+            "body": {"title": "Invented list"},
+            "reason": "The brief asks for a playlist.",
+        },
+    )
+    script = [
+        fake.brief("researcher", "Save a playlist."),
+        save,
+        fake.result("Saved it."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     assert job(script, spec_meta={"outward": {"preset": "balanced", "allow": ["api.podcasts.request"]}}) == "completed"
     assert [r.method for r in api.seen] == ["POST"] and outbox.actions(job.job_dir) == []
 
@@ -184,14 +226,34 @@ def test_the_briefs_answer_lets_an_api_change_run_in_the_job(home, api, job):
 
 
 def test_an_api_is_added_edited_and_removed_over_http(serve, home):
-    r = serve.http.post("/tools/apis", json={"name": "Podcasts", "url": BASE, "key": KEY, "send_key": "header",
-                                            "key_param": "X-API-Key", "about": "Invented list.",
-                                            "access": "read-only", "max_calls": 12})
+    r = serve.http.post(
+        "/tools/apis",
+        json={
+            "name": "Podcasts",
+            "url": BASE,
+            "key": KEY,
+            "send_key": "header",
+            "key_param": "X-API-Key",
+            "about": "Invented list.",
+            "access": "read-only",
+            "max_calls": 12,
+        },
+    )
     assert r.status_code == 201, r.text
     assert KEY not in r.text
     row = r.json()["apis"][0]
-    assert row == {"name": "podcasts", "url": BASE, "about": "Invented list.", "how_to": "", "access": "read-only",
-                   "get_looks_up": True, "send_key": "header:X-API-Key", "key": "PODCASTS_API_KEY", "key_set": True, "calls": 12}
+    assert row == {
+        "name": "podcasts",
+        "url": BASE,
+        "about": "Invented list.",
+        "how_to": "",
+        "access": "read-only",
+        "get_looks_up": True,
+        "send_key": "header:X-API-Key",
+        "key": "PODCASTS_API_KEY",
+        "key_set": True,
+        "calls": 12,
+    }
     assert keys.get_key(home, "PODCASTS_API_KEY") == KEY
     assert serve.http.post("/tools/apis", json={"name": "podcasts", "url": BASE}).status_code == 400  # taken
     assert serve.http.post("/tools/apis", json={"name": "x", "url": BASE, "send_key": "header"}).status_code == 400
@@ -199,8 +261,12 @@ def test_an_api_is_added_edited_and_removed_over_http(serve, home):
     edited = serve.http.put("/tools/apis/podcasts", json={"url": BASE + "/", "access": "internal"}).json()["apis"][0]
     assert edited["access"] == "internal" and edited["key"] == "PODCASTS_API_KEY" and edited["send_key"] == "bearer"
     assert edited["get_looks_up"] is True  # an API added before the question counts as yes
-    assert serve.http.put("/tools/apis/podcasts", json={"url": BASE, "access": "external", "get_looks_up": False}
-                          ).json()["apis"][0]["get_looks_up"] is False
+    assert (
+        serve.http.put("/tools/apis/podcasts", json={"url": BASE, "access": "external", "get_looks_up": False}).json()[
+            "apis"
+        ][0]["get_looks_up"]
+        is False
+    )
     assert mdfile.read(home.tools)[0]["apis"]["podcasts"]["get_looks_up"] is False
     kept = serve.http.put("/tools/apis/podcasts", json={"url": BASE, "access": "external"}).json()["apis"][0]
     assert kept["get_looks_up"] is False  # an edit that doesn't say keeps the answer
@@ -227,8 +293,10 @@ def test_whether_gets_only_look_things_up_is_a_setting():
     with pytest.raises(SetupError, match="true or false"):
         apitool.check_apis({"bot": {"url": BASE, "get_looks_up": "maybe"}})
     # A read-only API's every call is a lookup: the answer means nothing there.
-    assert "get_looks_up" not in apitool.check_apis({"bot": {"url": BASE, "class": "read-only",
-                                                             "get_looks_up": False}})["bot"]
+    assert (
+        "get_looks_up"
+        not in apitool.check_apis({"bot": {"url": BASE, "class": "read-only", "get_looks_up": False}})["bot"]
+    )
     assert apitool.entry_from("bot", {"url": BASE})["get_looks_up"] is True  # the default is yes
     assert apitool.entry_from("bot", {"url": BASE, "get_looks_up": "no"})["get_looks_up"] is False
     old = apitool.entry_from("bot", {"url": BASE, "get_looks_up": False})
@@ -246,11 +314,26 @@ def test_an_api_whose_gets_send_has_no_lookup_tool():
 
 
 def test_a_get_that_names_a_sending_verb_or_carries_a_long_query_is_not_a_lookup():
-    for path in ["/bot123/sendMessage?chat_id=1&text=hi", "/notify", "/hooks/abc", "/chat.postMessage",
-                 "/v1/trigger/build", "/webhook/T0/B0", "/api?action=send", "/sms/send"]:
+    for path in [
+        "/bot123/sendMessage?chat_id=1&text=hi",
+        "/notify",
+        "/hooks/abc",
+        "/chat.postMessage",
+        "/v1/trigger/build",
+        "/webhook/T0/B0",
+        "/api?action=send",
+        "/sms/send",
+    ]:
         assert apitool.get_check(path, None, 200), path
-    for path in ["/episodes?q=reservoir", "/bot123/getUpdates", "/posts", "/messages/12", "/settings",
-                 "/updates", "/notifications"]:
+    for path in [
+        "/episodes?q=reservoir",
+        "/bot123/getUpdates",
+        "/posts",
+        "/messages/12",
+        "/settings",
+        "/updates",
+        "/notifications",
+    ]:
         assert apitool.get_check(path, None, 200) is None, path
     assert apitool.get_check("/episodes", {"q": "x" * 250}, 200).startswith("its query is")
     assert apitool.get_check("/episodes", {"q": "x" * 150}, 200) is None
@@ -259,13 +342,27 @@ def test_a_get_that_names_a_sending_verb_or_carries_a_long_query_is_not_a_lookup
 def test_in_a_job_a_sending_get_goes_through_the_apis_class(home, api, job):
     send = fake.call("api__podcasts__get", {"path": "/bot1/sendMessage", "query": {"chat_id": "9", "text": "hi"}})
     leak = fake.call("api__podcasts__get", {"path": "/episodes", "query": {"q": "invented summary " * 20}})
-    again = fake.call("api__podcasts__request", {"method": "GET", "path": "/bot1/sendMessage",
-                                                 "query": {"chat_id": "9", "text": "hi"},
-                                                 "reason": "The brief asks to tell the user."})
+    again = fake.call(
+        "api__podcasts__request",
+        {
+            "method": "GET",
+            "path": "/bot1/sendMessage",
+            "query": {"chat_id": "9", "text": "hi"},
+            "reason": "The brief asks to tell the user.",
+        },
+    )
     look = fake.call("api__podcasts__get", {"path": "/episodes", "query": {"q": "reservoir"}})
-    script = [fake.brief("researcher", "Find reservoir episodes and tell me."), send, leak, again, look,
-              fake.result("Found one; the message waits for approval."), fake.finish(), fake.keep_notes(),
-              LEAD_REPORT]
+    script = [
+        fake.brief("researcher", "Find reservoir episodes and tell me."),
+        send,
+        leak,
+        again,
+        look,
+        fake.result("Found one; the message waits for approval."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     assert job(script) == "completed"
     assert [r.url.path for r in api.seen] == ["/v2/episodes"]  # only the ordinary lookup ran
     [a] = outbox.actions(job.job_dir)
@@ -280,10 +377,18 @@ def test_in_a_job_an_api_whose_gets_send_waits_for_every_get(home, api, job):
     meta, body = mdfile.read(home.tools)
     meta["apis"]["podcasts"]["get_looks_up"] = False
     mdfile.write(home.tools, meta, body)
-    get = fake.call("api__podcasts__request", {"method": "GET", "path": "/episodes", "query": {"q": "reservoir"},
-                                               "reason": "The brief asks for episodes."})
-    script = [fake.brief("researcher", "Find reservoir episodes."), get, fake.result("It waits."), fake.finish(),
-              fake.keep_notes(), LEAD_REPORT]
+    get = fake.call(
+        "api__podcasts__request",
+        {"method": "GET", "path": "/episodes", "query": {"q": "reservoir"}, "reason": "The brief asks for episodes."},
+    )
+    script = [
+        fake.brief("researcher", "Find reservoir episodes."),
+        get,
+        fake.result("It waits."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     assert job(script) == "completed"
     assert api.seen == []
     [a] = outbox.actions(job.job_dir)
@@ -298,8 +403,16 @@ def test_the_terminal_asks_whether_gets_only_look_things_up(home):
         assert f.label == tool_cmd.GET_QUESTION and f.default is True
         return False
 
-    ui = ScriptedUI([BASE, "An invented bot.", lambda f: next(o.key for o in f.options if o.label.startswith("external")),
-                     no, "", "y"])
+    ui = ScriptedUI(
+        [
+            BASE,
+            "An invented bot.",
+            lambda f: next(o.key for o in f.options if o.label.startswith("external")),
+            no,
+            "",
+            "y",
+        ]
+    )
     assert tool_cmd.api_flow(home, ui, "add", "bot", {}) == 0
     assert any("GET requests: can send or change things" in str(e.to_dict()) for e in ui.events)
     assert mdfile.read(home.tools)[0]["apis"]["bot"]["get_looks_up"] is False

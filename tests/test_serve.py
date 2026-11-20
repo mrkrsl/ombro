@@ -32,8 +32,13 @@ def client(dev: bool = False) -> TestClient:
 def test_hello_is_a_real_ui_event():
     msg = hello()
     assert msg["type"] == "event" and msg["seq"] == 1 and msg["session"] is None
-    assert msg["event"] == {"type": "note", "text": f"Ombro {__version__} is running.", "items": [],
-                            "spaced": False, "level": "done"}
+    assert msg["event"] == {
+        "type": "note",
+        "text": f"Ombro {__version__} is running.",
+        "items": [],
+        "spaced": False,
+        "level": "done",
+    }
 
 
 def test_http_needs_the_token():
@@ -68,23 +73,33 @@ def test_preflight_from_the_app_only():
     ask = {"Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "authorization"}
     ok = c.options("/hello", headers={**ask, "Origin": APP})
     assert ok.status_code == 200 and ok.headers["access-control-allow-origin"] == APP
-    assert "access-control-allow-origin" not in c.options("/hello", headers={**ask, "Origin": "https://example.com"}).headers
+    assert (
+        "access-control-allow-origin"
+        not in c.options("/hello", headers={**ask, "Origin": "https://example.com"}).headers
+    )
 
 
 def test_socket_sends_hello_with_the_token_as_subprotocol():
-    with client().websocket_connect("ws://127.0.0.1/events", subprotocols=["ombro", TOKEN], headers={"Origin": APP}) as ws:
+    with client().websocket_connect(
+        "ws://127.0.0.1/events", subprotocols=["ombro", TOKEN], headers={"Origin": APP}
+    ) as ws:
         assert ws.accepted_subprotocol == "ombro"
         assert ws.receive_json() == hello()
 
 
-@pytest.mark.parametrize("protocols,origin", [
-    (["ombro"], APP),
-    (["ombro", "wrong"], APP),
-    (["ombro", TOKEN], "https://example.com"),
-])
+@pytest.mark.parametrize(
+    "protocols,origin",
+    [
+        (["ombro"], APP),
+        (["ombro", "wrong"], APP),
+        (["ombro", TOKEN], "https://example.com"),
+    ],
+)
 def test_socket_refused(protocols, origin):
     with pytest.raises(WebSocketDisconnect):
-        with client().websocket_connect("ws://127.0.0.1/events", subprotocols=protocols, headers={"Origin": origin}) as ws:
+        with client().websocket_connect(
+            "ws://127.0.0.1/events", subprotocols=protocols, headers={"Origin": origin}
+        ) as ws:
             ws.receive_json()
 
 
@@ -96,6 +111,7 @@ def loopback(monkeypatch):
             if not address or address[0] != "127.0.0.1":
                 raise AssertionError("a test tried to use the network")
             return real(*args, **kwargs)
+
         return call
 
     monkeypatch.setattr(socket.socket, "connect", only_loopback(_connect))
@@ -114,8 +130,14 @@ def _start(home_root):
 
     # A home of its own: serve's poller reads the home, and must never read the real one.
     env = {**os.environ, "OMBRO_HOME": str(home_root)}
-    proc = subprocess.Popen([sys.executable, "-m", "ombro.serve", "--handshake"], stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "ombro.serve", "--handshake"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
     line = proc.stdout.readline()
     return proc, json.loads(line)
 

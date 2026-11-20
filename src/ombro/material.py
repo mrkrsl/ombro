@@ -14,18 +14,38 @@ CLOSE = "⟪end material"
 
 # The common signs of text written to steer a model. Lower-case; matched on folded text.
 SIGNS = [
-    ("addressed to an AI", re.compile(r"\b(?:dear|attention|note to|hey|hello)\s+(?:ai|assistant|llm|language model|"
-                                      r"agent|chatbot|claude|gpt)\b")),
-    ("override attempt", re.compile(r"\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+|the\s+|your\s+)?"
-                                    r"(?:previous|prior|above|earlier|system|original)?\s*"
-                                    r"(?:instructions|rules|prompts?|directions)\b")),
+    (
+        "addressed to an AI",
+        re.compile(
+            r"\b(?:dear|attention|note to|hey|hello)\s+(?:ai|assistant|llm|language model|"
+            r"agent|chatbot|claude|gpt)\b"
+        ),
+    ),
+    (
+        "override attempt",
+        re.compile(
+            r"\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+|the\s+|your\s+)?"
+            r"(?:previous|prior|above|earlier|system|original)?\s*"
+            r"(?:instructions|rules|prompts?|directions)\b"
+        ),
+    ),
     ("new instructions", re.compile(r"\b(?:new|updated|real|actual)\s+instructions\s*:")),
     ("role change", re.compile(r"\byou are now\b|\bact as (?:an?|the) (?:different|new|unrestricted)\b")),
-    ("asks to reveal", re.compile(r"\b(?:reveal|print|show|output|send)\s+(?:your|the)\s+"
-                                  r"(?:system prompt|instructions|api key|keys?|secrets?|password)")),
-    ("asks to send or delete", re.compile(r"\b(?:email|send|forward|upload|post)\s+(?:this|the|all|these)\s+"
-                                          r"(?:file|files|data|contents|document)s?\s+to\b|"
-                                          r"\b(?:delete|remove|erase|wipe)\s+(?:all|every|the)\s+files?\b")),
+    (
+        "asks to reveal",
+        re.compile(
+            r"\b(?:reveal|print|show|output|send)\s+(?:your|the)\s+"
+            r"(?:system prompt|instructions|api key|keys?|secrets?|password)"
+        ),
+    ),
+    (
+        "asks to send or delete",
+        re.compile(
+            r"\b(?:email|send|forward|upload|post)\s+(?:this|the|all|these)\s+"
+            r"(?:file|files|data|contents|document)s?\s+to\b|"
+            r"\b(?:delete|remove|erase|wipe)\s+(?:all|every|the)\s+files?\b"
+        ),
+    ),
 ]
 HIDDEN = re.compile("[​-‏‪-‮⁠-⁤﻿\U000e0000-\U000e007f]")
 

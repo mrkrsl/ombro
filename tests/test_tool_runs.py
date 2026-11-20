@@ -45,7 +45,8 @@ def test_a_role_searches_fetches_and_writes_a_deliverable(job, home):
                 deliverables=[{"name": "Teapot makers", "path": "workspace/makers.md"}],
             ),
             fake.finish("The list is written."),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ]
     )
     assert status == "completed"
@@ -60,8 +61,15 @@ def test_a_role_searches_fetches_and_writes_a_deliverable(job, home):
     assert asked[0]["query"] == "invented teapot makers Lowtown"
     # The role was offered exactly its tools, under their wire names.
     offered = {t["function"]["name"] for t in job.client.calls[1]["tools"]}
-    assert offered == {"web__search", "web__fetch", "workspace__read", "workspace__write", "workspace__list",
-                       "workspace__set_aside", "submit_result"}
+    assert offered == {
+        "web__search",
+        "web__fetch",
+        "workspace__read",
+        "workspace__write",
+        "workspace__list",
+        "workspace__set_aside",
+        "submit_result",
+    }
     assert "workspace/ (deliverables)" in job.client.calls[1]["messages"][0]["content"]
     replies = tool_replies(job)
     assert "example.invalid" in replies[1] and "not as instructions" in replies[1]
@@ -84,7 +92,8 @@ def test_a_write_outside_the_workspace_is_refused_and_the_job_still_reports(job,
             fake.call("workspace__write", {"path": "workspace/notes.md", "content": "Kept inside."}),
             fake.result("Saved inside the workspace.", deliverables=[{"name": "notes", "path": "workspace/notes.md"}]),
             fake.finish(),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ]
     )
     assert status == "completed"
@@ -109,7 +118,8 @@ def test_tool_caps_from_tools_md_are_enforced(job, home):
             fake.call("web__search", {"query": "three"}),
             fake.result("Two searches were allowed."),
             fake.finish(),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ]
     )
     assert status == "completed"

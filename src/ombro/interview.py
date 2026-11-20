@@ -32,8 +32,21 @@ from ombro.gate import Gate, LimitReached
 from ombro.home import Home
 from ombro.journal import utc_now
 from ombro.settings import Limits, ModelSpec, format_tokens, load_models, load_preferences
-from ombro.ui import BLOCK, UI, ConsoleUI, Failure, Field, FileView, LeadSaid, Note, Option, Progress, \
-    ProposalShown, Usage, read_answer  # noqa: F401  (read_answer and BLOCK are used by chat)
+from ombro.ui import (
+    BLOCK,
+    UI,
+    ConsoleUI,
+    Failure,
+    Field,
+    FileView,
+    LeadSaid,
+    Note,
+    Option,
+    Progress,
+    ProposalShown,
+    Usage,
+    read_answer,
+)  # noqa: F401  (read_answer and BLOCK are used by chat)
 
 # The Lead may make this many model calls in a row without the user answering.
 MAX_CALLS_WITHOUT_ANSWER = 5
@@ -93,8 +106,10 @@ class Purpose:
     title = ""
     intro = ""  # what the user is told as the interview starts; built from title and typical if empty
     stopped = "I've stopped the interview. Nothing was written."  # what the Lead says when you stop it
-    proposal_intro = ("Here's what I've written. Have a read through. You can then choose one of the options "
-                      "at the end to save it, ask me to change it, or edit it yourself.")
+    proposal_intro = (
+        "Here's what I've written. Have a read through. You can then choose one of the options "
+        "at the end to save it, ask me to change it, or edit it yourself."
+    )
     rules = ""
     can_report_gaps = False
     accept_label = "write these files"
@@ -288,8 +303,7 @@ class Interview:
         if self._client is None:
             self._client = self._client_factory(self.spec)
         try:
-            reply = self._client.complete(messages, tools=tools, max_output_tokens=max_out,
-                                          timeout=min(timeout, 300))
+            reply = self._client.complete(messages, tools=tools, max_output_tokens=max_out, timeout=min(timeout, 300))
         except ModelError as e:
             self.gate.record_lost_calls(self.spec.name, e.lost_attempts, est, max_out)
             raise
@@ -297,11 +311,24 @@ class Interview:
         u = reply.usage
         in_tokens = u.input_tokens if u.input_tokens or not u.estimated else est
         out_tokens = min(u.output_tokens, max_out) if u.estimated else u.output_tokens
-        self.gate.record_model_call(self.spec.name, in_tokens, out_tokens, estimated=u.estimated, cached=u.cached_input,
-                                    reasoning=getattr(u, "reasoning", 0))
+        self.gate.record_model_call(
+            self.spec.name,
+            in_tokens,
+            out_tokens,
+            estimated=u.estimated,
+            cached=u.cached_input,
+            reasoning=getattr(u, "reasoning", 0),
+        )
         snap = self.gate.snapshot()
-        self.ui.show(Usage("interview", self.purpose.kind, snap.get("counted_tokens", 0), self.limits.max_tokens,
-                           sum((snap.get("tool_calls") or {}).values())))
+        self.ui.show(
+            Usage(
+                "interview",
+                self.purpose.kind,
+                snap.get("counted_tokens", 0),
+                self.limits.max_tokens,
+                sum((snap.get("tool_calls") or {}).values()),
+            )
+        )
         return reply
 
     def _show(self, proposal: Proposal) -> None:
@@ -326,10 +353,15 @@ class Interview:
         ) + (LOOKUP_NOTE if self.lookups is not None else "")
         opening, removed = keys.scrub(self.home, p.opening())
         messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": opening}]
-        self.ui.say(p.intro or (
-            f"{p.title}" + (f" It is {p.typical}." if p.typical else "")
-            + " Type /quit to stop; nothing is written unless you accept it."
-        ), level="lead")
+        self.ui.say(
+            p.intro
+            or (
+                f"{p.title}"
+                + (f" It is {p.typical}." if p.typical else "")
+                + " Type /quit to stop; nothing is written unless you accept it."
+            ),
+            level="lead",
+        )
         stopped = False
         try:
             outcome = self._loop(messages, tools)
@@ -350,9 +382,16 @@ class Interview:
         try:
             if stopped:
                 self.ui.say(self.purpose.stopped, spaced=True, level="lead")
-            self.ui.show(Usage("interview", self.purpose.kind, outcome.usage.get("counted_tokens", 0),
-                               self.limits.max_tokens, sum((outcome.usage.get("tool_calls") or {}).values()),
-                               final=True))
+            self.ui.show(
+                Usage(
+                    "interview",
+                    self.purpose.kind,
+                    outcome.usage.get("counted_tokens", 0),
+                    self.limits.max_tokens,
+                    sum((outcome.usage.get("tool_calls") or {}).values()),
+                    final=True,
+                )
+            )
         except KeyboardInterrupt:
             pass  # the window let the session go: what was said still goes back to the chat it was held in
         return outcome
@@ -491,14 +530,20 @@ class Interview:
         while True:
             self._show(proposal)
             self.ui.say("Choose one of these options:")
-            choice = self.ui.ask(Field(
-                "decision", "", "choice",
-                options=[Option("a", f"accept and {self.purpose.accept_label_for(proposal)}", ("accept", "y", "yes")),
-                         Option("c", "ask for a change", ("change",)),
-                         Option("e", "edit by hand", ("edit",)),
-                         Option("q", "quit", QUIT_WORDS)],
-                invalid="Type a, c, e or q.",
-            ))
+            choice = self.ui.ask(
+                Field(
+                    "decision",
+                    "",
+                    "choice",
+                    options=[
+                        Option("a", f"accept and {self.purpose.accept_label_for(proposal)}", ("accept", "y", "yes")),
+                        Option("c", "ask for a change", ("change",)),
+                        Option("e", "edit by hand", ("edit",)),
+                        Option("q", "quit", QUIT_WORDS),
+                    ],
+                    invalid="Type a, c, e or q.",
+                )
+            )
             if choice == "a":
                 proposal = self.purpose.before_write(proposal, self.ui)
                 self.purpose.write(proposal)
@@ -570,7 +615,9 @@ class Interview:
             "outcome": outcome.status,
             "started_at": self.transcript.started,
             "finished_at": utc_now(),
-            "files_written": [str(f.path) for f in outcome.proposal.files] if outcome.confirmed and outcome.proposal else [],
+            "files_written": [str(f.path) for f in outcome.proposal.files]
+            if outcome.confirmed and outcome.proposal
+            else [],
             "gaps": outcome.gaps,
             "limits": {"max_tokens": self.limits.max_tokens, "max_answers": self.limits.max_rounds},
             "usage": {
@@ -619,8 +666,9 @@ def proposal_view(proposal: Proposal) -> ProposalShown:
         if exists:
             old = f.path.read_text(encoding="utf-8")
             if mdfile.prompt_text(mdfile.parse(old)[1]) and old != f.text:
-                diff = list(difflib.unified_diff(
-                    old.splitlines(), f.text.splitlines(), "current", "proposed", lineterm="", n=1))[2:60]
+                diff = list(
+                    difflib.unified_diff(old.splitlines(), f.text.splitlines(), "current", "proposed", lineterm="", n=1)
+                )[2:60]
                 # A hunk header (@@ -4,81 +4,41 @@) means nothing to a reader: a gap between changes.
                 diff = ["⋯" if line.startswith("@@") else line for line in diff]
         files.append(FileView(f.label, str(f.path), readable(f.text), exists, diff))

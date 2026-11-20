@@ -48,14 +48,34 @@ def format_duration(seconds: float) -> str:
 # for jobs and interviews, so nothing runs away. Any single value can still be
 # set by hand in limits.md or a spec, which wins over the level.
 ALLOWANCES: dict[str, dict[str, Any]] = {
-    "conservative": {"max_tokens": 300_000, "max_rounds": 4, "job_timeout": "15m", "interview_max_tokens": 50_000,
-                     "chat_max_tokens": 100_000},
-    "moderate": {"max_tokens": 800_000, "max_rounds": 8, "job_timeout": "30m", "interview_max_tokens": 100_000,
-                 "chat_max_tokens": 200_000},
-    "generous": {"max_tokens": 2_000_000, "max_rounds": 16, "job_timeout": "2h", "interview_max_tokens": 250_000,
-                 "chat_max_tokens": 1_000_000},
-    "unlimited": {"max_tokens": None, "max_rounds": 50, "job_timeout": "4h", "interview_max_tokens": None,
-                  "chat_max_tokens": None},
+    "conservative": {
+        "max_tokens": 300_000,
+        "max_rounds": 4,
+        "job_timeout": "15m",
+        "interview_max_tokens": 50_000,
+        "chat_max_tokens": 100_000,
+    },
+    "moderate": {
+        "max_tokens": 800_000,
+        "max_rounds": 8,
+        "job_timeout": "30m",
+        "interview_max_tokens": 100_000,
+        "chat_max_tokens": 200_000,
+    },
+    "generous": {
+        "max_tokens": 2_000_000,
+        "max_rounds": 16,
+        "job_timeout": "2h",
+        "interview_max_tokens": 250_000,
+        "chat_max_tokens": 1_000_000,
+    },
+    "unlimited": {
+        "max_tokens": None,
+        "max_rounds": 50,
+        "job_timeout": "4h",
+        "interview_max_tokens": None,
+        "chat_max_tokens": None,
+    },
 }
 DEFAULT_ALLOWANCE = "generous"  # moderate stopped every real research job
 LEVEL_KEYS = ("max_tokens", "max_rounds", "job_timeout", "interview_max_tokens", "chat_max_tokens")
@@ -70,19 +90,35 @@ MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
     "chat_history_chars": 200_000,
     "fetch_max_query": 200,
     "chat_calls_per_message": 20,
-    "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
-                            "web.fetch": 15, "folders.list": 30, "folders.read": 40, "folders.write": 10,
-                            "default": 10},
+    "chat_tool_max_calls": {
+        "memory.search": 20,
+        "memory.read": 30,
+        "memory.list": 30,
+        "web.search": 10,
+        "web.fetch": 15,
+        "folders.list": 30,
+        "folders.read": 40,
+        "folders.write": 10,
+        "default": 10,
+    },
 }
 # Scheduler settings: how late a tick may start a slot, and how many scheduled
 # jobs may start in one tick or be in progress at once.
 SCHEDULE_DEFAULTS: dict[str, Any] = {"schedule_grace": "15m", "schedule_max_running": 2, "schedule_max_starts": 3}
 # Code execution: limits on each script code.run runs.
-CODE_DEFAULTS: dict[str, Any] = {"code_timeout": "60s", "code_max_memory": "1GB", "code_output_chars": 30_000,
-                                 "code_max_total": "2GB"}
+CODE_DEFAULTS: dict[str, Any] = {
+    "code_timeout": "60s",
+    "code_max_memory": "1GB",
+    "code_output_chars": 30_000,
+    "code_max_total": "2GB",
+}
 # Skills: the listing in a prompt, a read, a model-written SKILL.md, and proposals waiting.
-SKILL_DEFAULTS: dict[str, Any] = {"skills_list_chars": 4_000, "skill_read_chars": 20_000,
-                                  "skill_max_chars": 10_000, "skill_proposals_waiting": 10}
+SKILL_DEFAULTS: dict[str, Any] = {
+    "skills_list_chars": 4_000,
+    "skill_read_chars": 20_000,
+    "skill_max_chars": 10_000,
+    "skill_proposals_waiting": 10,
+}
 CODE_DEFAULT_CALLS = 10  # code.job's max_calls when neither limits.md nor tools.md sets one
 # A bigger allowance gives more calls to the tools a research job leans on
 # (a generous job ran out of searches, fetches and code runs). Values set by hand still win.
@@ -109,6 +145,8 @@ def upgraded_steps(kind: str, value: Any) -> Any:
     """max_steps for a kind as written in a file: an old built-in default becomes today's."""
     old, new = CHANGED_STEPS.get(kind, ((), None))
     return new if not isinstance(value, bool) and value in old else value
+
+
 # Limits that were renamed: read under their old names too (jobs were once called runs).
 RENAMED_LIMITS = {"run_timeout": "job_timeout"}
 
@@ -120,6 +158,8 @@ def _changed(key: str, value: Any) -> Any:
 
 def _renamed(d: dict) -> dict:
     return {RENAMED_LIMITS.get(k, k): v for k, v in d.items()} if any(k in RENAMED_LIMITS for k in d) else d
+
+
 INTERVIEW_TIMEOUT = 6 * 3600.0  # interviews wait on a person; the token and turn caps bound them
 
 
@@ -254,8 +294,9 @@ class Limits:
             memory_index_entry_chars=pos_num("memory_index_entry_chars", d["memory_index_entry_chars"], integer=True),
             memory_search_max_chars=pos_num("memory_search_max_chars", d["memory_search_max_chars"], integer=True),
             chat_max_tokens=token_cap("chat_max_tokens", d["chat_max_tokens"]),
-            chat_history_chars=pos_num("chat_history_chars", _changed("chat_history_chars", d["chat_history_chars"]),
-                                       integer=True),
+            chat_history_chars=pos_num(
+                "chat_history_chars", _changed("chat_history_chars", d["chat_history_chars"]), integer=True
+            ),
             fetch_max_query=pos_num("fetch_max_query", d["fetch_max_query"], integer=True),
             chat_calls_per_message=pos_num("chat_calls_per_message", d["chat_calls_per_message"], integer=True),
             chat_tool_max_calls=chat_calls,
@@ -264,8 +305,9 @@ class Limits:
             schedule_max_starts=pos_num("schedule_max_starts", d["schedule_max_starts"], integer=True),
             code_timeout=pos_num("code_timeout", parse_duration(d["code_timeout"])),
             code_max_memory=pos_num("code_max_memory", parse_size(d["code_max_memory"]), integer=True),
-            code_output_chars=pos_num("code_output_chars", _changed("code_output_chars", d["code_output_chars"]),
-                                      integer=True),
+            code_output_chars=pos_num(
+                "code_output_chars", _changed("code_output_chars", d["code_output_chars"]), integer=True
+            ),
             code_max_total=pos_num("code_max_total", parse_size(d["code_max_total"]), integer=True),
             **{k: pos_num(k, d[k], integer=True) for k in SKILL_DEFAULTS},
         )
@@ -343,8 +385,9 @@ def load_limits(
     level = str(merged.get("allowance") or DEFAULT_ALLOWANCE).strip().lower()
     for name in PROVIDER_TOOLS:  # a free provider gets more calls than one that bills for each
         provider = tools.provider_for(name)
-        per_tool["tool_max_calls"][name] = PROVIDER_CALLS.get((name, provider), 30) \
-            * (TOOL_SCALE.get(level, 1) if provider in FREE_PROVIDERS else 1)
+        per_tool["tool_max_calls"][name] = PROVIDER_CALLS.get((name, provider), 30) * (
+            TOOL_SCALE.get(level, 1) if provider in FREE_PROVIDERS else 1
+        )
     if level in CODE_CALLS and "code.run" not in (meta.get("tool_max_calls") or {}):
         per_tool["tool_max_calls"]["code.run"] = CODE_CALLS[level]
     for name, n in BROWSER_CALLS.items():
@@ -378,17 +421,38 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
 }
 PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
 # Calls a job may make, by tool and provider, unless tools.md says: fewer where each call is billed.
-PROVIDER_CALLS = {("web.search", "firecrawl"): 20, ("web.fetch", "firecrawl"): 30,
-                  ("web.search", "duckduckgo"): 60, ("web.fetch", "browser"): 100,
-                  ("web.search", "fake"): 20, ("web.fetch", "fake"): 30}
+PROVIDER_CALLS = {
+    ("web.search", "firecrawl"): 20,
+    ("web.fetch", "firecrawl"): 30,
+    ("web.search", "duckduckgo"): 60,
+    ("web.fetch", "browser"): 100,
+    ("web.search", "fake"): 20,
+    ("web.fetch", "fake"): 30,
+}
 # The browser's tools (ombro.browser): calls a job may make, unless limits.md or tools.md says.
-BROWSER_CALLS = {"browser.open": 60, "browser.click": 100, "browser.type": 60, "browser.screenshot": 20,
-                 "browser.submit": 10}
+BROWSER_CALLS = {
+    "browser.open": 60,
+    "browser.click": 100,
+    "browser.type": 60,
+    "browser.screenshot": 20,
+    "browser.submit": 10,
+}
 _TOOL_FIELDS = {"provider", "max_calls", "class", "permission"}
 # Accepted in tools.md from earlier versions, and ignored.
 _RETIRED_TOOL_FIELDS = {"cost_per_call"}
-_SERVER_FIELDS = {"command", "args", "env", "pass_env", "url", "headers", "timeout", "start_timeout", "class",
-                  "client_id", "confirmed_internal"}
+_SERVER_FIELDS = {
+    "command",
+    "args",
+    "env",
+    "pass_env",
+    "url",
+    "headers",
+    "timeout",
+    "start_timeout",
+    "class",
+    "client_id",
+    "confirmed_internal",
+}
 TOOL_CLASSES = ("read-only", "internal", "external")
 # A server-wide class covers its tools that are not read-only; reading stays reading.
 SERVER_CLASSES = ("internal", "external")
@@ -415,8 +479,10 @@ class ToolSettings:
         d = d or {}
         unknown = set(d) - {"tools", "providers", "servers", "apis", "composio"}
         if unknown:
-            raise SetupError(f"{where}: unknown setting(s): {', '.join(sorted(unknown))} "
-                             "(use tools:, providers:, servers:, apis: and composio:)")
+            raise SetupError(
+                f"{where}: unknown setting(s): {', '.join(sorted(unknown))} "
+                "(use tools:, providers:, servers:, apis: and composio:)"
+            )
         raw_tools = d.get("tools") or {}
         raw_providers = d.get("providers") or {}
         raw_servers = d.get("servers") or {}
@@ -427,7 +493,9 @@ class ToolSettings:
             name = str(name)
             cfg = cfg or {}
             if not isinstance(cfg, dict):
-                raise SetupError(f"{where}: settings for {name} must be a mapping, e.g. {{provider: fake, max_calls: 10}}")
+                raise SetupError(
+                    f"{where}: settings for {name} must be a mapping, e.g. {{provider: fake, max_calls: 10}}"
+                )
             bad = set(cfg) - _TOOL_FIELDS - _RETIRED_TOOL_FIELDS
             if bad:
                 raise SetupError(f"{where}: {name} has unknown setting(s): {', '.join(sorted(bad))}")
@@ -448,19 +516,25 @@ class ToolSettings:
                 out["max_calls"] = v
             if "class" in cfg or ("permission" in cfg and name != "browser.submit"):
                 if not name.startswith(("mcp.", "composio.")):
-                    raise SetupError(f"{where}: class and permission apply only to MCP tools (mcp.<server>.<tool>) "
-                                     f"and Composio's (composio.<toolkit>.<tool>), not {name}")
+                    raise SetupError(
+                        f"{where}: class and permission apply only to MCP tools (mcp.<server>.<tool>) "
+                        f"and Composio's (composio.<toolkit>.<tool>), not {name}"
+                    )
             if "class" in cfg:
                 if cfg["class"] in _OLD_CLASSES:
-                    raise SetupError(f"{where}: class {cfg['class']!r} for {name} has been renamed; use "
-                                     f"{_OLD_CLASSES[cfg['class']]!r} (classes are read-only, internal and external)")
+                    raise SetupError(
+                        f"{where}: class {cfg['class']!r} for {name} has been renamed; use "
+                        f"{_OLD_CLASSES[cfg['class']]!r} (classes are read-only, internal and external)"
+                    )
                 if cfg["class"] not in TOOL_CLASSES:
                     raise SetupError(f"{where}: class for {name} must be one of {', '.join(TOOL_CLASSES)}")
                 out["class"] = cfg["class"]
             if "permission" in cfg:
                 if cfg["permission"] != "refuse":
-                    raise SetupError(f"{where}: permission for {name} can only be `refuse` here; whether a tool "
-                                     "runs or waits for approval is set by `outward:` in preferences or a spec")
+                    raise SetupError(
+                        f"{where}: permission for {name} can only be `refuse` here; whether a tool "
+                        "runs or waits for approval is set by `outward:` in preferences or a spec"
+                    )
                 out["permission"] = "refuse"
             tools[name] = out
         providers: dict[str, dict[str, Any]] = {}
@@ -479,8 +553,9 @@ class ToolSettings:
             if bad:
                 raise SetupError(f"{where}: server {name} has unknown setting(s): {', '.join(sorted(bad))}")
             if bool(cfg.get("command")) == bool(cfg.get("url")):
-                raise SetupError(f"{where}: server {name} needs either `command` (a local server) or `url` "
-                                 "(a remote one), not both")
+                raise SetupError(
+                    f"{where}: server {name} needs either `command` (a local server) or `url` (a remote one), not both"
+                )
             if cfg.get("url") and not str(cfg["url"]).startswith(("https://", "http://")):
                 raise SetupError(f"{where}: the url for server {name} must start with https://")
             for key in ("env", "headers"):
@@ -488,20 +563,32 @@ class ToolSettings:
                     raise SetupError(f"{where}: `{key}` for server {name} must be a mapping")
             if "args" in cfg and not isinstance(cfg["args"] or [], list):
                 raise SetupError(f"{where}: `args` for server {name} must be a list")
-            if "pass_env" in cfg and (not isinstance(cfg["pass_env"] or [], list) or not all(
-                    isinstance(n, str) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", n) for n in cfg["pass_env"] or [])):
+            if "pass_env" in cfg and (
+                not isinstance(cfg["pass_env"] or [], list)
+                or not all(
+                    isinstance(n, str) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", n) for n in cfg["pass_env"] or []
+                )
+            ):
                 raise SetupError(f"{where}: `pass_env` for server {name} must be a list of variable names")
             if "class" in cfg:
                 if cfg["class"] in _OLD_CLASSES:
-                    raise SetupError(f"{where}: class {cfg['class']!r} for server {name} has been renamed; use "
-                                     f"{_OLD_CLASSES[cfg['class']]!r}")
+                    raise SetupError(
+                        f"{where}: class {cfg['class']!r} for server {name} has been renamed; use "
+                        f"{_OLD_CLASSES[cfg['class']]!r}"
+                    )
                 if cfg["class"] not in SERVER_CLASSES:
-                    raise SetupError(f"{where}: class for server {name} must be internal or external (it covers "
-                                     "the server's tools that are not read-only)")
-            if "confirmed_internal" in cfg and (not isinstance(cfg["confirmed_internal"] or [], list) or not all(
-                    isinstance(n, str) and n for n in cfg["confirmed_internal"] or [])):
-                raise SetupError(f"{where}: `confirmed_internal` for server {name} must be a list of its tools' names "
-                                 "(those you confirmed stay inside your organisation)")
+                    raise SetupError(
+                        f"{where}: class for server {name} must be internal or external (it covers "
+                        "the server's tools that are not read-only)"
+                    )
+            if "confirmed_internal" in cfg and (
+                not isinstance(cfg["confirmed_internal"] or [], list)
+                or not all(isinstance(n, str) and n for n in cfg["confirmed_internal"] or [])
+            ):
+                raise SetupError(
+                    f"{where}: `confirmed_internal` for server {name} must be a list of its tools' names "
+                    "(those you confirmed stay inside your organisation)"
+                )
             for key in ("timeout", "start_timeout"):
                 if key in cfg:
                     try:
@@ -523,8 +610,11 @@ class ToolSettings:
         return cls(tools=tools, providers=providers, servers=servers, apis=apis, composio=composio)
 
     def to_dict(self) -> dict[str, Any]:
-        out = {"tools": copy.deepcopy(self.tools), "providers": copy.deepcopy(self.providers),
-               "servers": copy.deepcopy(self.servers)}
+        out = {
+            "tools": copy.deepcopy(self.tools),
+            "providers": copy.deepcopy(self.providers),
+            "servers": copy.deepcopy(self.servers),
+        }
         if self.apis:
             out["apis"] = copy.deepcopy(self.apis)
         if self.composio:
@@ -593,8 +683,9 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
             raise SetupError(f"{home.models}: model {name!r} must be a mapping or another model's name")
         api = str(entry.get("api", "openai"))
         if api not in ("openai", "anthropic", "chatgpt", "fake"):
-            raise SetupError(f"{home.models}: model {name!r} has unknown api {api!r} "
-                             "(use openai, anthropic, chatgpt or fake)")
+            raise SetupError(
+                f"{home.models}: model {name!r} has unknown api {api!r} (use openai, anthropic, chatgpt or fake)"
+            )
         if api == "anthropic" and not entry.get("endpoint"):
             entry = {**entry, "endpoint": "https://api.anthropic.com/v1"}
         if api == "openai" and not entry.get("endpoint"):
@@ -605,14 +696,17 @@ def load_models(home: Home) -> dict[str, ModelSpec]:
         if effort is False:  # YAML reads `none`-like words such as off and no as false
             effort = "off"
         if effort is not None and not (isinstance(effort, str) and effort.isalpha() and len(effort) <= 20):
-            raise SetupError(f"{home.models}: model {name!r} has reasoning_effort {effort!r}; use one word the "
-                             "provider accepts, e.g. none, low, high")
+            raise SetupError(
+                f"{home.models}: model {name!r} has reasoning_effort {effort!r}; use one word the "
+                "provider accepts, e.g. none, low, high"
+            )
         from ombro.thinking import LABELS, level_of
 
         thinking = entry.get("thinking")
         if thinking is not None and level_of(thinking) is None:
-            raise SetupError(f"{home.models}: model {name!r} has thinking {thinking!r}; use one of "
-                             + ", ".join(LABELS))
+            raise SetupError(
+                f"{home.models}: model {name!r} has thinking {thinking!r}; use one of " + ", ".join(LABELS)
+            )
         return ModelSpec(
             name=name,
             api=api,
@@ -743,6 +837,8 @@ def allowance_table() -> list[str]:
     """One line per level: what each job, chat and interview may use."""
     out = []
     for name, v in ALLOWANCES.items():
-        out.append(f"{name}: jobs {format_tokens(v['max_tokens'])}, chats {format_tokens(v['chat_max_tokens'])}, "
-                   f"interviews {format_tokens(v['interview_max_tokens'])} tokens")
+        out.append(
+            f"{name}: jobs {format_tokens(v['max_tokens'])}, chats {format_tokens(v['chat_max_tokens'])}, "
+            f"interviews {format_tokens(v['interview_max_tokens'])} tokens"
+        )
     return out

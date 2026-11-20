@@ -42,8 +42,14 @@ class Session:
         self.answers = Answers(answers)
         limits = load_limits(self.home)
         self.outcome = start(
-            self.home, purpose, crew, limits,
-            ask=self.answers, say=self.said.append, edit=edit, client_factory=lambda spec: self.client,
+            self.home,
+            purpose,
+            crew,
+            limits,
+            ask=self.answers,
+            say=self.said.append,
+            edit=edit,
+            client_factory=lambda spec: self.client,
         )
         return self.outcome
 
@@ -105,7 +111,9 @@ def test_setup_writes_nothing_until_accepted(talk, home):
     assert "I run an invented bakery in Lowtown." in home.instructions.read_text()
     soul = soul_path.read_text()
     # The interview adds its own section; the Lead's character above it is kept.
-    assert soul.startswith(TEST_LEAD_SOUL.strip()) and soul.endswith("## Working with Ada\n\nYou are brisk, kind and short.\n")
+    assert soul.startswith(TEST_LEAD_SOUL.strip()) and soul.endswith(
+        "## Working with Ada\n\nYou are brisk, kind and short.\n"
+    )
     assert (soul_path.parent / "soul.previous.md").read_text() == TEST_LEAD_SOUL  # the old text is kept
     # The change request went back to the Lead as the tool's result.
     assert "Make the soul shorter." in talk.tool_replies()[0]
@@ -151,7 +159,6 @@ def test_edit_by_hand_then_accept_writes_the_edited_version(talk, home):
 def test_an_edit_that_breaks_the_file_is_refused(talk, home):
     def edit(paths):
         paths[0].write_text("---\nnot: [closed\n---\nBroken.\n")
-
 
     out = talk(SetupPurpose(home), [fake.call("propose", SETUP)], ["e", "a"], edit=edit)
     assert out.status == "confirmed"
@@ -199,8 +206,11 @@ def test_role_interview_is_shown_the_tools_that_exist(talk, home):
 
 
 def test_a_new_role_gets_every_tool_and_skill_unless_limited(talk, home):
-    out = talk(RolePurpose(home, "default", load_limits(home)),
-               [fake.call("propose", {**ROLE, "tools": [], "skills": []})], ["a"])
+    out = talk(
+        RolePurpose(home, "default", load_limits(home)),
+        [fake.call("propose", {**ROLE, "tools": [], "skills": []})],
+        ["a"],
+    )
     assert out.status == "confirmed"
     assert "this role has no tools" not in talk.output
     meta = mdfile.read(home.roles_dir("default") / "fact-checker" / "config.md")[0]
@@ -254,12 +264,22 @@ def test_brief_writes_only_the_fields_that_say_something(talk, home):
 def test_a_brief_that_follows_a_skill_names_it_and_needs_nothing_else(talk, home):
     folder = home.skills_dir / "teapot-survey"
     folder.mkdir(parents=True)
-    (folder / "SKILL.md").write_text("---\nname: teapot-survey\ndescription: How to survey invented teapot "
-                                     "makers.\n---\n1. Search the invented directory.\n")
+    (folder / "SKILL.md").write_text(
+        "---\nname: teapot-survey\ndescription: How to survey invented teapot "
+        "makers.\n---\n1. Search the invented directory.\n"
+    )
     out = talk(
         BriefPurpose(home, "default", load_limits(home), "Run the teapot survey for Lowtown."),
-        [fake.call("propose", {"name": "lowtown-teapots", "title": "Teapot makers in Lowtown",
-                               "details": "Follow the skill teapot-survey, for Lowtown."})],
+        [
+            fake.call(
+                "propose",
+                {
+                    "name": "lowtown-teapots",
+                    "title": "Teapot makers in Lowtown",
+                    "details": "Follow the skill teapot-survey, for Lowtown.",
+                },
+            )
+        ],
         ["a"],
     )
     assert out.status == "confirmed"
@@ -399,13 +419,15 @@ def test_init_holds_the_setup_interview_and_offers_a_role(tmp_path):
     from ombro.init_cmd import run_init
 
     h = Home(tmp_path / "fresh")
-    client = ScriptedClient([
-        fake.say("OK"),  # the connection test
-        fake.say("Who are you?"),
-        fake.call("propose", SETUP),
-        fake.say("What should the role do?"),
-        fake.call("propose", ROLE),
-    ])
+    client = ScriptedClient(
+        [
+            fake.say("OK"),  # the connection test
+            fake.say("Who are you?"),
+            fake.call("propose", SETUP),
+            fake.say("What should the role do?"),
+            fake.call("propose", ROLE),
+        ]
+    )
     said = []
     ask = Answers(["", "1", "deepseek-chat", "", "An invented baker.", "a", "", "y", "Check facts.", "a", "n", "n"])
     secret = Answers(["sk-test-INVENTED-model", ""])
@@ -448,15 +470,23 @@ def test_ask_shows_how_far_through_the_interview_is(talk, home):
         BriefPurpose(home, "default", load_limits(home), "Invented teapots."),
         [
             fake.call("ask", {"questions": ["What is the task, and why?"], "covered": [], "progress": "just started"}),
-            fake.call("ask", {"questions": ["What would be a waste?", "What is not wanted?"],
-                              "covered": ["task", "done", "users", "constraint"], "progress": "about halfway"}),
+            fake.call(
+                "ask",
+                {
+                    "questions": ["What would be a waste?", "What is not wanted?"],
+                    "covered": ["task", "done", "users", "constraint"],
+                    "progress": "about halfway",
+                },
+            ),
             fake.call("propose", SPEC),
         ],
         ["Three makers, for a supplier choice.", "Anything outside Lowtown; prices.", "a"],
     )
     assert out.status == "confirmed"
     assert "○○○○○○  0 of 6 covered" in talk.output
-    assert "●●●●○○  4 of 6 covered  ·  still to cover: what would be a waste, non-goals  ·  about halfway" in talk.output
+    assert (
+        "●●●●○○  4 of 6 covered  ·  still to cover: what would be a waste, non-goals  ·  about halfway" in talk.output
+    )
     # Two questions come as separate paragraphs after "Two questions:".
     assert "Lead: Two questions:\n\nWhat would be a waste?\n\nWhat is not wanted?" in talk.output
     assert '"answer": "Anything outside Lowtown; prices."' in talk.tool_replies()[1]
@@ -495,8 +525,10 @@ def test_running_set_up_again_replaces_only_its_own_section(talk, home):
     talk(SetupPurpose(home), [fake.call("propose", {**SETUP, "soul": "With Ada, you report early."})], ["a"])
     talk(SetupPurpose(home), [fake.call("propose", {**SETUP, "soul": "With Ada, you report at the end."})], ["a"])
     soul = soul_path.read_text()
-    assert soul == ("You are an invented Lead with a character edited by hand.\n\n## Working with Ada\n\n"
-                    "With Ada, you report at the end.\n")
+    assert soul == (
+        "You are an invented Lead with a character edited by hand.\n\n## Working with Ada\n\n"
+        "With Ada, you report at the end.\n"
+    )
     assert soul_with("## Working with Ada\n\nOld.", "Ada", "New.") == "## Working with Ada\n\nNew.\n"
     # An older home kept the built-in character in the file: it is taken out, as it is built in now.
     assert soul_with(LEAD_SOUL + "\n## Working with Ada\n\nOld.", "Ada", "New.") == "## Working with Ada\n\nNew.\n"

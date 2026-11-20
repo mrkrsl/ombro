@@ -30,10 +30,54 @@ TEXT_CHARS = 40_000  # of one file's text, in the message to the Lead
 INPUTS = "inputs"  # in a job's workspace
 
 TEXT_SUFFIXES = {
-    ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".xml", ".html",
-    ".htm", ".css", ".js", ".ts", ".tsx", ".jsx", ".py", ".rb", ".go", ".rs", ".java", ".kt", ".swift", ".c",
-    ".h", ".cpp", ".hpp", ".cs", ".php", ".sh", ".zsh", ".bash", ".sql", ".r", ".ini", ".cfg", ".conf", ".log",
-    ".tex", ".rst", ".org", ".srt", ".vtt", ".ics", ".vcf", ".env.example",
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".tsv",
+    ".json",
+    ".jsonl",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".xml",
+    ".html",
+    ".htm",
+    ".css",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".py",
+    ".rb",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".swift",
+    ".c",
+    ".h",
+    ".cpp",
+    ".hpp",
+    ".cs",
+    ".php",
+    ".sh",
+    ".zsh",
+    ".bash",
+    ".sql",
+    ".r",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".log",
+    ".tex",
+    ".rst",
+    ".org",
+    ".srt",
+    ".vtt",
+    ".ics",
+    ".vcf",
+    ".env.example",
 }
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".tiff", ".bmp", ".svg"}
 
@@ -112,8 +156,13 @@ def dragged_paths(text: str) -> tuple[str, list[Path]]:
     return " ".join(text.split()), found
 
 
-SEEABLE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-           ".webp": "image/webp"}  # what the providers take as an image in a message
+SEEABLE = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}  # what the providers take as an image in a message
 IMAGE_MAX_BYTES = 5 * 1024 * 1024  # Anthropic's limit for one image, the lowest of them
 
 
@@ -278,5 +327,7 @@ def without_inputs_section(body: str) -> str:
 def inputs_section(names: list[str]) -> str:
     """The lines added to a job's brief naming the files it was given."""
     listed = "\n".join(f"- workspace/{INPUTS}/{n}" for n in names)
-    return (f"\n\n{INPUTS_HEADING}\n\nThe user attached these; read them with workspace.read "
-            f"(PDF and Word files are read as text):\n\n{listed}\n")
+    return (
+        f"\n\n{INPUTS_HEADING}\n\nThe user attached these; read them with workspace.read "
+        f"(PDF and Word files are read as text):\n\n{listed}\n"
+    )

@@ -39,12 +39,15 @@ def test_the_lead_is_told_which_folders_are_shared(chat):
 
 
 def test_the_lead_lists_and_reads_a_shared_folder(chat):
-    chat([
-        fake.call("folders__list", {}),
-        fake.call("folders__list", {"path": "shared/niches"}),
-        fake.call("folders__read", {"path": "shared/niches/master-list.md"}),
-        fake.say("The list starts with teapot restorers."),
-    ], ["What's on the niche list?"])
+    chat(
+        [
+            fake.call("folders__list", {}),
+            fake.call("folders__list", {"path": "shared/niches"}),
+            fake.call("folders__read", {"path": "shared/niches/master-list.md"}),
+            fake.say("The list starts with teapot restorers."),
+        ],
+        ["What's on the niche list?"],
+    )
     listed, inside, read = chat.tool_replies()
     assert {e["path"] for e in listed["entries"]} == {"shared/niches", "shared/brand"}
     assert [e["path"] for e in inside["entries"]] == ["shared/niches/master-list.md"]
@@ -52,10 +55,13 @@ def test_the_lead_lists_and_reads_a_shared_folder(chat):
 
 
 def test_a_write_waits_for_yes(chat, user):
-    chat([
-        fake.call("folders__write", {"path": "shared/niches/sizing.md", "content": "# Sizing\nInvented.\n"}),
-        fake.say("Saved it."),
-    ], ["Write a sizing note", "y"])
+    chat(
+        [
+            fake.call("folders__write", {"path": "shared/niches/sizing.md", "content": "# Sizing\nInvented.\n"}),
+            fake.say("Saved it."),
+        ],
+        ["Write a sizing note", "y"],
+    )
     (reply,) = chat.tool_replies()
     assert reply["path"] == "shared/niches/sizing.md"
     assert (user / "Documents" / "Niches" / "sizing.md").read_text() == "# Sizing\nInvented.\n"
@@ -63,10 +69,13 @@ def test_a_write_waits_for_yes(chat, user):
 
 
 def test_a_write_the_user_refuses_changes_nothing(chat, user):
-    chat([
-        fake.call("folders__write", {"path": "shared/niches/master-list.md", "content": "gone"}),
-        fake.say("Left it alone."),
-    ], ["Tidy the list", "n"])
+    chat(
+        [
+            fake.call("folders__write", {"path": "shared/niches/master-list.md", "content": "gone"}),
+            fake.say("Left it alone."),
+        ],
+        ["Tidy the list", "n"],
+    )
     (reply,) = chat.tool_replies()
     assert "declined" in reply
     assert "teapot restorers" in (user / "Documents" / "Niches" / "master-list.md").read_text()
@@ -74,13 +83,16 @@ def test_a_write_the_user_refuses_changes_nothing(chat, user):
 
 
 def test_read_only_grants_and_unshared_folders_stay_out_of_reach(chat, user):
-    chat([
-        fake.call("folders__write", {"path": "shared/brand/guide.md", "content": "orange"}),
-        fake.call("folders__read", {"path": str(user / "Documents" / "Private" / "diary.md")}),
-        fake.call("folders__read", {"path": "shared/niches/../Private/diary.md"}),
-        fake.call("folders__read", {"path": "workspace/notes.md"}),
-        fake.say("I can't reach those."),
-    ], ["Try these"])
+    chat(
+        [
+            fake.call("folders__write", {"path": "shared/brand/guide.md", "content": "orange"}),
+            fake.call("folders__read", {"path": str(user / "Documents" / "Private" / "diary.md")}),
+            fake.call("folders__read", {"path": "shared/niches/../Private/diary.md"}),
+            fake.call("folders__read", {"path": "workspace/notes.md"}),
+            fake.say("I can't reach those."),
+        ],
+        ["Try these"],
+    )
     write, absolute, dotdot, workspace = chat.tool_replies()
     assert "read-only" in write["error"]
     assert "not in a folder shared" in absolute["error"]
@@ -90,10 +102,13 @@ def test_read_only_grants_and_unshared_folders_stay_out_of_reach(chat, user):
 
 
 def test_an_absolute_path_inside_a_grant_is_read(chat, user):
-    chat([
-        fake.call("folders__read", {"path": "~/Documents/Niches/master-list.md"}),
-        fake.say("Read it."),
-    ], ["Read ~/Documents/Niches/master-list.md"])
+    chat(
+        [
+            fake.call("folders__read", {"path": "~/Documents/Niches/master-list.md"}),
+            fake.say("Read it."),
+        ],
+        ["Read ~/Documents/Niches/master-list.md"],
+    )
     (reply,) = chat.tool_replies()
     assert "teapot restorers" in reply["content"]
 
@@ -106,10 +121,13 @@ def test_with_nothing_shared_the_lead_is_told_how_to_share(home):
 
 
 def test_nothing_is_deleted_a_file_is_set_aside_with_a_note(chat, user):
-    chat([
-        fake.call("folders__set_aside", {"path": "shared/niches/master-list.md", "why": "Replaced by v2."}),
-        fake.say("Set aside."),
-    ], ["That list is old", "y"])
+    chat(
+        [
+            fake.call("folders__set_aside", {"path": "shared/niches/master-list.md", "why": "Replaced by v2."}),
+            fake.say("Set aside."),
+        ],
+        ["That list is old", "y"],
+    )
     (reply,) = chat.tool_replies()
     assert reply["to"] == "shared/niches/For deletion/master-list.md"
     shelf = user / "Documents" / "Niches" / "For deletion"
@@ -148,17 +166,28 @@ def test_a_role_that_writes_is_given_set_aside(home):
 
     from ombro.engine import Engine
 
-    role = Role(name="w", kind="specialist", description="", model="default", soul="", path=home.root,
-                max_steps=3, tools=["workspace.write"])
+    role = Role(
+        name="w",
+        kind="specialist",
+        description="",
+        model="default",
+        soul="",
+        path=home.root,
+        max_steps=3,
+        tools=["workspace.write"],
+    )
     _, by_wire = Engine._role_tools(E(), role)
     assert "workspace__set_aside" in by_wire
 
 
 def test_replacing_a_file_keeps_the_old_version_in_archive(chat, user):
-    chat([
-        fake.call("folders__write", {"path": "shared/niches/master-list.md", "content": "1. New list\n"}),
-        fake.say("Replaced."),
-    ], ["Update the list", "y"])
+    chat(
+        [
+            fake.call("folders__write", {"path": "shared/niches/master-list.md", "content": "1. New list\n"}),
+            fake.say("Replaced."),
+        ],
+        ["Update the list", "y"],
+    )
     (reply,) = chat.tool_replies()
     assert "Archive/master-list.md" in reply["archived"]
     niches = user / "Documents" / "Niches"
@@ -196,17 +225,24 @@ def test_chat_says_when_something_it_read_looks_like_an_injection(chat, user):
 
 # -- a document to write and save is work for a crew, not a chat write -------------------
 
-DOC = "".join(f"## Part {i}\nInvented paragraph {i} about teapot restorers, written out at length.\n" for i in range(20))
+DOC = "".join(
+    f"## Part {i}\nInvented paragraph {i} about teapot restorers, written out at length.\n" for i in range(20)
+)
 
 
 def test_writing_a_document_is_offered_as_work_not_written(chat, user):
-    chat([
-        fake.call("folders__write", {"path": "shared/niches/summary.md", "content": DOC}),
-        fake.say("Fine."),
-    ], ["Write a one-page summary of the niches and save it in the niches folder.", "not now"])
+    chat(
+        [
+            fake.call("folders__write", {"path": "shared/niches/summary.md", "content": DOC}),
+            fake.say("Fine."),
+        ],
+        ["Write a one-page summary of the niches and save it in the niches folder.", "not now"],
+    )
     assert not (user / "Documents" / "Niches" / "summary.md").exists()
     asked = chat.answers.asked
-    assert any("take this away and report back, shall we do it live, here, or shall we keep chatting" in a for a in asked)
+    assert any(
+        "take this away and report back, shall we do it live, here, or shall we keep chatting" in a for a in asked
+    )
     assert not any("Go ahead?" in a for a in asked)
     (reply,) = chat.tool_replies()
     assert "folders.write was not run" in reply["note"] and "Do not call folders.write" in reply["note"]
@@ -216,10 +252,13 @@ def test_a_live_job_from_a_document_write_writes_only_to_its_target_folder(chat,
     from ombro import jobs, mdfile
 
     in_thread[:] = [fake.finish("Wrote it."), LEAD_REPORT]
-    chat([
-        fake.call("folders__write", {"path": "shared/niches/summary.md", "content": DOC}),
-        fake.say("Done."),
-    ], ["Write a one-page summary of the niches and save it in the niches folder.", "live", "no", "/quit"])
+    chat(
+        [
+            fake.call("folders__write", {"path": "shared/niches/summary.md", "content": DOC}),
+            fake.say("Done."),
+        ],
+        ["Write a one-page summary of the niches and save it in the niches folder.", "live", "no", "/quit"],
+    )
     (job_dir,) = list(chat.chat.home.jobs_dir.iterdir())
     smeta, body = mdfile.read(job_dir / "spec.md")
     assert smeta["folders"] == {"niches": "write", "brand": "read"}
@@ -232,8 +271,13 @@ def test_a_small_change_to_a_long_file_stays_a_chat_write(chat, user):
     long = user / "Documents" / "Niches" / "master-list.md"
     long.write_text(DOC)
     changed = DOC.replace("Invented paragraph 4 ", "Invented paragraph four ")
-    chat([fake.call("folders__write", {"path": "shared/niches/master-list.md", "content": changed}),
-          fake.say("Changed.")], ["Spell out four in the list.", "y"])
+    chat(
+        [
+            fake.call("folders__write", {"path": "shared/niches/master-list.md", "content": changed}),
+            fake.say("Changed."),
+        ],
+        ["Spell out four in the list.", "y"],
+    )
     assert long.read_text() == changed
     assert any("Go ahead?" in a for a in chat.answers.asked)
 
@@ -254,8 +298,10 @@ def test_the_folder_a_task_saves_into(home, user):
     folders.add(home, user / "Documents" / "Brand", "brand", "read")
     assert folders.save_target(home, "Save it as shared/niches/x.md.") == "niches"
     assert folders.save_target(home, "Save it in ~/Documents/Niches/Old/x.md.") == "old"  # the innermost
-    assert folders.save_target(home, "Read ~/Documents/Brand/guide.md. Save the result in "
-                                     "~/Documents/Niches/new.md.") == "niches"
+    assert (
+        folders.save_target(home, "Read ~/Documents/Brand/guide.md. Save the result in ~/Documents/Niches/new.md.")
+        == "niches"
+    )
     assert folders.save_target(home, "Read shared/brand and shared/niches.") is None
     assert folders.save_target(home, "Read shared/brand/guide.md and sum it up.") is None  # only read from
     assert folders.save_target(home, "Save one in shared/brand and one in shared/niches.") is None
@@ -266,8 +312,14 @@ def test_a_live_job_offered_with_no_folders_writes_where_its_task_saves(chat, us
     from ombro import jobs
 
     in_thread[:] = [fake.finish("Wrote it."), LEAD_REPORT]
-    offer = fake.call("offer_work", {"summary": "A sizing note", "title": "Sizing",
-                                     "task": "Read shared/brand/guide.md. Save a sizing note as shared/niches/sizing.md."})
+    offer = fake.call(
+        "offer_work",
+        {
+            "summary": "A sizing note",
+            "title": "Sizing",
+            "task": "Read shared/brand/guide.md. Save a sizing note as shared/niches/sizing.md.",
+        },
+    )
     chat([offer, fake.say("Done.")], ["Write a sizing note in the niches folder.", "live", "no", "/quit"])
     (job_dir,) = list(chat.chat.home.jobs_dir.iterdir())
     meta, _ = jobs.read_job(job_dir)
@@ -276,12 +328,15 @@ def test_a_live_job_offered_with_no_folders_writes_where_its_task_saves(chat, us
 
 def test_the_record_says_whether_a_write_created_replaced_or_added_to_a_file(chat, user):
     path = "shared/niches/sizing.md"
-    chat([
-        fake.call("folders__write", {"path": path, "content": "# Sizing\nFirst.\n"}),
-        fake.call("folders__write", {"path": path, "content": "# Sizing\nSecond.\n"}),
-        fake.call("folders__write", {"path": path, "content": "Third.\n", "mode": "append"}),
-        fake.say("Saved it."),
-    ], ["Write a sizing note, then change it", "y", "y", "y"])
+    chat(
+        [
+            fake.call("folders__write", {"path": path, "content": "# Sizing\nFirst.\n"}),
+            fake.call("folders__write", {"path": path, "content": "# Sizing\nSecond.\n"}),
+            fake.call("folders__write", {"path": path, "content": "Third.\n", "mode": "append"}),
+            fake.say("Saved it."),
+        ],
+        ["Write a sizing note, then change it", "y", "y", "y"],
+    )
     record = chat.transcript
     assert f"Created {path}, with the user's yes." in record
     assert f"Replaced {path} (the old version is in Archive/), with the user's yes." in record

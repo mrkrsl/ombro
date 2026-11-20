@@ -37,11 +37,17 @@ def firecrawl(handler, key="fc-invented-key-123456"):
 
 
 def test_firecrawl_search():
-    body = {"success": True, "data": {"web": [
-        {"title": "Ada Pots", "description": "Invented maker.", "url": "https://ada-pots.invalid/"},
-        {"title": "No URL here"},
-        {"title": ["Brin Ware"], "url": "https://brin.invalid/", "description": None},
-    ]}, "creditsUsed": 2}
+    body = {
+        "success": True,
+        "data": {
+            "web": [
+                {"title": "Ada Pots", "description": "Invented maker.", "url": "https://ada-pots.invalid/"},
+                {"title": "No URL here"},
+                {"title": ["Brin Ware"], "url": "https://brin.invalid/", "description": None},
+            ]
+        },
+        "creditsUsed": 2,
+    }
     p, seen = firecrawl(lambda r: httpx.Response(200, json=body))
     results = p.search("invented teapot makers", 5, 10)
     assert results == [
@@ -56,19 +62,32 @@ def test_firecrawl_search():
 
 
 def test_firecrawl_search_accepts_v1_list_shape():
-    p, _ = firecrawl(lambda r: httpx.Response(200, json={"success": True, "data": [{"url": "https://a.invalid", "title": "A"}]}))
+    p, _ = firecrawl(
+        lambda r: httpx.Response(200, json={"success": True, "data": [{"url": "https://a.invalid", "title": "A"}]})
+    )
     assert p.search("q", 3, 10)[0]["url"] == "https://a.invalid"
 
 
 def test_firecrawl_scrape():
-    body = {"success": True, "data": {"markdown": "# Ada Pots\n\nInvented text.",
-                                      "metadata": {"title": "Ada Pots", "sourceURL": "https://ada.invalid/x",
-                                                   "url": "https://ada.invalid/y", "statusCode": 200}}}
+    body = {
+        "success": True,
+        "data": {
+            "markdown": "# Ada Pots\n\nInvented text.",
+            "metadata": {
+                "title": "Ada Pots",
+                "sourceURL": "https://ada.invalid/x",
+                "url": "https://ada.invalid/y",
+                "statusCode": 200,
+            },
+        },
+    }
     p, seen = firecrawl(lambda r: httpx.Response(200, json=body))
     page = p.fetch("https://ada.invalid/x", 10, 10)
     assert page == {"url": "https://ada.invalid/y", "title": "Ada Pots", "content": "# Ada Pots", "truncated": True}
     sent = json.loads(seen[0].content)
-    assert seen[0].url.path == "/v2/scrape" and sent["formats"] == ["markdown"] and sent["url"] == "https://ada.invalid/x"
+    assert (
+        seen[0].url.path == "/v2/scrape" and sent["formats"] == ["markdown"] and sent["url"] == "https://ada.invalid/x"
+    )
 
 
 @pytest.mark.parametrize(
@@ -139,7 +158,11 @@ def test_duckduckgo_results_are_parsed_and_unwrapped():
     results, blocked = parse_results(DDG_PAGE)
     assert not blocked
     assert results == [
-        {"title": "Ada Pots & Co", "url": "https://ada-pots.invalid/about", "snippet": "Invented teapot maker in Lowtown."},
+        {
+            "title": "Ada Pots & Co",
+            "url": "https://ada-pots.invalid/about",
+            "snippet": "Invented teapot maker in Lowtown.",
+        },
         {"title": "Brin Ware", "url": "https://brin-ware.invalid/", "snippet": "Another invented maker."},
     ]
 

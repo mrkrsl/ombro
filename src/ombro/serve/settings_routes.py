@@ -122,14 +122,24 @@ def settings_routes(s: Serve) -> list[Route]:
 
         def run() -> None:
             try:
-                done = chatgpt.sign_in(home, open_browser=open_browser, say=lambda _t: None, receiver=receiver,
-                                       back_to="the Ombro app")
-                signing.update({"signing_in": False, "problem": None if done["plan"] else chatgpt.NOT_ALLOWED,
-                                "welcome": done["welcome"]})
+                done = chatgpt.sign_in(
+                    home, open_browser=open_browser, say=lambda _t: None, receiver=receiver, back_to="the Ombro app"
+                )
+                signing.update(
+                    {
+                        "signing_in": False,
+                        "problem": None if done["plan"] else chatgpt.NOT_ALLOWED,
+                        "welcome": done["welcome"],
+                    }
+                )
             except (oauth.SignInError, Exception) as e:  # noqa: BLE001 - shown on the card
                 text = str(e)
-                signing.update({"signing_in": False, "problem": text[:1].upper() + text[1:] if text else
-                                "The sign-in didn't finish."})
+                signing.update(
+                    {
+                        "signing_in": False,
+                        "problem": text[:1].upper() + text[1:] if text else "The sign-in didn't finish.",
+                    }
+                )
             finally:
                 ready.set()
                 if s.handovers.get(":chatgpt") is receiver:
@@ -151,8 +161,9 @@ def settings_routes(s: Serve) -> list[Route]:
             raise LookupError("no ChatGPT sign-in is waiting for an answer")
         answer = oauth.answer_from(str(data.get("url") or ""))
         if not answer:
-            raise HttpError(400, "That address has no sign-in answer in it. Copy the whole address from "
-                                 "the browser's address bar.")
+            raise HttpError(
+                400, "That address has no sign-in answer in it. Copy the whole address from the browser's address bar."
+            )
         if not receiver.give(answer):
             raise HttpError(400, "That isn't the answer to this sign-in. Start the sign-in again.")
         return {"state": "answered"}
@@ -278,8 +289,9 @@ def settings_routes(s: Serve) -> list[Route]:
             for var in keep:
                 if var in had and var not in refs:
                     refs[var] = had[var]
-        entry = mcp_servers.server_entry(command=command, url=url, env=None if url else refs,
-                                        headers=refs if url else None)
+        entry = mcp_servers.server_entry(
+            command=command, url=url, env=None if url else refs, headers=refs if url else None
+        )
         if old:
             for k, v in old.items():  # what the form doesn't show, such as a class or a timeout
                 if k not in ("command", "args", "url", "env", "headers"):
@@ -325,8 +337,11 @@ def settings_routes(s: Serve) -> list[Route]:
         if cfg is None:
             raise LookupError(f"no tool called {name!r}")
         users = mcp_servers.roles_using(home, name)
-        warnings = [f"{', '.join(users)} use{'s' if len(users) == 1 else ''} its tools and will go without them."] \
-            if users else []
+        warnings = (
+            [f"{', '.join(users)} use{'s' if len(users) == 1 else ''} its tools and will go without them."]
+            if users
+            else []
+        )
         warnings += _key_notes(_server_keys(name, cfg), f"MCP server {name}")
         return {"blocked": None, "warnings": warnings}
 
@@ -404,8 +419,15 @@ def settings_routes(s: Serve) -> list[Route]:
 
         def run() -> None:
             try:
-                oauth.connect(home, name, cfg, open_browser=open_browser, say=lambda _t: None, receiver=receiver,
-                              back_to="the Ombro app")
+                oauth.connect(
+                    home,
+                    name,
+                    cfg,
+                    open_browser=open_browser,
+                    say=lambda _t: None,
+                    receiver=receiver,
+                    back_to="the Ombro app",
+                )
                 s.signing[name] = {"state": "done"}
             except oauth.SignInError as e:
                 text = str(e)
@@ -439,8 +461,9 @@ def settings_routes(s: Serve) -> list[Route]:
             raise LookupError(f"no sign-in to {name} is waiting for an answer")
         answer = oauth.answer_from(str(data.get("url") or ""))
         if not answer:
-            raise HttpError(400, "That address has no sign-in answer in it. Copy the whole address from "
-                                 "the browser's address bar.")
+            raise HttpError(
+                400, "That address has no sign-in answer in it. Copy the whole address from the browser's address bar."
+            )
         if not receiver.give(answer):
             raise HttpError(400, "That isn't the answer to this sign-in. Start the sign-in again.")
         return {"state": "answered"}
@@ -464,11 +487,15 @@ def settings_routes(s: Serve) -> list[Route]:
         going, kept = keys.still_used(home, names, leaving)
         notes = []
         if going:
-            notes.append(f"Its key{'s' if len(going) > 1 else ''} ({', '.join(going)}) {'are' if len(going) > 1 else 'is'} "
-                         "removed from this computer too.")
+            notes.append(
+                f"Its key{'s' if len(going) > 1 else ''} ({', '.join(going)}) {'are' if len(going) > 1 else 'is'} "
+                "removed from this computer too."
+            )
         if kept:
-            notes.append(f"{', '.join(kept)} stay{'s' if len(kept) == 1 else ''}: something else uses "
-                         f"{'it' if len(kept) == 1 else 'them'} too.")
+            notes.append(
+                f"{', '.join(kept)} stay{'s' if len(kept) == 1 else ''}: something else uses "
+                f"{'it' if len(kept) == 1 else 'them'} too."
+            )
         return notes
 
     def add_api(r: Request, data: dict[str, Any]) -> Any:
@@ -496,8 +523,13 @@ def settings_routes(s: Serve) -> list[Route]:
         cfg = load_tool_settings(home).apis.get(name)
         if cfg is None:
             raise LookupError(f"no API called {name!r}")
-        return {"blocked": None, "warnings": ["Every crew member stops being offered it.",
-                                              *_key_notes([cfg.get("key") or ""], f"API {name}")]}
+        return {
+            "blocked": None,
+            "warnings": [
+                "Every crew member stops being offered it.",
+                *_key_notes([cfg.get("key") or ""], f"API {name}"),
+            ],
+        }
 
     def remove_api(r: Request) -> Any:
         from ombro import apitool
@@ -526,9 +558,14 @@ def settings_routes(s: Serve) -> list[Route]:
         cfg = load_tool_settings(home).composio
         if cfg is None:
             raise LookupError("Composio isn't connected")
-        return {"blocked": None, "warnings": [
-            "Every crew member stops being offered the tools from your Composio account. Nothing changes in "
-            "Composio itself.", *_key_notes([cfg["key"]], "Composio")]}
+        return {
+            "blocked": None,
+            "warnings": [
+                "Every crew member stops being offered the tools from your Composio account. Nothing changes in "
+                "Composio itself.",
+                *_key_notes([cfg["key"]], "Composio"),
+            ],
+        }
 
     def disconnect_composio(r: Request) -> Any:
         from ombro import composio
@@ -544,8 +581,13 @@ def settings_routes(s: Serve) -> list[Route]:
         sk = skills.load(home, r.path_params["name"])
         if sk is None:
             raise LookupError(f"no skill called {r.path_params['name']!r}")
-        return {"name": sk.name, "description": sk.description, "body": sk.body, "source": sk.source,
-                "path": str(sk.file)}
+        return {
+            "name": sk.name,
+            "description": sk.description,
+            "body": sk.body,
+            "source": sk.source,
+            "path": str(sk.file),
+        }
 
     def _write_skill(name: str, data: dict[str, Any], old=None) -> Any:
         from datetime import datetime
@@ -557,18 +599,23 @@ def settings_routes(s: Serve) -> list[Route]:
             pasted, body = skills.pasted(_need(data, "body"))
         except skills.SkillError as e:
             raise HttpError(400, str(e)) from None
-        description = str(data.get("description") or "").strip() or " ".join(str(pasted.get("description") or "")
-                                                                             .split())
+        description = str(data.get("description") or "").strip() or " ".join(
+            str(pasted.get("description") or "").split()
+        )
         if not description:
             raise HttpError(400, "Say what it does, and when to use it.")
         if not body.strip():
             raise HttpError(400, "Write the instructions after the front matter.")
-        md = dict(old.meta.get("metadata") or {}) if old is not None and isinstance(old.meta.get("metadata"), dict) \
+        md = (
+            dict(old.meta.get("metadata") or {})
+            if old is not None and isinstance(old.meta.get("metadata"), dict)
             else {}
+        )
         text = skills.compose(name, description, body, md or None)
         skills.check(text, name)
-        skills.write(home, name, text, source=md.get("source") or "you",
-                     accepted=datetime.now().isoformat(timespec="seconds"))
+        skills.write(
+            home, name, text, source=md.get("source") or "you", accepted=datetime.now().isoformat(timespec="seconds")
+        )
         return library_view(home)
 
     def save_skill(r: Request, data: dict[str, Any]) -> Any:
@@ -589,7 +636,7 @@ def settings_routes(s: Serve) -> list[Route]:
                 title = str(skills.pasted(str(data.get("body") or ""))[0].get("name") or "")
             except skills.SkillError:
                 title = ""
-        name = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")[:skills.NAME_MAX]
+        name = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")[: skills.NAME_MAX]
         if not name:
             raise HttpError(400, "Give the skill a name.")
         if skills.load(home, name) is not None:
@@ -609,8 +656,9 @@ def settings_routes(s: Serve) -> list[Route]:
         skipped = [str(x) for x in data.get("skipped") or [] if isinstance(x, str)]
         path = str(data.get("path") or "").strip() or None
         try:
-            return import_files(home, str(data.get("folder") or ""), files, skipped=skipped, label=path,
-                                add=data.get("add") is True)
+            return import_files(
+                home, str(data.get("folder") or ""), files, skipped=skipped, label=path, add=data.get("add") is True
+            )
         except skills.SkillError as e:
             raise HttpError(400, str(e)[:1].upper() + str(e)[1:]) from None
 

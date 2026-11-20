@@ -34,8 +34,7 @@ import httpx
 
 from ombro import mdfile
 from ombro.home import Home
-from ombro.oauth import (CONNECT_TIMEOUT, HTTP_TIMEOUT, REFRESH_MARGIN, Receiver, SignInError, SignInNeeded,
-                         _lock, _pkce)
+from ombro.oauth import CONNECT_TIMEOUT, HTTP_TIMEOUT, REFRESH_MARGIN, Receiver, SignInError, SignInNeeded, _lock, _pkce
 
 ISSUER = "https://auth.openai.com"
 AUTHORIZE_URL = ISSUER + "/api/accounts/authorize"
@@ -53,8 +52,14 @@ USAGE_URL = "https://chatgpt.com/settings/usage"
 LABEL = "ChatGPT plan"
 
 AGAIN = "Sign in with ChatGPT again: Settings › General, or `ombro chatgpt sign-in`."
-UNUSABLE_REFRESH = {"invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired",
-                    "refresh_token_invalidated", "refresh_token_reused"}
+UNUSABLE_REFRESH = {
+    "invalid_grant",
+    "invalid_refresh_token",
+    "token_expired",
+    "refresh_token_expired",
+    "refresh_token_invalidated",
+    "refresh_token_reused",
+}
 
 
 # -- what is kept ----------------------------------------------------------------
@@ -107,7 +112,9 @@ def status(home: Home) -> dict[str, Any]:
 def secret_values(home: Home) -> set[str]:
     """The tokens held, so they can be removed from anything shown to a model."""
     data = load(home) or {}
-    return {v for k in ("access_token", "refresh_token", "id_token") if isinstance(v := data.get(k), str) and len(v) >= 8}
+    return {
+        v for k in ("access_token", "refresh_token", "id_token") if isinstance(v := data.get(k), str) and len(v) >= 8
+    }
 
 
 # -- the ID token ------------------------------------------------------------------
@@ -134,8 +141,9 @@ def rsa_verify(n: int, e: int, message: bytes, signature: bytes) -> bool:
     return hmac.compare_digest(em, expected)
 
 
-def verify_id_token(token: str, *, client_id: str, nonce: str, jwks: dict[str, Any],
-                    now: float | None = None) -> dict[str, Any]:
+def verify_id_token(
+    token: str, *, client_id: str, nonce: str, jwks: dict[str, Any], now: float | None = None
+) -> dict[str, Any]:
     """The ID token's claims, once its signature (OpenAI's keys), issuer, audience, expiry and
     nonce are right. Raises SignInError otherwise."""
     try:
@@ -147,11 +155,17 @@ def verify_id_token(token: str, *, client_id: str, nonce: str, jwks: dict[str, A
         raise SignInError("OpenAI's sign-in sent an identity Ombro could not read") from None
     if header.get("alg") != "RS256":
         raise SignInError("OpenAI's sign-in sent an identity signed in a way Ombro doesn't accept")
-    keys = [k for k in (jwks.get("keys") or []) if isinstance(k, dict) and k.get("kty") == "RSA"
-            and (not header.get("kid") or k.get("kid") == header["kid"])]
+    keys = [
+        k
+        for k in (jwks.get("keys") or [])
+        if isinstance(k, dict) and k.get("kty") == "RSA" and (not header.get("kid") or k.get("kid") == header["kid"])
+    ]
     message = f"{head_b64}.{body_b64}".encode("ascii")
-    if not any(rsa_verify(int.from_bytes(_b64(k["n"]), "big"), int.from_bytes(_b64(k["e"]), "big"), message, signature)
-               for k in keys if k.get("n") and k.get("e")):
+    if not any(
+        rsa_verify(int.from_bytes(_b64(k["n"]), "big"), int.from_bytes(_b64(k["e"]), "big"), message, signature)
+        for k in keys
+        if k.get("n") and k.get("e")
+    ):
         raise SignInError("the identity from OpenAI's sign-in didn't carry OpenAI's signature; it was ignored")
     now = time.time() if now is None else now
     aud = claims.get("aud")
@@ -189,8 +203,12 @@ def _tokens(client: httpx.Client, form: dict[str, str]) -> dict[str, Any]:
         raise SignInError(f"OpenAI's sign-in could not be reached: {type(e).__name__}") from None
     if r.status_code != 200:
         code, text = _oauth_error(r)
-        err = SignInError(f"OpenAI's sign-in refused the request (HTTP {r.status_code}"
-                          + (f", {code}" if code else "") + ")" + (f": {text}" if text else ""))
+        err = SignInError(
+            f"OpenAI's sign-in refused the request (HTTP {r.status_code}"
+            + (f", {code}" if code else "")
+            + ")"
+            + (f": {text}" if text else "")
+        )
         err.code = code  # type: ignore[attr-defined]
         raise err
     try:
@@ -214,9 +232,16 @@ def authorize_url(params: dict[str, str]) -> str:
     return AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
 
 
-def connect(home: Home, *, open_browser: Callable[[str], Any], say: Callable[[str], None] = print,
-            receiver: Any = None, transport: httpx.BaseTransport | None = None,
-            timeout: float = CONNECT_TIMEOUT, back_to: str = "the terminal") -> dict[str, Any]:
+def connect(
+    home: Home,
+    *,
+    open_browser: Callable[[str], Any],
+    say: Callable[[str], None] = print,
+    receiver: Any = None,
+    transport: httpx.BaseTransport | None = None,
+    timeout: float = CONNECT_TIMEOUT,
+    back_to: str = "the terminal",
+) -> dict[str, Any]:
     """Sign in with ChatGPT and keep the result. Returns the kept record (no tokens shown)."""
     saved = load(home) or {}
     issued = saved.get("client_id") if saved.get("client_id") not in (None, "", NEW_CLIENT) else None
@@ -227,9 +252,18 @@ def connect(home: Home, *, open_browser: Callable[[str], Any], say: Callable[[st
     try:
         if hasattr(rec, "expect"):
             rec.expect(state)
-        params = {"client_id": issued or NEW_CLIENT, "ext_agent_host_id": host, "response_type": "code",
-                  "redirect_uri": rec.redirect_uri, "scope": SCOPES, "resource": RESOURCE, "state": state,
-                  "nonce": nonce, "code_challenge_method": "S256", "code_challenge": challenge}
+        params = {
+            "client_id": issued or NEW_CLIENT,
+            "ext_agent_host_id": host,
+            "response_type": "code",
+            "redirect_uri": rec.redirect_uri,
+            "scope": SCOPES,
+            "resource": RESOURCE,
+            "state": state,
+            "nonce": nonce,
+            "code_challenge_method": "S256",
+            "code_challenge": challenge,
+        }
         if issued:
             if saved.get("id_token"):
                 params["id_token_hint"] = saved["id_token"]
@@ -262,8 +296,14 @@ def connect(home: Home, *, open_browser: Callable[[str], Any], say: Callable[[st
         raise SignInError("OpenAI didn't finish registering Ombro for your account; try again")
 
     with httpx.Client(transport=transport, follow_redirects=False) as client:
-        form = {"grant_type": "authorization_code", "client_id": client_id, "code": answer["code"],
-                "code_verifier": verifier, "redirect_uri": rec.redirect_uri, "resource": RESOURCE}
+        form = {
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": answer["code"],
+            "code_verifier": verifier,
+            "redirect_uri": rec.redirect_uri,
+            "resource": RESOURCE,
+        }
         try:
             tok = _tokens(client, form)
         except SignInError as e:
@@ -274,16 +314,26 @@ def connect(home: Home, *, open_browser: Callable[[str], Any], say: Callable[[st
             raise SignInError("OpenAI's sign-in sent no identity")
         claims = verify_id_token(tok["id_token"], client_id=client_id, nonce=nonce, jwks=_jwks(client))
     if issued and saved.get("subject") and claims["sub"] != saved["subject"]:
-        raise SignInError("you signed in to a different ChatGPT account from the one Ombro was registered "
-                          "with; sign out in Ombro first to use another account")
+        raise SignInError(
+            "you signed in to a different ChatGPT account from the one Ombro was registered "
+            "with; sign out in Ombro first to use another account"
+        )
     scopes = sorted(str(tok.get("scope") or answer.get("scope") or "").replace("+", " ").split())
     now = time.time()
     record = {
-        "email": claims.get("email") or saved.get("email"), "issuer": ISSUER, "subject": claims["sub"],
-        "client_id": client_id, "ext_agent_host_id": host, "id_token": tok["id_token"],
-        "access_token": tok["access_token"], "refresh_token": tok.get("refresh_token"), "token_type": "Bearer",
-        "expires_in": tok.get("expires_in"), "expires_at": now + float(tok.get("expires_in") or 3600),
-        "scopes": scopes, "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+        "email": claims.get("email") or saved.get("email"),
+        "issuer": ISSUER,
+        "subject": claims["sub"],
+        "client_id": client_id,
+        "ext_agent_host_id": host,
+        "id_token": tok["id_token"],
+        "access_token": tok["access_token"],
+        "refresh_token": tok.get("refresh_token"),
+        "token_type": "Bearer",
+        "expires_in": tok.get("expires_in"),
+        "expires_at": now + float(tok.get("expires_in") or 3600),
+        "scopes": scopes,
+        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
         "welcomed": bool(saved.get("welcomed")) and saved.get("subject") == claims["sub"],
     }
     save(home, record)
@@ -314,8 +364,10 @@ class Session:
         if not data or not data.get("access_token"):
             raise SignInNeeded(f"Ombro isn't signed in with ChatGPT. {AGAIN}")
         if not plan_enabled(data):
-            raise SignInNeeded("Your ChatGPT sign-in doesn't allow Ombro to use your ChatGPT plan. "
-                               f"{AGAIN} and allow it, or use an OpenAI API key instead.")
+            raise SignInNeeded(
+                "Your ChatGPT sign-in doesn't allow Ombro to use your ChatGPT plan. "
+                f"{AGAIN} and allow it, or use an OpenAI API key instead."
+            )
         return data
 
     def token(self) -> str:
@@ -328,13 +380,20 @@ class Session:
         """A fresh access token, one refresh at a time (the refresh token rotates)."""
         with _lock(self.home, "chatgpt-plan"):
             data = self._data()
-            if stale is not None and data["access_token"] != stale and \
-                    float(data.get("expires_at") or 0) - REFRESH_MARGIN >= time.time():
+            if (
+                stale is not None
+                and data["access_token"] != stale
+                and float(data.get("expires_at") or 0) - REFRESH_MARGIN >= time.time()
+            ):
                 return data["access_token"]  # another process already renewed it
             if not data.get("refresh_token"):
                 raise SignInNeeded(f"Your ChatGPT sign-in has expired. {AGAIN}")
-            form = {"grant_type": "refresh_token", "client_id": data["client_id"],
-                    "refresh_token": data["refresh_token"], "resource": RESOURCE}
+            form = {
+                "grant_type": "refresh_token",
+                "client_id": data["client_id"],
+                "refresh_token": data["refresh_token"],
+                "resource": RESOURCE,
+            }
             with httpx.Client(transport=self._transport, follow_redirects=False) as client:
                 try:
                     tok = _tokens(client, form)
@@ -346,10 +405,15 @@ class Session:
                         raise SignInNeeded(f"Your ChatGPT sign-in has ended. {AGAIN}") from None
                     raise SignInNeeded(f"Your ChatGPT sign-in could not be renewed ({e}).") from None
             now = time.time()
-            data.update({"access_token": tok["access_token"],
-                         "refresh_token": tok.get("refresh_token") or data["refresh_token"],
-                         "expires_in": tok.get("expires_in"), "expires_at": now + float(tok.get("expires_in") or 3600),
-                         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))})
+            data.update(
+                {
+                    "access_token": tok["access_token"],
+                    "refresh_token": tok.get("refresh_token") or data["refresh_token"],
+                    "expires_in": tok.get("expires_in"),
+                    "expires_at": now + float(tok.get("expires_in") or 3600),
+                    "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                }
+            )
             if tok.get("scope"):
                 data["scopes"] = sorted(str(tok["scope"]).split())
             if tok.get("id_token"):
@@ -403,9 +467,15 @@ def sign_out(home: Home, transport: httpx.BaseTransport | None = None) -> dict[s
                 pass
             for attempt in range(3):
                 try:
-                    r = client.post(endpoint, timeout=HTTP_TIMEOUT, data={
-                        "token": data["refresh_token"], "token_type_hint": "refresh_token",
-                        "client_id": data.get("client_id", "")})
+                    r = client.post(
+                        endpoint,
+                        timeout=HTTP_TIMEOUT,
+                        data={
+                            "token": data["refresh_token"],
+                            "token_type_hint": "refresh_token",
+                            "client_id": data.get("client_id", ""),
+                        },
+                    )
                     if r.status_code == 200:
                         revoked = True
                         break
@@ -420,20 +490,36 @@ def sign_out(home: Home, transport: httpx.BaseTransport | None = None) -> dict[s
     return {"signed_out": True, "revoked": revoked}
 
 
-WELCOME = ("You're using your ChatGPT plan. Ombro's model calls on the ChatGPT plan models now use the usage "
-           f"included in your plan. You can see and limit it in ChatGPT settings: {USAGE_URL}")
+WELCOME = (
+    "You're using your ChatGPT plan. Ombro's model calls on the ChatGPT plan models now use the usage "
+    f"included in your plan. You can see and limit it in ChatGPT settings: {USAGE_URL}"
+)
 
 
-def sign_in(home: Home, *, open_browser: Callable[[str], Any], say: Callable[[str], None] = print,
-            receiver: Any = None, transport: httpx.BaseTransport | None = None,
-            timeout: float = CONNECT_TIMEOUT, back_to: str = "the terminal") -> dict[str, Any]:
+def sign_in(
+    home: Home,
+    *,
+    open_browser: Callable[[str], Any],
+    say: Callable[[str], None] = print,
+    receiver: Any = None,
+    transport: httpx.BaseTransport | None = None,
+    timeout: float = CONNECT_TIMEOUT,
+    back_to: str = "the terminal",
+) -> dict[str, Any]:
     """Sign in, then add the plan's models to models.md (as name-plan, api: chatgpt).
     Returns {"email", "plan", "models", "welcome"}: welcome is the first-time confirmation to show,
     or None once it has been shown."""
     from ombro.models import add_plan_models
 
-    done = connect(home, open_browser=open_browser, say=say, receiver=receiver, transport=transport,
-                   timeout=timeout, back_to=back_to)
+    done = connect(
+        home,
+        open_browser=open_browser,
+        say=say,
+        receiver=receiver,
+        transport=transport,
+        timeout=timeout,
+        back_to=back_to,
+    )
     if not done["plan"]:
         return {"email": done["email"], "plan": False, "models": [], "welcome": None}
     slugs = list_models(Session(home, transport).token(), transport)
@@ -442,5 +528,7 @@ def sign_in(home: Home, *, open_browser: Callable[[str], Any], say: Callable[[st
     return {"email": done["email"], "plan": True, "models": names, "welcome": welcome}
 
 
-NOT_ALLOWED = ("You signed in, but didn't allow Ombro to use your ChatGPT plan, so it can't make model calls "
-               "with it. Sign in again and allow it, or use an OpenAI API key instead.")
+NOT_ALLOWED = (
+    "You signed in, but didn't allow Ombro to use your ChatGPT plan, so it can't make model calls "
+    "with it. Sign in again and allow it, or use an OpenAI API key instead."
+)

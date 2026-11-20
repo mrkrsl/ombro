@@ -337,7 +337,7 @@ def option_text(options: list[Option], other: str = "") -> str:
         m = re.search(rf"(?<![\w]){re.escape(o.key)}", o.label, re.IGNORECASE)
         if m:
             i = m.start()
-            parts.append(o.label[:i] + "[" + o.label[i:i + len(o.key)] + "]" + o.label[i + len(o.key):])
+            parts.append(o.label[:i] + "[" + o.label[i : i + len(o.key)] + "]" + o.label[i + len(o.key) :])
         else:
             parts.append(f"[{o.key}] {o.label}")
     if other:
@@ -379,7 +379,7 @@ def read_answer(ask: Callable[[str], str], prompt: str) -> str:
     raw = ask(prompt) or ""
     if not raw.strip().startswith(BLOCK):
         return raw
-    first = raw.strip()[len(BLOCK):]
+    first = raw.strip()[len(BLOCK) :]
     if first.endswith(BLOCK):
         return first[: -len(BLOCK)]
     lines = [first] if first.strip() else []
@@ -497,8 +497,11 @@ def parse_answer(f: Field, raw: Any) -> tuple[Any, str | None]:
         text = "" if raw is None else str(raw)
         value = yes_no(text, f.default, f.other)
         if value is None:
-            return None, ("That's a question waiting for an answer, so commands wait until it's done. "
-                          if text.strip().startswith("/") else "") + YESNO_AGAIN
+            return None, (
+                "That's a question waiting for an answer, so commands wait until it's done. "
+                if text.strip().startswith("/")
+                else ""
+            ) + YESNO_AGAIN
         return value, None
     text = "" if raw is None else str(raw)
     if f.kind == "choice":
@@ -545,9 +548,13 @@ def field_prompt(f: Field) -> str:
         return f"{f.label} (y or n{', Enter for ' + ('yes' if f.default else 'no')})"
     if f.kind == "choice":
         if numbered(f):
-            return f.label + ("" if f.label.endswith(("?", ":")) else ":") + "\n" + \
-                "\n".join(f"  {o.key}) {o.label}" for o in f.options) + \
-                (f"\n(Enter for {f.default})" if f.default not in (None, "") else "")
+            return (
+                f.label
+                + ("" if f.label.endswith(("?", ":")) else ":")
+                + "\n"
+                + "\n".join(f"  {o.key}) {o.label}" for o in f.options)
+                + (f"\n(Enter for {f.default})" if f.default not in (None, "") else "")
+            )
         return (f"{f.label} " if f.label else "") + option_text(f.options, f.other) + "?"
     if f.kind == "secret":
         return f.label + ("" if "hidden" in f.label.lower() else " (hidden as you type)")
@@ -579,8 +586,10 @@ def render(event: Event) -> list[str]:
             return [f"(Interview used {event.total_tokens:,} of {format_tokens(event.max_tokens)} tokens.)"]
         from ombro.settings import format_tokens
 
-        return [f"[{event.mode} · {event.total_tokens:,} of {format_tokens(event.max_tokens)} tokens · "
-                f"{event.tool_calls} tool call(s)]"]
+        return [
+            f"[{event.mode} · {event.total_tokens:,} of {format_tokens(event.max_tokens)} tokens · "
+            f"{event.tool_calls} tool call(s)]"
+        ]
     if isinstance(event, ProposalShown):
         out = []
         for f in event.files:
@@ -597,8 +606,11 @@ def render(event: Event) -> list[str]:
     if isinstance(event, (JobStarted, JobProgress)):
         return [event.text]
     if isinstance(event, JobEnded):
-        return [f"\n{event.text}", event.summary or event.brief] + [f"  {f.name}: {f.path}" for f in event.files] + \
-            ([f"{event.waiting} waiting for approval: ombro approvals"] if event.waiting else []) + \
-            [f"Read the report: ombro report {event.job_id}"] + \
-            ([event.again_text] + [f"  {o.label}: {o.command}" for o in event.offers] if event.offers else [])
+        return (
+            [f"\n{event.text}", event.summary or event.brief]
+            + [f"  {f.name}: {f.path}" for f in event.files]
+            + ([f"{event.waiting} waiting for approval: ombro approvals"] if event.waiting else [])
+            + [f"Read the report: ombro report {event.job_id}"]
+            + ([event.again_text] + [f"  {o.label}: {o.command}" for o in event.offers] if event.offers else [])
+        )
     return [str(event.to_dict())]

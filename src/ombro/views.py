@@ -46,8 +46,7 @@ def crews(home: Home) -> vt.Crews:
     default = load_preferences(home).default_crew
     try:
         lead = load_lead(home, limits)
-        lead_view: vt.LeadView = {"name": "lead", "title": lead.title, "model": lead.model,
-                                  "path": str(home.lead_dir)}
+        lead_view: vt.LeadView = {"name": "lead", "title": lead.title, "model": lead.model, "path": str(home.lead_dir)}
     except SetupError as e:
         lead_view = {"name": "lead", "title": "Lead", "model": None, "path": str(home.lead_dir), "problem": str(e)}
     out: list[vt.CrewRow] = []
@@ -61,18 +60,35 @@ def crews(home: Home) -> vt.Crews:
             pass
         roles: list[vt.RoleRow] = []
         rdir = home.roles_dir(crew)
-        for folder in sorted(p for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")) \
-                if rdir.is_dir() else []:
+        for folder in (
+            sorted(p for p in rdir.iterdir() if p.is_dir() and not p.name.startswith(".")) if rdir.is_dir() else []
+        ):
             try:
                 r = load_role(folder, limits)
-                roles.append({"name": r.name, "title": r.title, "kind": r.kind, "model": r.model,
-                              "tools": ["all"] if r.all_tools else list(r.tools), "skills": list(r.skills), "description": r.description})
+                roles.append(
+                    {
+                        "name": r.name,
+                        "title": r.title,
+                        "kind": r.kind,
+                        "model": r.model,
+                        "tools": ["all"] if r.all_tools else list(r.tools),
+                        "skills": list(r.skills),
+                        "description": r.description,
+                    }
+                )
             except RoleError as e:
                 from ombro.home import tidy_title
 
                 roles.append({"name": folder.name, "title": tidy_title(folder.name), "problem": str(e)})
-        out.append({"name": crew, "title": crew_title(home, crew), "description": str(meta.get("description") or ""),
-                    "default": crew == default, "roles": roles})
+        out.append(
+            {
+                "name": crew,
+                "title": crew_title(home, crew),
+                "description": str(meta.get("description") or ""),
+                "default": crew == default,
+                "roles": roles,
+            }
+        )
     return {"lead": lead_view, "default_crew": default, "crews": out}
 
 
@@ -165,8 +181,16 @@ def deliverables(home: Home, job_dir: Path) -> list[vt.Deliverable]:
     out: list[vt.Deliverable] = []
     for d in report._without_copies(facts.get("deliverables") or []):
         p = Path(d["path"])
-        out.append({"name": d.get("name") or p.name, "role": d.get("role", ""), "path": str(p),
-                    "url": p.as_uri(), "exists": p.is_file(), "kind": "deliverable"})
+        out.append(
+            {
+                "name": d.get("name") or p.name,
+                "role": d.get("role", ""),
+                "path": str(p),
+                "url": p.as_uri(),
+                "exists": p.is_file(),
+                "kind": "deliverable",
+            }
+        )
     named = {d["path"] for d in out}
     for name, ev in (facts.get("folder_changes") or {}).items():
         root = Path(str(ev.get("path") or ""))
@@ -177,12 +201,21 @@ def deliverables(home: Home, job_dir: Path) -> list[vt.Deliverable]:
                 p = root / rel
                 if str(p) in named:
                     continue
-                out.append({"name": f"shared/{name}/{rel}", "role": "", "path": str(p), "url": p.as_uri(),
-                            "exists": p.is_file(), "kind": kind})
+                out.append(
+                    {
+                        "name": f"shared/{name}/{rel}",
+                        "role": "",
+                        "path": str(p),
+                        "url": p.as_uri(),
+                        "exists": p.is_file(),
+                        "kind": kind,
+                    }
+                )
     for path in facts.get("other_files") or []:
         p = Path(path)
-        out.append({"name": p.name, "role": "", "path": str(p), "url": p.as_uri(), "exists": p.is_file(),
-                    "kind": "other"})
+        out.append(
+            {"name": p.name, "role": "", "path": str(p), "url": p.as_uri(), "exists": p.is_file(), "kind": "other"}
+        )
     return [_with_text(d) if d["kind"] != "other" else d for d in out]
 
 
@@ -205,9 +238,17 @@ def chat_list(home: Home) -> list[vt.ChatRow]:
             m = jobs.WHEN.search(p.stem)
             title = f"Chat of {m.group(1)[6:8]}/{m.group(1)[4:6]}/{m.group(1)[:4]}" if m else p.stem
         stamp = datetime.fromtimestamp(p.stat().st_mtime)
-        out.append({"name": p.stem, "title": title, "path": str(p), "updated_at": updated,
-                    "when": f"{stamp.day} {stamp:%b}, {stamp:%H:%M}", "id": meta.get("id"),
-                    "jobs": [str(j) for j in meta.get("jobs") or []]})
+        out.append(
+            {
+                "name": p.stem,
+                "title": title,
+                "path": str(p),
+                "updated_at": updated,
+                "when": f"{stamp.day} {stamp:%b}, {stamp:%H:%M}",
+                "id": meta.get("id"),
+                "jobs": [str(j) for j in meta.get("jobs") or []],
+            }
+        )
     out.sort(key=lambda c: (c["updated_at"], c["name"]), reverse=True)
     return out
 
@@ -215,8 +256,13 @@ def chat_list(home: Home) -> list[vt.ChatRow]:
 def report(home: Home, job_dir: Path) -> vt.Report:
     path = job_dir / "report.md"
     text = path.read_text(encoding="utf-8") if path.is_file() else None
-    return {**job_row(job_dir), "report_path": str(path), "report": text,
-            "deliverables": deliverables(home, job_dir), "workspace": str(job_dir / "workspace")}
+    return {
+        **job_row(job_dir),
+        "report_path": str(path),
+        "report": text,
+        "deliverables": deliverables(home, job_dir),
+        "workspace": str(job_dir / "workspace"),
+    }
 
 
 def brief(job_dir: Path) -> vt.Brief:
@@ -224,8 +270,9 @@ def brief(job_dir: Path) -> vt.Brief:
 
 
 def journal_events(job_dir: Path, include_model_calls: bool = False) -> list[dict[str, Any]]:
-    return [e for e in journal.read(job_dir / "journal.jsonl")
-            if include_model_calls or e.get("action") != "model_call"]
+    return [
+        e for e in journal.read(job_dir / "journal.jsonl") if include_model_calls or e.get("action") != "model_call"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -269,15 +316,31 @@ def schedule_list(home: Home, crew: str | None = None) -> list[vt.ScheduleRow]:
         last: vt.LastJob | None = None
         if recent:
             rd, m = recent[-1]
-            last = {"job_id": rd.name, "due": m.get("due"), "status": m.get("status"),
-                    "waiting": outbox.waiting_count(rd)}
+            last = {
+                "job_id": rd.name,
+                "due": m.get("due"),
+                "status": m.get("status"),
+                "waiting": outbox.waiting_count(rd),
+            }
         try:
             spec_title = jobs.first_line(mdfile.read(s.spec_path(home))[1], 120) if s.spec else ""
         except (SetupError, OSError, mdfile.FrontMatterError):
             spec_title = ""
-        out.append({"name": s.name, "enabled": s.enabled, "cron": s.cron_text, "spec": s.spec, "crews": s.crews,
-                    "when": cronmod.describe(s.cron) if s.cron else s.cron_text, "spec_title": spec_title,
-                    "next": nxt, "last_job": last, "problem": s.error, "path": str(s.path)})
+        out.append(
+            {
+                "name": s.name,
+                "enabled": s.enabled,
+                "cron": s.cron_text,
+                "spec": s.spec,
+                "crews": s.crews,
+                "when": cronmod.describe(s.cron) if s.cron else s.cron_text,
+                "spec_title": spec_title,
+                "next": nxt,
+                "last_job": last,
+                "problem": s.error,
+                "path": str(s.path),
+            }
+        )
     return out
 
 
@@ -291,9 +354,15 @@ def spec_list(home: Home, crew: str | None = None) -> list[vt.SpecRow]:
         except mdfile.FrontMatterError:
             meta, body = {}, ""
         raw = meta.get("crews") or []
-        out.append({"name": name, "path": str(path), "modified": _when(path.stat().st_mtime),
-                    "crews": [str(c) for c in raw] if isinstance(raw, list) else [str(raw)],
-                    "title": jobs.first_line(body, 120)})
+        out.append(
+            {
+                "name": name,
+                "path": str(path),
+                "modified": _when(path.stat().st_mtime),
+                "crews": [str(c) for c in raw] if isinstance(raw, list) else [str(raw)],
+                "title": jobs.first_line(body, 120),
+            }
+        )
     return out
 
 
@@ -308,9 +377,15 @@ def folder_list(home: Home) -> vt.FolderList:
             problem = None
         except folders.FolderError as e:
             problem = str(e)
-        rows.append({"name": g.name, "path": str(g.path), "access": g.access,
-                     "backup": folders.backup_hint(g.path, home) if g.access == "write" else None,
-                     "problem": problem})
+        rows.append(
+            {
+                "name": g.name,
+                "path": str(g.path),
+                "access": g.access,
+                "backup": folders.backup_hint(g.path, home) if g.access == "write" else None,
+                "problem": problem,
+            }
+        )
     return {"folders": rows, "declined": [str(d) for d in declined], "file": str(home.folders)}
 
 
@@ -326,12 +401,24 @@ def tool_list(home: Home, settings=None, signing: dict | None = None, fresh: boo
     except SetupError:
         limits = None
     native: list[vt.NativeTool] = []
-    for name in ("web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list", "workspace.place",
-                 "code.run"):
+    for name in (
+        "web.search",
+        "web.fetch",
+        "workspace.read",
+        "workspace.write",
+        "workspace.list",
+        "workspace.place",
+        "code.run",
+    ):
         cfg = settings.tools.get(name, {})
-        native.append({"tool": name, "provider": settings.provider_for(name) if name in PROVIDER_TOOLS else None,
-                       "max_calls": cfg.get("max_calls") or (10 if name == "code.run" else None),
-                       "calls": limits.max_calls_for(name) if limits else None})
+        native.append(
+            {
+                "tool": name,
+                "provider": settings.provider_for(name) if name in PROVIDER_TOOLS else None,
+                "max_calls": cfg.get("max_calls") or (10 if name == "code.run" else None),
+                "calls": limits.max_calls_for(name) if limits else None,
+            }
+        )
     from ombro import oauth
 
     signing = signing or {}
@@ -344,23 +431,47 @@ def tool_list(home: Home, settings=None, signing: dict | None = None, fresh: boo
             sign_in = "no sign-in needed"
         elif sign_in == "not signed in" and cfg.get("headers"):
             sign_in = "uses its key"
-        servers.append({"server": name, "command": cfg.get("command"), "args": cfg.get("args") or [],
-                        "url": cfg.get("url"), "secrets": secrets, "sign_in": sign_in,
-                        "signing_in": state.get("state") == "waiting", "problem": state.get("problem")})
+        servers.append(
+            {
+                "server": name,
+                "command": cfg.get("command"),
+                "args": cfg.get("args") or [],
+                "url": cfg.get("url"),
+                "secrets": secrets,
+                "sign_in": sign_in,
+                "signing_in": state.get("state") == "waiting",
+                "problem": state.get("problem"),
+            }
+        )
     from ombro import apitool
 
-    apis: list[vt.ApiRow] = [{"name": n, "url": c["url"], "about": c.get("about") or "", "how_to": c.get("how_to") or "",
-                              "access": c.get("class") or "external",
-                              "get_looks_up": apitool.gets_look_up(c), "send_key": c.get("send_key") or "bearer",
-                              "key": c.get("key"), "key_set": bool(c.get("key") and keys.get_key(home, c["key"])),
-                              "calls": c.get("max_calls") or apitool.DEFAULT_CALLS}
-                             for n, c in settings.apis.items()]
+    apis: list[vt.ApiRow] = [
+        {
+            "name": n,
+            "url": c["url"],
+            "about": c.get("about") or "",
+            "how_to": c.get("how_to") or "",
+            "access": c.get("class") or "external",
+            "get_looks_up": apitool.gets_look_up(c),
+            "send_key": c.get("send_key") or "bearer",
+            "key": c.get("key"),
+            "key_set": bool(c.get("key") and keys.get_key(home, c["key"])),
+            "calls": c.get("max_calls") or apitool.DEFAULT_CALLS,
+        }
+        for n, c in settings.apis.items()
+    ]
     from ombro import composio
 
     account: vt.ComposioAccount | None = composio.view(home, settings.composio, fresh)  # type: ignore[assignment]
-    return {"native": native, "servers": servers, "apis": apis, "composio": account,
-            "sandbox": sandbox.unavailable_reason(),
-            "folders": folders.granted_names(home), "browser": _browser_name(settings)}
+    return {
+        "native": native,
+        "servers": servers,
+        "apis": apis,
+        "composio": account,
+        "sandbox": sandbox.unavailable_reason(),
+        "folders": folders.granted_names(home),
+        "browser": _browser_name(settings),
+    }
 
 
 def browser_view(home: Home) -> vt.BrowserView:
@@ -383,8 +494,13 @@ def browser_view(home: Home) -> vt.BrowserView:
         using = browser._name(found["path"])
     else:
         problem = "No browser found. Install Chrome, Chromium, Edge or Brave, and crews and chat can read web pages."
-    return {"choice": choice, "using": using, "installed": browser.installed(), "endpoint": endpoint,
-            "problem": problem}
+    return {
+        "choice": choice,
+        "using": using,
+        "installed": browser.installed(),
+        "endpoint": endpoint,
+        "problem": problem,
+    }
 
 
 def _browser_name(settings: Any) -> str | None:
@@ -402,8 +518,12 @@ def model_list(home: Home) -> vt.ModelList:
 
     connections: list[vt.Connection] = models.connections(home)  # type: ignore[assignment]
     presets: list[vt.ProviderPreset] = [dict(p) for p in models.PRESETS]  # type: ignore[misc]
-    return {"connections": connections, "default": load_lead_model(home), "presets": presets,
-            "chatgpt": chatgpt_view(home)}
+    return {
+        "connections": connections,
+        "default": load_lead_model(home),
+        "presets": presets,
+        "chatgpt": chatgpt_view(home),
+    }
 
 
 # Signing in with ChatGPT from the app, while it lasts: {"signing_in", "problem", "welcome"}.
@@ -414,9 +534,14 @@ def chatgpt_view(home: Home) -> vt.ChatGPTPlan:
     from ombro import chatgpt
 
     st = chatgpt.status(home)
-    return {"state": st["state"], "email": st["email"], "signing_in": bool(CHATGPT_SIGNING.get("signing_in")),
-            "problem": CHATGPT_SIGNING.get("problem"), "welcome": CHATGPT_SIGNING.get("welcome"),
-            "usage_url": chatgpt.USAGE_URL}
+    return {
+        "state": st["state"],
+        "email": st["email"],
+        "signing_in": bool(CHATGPT_SIGNING.get("signing_in")),
+        "problem": CHATGPT_SIGNING.get("problem"),
+        "welcome": CHATGPT_SIGNING.get("welcome"),
+        "usage_url": chatgpt.USAGE_URL,
+    }
 
 
 def approval_row(a: outbox.Action, home: Home | None = None) -> vt.ApprovalRow:
@@ -425,10 +550,21 @@ def approval_row(a: outbox.Action, home: Home | None = None) -> vt.ApprovalRow:
         crews = jobs.job_crews(jobs.read_job(a.job_dir)[0])
     except (OSError, mdfile.FrontMatterError):
         crews = []
-    return {"ref": a.ref, "crews": [crew_title(home, c) if home else c for c in crews], "long_ref": a.long_ref, "job_id": a.job_id, "job_name": jobs.job_name(a.job_id),
-            "status": a.status, "tool": a.tool, "summary": a.summary(120), "role": str(d.get("role") or ""),
-            "reason": str(d.get("reason") or ""), "class": str(d.get("class") or ""), "edited": a.edited,
-            "arguments": a.arguments}
+    return {
+        "ref": a.ref,
+        "crews": [crew_title(home, c) if home else c for c in crews],
+        "long_ref": a.long_ref,
+        "job_id": a.job_id,
+        "job_name": jobs.job_name(a.job_id),
+        "status": a.status,
+        "tool": a.tool,
+        "summary": a.summary(120),
+        "role": str(d.get("role") or ""),
+        "reason": str(d.get("reason") or ""),
+        "class": str(d.get("class") or ""),
+        "edited": a.edited,
+        "arguments": a.arguments,
+    }
 
 
 def approval_list(home: Home) -> list[vt.ApprovalRow]:
@@ -449,9 +585,19 @@ def role(home: Home, crew: str, name: str) -> vt.RoleDetail:
 
     limits = load_limits(home)
     r = load_lead(home, limits) if name == "lead" else load_role(home.roles_dir(crew) / name, limits)
-    return {"name": r.name, "crew": crew if name != "lead" else "", "title": r.title, "kind": r.kind,
-            "model": r.model, "description": r.description, "tools": ["all"] if r.all_tools else list(r.tools), "skills": list(r.skills),
-            "all_skills": r.all_skills, "soul": r.soul, "path": str(r.path)}
+    return {
+        "name": r.name,
+        "crew": crew if name != "lead" else "",
+        "title": r.title,
+        "kind": r.kind,
+        "model": r.model,
+        "description": r.description,
+        "tools": ["all"] if r.all_tools else list(r.tools),
+        "skills": list(r.skills),
+        "all_skills": r.all_skills,
+        "soul": r.soul,
+        "path": str(r.path),
+    }
 
 
 CHAT_ARCHIVE = "Archive"  # under the chats folder: chats removed from the list, kept as they were
@@ -485,8 +631,12 @@ def chat(home: Home, name: str) -> vt.ChatDetail:
     row = next((c for c in chat_list(home) if c["name"] == name), None)
     if row is None:
         raise LookupError(f"the chat {name!r} can't be read")
-    return {**row, "turns": [{"who": "you" if who == "user" else "lead", "text": text}
-                             for who, text in turns(parse_entries(body))]}
+    return {
+        **row,
+        "turns": [
+            {"who": "you" if who == "user" else "lead", "text": text} for who, text in turns(parse_entries(body))
+        ],
+    }
 
 
 def limit_values(home: Home) -> dict[str, Any]:
@@ -499,13 +649,21 @@ def preferences(home: Home) -> vt.Preferences:
     p = load_preferences(home)
     outward = p.outward
     preset = outward.get("preset") if isinstance(outward, dict) else outward
-    return {"name": p.name, "theme": p.theme, "default_crew": p.default_crew,
-            "default_crew_title": crew_title(home, p.default_crew), "editor": p.editor,
-            "outward": str(preset or "balanced"), "instructions_set": bool(p.instructions.strip()),
-            "instructions": p.instructions,
-            "background_feed": p.background_feed, "notifications": p.notifications,
-            "thinking": p.thinking or thinking.DEFAULT, "thinking_set": bool(p.thinking),
-            "files": {"config": str(home.preferences_config), "instructions": str(home.instructions)}}
+    return {
+        "name": p.name,
+        "theme": p.theme,
+        "default_crew": p.default_crew,
+        "default_crew_title": crew_title(home, p.default_crew),
+        "editor": p.editor,
+        "outward": str(preset or "balanced"),
+        "instructions_set": bool(p.instructions.strip()),
+        "instructions": p.instructions,
+        "background_feed": p.background_feed,
+        "notifications": p.notifications,
+        "thinking": p.thinking or thinking.DEFAULT,
+        "thinking_set": bool(p.thinking),
+        "files": {"config": str(home.preferences_config), "instructions": str(home.instructions)},
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -548,8 +706,16 @@ def summary(home: Home) -> vt.Summary:
             "unseen_jobs": len(unseen := [r for r in job_rows if is_unseen(r)]),
         },
         "active_ids": [r["job_id"] for r in job_rows if r["active"]],
-        "unseen": [{"job_id": r["job_id"], "status": r["status"], "brief": r["brief"],
-                    "finished_at": r["finished_at"], "waiting": r["waiting"]} for r in unseen],
+        "unseen": [
+            {
+                "job_id": r["job_id"],
+                "status": r["status"],
+                "brief": r["brief"],
+                "finished_at": r["finished_at"],
+                "waiting": r["waiting"],
+            }
+            for r in unseen
+        ],
     }
 
 

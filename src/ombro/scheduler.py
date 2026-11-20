@@ -120,8 +120,7 @@ class Installer:
 
         cmd = " ".join(q(p) for p in self.program())
         env = " ".join(f"{k}={q(v)}" for k, v in self.home.process_env().items())
-        return (f"* * * * * {env} {cmd} "
-                f">/dev/null 2>>{q(str(self.error_log))} {CRON_MARK}")
+        return f"* * * * * {env} {cmd} >/dev/null 2>>{q(str(self.error_log))} {CRON_MARK}"
 
     def plan(self) -> Plan:
         now = self.installed()
@@ -151,8 +150,9 @@ class Installer:
             args = data.get("ProgramArguments") or []
             env = data.get("EnvironmentVariables") or {}
             r = self.run(["launchctl", "print", f"gui/{self.uid}/{LABEL}"], capture_output=True, text=True)
-            return Installed("launchd", " ".join(args), env.get("OMBRO_HOME"), args[0] if args else None,
-                             loaded=r.returncode == 0)
+            return Installed(
+                "launchd", " ".join(args), env.get("OMBRO_HOME"), args[0] if args else None, loaded=r.returncode == 0
+            )
         for line in self._crontab():
             if line.rstrip().endswith(CRON_MARK):
                 parts = shlex.split(line.split(CRON_MARK)[0].replace("\\%", "%"))
@@ -215,11 +215,17 @@ def check(home: Home, inst: Installer | None = None) -> dict[str, Any]:
     except OSError as e:
         return {"ok": False, "message": f"The scheduler service can't be installed here: {e}.", "can_install": False}
     if cur is None:
-        return {"ok": False, "message": "The scheduler service is not installed, so scheduled jobs don't run.",
-                "can_install": True}
+        return {
+            "ok": False,
+            "message": "The scheduler service is not installed, so scheduled jobs don't run.",
+            "can_install": True,
+        }
     if cur.home and Path(cur.home).resolve() != home.root:
-        return {"ok": False, "message": f"The scheduler service runs scheduled jobs for another Ombro home, "
-                f"{cur.home}, not this one.", "can_install": True}
+        return {
+            "ok": False,
+            "message": f"The scheduler service runs scheduled jobs for another Ombro home, {cur.home}, not this one.",
+            "can_install": True,
+        }
     if broken(cur):
         return {"ok": False, "message": "The scheduler service is installed but isn't working.", "can_install": True}
     return {"ok": True, "message": "", "can_install": False}
@@ -242,8 +248,9 @@ def may_install_itself(home: Home, executable: str = sys.executable, platform: s
     exe = str(Path(executable).absolute())
     if platform.startswith("linux"):
         return exe.startswith("/usr/bin/")
-    return "/AppTranslocation/" not in exe and (exe.startswith("/Applications/")
-                                                 or exe.startswith(str(Path.home() / "Applications") + "/"))
+    return "/AppTranslocation/" not in exe and (
+        exe.startswith("/Applications/") or exe.startswith(str(Path.home() / "Applications") + "/")
+    )
 
 
 def ensure(home: Home, inst: Installer | None = None) -> bool:

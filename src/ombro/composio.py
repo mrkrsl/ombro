@@ -50,24 +50,110 @@ MAX_PAGES = 10
 _FIELDS = {"key", "class"}
 _TOOLKIT = re.compile(r"[^a-z0-9_-]+")
 # The first word of a tool's name, when Composio gives no marking, that says it only looks things up.
-READ_VERBS = {"GET", "LIST", "SEARCH", "FETCH", "FIND", "READ", "RETRIEVE", "QUERY", "LOOKUP", "DESCRIBE",
-              "COUNT", "VIEW"}
+READ_VERBS = {
+    "GET",
+    "LIST",
+    "SEARCH",
+    "FETCH",
+    "FIND",
+    "READ",
+    "RETRIEVE",
+    "QUERY",
+    "LOOKUP",
+    "DESCRIBE",
+    "COUNT",
+    "VIEW",
+}
 # Words that, anywhere in an unmarked tool's name, say a reading word isn't the whole story: it may
 # make, send, share, link, mark or delete something too. Verbs only: outward.RISKY_WORDS has
 # nouns a lookup's name may carry (LIST_DRIVE_ITEM_PERMISSIONS, GET_POST).
-CHANGE_WORDS = frozenset({
-    "OR", "AND", "CREATE", "MAKE", "ADD", "INSERT", "UPDATE", "UPSERT", "SET", "EDIT", "MODIFY", "PATCH", "PUT",
-    "WRITE", "SAVE", "UPLOAD", "COPY", "MOVE", "RENAME", "SHARE", "LINK", "MARK", "ARCHIVE", "STAR", "APPLY",
-    "ENABLE", "DISABLE", "EXECUTE", "TRIGGER", "NOTIFY", "GENERATE", "EXPORT", "IMPORT", "SYNC", "LOCK",
-    "UNLOCK", "CLAIM", "ACCEPT", "APPROVE", "REGISTER", "SUBSCRIBE", "WATCH", "SEND", "REPLY", "FORWARD",
-    "INVITE", "PUBLISH", "DELETE", "REMOVE", "PURGE", "DESTROY", "PAY", "PURCHASE", "BUY", "CHARGE", "REFUND",
-    "TRANSFER",
-})
+CHANGE_WORDS = frozenset(
+    {
+        "OR",
+        "AND",
+        "CREATE",
+        "MAKE",
+        "ADD",
+        "INSERT",
+        "UPDATE",
+        "UPSERT",
+        "SET",
+        "EDIT",
+        "MODIFY",
+        "PATCH",
+        "PUT",
+        "WRITE",
+        "SAVE",
+        "UPLOAD",
+        "COPY",
+        "MOVE",
+        "RENAME",
+        "SHARE",
+        "LINK",
+        "MARK",
+        "ARCHIVE",
+        "STAR",
+        "APPLY",
+        "ENABLE",
+        "DISABLE",
+        "EXECUTE",
+        "TRIGGER",
+        "NOTIFY",
+        "GENERATE",
+        "EXPORT",
+        "IMPORT",
+        "SYNC",
+        "LOCK",
+        "UNLOCK",
+        "CLAIM",
+        "ACCEPT",
+        "APPROVE",
+        "REGISTER",
+        "SUBSCRIBE",
+        "WATCH",
+        "SEND",
+        "REPLY",
+        "FORWARD",
+        "INVITE",
+        "PUBLISH",
+        "DELETE",
+        "REMOVE",
+        "PURGE",
+        "DESTROY",
+        "PAY",
+        "PURCHASE",
+        "BUY",
+        "CHARGE",
+        "REFUND",
+        "TRANSFER",
+    }
+)
 # Toolkits that are the organisation's own documents, sheets, pages and boards. Making and editing
 # things in them is the work a brief asks for (internal), unless the name is risky (see classify).
-OWN_TOOLKITS = frozenset({"googlesheets", "googledocs", "googledrive", "googleslides", "googletasks", "notion",
-                          "airtable", "linear", "asana", "trello", "clickup", "jira", "confluence", "coda",
-                          "excel", "onedrive", "sharepoint", "dropbox", "box", "monday"})
+OWN_TOOLKITS = frozenset(
+    {
+        "googlesheets",
+        "googledocs",
+        "googledrive",
+        "googleslides",
+        "googletasks",
+        "notion",
+        "airtable",
+        "linear",
+        "asana",
+        "trello",
+        "clickup",
+        "jira",
+        "confluence",
+        "coda",
+        "excel",
+        "onedrive",
+        "sharepoint",
+        "dropbox",
+        "box",
+        "monday",
+    }
+)
 TRANSPORT: httpx.BaseTransport | None = None  # tests put a fake Composio here; nothing else sets it
 
 
@@ -104,23 +190,48 @@ def check(raw: Any, where: str = "tools.md") -> dict[str, Any] | None:
         raise SetupError(f"{where}: composio has unknown setting(s): {', '.join(sorted(bad))}")
     key = str(raw.get("key") or KEY_NAME)
     if not keys.valid_name(key):
-        raise SetupError(f"{where}: the key for composio must be a name in keys.env, such as {KEY_NAME}, "
-                         "never the key itself")
+        raise SetupError(
+            f"{where}: the key for composio must be a name in keys.env, such as {KEY_NAME}, never the key itself"
+        )
     cls = str(raw.get("class") or "external")
     if cls not in SERVER_CLASSES:
-        raise SetupError(f"{where}: class for composio must be internal or external (it covers its tools "
-                         "that are not read-only)")
+        raise SetupError(
+            f"{where}: class for composio must be internal or external (it covers its tools that are not read-only)"
+        )
     return {"key": key, "class": cls}
 
 
 # Composio's names for the toolkits people use most, for when it gives only the slug.
-TITLES = {"gmail": "Gmail", "googledocs": "Google Docs", "googlesheets": "Google Sheets",
-          "googledrive": "Google Drive", "googlecalendar": "Google Calendar", "googleslides": "Google Slides",
-          "googlemeet": "Google Meet", "googletasks": "Google Tasks", "github": "GitHub", "gitlab": "GitLab",
-          "slack": "Slack", "notion": "Notion", "linear": "Linear", "outlook": "Outlook", "hubspot": "HubSpot",
-          "airtable": "Airtable", "dropbox": "Dropbox", "trello": "Trello", "asana": "Asana", "jira": "Jira",
-          "discord": "Discord", "youtube": "YouTube", "linkedin": "LinkedIn", "twitter": "X (Twitter)",
-          "microsoft_teams": "Microsoft Teams", "one_drive": "OneDrive", "calendly": "Calendly", "zoom": "Zoom"}
+TITLES = {
+    "gmail": "Gmail",
+    "googledocs": "Google Docs",
+    "googlesheets": "Google Sheets",
+    "googledrive": "Google Drive",
+    "googlecalendar": "Google Calendar",
+    "googleslides": "Google Slides",
+    "googlemeet": "Google Meet",
+    "googletasks": "Google Tasks",
+    "github": "GitHub",
+    "gitlab": "GitLab",
+    "slack": "Slack",
+    "notion": "Notion",
+    "linear": "Linear",
+    "outlook": "Outlook",
+    "hubspot": "HubSpot",
+    "airtable": "Airtable",
+    "dropbox": "Dropbox",
+    "trello": "Trello",
+    "asana": "Asana",
+    "jira": "Jira",
+    "discord": "Discord",
+    "youtube": "YouTube",
+    "linkedin": "LinkedIn",
+    "twitter": "X (Twitter)",
+    "microsoft_teams": "Microsoft Teams",
+    "one_drive": "OneDrive",
+    "calendly": "Calendly",
+    "zoom": "Zoom",
+}
 
 
 def title_for(slug: str, said: str | None = None) -> str:
@@ -139,7 +250,7 @@ def toolkit_name(slug: str) -> str:
 def short_name(toolkit: str, slug: str) -> str:
     """A Composio tool's slug without its toolkit's prefix: GOOGLEDOCS_CREATE_DOCUMENT -> CREATE_DOCUMENT."""
     prefix = toolkit.upper().replace("-", "_") + "_"
-    return slug[len(prefix):] if slug.upper().startswith(prefix) and len(slug) > len(prefix) else slug
+    return slug[len(prefix) :] if slug.upper().startswith(prefix) and len(slug) > len(prefix) else slug
 
 
 def split_name(name: str) -> tuple[str, str] | None:
@@ -195,8 +306,17 @@ def _refusal(status: int, said: str, doing: str) -> str:
     return f"Composio answered {status} while {doing}.{said}"
 
 
-def _send(key: str, method: str, path: str, *, params: dict | None = None, body: Any = None,
-          timeout: float = LIST_TIMEOUT, doing: str = "listing tools", sends: bool = False) -> Any:
+def _send(
+    key: str,
+    method: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    body: Any = None,
+    timeout: float = LIST_TIMEOUT,
+    doing: str = "listing tools",
+    sends: bool = False,
+) -> Any:
     """One request to Composio. Raises ComposioNotReached (nothing done), ComposioCallLost (sent, no
     answer; only for a run, `sends`) or ToolError (Composio said no)."""
     headers = {"x-api-key": key, "Accept": "application/json", "User-Agent": "Ombro"}
@@ -226,8 +346,9 @@ def _pages(key: str, path: str, params: dict[str, Any], doing: str, timeout: flo
     out: list[dict] = []
     cursor = None
     for _ in range(MAX_PAGES):
-        page = _send(key, "GET", path, params={**params, **({"cursor": cursor} if cursor else {})},
-                     doing=doing, timeout=timeout)
+        page = _send(
+            key, "GET", path, params={**params, **({"cursor": cursor} if cursor else {})}, doing=doing, timeout=timeout
+        )
         out += [i for i in (page.get("items") or []) if isinstance(i, dict)]
         cursor = page.get("next_cursor")
         if not cursor:
@@ -239,15 +360,21 @@ def check_key(value: str) -> None:
     """Make sure a key works before keeping it: SetupError with what Composio said, if not."""
     value = value.strip()
     if not value:
-        raise SetupError(f"Paste your Composio project API key (ak_…), from Settings › API Keys in your project: {KEYS_PAGE}")
+        raise SetupError(
+            f"Paste your Composio project API key (ak_…), from Settings › API Keys in your project: {KEYS_PAGE}"
+        )
     if value.startswith("uak_"):
-        raise SetupError("That's a Composio user key (uak_…). Ombro needs your project's API key, from the "
-                         f"project's API Keys page in Composio: {KEYS_PAGE}")
+        raise SetupError(
+            "That's a Composio user key (uak_…). Ombro needs your project's API key, from the "
+            f"project's API Keys page in Composio: {KEYS_PAGE}"
+        )
     if value.startswith("ck_"):
-        raise SetupError("That's a Composio Connect key (ck_…), from Composio's For You pages. Ombro needs a "
-                         "project API key (ak_…): in the Composio dashboard choose Platform, then your project, "
-                         f"then Settings › API Keys ({KEYS_PAGE}). Services connected under For You aren't "
-                         "visible to a project key, so connect them in the project too.")
+        raise SetupError(
+            "That's a Composio Connect key (ck_…), from Composio's For You pages. Ombro needs a "
+            "project API key (ak_…): in the Composio dashboard choose Platform, then your project, "
+            f"then Settings › API Keys ({KEYS_PAGE}). Services connected under For You aren't "
+            "visible to a project key, so connect them in the project too."
+        )
     try:
         _send(value, "GET", "/connected_accounts", params={"limit": 1}, doing="checking the key")
     except ToolError as e:
@@ -282,8 +409,10 @@ def _key(home: Home, cfg: dict[str, Any]) -> str:
 
     value = keys.get_key(home, cfg.get("key") or KEY_NAME)
     if not value:
-        raise ToolError(f"the Composio key ({cfg.get('key') or KEY_NAME}) isn't set, so Composio's tools can't "
-                        "be used. Connect your Composio account again in Settings › Tools.")
+        raise ToolError(
+            f"the Composio key ({cfg.get('key') or KEY_NAME}) isn't set, so Composio's tools can't "
+            "be used. Connect your Composio account again in Settings › Tools."
+        )
     return value
 
 
@@ -294,23 +423,39 @@ def toolkits(home: Home, cfg: dict[str, Any], fresh: bool = False) -> list[dict[
     key = _key(home, cfg)
 
     def fetch() -> list[dict[str, Any]]:
-        accounts = _pages(key, "/connected_accounts", {"limit": 100, "order_by": "updated_at",
-                                                        "order_direction": "desc"}, "listing your connections")
+        accounts = _pages(
+            key,
+            "/connected_accounts",
+            {"limit": 100, "order_by": "updated_at", "order_direction": "desc"},
+            "listing your connections",
+        )
         best: dict[str, dict[str, Any]] = {}
         for a in accounts:
             slug = str((a.get("toolkit") or {}).get("slug") or "")
             if not slug or a.get("is_disabled") or (a.get("auth_config") or {}).get("is_disabled"):
                 continue
             status = str(a.get("status") or "").upper()
-            row = {"slug": slug, "name": toolkit_name(slug), "title": title_for(slug), "status": status,
-                   "account_id": str(a.get("id") or ""), "user_id": a.get("user_id"), "tools": None}
+            row = {
+                "slug": slug,
+                "name": toolkit_name(slug),
+                "title": title_for(slug),
+                "status": status,
+                "account_id": str(a.get("id") or ""),
+                "user_id": a.get("user_id"),
+                "tools": None,
+            }
             have = best.get(slug)
             if have is None or (status == "ACTIVE" and have["status"] != "ACTIVE"):
                 best[slug] = row
         for row in best.values():  # each toolkit's name and how many tools it has, in one small call
             try:
-                page = _send(key, "GET", "/tools", params={"toolkit_slug": row["slug"], "limit": 1},
-                             doing=f"listing {row['slug']}'s tools")
+                page = _send(
+                    key,
+                    "GET",
+                    "/tools",
+                    params={"toolkit_slug": row["slug"], "limit": 1},
+                    doing=f"listing {row['slug']}'s tools",
+                )
             except ToolError:
                 continue
             items = page.get("items") or []
@@ -327,19 +472,27 @@ def toolkit_tools(home: Home, cfg: dict[str, Any], slug: str, fresh: bool = Fals
     """Every tool of one toolkit, as Composio lists it (slug, name, description, input_parameters, tags,
     version)."""
     key = _key(home, cfg)
-    return _cached(("tools", key, slug), lambda: [
-        t for t in _pages(key, "/tools", {"toolkit_slug": slug, "limit": 1000}, f"listing {slug}'s tools")
-        if t.get("slug") and not t.get("is_deprecated")], fresh)
+    return _cached(
+        ("tools", key, slug),
+        lambda: [
+            t
+            for t in _pages(key, "/tools", {"toolkit_slug": slug, "limit": 1000}, f"listing {slug}'s tools")
+            if t.get("slug") and not t.get("is_deprecated")
+        ],
+        fresh,
+    )
 
 
-def classify(tool: dict[str, Any], short: str, server_class: str, override: str | None = None,
-             toolkit: str = "") -> str:
+def classify(
+    tool: dict[str, Any], short: str, server_class: str, override: str | None = None, toolkit: str = ""
+) -> str:
     """read-only, internal or external: class_of without where it came from."""
     return class_of(tool, short, server_class, override, toolkit)[0]
 
 
-def class_of(tool: dict[str, Any], short: str, server_class: str, override: str | None = None,
-             toolkit: str = "") -> tuple[str, str]:
+def class_of(
+    tool: dict[str, Any], short: str, server_class: str, override: str | None = None, toolkit: str = ""
+) -> tuple[str, str]:
     """A Composio tool's class and where it came from. In order: tools.md's class for the tool (tool);
     Composio's read-only marking (marking); where Composio marks nothing, a name that starts with a
     reading word and has no word that makes, shares, links or marks something (name); a name that
@@ -356,8 +509,7 @@ def class_of(tool: dict[str, Any], short: str, server_class: str, override: str 
         return "read-only", "marking"
     marked = tags & {"destructivehint", "openworldhint", "idempotenthint"}
     words = name_words(short)
-    if (not marked and short.split("_", 1)[0].upper() in READ_VERBS
-            and not words & CHANGE_WORDS):
+    if not marked and short.split("_", 1)[0].upper() in READ_VERBS and not words & CHANGE_WORDS:
         return "read-only", "name"
     if risky(short):
         return "external", "name"
@@ -366,8 +518,15 @@ def class_of(tool: dict[str, Any], short: str, server_class: str, override: str 
     return server_class, "default"
 
 
-def run(home: Home, cfg: dict[str, Any], slug: str, arguments: dict, account: dict[str, Any] | None,
-        version: str | None = None, timeout: float = TIMEOUT) -> str:
+def run(
+    home: Home,
+    cfg: dict[str, Any],
+    slug: str,
+    arguments: dict,
+    account: dict[str, Any] | None,
+    version: str | None = None,
+    timeout: float = TIMEOUT,
+) -> str:
     """Run one Composio tool for the user's connected account. Returns what it gave back, as text."""
     key = _key(home, cfg)
     body: dict[str, Any] = {"arguments": arguments or {}}
@@ -378,8 +537,7 @@ def run(home: Home, cfg: dict[str, Any], slug: str, arguments: dict, account: di
             body["user_id"] = account["user_id"]
     if version:
         body["version"] = version
-    out = _send(key, "POST", f"/tools/execute/{slug}", body=body, timeout=timeout,
-                doing=f"running {slug}", sends=True)
+    out = _send(key, "POST", f"/tools/execute/{slug}", body=body, timeout=timeout, doing=f"running {slug}", sends=True)
     if not isinstance(out, dict):
         raise ToolError("Composio's answer could not be read")
     if out.get("successful") is False or (out.get("error") and not out.get("data")):
@@ -417,8 +575,10 @@ def tools(home: Home, settings: Any) -> tuple[list[Tool], list[str]]:
     seen: set[str] = set()
     for kit in kits:
         if kit["status"] != "ACTIVE":
-            warnings.append(f"{kit['title']} (via Composio) isn't offered: its connection is "
-                            f"{kit['status'].lower() or 'not active'}. Reconnect it in the Composio dashboard.")
+            warnings.append(
+                f"{kit['title']} (via Composio) isn't offered: its connection is "
+                f"{kit['status'].lower() or 'not active'}. Reconnect it in the Composio dashboard."
+            )
             continue
         try:
             listed = toolkit_tools(home, cfg, kit["slug"])
@@ -432,28 +592,43 @@ def tools(home: Home, settings: Any) -> tuple[list[Tool], list[str]]:
             if wire_name(name) in seen:
                 continue  # two names that read the same to a model: keep the first
             seen.add(wire_name(name))
-            effect = classify(t, short, cfg.get("class") or "external", settings.tools.get(name, {}).get("class"),
-                              kit["name"])
+            effect = classify(
+                t, short, cfg.get("class") or "external", settings.tools.get(name, {}).get("class"), kit["name"]
+            )
             schema = t.get("input_parameters") if isinstance(t.get("input_parameters"), dict) else {}
             schema = {"type": "object", "properties": {}, **schema}
             if effect == "read-only":
                 params, reason_key = schema, None
             else:
                 params, reason_key = _with_reason(schema)
-            label = {"read-only": "Reads from", "internal": "Changes things in",
-                     "external": "Reaches outside the organisation, through"}[effect]
+            label = {
+                "read-only": "Reads from",
+                "internal": "Changes things in",
+                "external": "Reaches outside the organisation, through",
+            }[effect]
             said = " ".join(str(t.get("description") or t.get("name") or "").split())
             if len(said) > DESCRIPTION_MAX_CHARS:
-                said = said[:DESCRIPTION_MAX_CHARS - 1] + "…"
-            text = f"{label} {kit['title']}, through Composio (an outside service)." + \
-                (f" Composio describes it as: \"{said}\"" if said else "")
+                said = said[: DESCRIPTION_MAX_CHARS - 1] + "…"
+            text = f"{label} {kit['title']}, through Composio (an outside service)." + (
+                f' Composio describes it as: "{said}"' if said else ""
+            )
 
             def handler(args: dict, ctx: ToolContext, slug=slug, kit=kit, version=t.get("version")) -> dict[str, Any]:
                 result = run(home, cfg, slug, args, kit, version, timeout=min(TIMEOUT, ctx.timeout))
                 return {"result": result, "note": MCP_NOTE}
 
-            out.append(Tool(name=name, description=text[:1000], parameters=params, handler=handler, outward=True,
-                            effect=effect, input_schema=schema, reason_key=reason_key))
+            out.append(
+                Tool(
+                    name=name,
+                    description=text[:1000],
+                    parameters=params,
+                    handler=handler,
+                    outward=True,
+                    effect=effect,
+                    input_schema=schema,
+                    reason_key=reason_key,
+                )
+            )
     return out, warnings
 
 
@@ -470,10 +645,17 @@ def tool_classes(home: Home, settings: Any) -> list[dict[str, Any]]:
         for t in toolkit_tools(home, cfg, kit["slug"]):
             short = re.sub(r"[^A-Za-z0-9_-]", "_", short_name(kit["name"], str(t["slug"])))
             name = f"composio.{kit['name']}.{short}"
-            effect, source = class_of(t, short, cfg.get("class") or "external",
-                                      settings.tools.get(name, {}).get("class"), kit["name"])
-            rows.append({"tool": name, "class": effect, "class_from": source,
-                         "description": " ".join(str(t.get("description") or t.get("name") or "").split())})
+            effect, source = class_of(
+                t, short, cfg.get("class") or "external", settings.tools.get(name, {}).get("class"), kit["name"]
+            )
+            rows.append(
+                {
+                    "tool": name,
+                    "class": effect,
+                    "class_from": source,
+                    "description": " ".join(str(t.get("description") or t.get("name") or "").split()),
+                }
+            )
     return rows
 
 
@@ -490,10 +672,17 @@ def run_approved(home: Home, tools_settings: dict[str, Any] | None, tool: str, a
         raise ToolError("the job had no Composio account")
     kit = next((k for k in toolkits(home, cfg, fresh=True) if k["name"] == parts[0]), None)
     if kit is None or kit["status"] != "ACTIVE":
-        raise ToolError(f"{parts[0]} is no longer connected in your Composio account; reconnect it there, then "
-                        "approve again")
-    found = next((t for t in toolkit_tools(home, cfg, kit["slug"])
-                  if re.sub(r"[^A-Za-z0-9_-]", "_", short_name(kit["name"], str(t["slug"]))) == parts[1]), None)
+        raise ToolError(
+            f"{parts[0]} is no longer connected in your Composio account; reconnect it there, then approve again"
+        )
+    found = next(
+        (
+            t
+            for t in toolkit_tools(home, cfg, kit["slug"])
+            if re.sub(r"[^A-Za-z0-9_-]", "_", short_name(kit["name"], str(t["slug"]))) == parts[1]
+        ),
+        None,
+    )
     if found is None:
         raise ToolError(f"Composio no longer offers {tool}")
     return run(home, cfg, str(found["slug"]), arguments, kit, found.get("version"))
@@ -555,8 +744,21 @@ def view(home: Home, cfg: dict[str, Any] | None, fresh: bool = False) -> dict[st
             kits = toolkits(home, cfg, fresh)
         except ToolError as e:
             kits, problem = [], str(e)
-        rows = [{"slug": k["slug"], "title": k["title"], "active": k["status"] == "ACTIVE",
-                 "status": k["status"].lower(), "tools": k["tools"]} for k in kits]
-    return {"key": cfg.get("key") or KEY_NAME, "key_set": key_set, "access": cfg.get("class") or "external",
-            "problem": problem, "toolkits": rows, "dashboard": TOOLKITS_PAGE}
-
+        rows = [
+            {
+                "slug": k["slug"],
+                "title": k["title"],
+                "active": k["status"] == "ACTIVE",
+                "status": k["status"].lower(),
+                "tools": k["tools"],
+            }
+            for k in kits
+        ]
+    return {
+        "key": cfg.get("key") or KEY_NAME,
+        "key_set": key_set,
+        "access": cfg.get("class") or "external",
+        "problem": problem,
+        "toolkits": rows,
+        "dashboard": TOOLKITS_PAGE,
+    }

@@ -195,9 +195,16 @@ def challenge(client: httpx.Client, url: str) -> dict[str, str] | None:
     or None if the server did not ask for sign-in."""
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
     try:
-        r = client.post(url, content=body, timeout=HTTP_TIMEOUT, headers={
-            "Content-Type": "application/json", "Accept": "application/json, text/event-stream",
-            "Mcp-Method": "tools/list"})
+        r = client.post(
+            url,
+            content=body,
+            timeout=HTTP_TIMEOUT,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "Mcp-Method": "tools/list",
+            },
+        )
     except httpx.HTTPError as e:
         raise SignInError(f"the server could not be reached: {e}") from None
     if r.status_code != 401:
@@ -219,13 +226,16 @@ def resource_metadata(client: httpx.Client, url: str, hint: str | None) -> dict[
         if data and data.get("authorization_servers"):
             res = data.get("resource")
             if not res:
-                raise SignInError("the server's sign-in details do not say which server they are for "
-                                  "(no `resource`), so they cannot be checked; refusing them")
+                raise SignInError(
+                    "the server's sign-in details do not say which server they are for "
+                    "(no `resource`), so they cannot be checked; refusing them"
+                )
             if canonical(str(res)) != canonical(url):
                 raise SignInError(f"the server's sign-in details are for {res}, not {url}")
             return data
-    raise SignInError("the server asks for sign-in but publishes no sign-in details "
-                      "(no protected-resource metadata was found)")
+    raise SignInError(
+        "the server asks for sign-in but publishes no sign-in details (no protected-resource metadata was found)"
+    )
 
 
 def server_metadata(client: httpx.Client, issuer: str) -> dict[str, Any]:
@@ -235,9 +245,11 @@ def server_metadata(client: httpx.Client, issuer: str) -> dict[str, Any]:
     p = urllib.parse.urlsplit(issuer)
     origin, path = f"{p.scheme}://{p.netloc}", p.path.rstrip("/")
     if path:
-        tries = [f"{origin}/.well-known/oauth-authorization-server{path}",
-                 f"{origin}/.well-known/openid-configuration{path}",
-                 f"{origin}{path}/.well-known/openid-configuration"]
+        tries = [
+            f"{origin}/.well-known/oauth-authorization-server{path}",
+            f"{origin}/.well-known/openid-configuration{path}",
+            f"{origin}{path}/.well-known/openid-configuration",
+        ]
     else:
         tries = [f"{origin}/.well-known/oauth-authorization-server", f"{origin}/.well-known/openid-configuration"]
     for t in tries:
@@ -245,8 +257,9 @@ def server_metadata(client: httpx.Client, issuer: str) -> dict[str, Any]:
         if data is None:
             continue
         if data.get("issuer") != issuer:
-            raise SignInError(f"the sign-in service's details claim to be from {data.get('issuer')!r}, "
-                              f"not {issuer!r}; refusing them")
+            raise SignInError(
+                f"the sign-in service's details claim to be from {data.get('issuer')!r}, not {issuer!r}; refusing them"
+            )
         for key in ("authorization_endpoint", "token_endpoint"):
             if not data.get(key):
                 raise SignInError(f"the sign-in service's details have no {key}")
@@ -263,19 +276,25 @@ def register(client: httpx.Client, meta: dict[str, Any], redirect_uri: str) -> d
     """Dynamic client registration (RFC 7591), as a native app."""
     endpoint = meta.get("registration_endpoint")
     if not endpoint:
-        raise SignInError("the sign-in service does not let Ombro register itself; set `client_id` for this "
-                          "server in tools.md (from the service's developer settings)")
+        raise SignInError(
+            "the sign-in service does not let Ombro register itself; set `client_id` for this "
+            "server in tools.md (from the service's developer settings)"
+        )
     _require_https(endpoint, "the sign-in service's registration_endpoint")
-    body = {"client_name": CLIENT_NAME, "redirect_uris": [redirect_uri], "application_type": "native",
-            "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
-            "token_endpoint_auth_method": "none"}
+    body = {
+        "client_name": CLIENT_NAME,
+        "redirect_uris": [redirect_uri],
+        "application_type": "native",
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+    }
     try:
         r = client.post(endpoint, json=body, timeout=HTTP_TIMEOUT)
     except httpx.HTTPError as e:
         raise SignInError(f"registering with the sign-in service failed: {e}") from None
     if r.status_code not in (200, 201):
-        raise SignInError(f"the sign-in service refused to register Ombro (HTTP {r.status_code}): "
-                          f"{_oauth_error(r)}")
+        raise SignInError(f"the sign-in service refused to register Ombro (HTTP {r.status_code}): {_oauth_error(r)}")
     try:
         data = r.json()
     except ValueError:
@@ -284,8 +303,12 @@ def register(client: httpx.Client, meta: dict[str, Any], redirect_uri: str) -> d
         raise SignInError("the sign-in service's answer to registering Ombro was not JSON")
     if not data.get("client_id"):
         raise SignInError("the sign-in service registered Ombro but gave no client_id")
-    return {"client_id": data["client_id"], "client_secret": data.get("client_secret"),
-            "registered": True, "redirect_uri": redirect_uri}
+    return {
+        "client_id": data["client_id"],
+        "client_secret": data.get("client_secret"),
+        "registered": True,
+        "redirect_uri": redirect_uri,
+    }
 
 
 def _oauth_error(r: httpx.Response) -> str:
@@ -417,16 +440,27 @@ class Connected:
     refreshes: bool
 
 
-def connect(home: Home, server: str, cfg: dict[str, Any], *, open_browser: Callable[[str], Any],
-            say: Callable[[str], None] = print, transport: httpx.BaseTransport | None = None,
-            receiver: Any = None, timeout: float = CONNECT_TIMEOUT, back_to: str = "the terminal") -> Connected:
+def connect(
+    home: Home,
+    server: str,
+    cfg: dict[str, Any],
+    *,
+    open_browser: Callable[[str], Any],
+    say: Callable[[str], None] = print,
+    transport: httpx.BaseTransport | None = None,
+    receiver: Any = None,
+    timeout: float = CONNECT_TIMEOUT,
+    back_to: str = "the terminal",
+) -> Connected:
     """Sign in to one remote server and keep the result. `open_browser(url)` shows
     the sign-in page; `receiver` (for tests) stands in for the local listener, whose page
     afterwards sends the user back to `back_to`."""
     url = cfg.get("url")
     if not url:
-        raise SignInError(f"server {server} is started by a command, so it signs in by itself; "
-                          "only servers with a `url` use `ombro connect`")
+        raise SignInError(
+            f"server {server} is started by a command, so it signs in by itself; "
+            "only servers with a `url` use `ombro connect`"
+        )
     _require_https(url, f"the address of server {server}")
     resource = canonical(url)
     with httpx.Client(transport=transport, follow_redirects=False) as client:
@@ -440,27 +474,38 @@ def connect(home: Home, server: str, cfg: dict[str, Any], *, open_browser: Calla
         rec = receiver or Receiver(back_to)
         try:
             if cfg.get("client_id"):
-                client_info = {"client_id": str(cfg["client_id"]), "registered": False,
-                               "redirect_uri": rec.redirect_uri}
+                client_info = {
+                    "client_id": str(cfg["client_id"]),
+                    "registered": False,
+                    "redirect_uri": rec.redirect_uri,
+                }
             else:
                 client_info = register(client, meta, rec.redirect_uri)
             scope = ch.get("scope") or " ".join(map(str, prm.get("scopes_supported") or [])) or None
-            if scope is not None and "offline_access" in (meta.get("scopes_supported") or []) \
-                    and "offline_access" not in scope.split():
+            if (
+                scope is not None
+                and "offline_access" in (meta.get("scopes_supported") or [])
+                and "offline_access" not in scope.split()
+            ):
                 scope += " offline_access"
             verifier, code_challenge = _pkce()
             state = secrets.token_urlsafe(24)
             if hasattr(rec, "expect"):
                 rec.expect(state)
-            params = {"response_type": "code", "client_id": client_info["client_id"],
-                      "redirect_uri": rec.redirect_uri, "code_challenge": code_challenge,
-                      "code_challenge_method": "S256", "state": state, "resource": resource}
+            params = {
+                "response_type": "code",
+                "client_id": client_info["client_id"],
+                "redirect_uri": rec.redirect_uri,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "state": state,
+                "resource": resource,
+            }
             if scope:
                 params["scope"] = scope
             sep = "&" if "?" in meta["authorization_endpoint"] else "?"
             auth_url = meta["authorization_endpoint"] + sep + urllib.parse.urlencode(params)
-            say(f"Opening your browser to sign in to {server} ({issuer}).\n"
-                f"If it does not open, visit:\n  {auth_url}\n")
+            say(f"Opening your browser to sign in to {server} ({issuer}).\nIf it does not open, visit:\n  {auth_url}\n")
             open_browser(auth_url)
             answer = rec.wait(timeout)
         finally:
@@ -469,33 +514,48 @@ def connect(home: Home, server: str, cfg: dict[str, Any], *, open_browser: Calla
         # The issuer first: an answer from the wrong service is not acted on, or even shown.
         if "iss" in answer:
             if answer["iss"] != issuer:
-                raise SignInError("the sign-in answer came from a different service than the one asked; "
-                                  "it was ignored")
+                raise SignInError("the sign-in answer came from a different service than the one asked; it was ignored")
         elif meta.get("authorization_response_iss_parameter_supported"):
             raise SignInError("the sign-in answer did not say which service sent it; it was ignored")
         if answer.get("state") != state:
             raise SignInError("the sign-in answer did not match this request; it was ignored")
         if answer.get("error"):
-            raise SignInError(f"the sign-in was not completed: {answer.get('error')}"
-                              + (f" ({answer['error_description'][:200]})" if answer.get("error_description") else ""))
+            raise SignInError(
+                f"the sign-in was not completed: {answer.get('error')}"
+                + (f" ({answer['error_description'][:200]})" if answer.get("error_description") else "")
+            )
         if not answer.get("code"):
             raise SignInError("the sign-in answer had no code")
 
-        form = {"grant_type": "authorization_code", "code": answer["code"], "redirect_uri": rec.redirect_uri,
-                "client_id": client_info["client_id"], "code_verifier": verifier, "resource": resource}
+        form = {
+            "grant_type": "authorization_code",
+            "code": answer["code"],
+            "redirect_uri": rec.redirect_uri,
+            "client_id": client_info["client_id"],
+            "code_verifier": verifier,
+            "resource": resource,
+        }
         if client_info.get("client_secret"):
             form["client_secret"] = client_info["client_secret"]
         tokens = _token_request(client, meta["token_endpoint"], form)
 
-    data = {"server": server, "resource": resource, "issuer": issuer,
-            "token_endpoint": meta["token_endpoint"], "revocation_endpoint": meta.get("revocation_endpoint"),
-            "client": client_info, "tokens": tokens, "connected_at": time.time()}
+    data = {
+        "server": server,
+        "resource": resource,
+        "issuer": issuer,
+        "token_endpoint": meta["token_endpoint"],
+        "revocation_endpoint": meta.get("revocation_endpoint"),
+        "client": client_info,
+        "tokens": tokens,
+        "connected_at": time.time(),
+    }
     save(home, server, data)
     return Connected(server, issuer, tokens.get("scope") or scope, bool(tokens.get("refresh_token")))
 
 
-def _token_request(client: httpx.Client, endpoint: str, form: dict[str, str],
-                   keep_refresh: str | None = None) -> dict[str, Any]:
+def _token_request(
+    client: httpx.Client, endpoint: str, form: dict[str, str], keep_refresh: str | None = None
+) -> dict[str, Any]:
     try:
         r = client.post(endpoint, data=form, headers={"Accept": "application/json"}, timeout=HTTP_TIMEOUT)
     except httpx.HTTPError as e:
@@ -508,8 +568,12 @@ def _token_request(client: httpx.Client, endpoint: str, form: dict[str, str],
         raise SignInError("the sign-in service's answer was not JSON") from None
     if not d.get("access_token") or str(d.get("token_type", "bearer")).lower() != "bearer":
         raise SignInError("the sign-in service gave no usable bearer token")
-    out = {"access_token": d["access_token"], "token_type": "Bearer",
-           "refresh_token": d.get("refresh_token") or keep_refresh, "scope": d.get("scope")}
+    out = {
+        "access_token": d["access_token"],
+        "token_type": "Bearer",
+        "refresh_token": d.get("refresh_token") or keep_refresh,
+        "scope": d.get("scope"),
+    }
     if d.get("expires_in"):
         out["expires_at"] = time.time() + float(d["expires_in"])
     return out
@@ -532,8 +596,10 @@ class Session:
         if not data or not (data.get("tokens") or {}).get("access_token"):
             raise SignInNeeded(f"server {self.server} needs sign-in: run `ombro connect {self.server}`")
         if data.get("resource") != self.resource:
-            raise SignInNeeded(f"the sign-in for server {self.server} was for {data.get('resource')}, not its "
-                               f"current address; run `ombro connect {self.server}` again")
+            raise SignInNeeded(
+                f"the sign-in for server {self.server} was for {data.get('resource')}, not its "
+                f"current address; run `ombro connect {self.server}` again"
+            )
         return data
 
     def token(self) -> str:
@@ -554,25 +620,33 @@ class Session:
                 if not exp or exp - REFRESH_MARGIN >= time.time():
                     return tok["access_token"]
             if not tok.get("refresh_token"):
-                raise SignInNeeded(f"the sign-in for server {self.server} has expired: "
-                                   f"run `ombro connect {self.server}`")
-            form = {"grant_type": "refresh_token", "refresh_token": tok["refresh_token"],
-                    "client_id": data["client"]["client_id"], "resource": self.resource}
+                raise SignInNeeded(
+                    f"the sign-in for server {self.server} has expired: run `ombro connect {self.server}`"
+                )
+            form = {
+                "grant_type": "refresh_token",
+                "refresh_token": tok["refresh_token"],
+                "client_id": data["client"]["client_id"],
+                "resource": self.resource,
+            }
             if data["client"].get("client_secret"):
                 form["client_secret"] = data["client"]["client_secret"]
             with httpx.Client(transport=self._transport, follow_redirects=False) as client:
                 try:
                     new = _token_request(client, data["token_endpoint"], form, keep_refresh=tok["refresh_token"])
                 except SignInError as e:
-                    raise SignInNeeded(f"the sign-in for server {self.server} could not be renewed ({e}): "
-                                       f"run `ombro connect {self.server}`") from None
+                    raise SignInNeeded(
+                        f"the sign-in for server {self.server} could not be renewed ({e}): "
+                        f"run `ombro connect {self.server}`"
+                    ) from None
             data["tokens"] = new
             save(self.home, self.server, data)
             return new["access_token"]
 
 
-def session_for(home: Home, server: str, cfg: dict[str, Any],
-                transport: httpx.BaseTransport | None = None) -> Session | None:
+def session_for(
+    home: Home, server: str, cfg: dict[str, Any], transport: httpx.BaseTransport | None = None
+) -> Session | None:
     """The sign-in a remote server uses, if it has one. A server whose headers
     already carry Authorization (a fixed token from keys.env) does not use one."""
     if not cfg.get("url") or any(k.lower() == "authorization" for k in (cfg.get("headers") or {})):
@@ -600,9 +674,15 @@ def disconnect(home: Home, server: str, transport: httpx.BaseTransport | None = 
             with httpx.Client(transport=transport, follow_redirects=False) as client:
                 for kind in ("refresh_token", "access_token"):
                     if tok.get(kind):
-                        client.post(endpoint, timeout=HTTP_TIMEOUT, data={
-                            "token": tok[kind], "token_type_hint": kind,
-                            "client_id": (data.get("client") or {}).get("client_id", "")})
+                        client.post(
+                            endpoint,
+                            timeout=HTTP_TIMEOUT,
+                            data={
+                                "token": tok[kind],
+                                "token_type_hint": kind,
+                                "client_id": (data.get("client") or {}).get("client_id", ""),
+                            },
+                        )
         except httpx.HTTPError:
             pass  # forgetting it locally is what matters
     store_path(home, server).unlink(missing_ok=True)

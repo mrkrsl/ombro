@@ -18,20 +18,46 @@ from test_serve_sessions import loopback, serve  # noqa: F401 - fixtures
 
 KEY = "ak_INVENTED0123456789abcdef"
 DOC_TOOLS = [
-    {"slug": "GOOGLEDOCS_GET_DOCUMENT_BY_ID", "name": "Get document", "description": "Reads a document.",
-     "toolkit": {"slug": "googledocs", "name": "Google Docs"}, "tags": [], "version": "20261101_00",
-     "input_parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}},
-    {"slug": "GOOGLEDOCS_CREATE_DOCUMENT", "name": "Create document", "description": "Creates a document.",
-     "toolkit": {"slug": "googledocs", "name": "Google Docs"}, "tags": ["important"], "version": "20261101_00",
-     "input_parameters": {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}},
-    {"slug": "GOOGLEDOCS_SHARE_DOCUMENT", "name": "Share document", "description": "Shares a document.",
-     "toolkit": {"slug": "googledocs", "name": "Google Docs"}, "tags": [], "version": "20261101_00",
-     "input_parameters": {"type": "object", "properties": {"document_id": {"type": "string"},
-                                                           "email": {"type": "string"}},
-                          "required": ["document_id", "email"]}},
-    {"slug": "GOOGLEDOCS_SUMMARISE", "name": "Summarise", "description": "Marked read-only by Composio.",
-     "toolkit": {"slug": "googledocs", "name": "Google Docs"}, "tags": ["readOnlyHint"], "version": "20261101_00",
-     "input_parameters": {"type": "object", "properties": {}}},
+    {
+        "slug": "GOOGLEDOCS_GET_DOCUMENT_BY_ID",
+        "name": "Get document",
+        "description": "Reads a document.",
+        "toolkit": {"slug": "googledocs", "name": "Google Docs"},
+        "tags": [],
+        "version": "20261101_00",
+        "input_parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
+    {
+        "slug": "GOOGLEDOCS_CREATE_DOCUMENT",
+        "name": "Create document",
+        "description": "Creates a document.",
+        "toolkit": {"slug": "googledocs", "name": "Google Docs"},
+        "tags": ["important"],
+        "version": "20261101_00",
+        "input_parameters": {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]},
+    },
+    {
+        "slug": "GOOGLEDOCS_SHARE_DOCUMENT",
+        "name": "Share document",
+        "description": "Shares a document.",
+        "toolkit": {"slug": "googledocs", "name": "Google Docs"},
+        "tags": [],
+        "version": "20261101_00",
+        "input_parameters": {
+            "type": "object",
+            "properties": {"document_id": {"type": "string"}, "email": {"type": "string"}},
+            "required": ["document_id", "email"],
+        },
+    },
+    {
+        "slug": "GOOGLEDOCS_SUMMARISE",
+        "name": "Summarise",
+        "description": "Marked read-only by Composio.",
+        "toolkit": {"slug": "googledocs", "name": "Google Docs"},
+        "tags": ["readOnlyHint"],
+        "version": "20261101_00",
+        "input_parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -43,10 +69,20 @@ class FakeComposio:
         self.execute_status = 200
         self.kit_tools = {"googledocs": DOC_TOOLS}
         self.accounts = [
-            {"id": "ca_docs", "status": "ACTIVE", "user_id": "ada", "toolkit": {"slug": "googledocs"},
-             "auth_config": {"id": "ac_1", "is_disabled": False}},
-            {"id": "ca_old", "status": "EXPIRED", "user_id": "ada", "toolkit": {"slug": "gmail"},
-             "auth_config": {"id": "ac_2", "is_disabled": False}},
+            {
+                "id": "ca_docs",
+                "status": "ACTIVE",
+                "user_id": "ada",
+                "toolkit": {"slug": "googledocs"},
+                "auth_config": {"id": "ac_1", "is_disabled": False},
+            },
+            {
+                "id": "ca_old",
+                "status": "EXPIRED",
+                "user_id": "ada",
+                "toolkit": {"slug": "gmail"},
+                "auth_config": {"id": "ac_2", "is_disabled": False},
+            },
         ]
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -94,12 +130,17 @@ def connected(home, fake_composio):
 def test_the_settings_are_checked():
     assert composio.check({}) == {"key": "COMPOSIO_API_KEY", "class": "external"}
     assert composio.check(None) is None
-    for bad, words in [({"key": KEY}, "never the key itself"), ({"class": "read-only"}, "internal or external"),
-                       ({"toolkits": []}, "unknown")]:
+    for bad, words in [
+        ({"key": KEY}, "never the key itself"),
+        ({"class": "read-only"}, "internal or external"),
+        ({"toolkits": []}, "unknown"),
+    ]:
         with pytest.raises(SetupError, match=words):
             composio.check(bad)
-    assert ToolSettings.from_dict({"composio": {}}).to_dict()["composio"] == {"key": "COMPOSIO_API_KEY",
-                                                                             "class": "external"}
+    assert ToolSettings.from_dict({"composio": {}}).to_dict()["composio"] == {
+        "key": "COMPOSIO_API_KEY",
+        "class": "external",
+    }
     assert composio.short_name("googledocs", "GOOGLEDOCS_CREATE_DOCUMENT") == "CREATE_DOCUMENT"
     assert composio.short_name("gmail", "SOMETHING_ELSE") == "SOMETHING_ELSE"
 
@@ -120,7 +161,9 @@ def test_connecting_lists_each_toolkit_and_classes_its_tools(home, connected):
     assert mdfile.read(home.tools)[0]["composio"] == {"key": "COMPOSIO_API_KEY", "class": "external"}
     view = composio.view(home, load_tool_settings(home).composio)
     assert [(k["title"], k["active"], k["status"]) for k in view["toolkits"]] == [
-        ("Gmail", False, "expired"), ("Google Docs", True, "active")]
+        ("Gmail", False, "expired"),
+        ("Google Docs", True, "active"),
+    ]
     assert view["toolkits"][1]["tools"] == 4
     found, warnings = composio.tools(home, load_tool_settings(home))
     by = {t.name: t for t in found}
@@ -135,9 +178,11 @@ def test_connecting_lists_each_toolkit_and_classes_its_tools(home, connected):
 
 def test_toolsmd_can_class_a_tool_or_refuse_it(home, connected):
     meta, body = mdfile.read(home.tools)
-    meta["tools"] = {**(meta.get("tools") or {}),
-                     "composio.googledocs.CREATE_DOCUMENT": {"class": "internal"},
-                     "composio.googledocs.SUMMARISE": {"permission": "refuse"}}
+    meta["tools"] = {
+        **(meta.get("tools") or {}),
+        "composio.googledocs.CREATE_DOCUMENT": {"class": "internal"},
+        "composio.googledocs.SUMMARISE": {"permission": "refuse"},
+    }
     mdfile.write(home.tools, meta, body)
     by = {t.name: t for t in composio.tools(home, load_tool_settings(home))[0]}
     assert by["composio.googledocs.CREATE_DOCUMENT"].effect == "internal"
@@ -148,11 +193,16 @@ def test_toolsmd_can_class_a_tool_or_refuse_it(home, connected):
 
 def test_a_run_uses_the_connected_account_and_never_returns_the_key(home, connected):
     kit = composio.toolkits(home, load_tool_settings(home).composio)[1]
-    text = composio.run(home, load_tool_settings(home).composio, "GOOGLEDOCS_GET_DOCUMENT_BY_ID", {"id": "d1"}, kit,
-                        "20261101_00")
+    text = composio.run(
+        home, load_tool_settings(home).composio, "GOOGLEDOCS_GET_DOCUMENT_BY_ID", {"id": "d1"}, kit, "20261101_00"
+    )
     sent = json.loads(connected.seen[-1].content)
-    assert sent == {"arguments": {"id": "d1"}, "connected_account_id": "ca_docs", "user_id": "ada",
-                    "version": "20261101_00"}
+    assert sent == {
+        "arguments": {"id": "d1"},
+        "connected_account_id": "ca_docs",
+        "user_id": "ada",
+        "version": "20261101_00",
+    }
     assert KEY not in text and "[key removed]" in text
 
 
@@ -171,20 +221,41 @@ def test_composios_limits_are_said_plainly(home, connected):
 
 
 def test_every_crew_member_gets_it_lookups_and_own_work_run_and_sharing_waits(home, connected, job):
-    load = fake.call("tools__load", {"names": ["composio__googledocs__GET_DOCUMENT_BY_ID",
-                                               "composio__googledocs__CREATE_DOCUMENT",
-                                               "composio__googledocs__SHARE_DOCUMENT"]})
+    load = fake.call(
+        "tools__load",
+        {
+            "names": [
+                "composio__googledocs__GET_DOCUMENT_BY_ID",
+                "composio__googledocs__CREATE_DOCUMENT",
+                "composio__googledocs__SHARE_DOCUMENT",
+            ]
+        },
+    )
     look = fake.call("composio__googledocs__GET_DOCUMENT_BY_ID", {"id": "d1"})
-    make = fake.call("composio__googledocs__CREATE_DOCUMENT", {"title": "Invented notes",
-                                                               "reason": "The brief asks for a document."})
-    share = fake.call("composio__googledocs__SHARE_DOCUMENT", {"document_id": "d1", "email": "bo@example.invalid",
-                                                               "reason": "Bo should see it."})
-    script = [fake.brief("researcher", "Read d1, make a document and share d1."), load, look, make, share,
-              fake.result("Made it; sharing waits for approval."), fake.finish(), fake.keep_notes(), LEAD_REPORT]
+    make = fake.call(
+        "composio__googledocs__CREATE_DOCUMENT", {"title": "Invented notes", "reason": "The brief asks for a document."}
+    )
+    share = fake.call(
+        "composio__googledocs__SHARE_DOCUMENT",
+        {"document_id": "d1", "email": "bo@example.invalid", "reason": "Bo should see it."},
+    )
+    script = [
+        fake.brief("researcher", "Read d1, make a document and share d1."),
+        load,
+        look,
+        make,
+        share,
+        fake.result("Made it; sharing waits for approval."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     assert job(script) == "completed"
     ran = [r.url.path for r in connected.seen if "/execute/" in r.url.path]
-    assert ran == ["/api/v3.1/tools/execute/GOOGLEDOCS_GET_DOCUMENT_BY_ID",
-                   "/api/v3.1/tools/execute/GOOGLEDOCS_CREATE_DOCUMENT"]  # the lookup and the work ran
+    assert ran == [
+        "/api/v3.1/tools/execute/GOOGLEDOCS_GET_DOCUMENT_BY_ID",
+        "/api/v3.1/tools/execute/GOOGLEDOCS_CREATE_DOCUMENT",
+    ]  # the lookup and the work ran
     [a] = outbox.actions(job.job_dir)
     assert a.tool == "composio.googledocs.SHARE_DOCUMENT" and a.status == "pending" and a.meta["class"] == "external"
     assert "composio_ready" in job.actions()
@@ -197,11 +268,19 @@ def test_every_crew_member_gets_it_lookups_and_own_work_run_and_sharing_waits(ho
 
 
 def test_an_approval_that_hits_a_limit_keeps_waiting(home, connected, job):
-    make = fake.call("composio__googledocs__SHARE_DOCUMENT", {"document_id": "d1", "email": "bo@example.invalid",
-                                                              "reason": "Bo should see it."})
-    script = [fake.brief("researcher", "Share a document."),
-              fake.call("tools__load", {"names": ["composio__googledocs__SHARE_DOCUMENT"]}), make,
-              fake.result("It waits."), fake.finish(), fake.keep_notes(), LEAD_REPORT]
+    make = fake.call(
+        "composio__googledocs__SHARE_DOCUMENT",
+        {"document_id": "d1", "email": "bo@example.invalid", "reason": "Bo should see it."},
+    )
+    script = [
+        fake.brief("researcher", "Share a document."),
+        fake.call("tools__load", {"names": ["composio__googledocs__SHARE_DOCUMENT"]}),
+        make,
+        fake.result("It waits."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     assert job(script) == "completed"
     [a] = outbox.actions(job.job_dir)
     connected.execute_status = 429
@@ -230,18 +309,30 @@ def test_connect_refresh_and_disconnect_over_http(serve, home, fake_composio):
     assert keys.get_key(home, "COMPOSIO_API_KEY") is None
 
 
-
 # -- approvals in briefed work --------------------------------------------------------------
 
 
 def test_tools_are_classed_by_what_they_do_not_by_one_class_for_all_of_composio():
-    sheets = ["CREATE_GOOGLE_SHEET1", "UPDATE_VALUES_BATCH", "FORMAT_CELL", "UPDATE_DIMENSION_PROPERTIES",
-              "SET_DATA_VALIDATION_RULE", "UPDATE_SHEET_PROPERTIES", "SPREADSHEETS_VALUES_APPEND"]
+    sheets = [
+        "CREATE_GOOGLE_SHEET1",
+        "UPDATE_VALUES_BATCH",
+        "FORMAT_CELL",
+        "UPDATE_DIMENSION_PROPERTIES",
+        "SET_DATA_VALIDATION_RULE",
+        "UPDATE_SHEET_PROPERTIES",
+        "SPREADSHEETS_VALUES_APPEND",
+    ]
     for short in sheets:  # the calls once asked about one by one: the sheet the brief asked for, made and formatted
         assert composio.classify({}, short, "external", toolkit="googlesheets") == "internal", short
-    for kit, short in [("googlesheets", "DELETE_SHEET"), ("googledocs", "CREATE_PERMISSION"),
-                       ("googledrive", "SHARE_FILE"), ("gmail", "SEND_EMAIL"), ("gmail", "REPLY_TO_THREAD"),
-                       ("slack", "CHAT_POST_MESSAGE"), ("stripe", "CREATE_PAYMENT_INTENT")]:
+    for kit, short in [
+        ("googlesheets", "DELETE_SHEET"),
+        ("googledocs", "CREATE_PERMISSION"),
+        ("googledrive", "SHARE_FILE"),
+        ("gmail", "SEND_EMAIL"),
+        ("gmail", "REPLY_TO_THREAD"),
+        ("slack", "CHAT_POST_MESSAGE"),
+        ("stripe", "CREATE_PAYMENT_INTENT"),
+    ]:
         assert composio.classify({}, short, "internal", toolkit=kit) == "external", short  # risky, wherever
     assert composio.classify({}, "CREATE_EMAIL_DRAFT", "external", toolkit="gmail") == "internal"  # a draft
     assert composio.classify({}, "LIST_DRIVE_ITEM_PERMISSIONS", "external", toolkit="googledocs") == "read-only"
@@ -260,10 +351,14 @@ def test_scope_counts_calls_on_one_item_as_one_piece_of_work():
     s.done("composio.googlesheets.CREATE_GOOGLE_SHEET1", {"title": "M"}, {"spreadsheetId": "sheet_made_12345"})
     assert s.made == {"sheet_made_12345"}
     # Deleting inside what this job made is its own work; sharing it, or deleting elsewhere, is not.
-    assert s.effect("composio.googlesheets.DELETE_DIMENSION", {"spreadsheet_id": "sheet_made_12345"},
-                    "external") == "internal"
-    assert s.effect("composio.googlesheets.DELETE_DIMENSION", {"spreadsheet_id": "other_sheet_1"},
-                    "external") == "external"
+    assert (
+        s.effect("composio.googlesheets.DELETE_DIMENSION", {"spreadsheet_id": "sheet_made_12345"}, "external")
+        == "internal"
+    )
+    assert (
+        s.effect("composio.googlesheets.DELETE_DIMENSION", {"spreadsheet_id": "other_sheet_1"}, "external")
+        == "external"
+    )
     assert s.effect("composio.googledocs.SHARE_FILE", {"file_id": "sheet_made_12345"}, "external") == "external"
     # A yes in chat covers later calls on the same item in the same service, unless they are risky.
     s.done("composio.wiki.UPDATE_PAGE", {"page_id": "p1"}, {}, approved=True)
@@ -273,10 +368,19 @@ def test_scope_counts_calls_on_one_item_as_one_piece_of_work():
     assert not s.covered("composio.wiki.DELETE_PAGE", {"page_id": "p1"})
 
 
-DELETE_DOC = {"slug": "GOOGLEDOCS_DELETE_DOCUMENT", "name": "Delete document", "description": "Deletes one.",
-              "toolkit": {"slug": "googledocs", "name": "Google Docs"}, "tags": [], "version": "20261101_00",
-              "input_parameters": {"type": "object", "properties": {"document_id": {"type": "string"}},
-                                   "required": ["document_id"]}}
+DELETE_DOC = {
+    "slug": "GOOGLEDOCS_DELETE_DOCUMENT",
+    "name": "Delete document",
+    "description": "Deletes one.",
+    "toolkit": {"slug": "googledocs", "name": "Google Docs"},
+    "tags": [],
+    "version": "20261101_00",
+    "input_parameters": {
+        "type": "object",
+        "properties": {"document_id": {"type": "string"}},
+        "required": ["document_id"],
+    },
+}
 
 
 def test_a_job_makes_and_edits_what_the_brief_asked_for_and_says_plainly_what_waits(home, connected, job):
@@ -285,15 +389,32 @@ def test_a_job_makes_and_edits_what_the_brief_asked_for_and_says_plainly_what_wa
     names = ["CREATE_DOCUMENT", "DELETE_DOCUMENT", "SHARE_DOCUMENT"]
     load = fake.call("tools__load", {"names": [f"composio__googledocs__{n}" for n in names]})
     make = fake.call("composio__googledocs__CREATE_DOCUMENT", {"title": "Matrix", "reason": "The brief asks."})
-    tidy = fake.call("composio__googledocs__DELETE_DOCUMENT", {"document_id": "doc_made_0123456789",
-                                                               "reason": "A false start of my own."})
+    tidy = fake.call(
+        "composio__googledocs__DELETE_DOCUMENT",
+        {"document_id": "doc_made_0123456789", "reason": "A false start of my own."},
+    )
     other = fake.call("composio__googledocs__DELETE_DOCUMENT", {"document_id": "d1", "reason": "Old."})
-    share1 = fake.call("composio__googledocs__SHARE_DOCUMENT", {"document_id": "d1", "email": "bo@example.invalid",
-                                                                "reason": "Bo asked."})
-    share2 = fake.call("composio__googledocs__SHARE_DOCUMENT", {"document_id": "d1", "email": "cy@example.invalid",
-                                                                "reason": "Cy too."})
-    script = [fake.brief("researcher", "Make the matrix document."), load, make, tidy, other, share2, share1,
-              fake.result("Made it; the rest waits."), fake.finish(), fake.keep_notes(), LEAD_REPORT]
+    share1 = fake.call(
+        "composio__googledocs__SHARE_DOCUMENT",
+        {"document_id": "d1", "email": "bo@example.invalid", "reason": "Bo asked."},
+    )
+    share2 = fake.call(
+        "composio__googledocs__SHARE_DOCUMENT",
+        {"document_id": "d1", "email": "cy@example.invalid", "reason": "Cy too."},
+    )
+    script = [
+        fake.brief("researcher", "Make the matrix document."),
+        load,
+        make,
+        tidy,
+        other,
+        share2,
+        share1,
+        fake.result("Made it; the rest waits."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     assert job(script) == "completed"
     ran = [r.url.path.rsplit("/", 1)[1] for r in connected.seen if "/execute/" in r.url.path]
     assert ran == ["GOOGLEDOCS_CREATE_DOCUMENT", "GOOGLEDOCS_DELETE_DOCUMENT"]  # made it, and tidied its own
@@ -310,27 +431,50 @@ def test_a_job_makes_and_edits_what_the_brief_asked_for_and_says_plainly_what_wa
 
 def test_a_job_with_nothing_waiting_says_nothing_about_approval(home, connected, job):
     make = fake.call("composio__googledocs__CREATE_DOCUMENT", {"title": "Matrix", "reason": "The brief asks."})
-    script = [fake.brief("researcher", "Make it."),
-              fake.call("tools__load", {"names": ["composio__googledocs__CREATE_DOCUMENT"]}), make,
-              fake.result("Made it."), fake.finish(), fake.keep_notes(), LEAD_REPORT]
+    script = [
+        fake.brief("researcher", "Make it."),
+        fake.call("tools__load", {"names": ["composio__googledocs__CREATE_DOCUMENT"]}),
+        make,
+        fake.result("Made it."),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
     assert job(script) == "completed"
     assert outbox.actions(job.job_dir) == []
     assert "Stopped for your approval" not in (job.job_dir / "report.md").read_text()
 
 
 WIKI_TOOLS = [
-    {"slug": f"WIKI_{n}", "name": n.title(), "description": f"{n.title()} a page.",
-     "toolkit": {"slug": "wiki", "name": "Wiki"}, "tags": [], "version": "20261101_00",
-     "input_parameters": {"type": "object", "properties": {"page_id": {"type": "string"},
-                                                           "text": {"type": "string"}}, "required": ["page_id"]}}
-    for n in ("UPDATE_PAGE", "FORMAT_PAGE", "DELETE_PAGE")]
+    {
+        "slug": f"WIKI_{n}",
+        "name": n.title(),
+        "description": f"{n.title()} a page.",
+        "toolkit": {"slug": "wiki", "name": "Wiki"},
+        "tags": [],
+        "version": "20261101_00",
+        "input_parameters": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["page_id"],
+        },
+    }
+    for n in ("UPDATE_PAGE", "FORMAT_PAGE", "DELETE_PAGE")
+]
 
 
 def test_in_chat_one_yes_covers_related_calls_on_the_same_item(home, connected):
     from test_chat import ChatSession
 
-    connected.accounts.append({"id": "ca_wiki", "status": "ACTIVE", "user_id": "ada", "toolkit": {"slug": "wiki"},
-                               "auth_config": {"id": "ac_3", "is_disabled": False}})
+    connected.accounts.append(
+        {
+            "id": "ca_wiki",
+            "status": "ACTIVE",
+            "user_id": "ada",
+            "toolkit": {"slug": "wiki"},
+            "auth_config": {"id": "ac_3", "is_disabled": False},
+        }
+    )
     connected.kit_tools["wiki"] = WIKI_TOOLS
     composio.forget()
     meta, body = mdfile.read(home.tools)
@@ -338,13 +482,20 @@ def test_in_chat_one_yes_covers_related_calls_on_the_same_item(home, connected):
     mdfile.write(home.tools, meta, body)
     call = lambda n, page, why: fake.call(f"composio__wiki__{n}", {"page_id": page, "text": "x", "reason": why})  # noqa: E731
     session = ChatSession(home)
-    session([
-        fake.call("tools__load", {"names": [f"composio__wiki__{t}" for t in ("UPDATE_PAGE", "FORMAT_PAGE",
-                                                                              "DELETE_PAGE")]}),
-        call("UPDATE_PAGE", "p1", "You asked."), call("FORMAT_PAGE", "p1", "Tidy it."),
-        call("FORMAT_PAGE", "p1", "Tidy more."), call("DELETE_PAGE", "p1", "Remove it."),
-        fake.say("Done."),
-    ], ["Fill in the wiki page p1.", "y", "n"])
+    session(
+        [
+            fake.call(
+                "tools__load",
+                {"names": [f"composio__wiki__{t}" for t in ("UPDATE_PAGE", "FORMAT_PAGE", "DELETE_PAGE")]},
+            ),
+            call("UPDATE_PAGE", "p1", "You asked."),
+            call("FORMAT_PAGE", "p1", "Tidy it."),
+            call("FORMAT_PAGE", "p1", "Tidy more."),
+            call("DELETE_PAGE", "p1", "Remove it."),
+            fake.say("Done."),
+        ],
+        ["Fill in the wiki page p1.", "y", "n"],
+    )
     asked = [a for a in session.answers.asked if "Go ahead?" in a]
     assert len(asked) == 2  # once for the page, once more for deleting it
     ran = [r.url.path.rsplit("/", 1)[1] for r in connected.seen if "/execute/" in r.url.path]
@@ -355,8 +506,9 @@ def test_in_chat_one_yes_covers_related_calls_on_the_same_item(home, connected):
 def test_what_a_create_call_made_is_read_from_its_result():
     from ombro.outward import targets_made
 
-    assert targets_made({"result": json.dumps({"spreadsheetId": "sheet_made_12345", "parents": [{"id": "folder_0123456"}]})}) \
-        == {"sheet_made_12345"}
+    assert targets_made(
+        {"result": json.dumps({"spreadsheetId": "sheet_made_12345", "parents": [{"id": "folder_0123456"}]})}
+    ) == {"sheet_made_12345"}
     assert targets_made('{"id": "page_made_123456", "parent": {"id": "parent_0123456"}}') == {"page_made_123456"}
     assert targets_made("no ids here") == set()
 
@@ -366,21 +518,27 @@ def test_an_unmarked_tools_name_makes_it_a_lookup_only_when_nothing_in_it_makes_
     tool also makes, shares, links or marks something; the rest keep their classing by name."""
     for short in ["GET_DOCUMENT_BY_ID", "LIST_DRIVE_ITEM_PERMISSIONS", "FETCH_EMAILS", "SEARCH_PAGES", "GET_POST"]:
         assert composio.class_of({}, short, "external", toolkit="gmail") == ("read-only", "name"), short
-    for short, kit, want in [("FIND_OR_CREATE_ROW", "googlesheets", "internal"),  # own documents: their work
-                             ("FIND_OR_CREATE_CONTACT", "hubspot", "external"),  # composio's class
-                             ("GET_SHARE_LINK", "googledrive", "external"),  # sharing reaches people
-                             ("GET_SHAREABLE_LINK", "dropbox", "internal"),
-                             ("FETCH_AND_MARK_READ", "gmail", "external"),
-                             ("FETCH_AND_MARK_READ", "slack", "internal")]:
+    for short, kit, want in [
+        ("FIND_OR_CREATE_ROW", "googlesheets", "internal"),  # own documents: their work
+        ("FIND_OR_CREATE_CONTACT", "hubspot", "external"),  # composio's class
+        ("GET_SHARE_LINK", "googledrive", "external"),  # sharing reaches people
+        ("GET_SHAREABLE_LINK", "dropbox", "internal"),
+        ("FETCH_AND_MARK_READ", "gmail", "external"),
+        ("FETCH_AND_MARK_READ", "slack", "internal"),
+    ]:
         server = "internal" if kit == "slack" else "external"
         assert composio.classify({}, short, server, toolkit=kit) == want, short
     # Composio's own marking still wins, as does tools.md.
     assert composio.class_of({"tags": ["readOnlyHint"]}, "GET_SHARE_LINK", "external", toolkit="googledrive") == (
-        "read-only", "marking")
+        "read-only",
+        "marking",
+    )
     assert composio.class_of({}, "GET_SHARE_LINK", "external", "read-only", "googledrive") == ("read-only", "tool")
     # A tool Composio marks (as not read-only) never counts as a lookup by its name.
     assert composio.class_of({"tags": ["destructiveHint"]}, "GET_DOCUMENT", "external", toolkit="gmail") == (
-        "external", "default")
+        "external",
+        "default",
+    )
 
 
 def test_the_terminal_shows_each_composio_tools_class_and_where_it_came_from(home, connected):

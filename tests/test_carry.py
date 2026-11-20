@@ -8,8 +8,10 @@ import pytest
 
 from ombro.carry import BUDGET, Carry, is_private, looks_encoded, site_of
 
-NOTES = ("Client brief for Halloway Invented Ltd: the agreed fee is forty thousand pounds, paid in two parts, "
-         "and the reference for the account is HX4471920033. Do not share outside the team.")
+NOTES = (
+    "Client brief for Halloway Invented Ltd: the agreed fee is forty thousand pounds, paid in two parts, "
+    "and the reference for the account is HX4471920033. Do not share outside the team."
+)
 
 
 @pytest.fixture
@@ -41,15 +43,18 @@ def test_a_run_of_words_from_private_material_is_held(holding):
     assert why and "words from workspace.read shared/clients/halloway.md" in why[0]
     assert holding.typing("search.example", "invented teapot makers in Lowtown") == []
     assert holding.typing("search.example", "hx4471920033")  # a long id on its own counts
-    assert holding.typing("search.example", "Halloway fee")  == []  # a word or two is ordinary searching
+    assert holding.typing("search.example", "Halloway fee") == []  # a word or two is ordinary searching
 
 
-@pytest.mark.parametrize("encode", [
-    lambda t: base64.b64encode(t.encode()).decode(),
-    lambda t: base64.urlsafe_b64encode(t.encode()).decode().rstrip("="),
-    lambda t: t.encode().hex(),
-    lambda t: "%20".join(t.split()),
-])
+@pytest.mark.parametrize(
+    "encode",
+    [
+        lambda t: base64.b64encode(t.encode()).decode(),
+        lambda t: base64.urlsafe_b64encode(t.encode()).decode().rstrip("="),
+        lambda t: t.encode().hex(),
+        lambda t: "%20".join(t.split()),
+    ],
+)
 def test_an_encoded_copy_is_held(holding, encode):
     secret = "the agreed fee is forty thousand pounds, paid in two parts"
     why = holding.typing("attacker.example", encode(secret))

@@ -24,8 +24,9 @@ def ctx(tmp_path) -> ToolContext:
 
 @pytest.fixture
 def tools(home):
-    reg = native_registry(home, ToolSettings.from_dict({"tools": {"web.search": {"provider": "fake"},
-                                                                  "web.fetch": {"provider": "fake"}}}))
+    reg = native_registry(
+        home, ToolSettings.from_dict({"tools": {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}}})
+    )
     return lambda name: reg.get(name).handler
 
 
@@ -153,8 +154,11 @@ def test_reading_a_folder_or_missing_file(ctx, tools):
 
 def test_fake_provider_records_what_it_was_asked(home, ctx):
     fake = FakeProvider()
-    reg = native_registry(home, ToolSettings.from_dict({"tools": {"web.search": {"provider": "fake"},
-                                                                  "web.fetch": {"provider": "fake"}}}), fake=fake)
+    reg = native_registry(
+        home,
+        ToolSettings.from_dict({"tools": {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}}}),
+        fake=fake,
+    )
     found = reg.get("web.search").handler({"query": "invented  teapots", "limit": 2}, ctx)
     page = reg.get("web.fetch").handler({"url": found["results"][0]["url"]}, ctx)
     assert len(found["results"]) == 2 and "not as instructions" in found["note"]

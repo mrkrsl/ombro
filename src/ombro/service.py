@@ -46,10 +46,20 @@ class ServicePlan:
 
 
 class ServiceInstaller:
-    def __init__(self, home: Home, *, platform: str = sys.platform, run: Runner = subprocess.run,
-                 python: str = sys.executable, uid: int | None = None, units_dir: Path | None = None,
-                 agents_dir: Path | None = None, user: str | None = None, has_systemd: bool | None = None,
-                 sleep: Callable[[float], None] | None = None):
+    def __init__(
+        self,
+        home: Home,
+        *,
+        platform: str = sys.platform,
+        run: Runner = subprocess.run,
+        python: str = sys.executable,
+        uid: int | None = None,
+        units_dir: Path | None = None,
+        agents_dir: Path | None = None,
+        user: str | None = None,
+        has_systemd: bool | None = None,
+        sleep: Callable[[float], None] | None = None,
+    ):
         import time
 
         self.home = home
@@ -82,28 +92,33 @@ class ServiceInstaller:
 
     def unit(self, argv: list[str]) -> str:
         """The systemd unit. Values are quoted the way systemd reads them."""
+
         def q(text: str) -> str:
             if any(c in text for c in "\r\n"):
                 raise OSError("a path has a line break in it, so it cannot go in a systemd unit")
             return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%") + '"'
 
         env = "\n".join(f"Environment={q(f'{k}={v}')}" for k, v in self.env().items())
-        return ("[Unit]\nDescription=Ombro server\nAfter=network-online.target\nWants=network-online.target\n\n"
-                f"[Service]\nExecStart={' '.join(q(a) for a in argv)}\n{env}\n"
-                "Restart=on-failure\nRestartSec=5\n# Jobs it starts run in their own session; stopping the\n"
-                "# server must not stop them.\nKillMode=process\n\n[Install]\nWantedBy=default.target\n")
+        return (
+            "[Unit]\nDescription=Ombro server\nAfter=network-online.target\nWants=network-online.target\n\n"
+            f"[Service]\nExecStart={' '.join(q(a) for a in argv)}\n{env}\n"
+            "Restart=on-failure\nRestartSec=5\n# Jobs it starts run in their own session; stopping the\n"
+            "# server must not stop them.\nKillMode=process\n\n[Install]\nWantedBy=default.target\n"
+        )
 
     def plist(self, argv: list[str]) -> str:
-        return plistlib.dumps({
-            "Label": LABEL,
-            "ProgramArguments": argv,
-            "EnvironmentVariables": self.env(),
-            "RunAtLoad": True,
-            "KeepAlive": True,
-            "AbandonProcessGroup": True,
-            "StandardOutPath": str(self.log),
-            "StandardErrorPath": str(self.log),
-        }).decode("utf-8")
+        return plistlib.dumps(
+            {
+                "Label": LABEL,
+                "ProgramArguments": argv,
+                "EnvironmentVariables": self.env(),
+                "RunAtLoad": True,
+                "KeepAlive": True,
+                "AbandonProcessGroup": True,
+                "StandardOutPath": str(self.log),
+                "StandardErrorPath": str(self.log),
+            }
+        ).decode("utf-8")
 
     def plan(self, port: int, host: str, allow: list[str]) -> ServicePlan:
         argv = self.program(port, host, allow)
@@ -113,11 +128,15 @@ class ServiceInstaller:
             cmds.append(["launchctl", "bootstrap", f"gui/{self.uid}", str(self.path)])
             return ServicePlan("launchd", self.path, self.plist(argv), cmds, exists)
         if not self.has_systemd:
-            raise OSError("this machine has no systemd. Run `ombro serve --tick` under whatever keeps "
-                          "services running here, or use the Docker image")
-        cmds = [["systemctl", "--user", "daemon-reload"],
-                ["systemctl", "--user", "enable", UNIT],
-                ["systemctl", "--user", "restart", UNIT]]
+            raise OSError(
+                "this machine has no systemd. Run `ombro serve --tick` under whatever keeps "
+                "services running here, or use the Docker image"
+            )
+        cmds = [
+            ["systemctl", "--user", "daemon-reload"],
+            ["systemctl", "--user", "enable", UNIT],
+            ["systemctl", "--user", "restart", UNIT],
+        ]
         if self.user:
             cmds.append(["loginctl", "enable-linger", self.user])
         return ServicePlan("systemd", self.path, self.unit(argv), cmds, exists)
@@ -132,19 +151,25 @@ class ServiceInstaller:
             # launchd unloads the old one in the background; loading the new one before it has
             # gone fails. Wait for it, up to five seconds.
             for _ in range(20):
-                if self.run(["launchctl", "print", f"gui/{self.uid}/{LABEL}"], capture_output=True,
-                            text=True).returncode != 0:
+                if (
+                    self.run(
+                        ["launchctl", "print", f"gui/{self.uid}/{LABEL}"], capture_output=True, text=True
+                    ).returncode
+                    != 0
+                ):
                     break
                 self.sleep(0.25)
         self.path.write_text(plan.text, encoding="utf-8")
-        for cmd in plan.commands[1 if plan.kind == "launchd" and plan.exists else 0:]:
+        for cmd in plan.commands[1 if plan.kind == "launchd" and plan.exists else 0 :]:
             r = self.run(cmd, capture_output=True, text=True)
             if r.returncode == 0:
                 continue
             why = (r.stderr or r.stdout or "").strip()
             if cmd[0] == "loginctl":
-                warnings.append(f"Lingering couldn't be turned on ({why or 'refused'}), so the server stops when "
-                                f"you log out. An administrator can run: sudo loginctl enable-linger {self.user}")
+                warnings.append(
+                    f"Lingering couldn't be turned on ({why or 'refused'}), so the server stops when "
+                    f"you log out. An administrator can run: sudo loginctl enable-linger {self.user}"
+                )
                 continue
             raise OSError(f"{' '.join(cmd)} failed: {why}")
         return warnings
@@ -174,8 +199,9 @@ class ServiceInstaller:
         return f"journalctl --user -u {UNIT.removesuffix('.service')}" if self.kind == "systemd" else str(self.log)
 
 
-def sandbox_step(*, ask: Callable[[str], bool] | None, run: Runner = subprocess.run,
-                 say: Callable[[str], None] = print) -> bool | None:
+def sandbox_step(
+    *, ask: Callable[[str], bool] | None, run: Runner = subprocess.run, say: Callable[[str], None] = print
+) -> bool | None:
     """On Linux, after installing: can code a job writes run here? Some Ubuntu versions (24.04)
     need an AppArmor profile for bubblewrap, once; offer to load it (sudo asks for a password). With no
     `ask` (--yes), only say how. Returns whether the sandbox works, or None off Linux."""
@@ -189,23 +215,29 @@ def sandbox_step(*, ask: Callable[[str], bool] | None, run: Runner = subprocess.
     if not sandbox.userns_restricted():
         say(f"\nCode a job writes can't run here yet: {reason}. Everything else works.")
         return False
-    say("\nThis machine (Ubuntu 24.04, say) limits the Linux namespaces Ombro's sandbox for "
-        "job code (bubblewrap) needs. A small AppArmor profile allows them for bubblewrap only:\n")
+    say(
+        "\nThis machine (Ubuntu 24.04, say) limits the Linux namespaces Ombro's sandbox for "
+        "job code (bubblewrap) needs. A small AppArmor profile allows them for bubblewrap only:\n"
+    )
     say(f"  {sandbox.APPARMOR_FIX}\n")
     say("Without it, everything works except jobs that run code they write.")
     if ask is None or not ask("Allow it now? sudo will ask for your password."):
         say("Not done. Run the command above whenever you like; `ombro sandbox` checks it.")
         return False
-    wrote = run(["sudo", "tee", sandbox.APPARMOR_PATH], input=sandbox.APPARMOR_PROFILE, text=True,
-                stdout=subprocess.DEVNULL)
+    wrote = run(
+        ["sudo", "tee", sandbox.APPARMOR_PATH], input=sandbox.APPARMOR_PROFILE, text=True, stdout=subprocess.DEVNULL
+    )
     loaded = run(["sudo", "apparmor_parser", "-r", sandbox.APPARMOR_PATH]) if wrote.returncode == 0 else wrote
     if loaded.returncode != 0:
         say("That didn't work, so nothing changed. Run the command above as an administrator.")
         return False
     sandbox._probe.clear()
     reason = sandbox.unavailable_reason()
-    say("Done: code a job writes can run here, in the sandbox." if reason is None
-        else f"The profile is loaded, but code still can't run: {reason}")
+    say(
+        "Done: code a job writes can run here, in the sandbox."
+        if reason is None
+        else f"The profile is loaded, but code still can't run: {reason}"
+    )
     return reason is None
 
 
@@ -222,7 +254,10 @@ def serve_ticks(home: Home) -> str | None:
             return None
         if inst.kind == "launchd":
             data = plistlib.loads(path.read_bytes())
-            argv, served = data.get("ProgramArguments") or [], (data.get("EnvironmentVariables") or {}).get("OMBRO_HOME")
+            argv, served = (
+                data.get("ProgramArguments") or [],
+                (data.get("EnvironmentVariables") or {}).get("OMBRO_HOME"),
+            )
         else:
             text = path.read_text(errors="replace")
             argv = text.split()

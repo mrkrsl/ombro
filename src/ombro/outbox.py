@@ -122,8 +122,13 @@ class Action:
         return text if len(text) <= n else text[: n - 1] + "…"
 
     def as_dict(self) -> dict[str, Any]:
-        return {"ref": self.ref, "long_ref": self.long_ref, "path": str(self.path), "edited": self.edited,
-                **{k: v for k, v in self.meta.items() if k != "input_schema"}}
+        return {
+            "ref": self.ref,
+            "long_ref": self.long_ref,
+            "path": str(self.path),
+            "edited": self.edited,
+            **{k: v for k, v in self.meta.items() if k != "input_schema"},
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -179,8 +184,11 @@ def waiting(home: Home, crew: str | None = None) -> list[Action]:
         if not outbox_dir(job_dir).is_dir():
             continue
         settle(job_dir)
-        out += [(str(a.meta.get("staged_at") or ""), i, a.number, a)
-                for a in actions(job_dir) if a.status in (*WAITING, "executing")]
+        out += [
+            (str(a.meta.get("staged_at") or ""), i, a.number, a)
+            for a in actions(job_dir)
+            if a.status in (*WAITING, "executing")
+        ]
     out.sort(key=lambda t: t[:3], reverse=True)
     return [t[3] for t in out]
 
@@ -203,8 +211,9 @@ def find(home: Home, ref: str) -> Action:
     if not found:
         raise OutboxError(f"no staged action {ref}")
     if len(found) > 1:
-        raise OutboxError(f"{ref} matches more than one job; use the long form: "
-                          + ", ".join(a.long_ref for a in found))
+        raise OutboxError(
+            f"{ref} matches more than one job; use the long form: " + ", ".join(a.long_ref for a in found)
+        )
     return found[0]
 
 
@@ -220,18 +229,27 @@ def _slug(text: str) -> str:
 STAGE_WAIT = 120.0
 
 
-def stage(job_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str,
-          input_schema: dict | None) -> tuple[Action, bool]:
+def stage(
+    job_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str, input_schema: dict | None
+) -> tuple[Action, bool]:
     """Write one staged action, under the outbox lock, since decisions can be made
     while the job is going. Returns (action, duplicate): an exact duplicate of an
     action already staged in this job is not staged again."""
     with lock(job_dir, wait=STAGE_WAIT):
-        return _stage_locked(Path(job_dir), tool=tool, effect=effect, arguments=arguments, reason=reason,
-                             role=role, input_schema=input_schema)
+        return _stage_locked(
+            Path(job_dir),
+            tool=tool,
+            effect=effect,
+            arguments=arguments,
+            reason=reason,
+            role=role,
+            input_schema=input_schema,
+        )
 
 
-def _stage_locked(job_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str,
-                  input_schema: dict | None) -> tuple[Action, bool]:
+def _stage_locked(
+    job_dir: Path, *, tool: str, effect: str, arguments: dict, reason: str, role: str, input_schema: dict | None
+) -> tuple[Action, bool]:
     job_id = job_dir.name
     existing = actions(job_dir)
     fp = fingerprint(arguments)
@@ -264,8 +282,7 @@ PLACE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["to"],
-    "properties": {"to": {"type": "string", "minLength": 2, "maxLength": 1000},
-                   "overwrite": {"type": "boolean"}},
+    "properties": {"to": {"type": "string", "minLength": 2, "maxLength": 1000}, "overwrite": {"type": "boolean"}},
 }
 
 
@@ -277,8 +294,9 @@ def _file_sha(path: Path) -> str:
     return h.hexdigest()
 
 
-def stage_placement(job_dir: Path, *, source: Path, shown_source: str, to: str, overwrite: bool, reason: str,
-                    role: str) -> tuple[Action, bool]:
+def stage_placement(
+    job_dir: Path, *, source: Path, shown_source: str, to: str, overwrite: bool, reason: str, role: str
+) -> tuple[Action, bool]:
     """Stage copying a workspace file to a place not shared for writing. A copy of the
     file as it is now is kept with the action, so later changes in the workspace do
     not change what is approved."""
@@ -288,12 +306,23 @@ def stage_placement(job_dir: Path, *, source: Path, shown_source: str, to: str, 
     sha = _file_sha(source)
     with lock(job_dir, wait=STAGE_WAIT):
         for a in actions(job_dir):
-            if a.tool == PLACE_TOOL and a.meta.get("file_sha256") == sha and isinstance(a.arguments, dict) \
-                    and a.arguments.get("to") == to:
+            if (
+                a.tool == PLACE_TOOL
+                and a.meta.get("file_sha256") == sha
+                and isinstance(a.arguments, dict)
+                and a.arguments.get("to") == to
+            ):
                 return a, True
         arguments = {"to": to, "overwrite": overwrite}
-        a, _ = _stage_locked(job_dir, tool=PLACE_TOOL, effect="internal", arguments=arguments, reason=reason,
-                             role=role, input_schema=PLACE_SCHEMA)
+        a, _ = _stage_locked(
+            job_dir,
+            tool=PLACE_TOOL,
+            effect="internal",
+            arguments=arguments,
+            reason=reason,
+            role=role,
+            input_schema=PLACE_SCHEMA,
+        )
         keep = a.path.with_suffix("") / source.name
         keep.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, keep)
@@ -321,8 +350,10 @@ def placement_check(home: Home, a: Action) -> tuple[Path, str | None]:
     warning = None
     if final.exists():
         if not args.get("overwrite"):
-            raise OutboxError(f"{a.ref} would replace {to}, which already exists. To replace it, set overwrite "
-                              f"to true with `ombro approvals edit {a.ref}`; otherwise decline it")
+            raise OutboxError(
+                f"{a.ref} would replace {to}, which already exists. To replace it, set overwrite "
+                f"to true with `ombro approvals edit {a.ref}`; otherwise decline it"
+            )
         warning = f"this replaces {to}, which already exists"
     return final, warning
 
@@ -366,8 +397,10 @@ SKILL_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["name"],
-    "properties": {"name": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64},
-                   "for": {"type": "array", "items": {"type": "string", "minLength": 1}}},
+    "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64},
+        "for": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    },
 }
 
 
@@ -391,8 +424,18 @@ def skill_text(a: Action) -> str:
         raise OutboxError(f"{a.ref}: the proposed SKILL.md could not be read: {e}") from None
 
 
-def stage_skill(job_dir: Path, *, name: str, text: str, for_roles: list[str], reason: str, base_sha: str,
-                flags: list[str], adds: str = "", jobs: list[str] | None = None) -> tuple[Action, bool]:
+def stage_skill(
+    job_dir: Path,
+    *,
+    name: str,
+    text: str,
+    for_roles: list[str],
+    reason: str,
+    base_sha: str,
+    flags: list[str],
+    adds: str = "",
+    jobs: list[str] | None = None,
+) -> tuple[Action, bool]:
     """Stage a skill the Lead proposes, keeping its SKILL.md beside the action. `reason` says why it
     is suggested (what in the job showed it); `adds`, what it gives later jobs that a brief would not;
     `jobs`, the earlier jobs of the same kind it rests on."""
@@ -401,13 +444,27 @@ def stage_skill(job_dir: Path, *, name: str, text: str, for_roles: list[str], re
         for a in actions(job_dir):
             if a.tool == SKILL_TOOL and a.meta.get("file_sha256") == _text_sha(text):
                 return a, True
-        a, _ = _stage_locked(job_dir, tool=SKILL_TOOL, effect="skill", arguments={"name": name, "for": for_roles},
-                             reason=reason, role="lead", input_schema=SKILL_SCHEMA)
+        a, _ = _stage_locked(
+            job_dir,
+            tool=SKILL_TOOL,
+            effect="skill",
+            arguments={"name": name, "for": for_roles},
+            reason=reason,
+            role="lead",
+            input_schema=SKILL_SCHEMA,
+        )
         keep = a.path.with_suffix("") / "SKILL.md"
         mdfile.write_atomic(keep, text)
-        _save(a, file=keep.relative_to(job_dir).as_posix(), file_sha256=_text_sha(text), base_sha256=base_sha,
-              change="update" if base_sha else "new", flags=list(flags), **({"adds": adds} if adds else {}),
-              **({"jobs": list(jobs)} if jobs else {}))
+        _save(
+            a,
+            file=keep.relative_to(job_dir).as_posix(),
+            file_sha256=_text_sha(text),
+            base_sha256=base_sha,
+            change="update" if base_sha else "new",
+            flags=list(flags),
+            **({"adds": adds} if adds else {}),
+            **({"jobs": list(jobs)} if jobs else {}),
+        )
     return a, False
 
 
@@ -421,10 +478,16 @@ def skill_view(home: Home, a: Action) -> dict[str, Any]:
     text = skill_text(a)
     live = skills.load(home, name)
     now = live.text if live else ""
-    out: dict[str, Any] = {"name": name, "for": list(args.get("for") or []), "text": text,
-                           "flags": list(a.meta.get("flags") or []), "live": bool(live),
-                           "why": str(a.meta.get("reason") or ""), "adds": str(a.meta.get("adds") or ""),
-                           "jobs": [str(j) for j in a.meta.get("jobs") or []]}
+    out: dict[str, Any] = {
+        "name": name,
+        "for": list(args.get("for") or []),
+        "text": text,
+        "flags": list(a.meta.get("flags") or []),
+        "live": bool(live),
+        "why": str(a.meta.get("reason") or ""),
+        "adds": str(a.meta.get("adds") or ""),
+        "jobs": [str(j) for j in a.meta.get("jobs") or []],
+    }
     if live:
         out["diff"] = skills.diff(now, text, name)
     out["changed_since"] = (skills.sha(now) if now else "") != str(a.meta.get("base_sha256") or "")
@@ -445,9 +508,11 @@ def _approve_skill(home: Home, a: Action) -> Action:
     except skills.SkillError as e:
         raise OutboxError(f"{a.ref} cannot be approved: {e}. Fix it with `ombro approvals edit {a.ref}`") from None
     if skills.live_sha(home, name) != str(a.meta.get("base_sha256") or ""):
-        raise OutboxError(f"{a.ref}: the skill {name} has changed since this was proposed. See the diff against "
-                          f"today's version with `ombro approvals show {a.ref}`; to approve it after all, open it "
-                          f"with `ombro approvals edit {a.ref}`, save, then approve")
+        raise OutboxError(
+            f"{a.ref}: the skill {name} has changed since this was proposed. See the diff against "
+            f"today's version with `ombro approvals show {a.ref}`; to approve it after all, open it "
+            f"with `ombro approvals edit {a.ref}`, save, then approve"
+        )
     _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
     _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
     try:
@@ -534,8 +599,9 @@ def lock(job_dir: Path, wait: float = 0.0):
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise OutboxBusy(f"another outbox command is working on job {Path(job_dir).name}; "
-                                     "wait for it to finish") from None
+                    raise OutboxBusy(
+                        f"another outbox command is working on job {Path(job_dir).name}; wait for it to finish"
+                    ) from None
                 time.sleep(0.1)
         try:
             yield
@@ -555,8 +621,12 @@ def _settle_locked(job_dir: Path) -> list[Action]:
     out = []
     for a in actions(job_dir):
         if a.status == "executing":
-            _save(a, status="uncertain", note="Ombro stopped while this action was running, so it may or may not "
-                  "have happened. It is never retried; settle it with `ombro approvals resolve`.")
+            _save(
+                a,
+                status="uncertain",
+                note="Ombro stopped while this action was running, so it may or may not "
+                "have happened. It is never retried; settle it with `ombro approvals resolve`.",
+            )
             _journal(job_dir, "outbox_uncertain", a, "Ombro stopped while it was running")
             out.append(a)
     if out:
@@ -577,8 +647,9 @@ def settle(job_dir: Path) -> None:
 
 def _journal(job_dir: Path, action: str, a: Action, note: str, **extra: Any) -> None:
     note = " ".join(str(note).split())  # one line, whatever the server's answer looked like
-    Journal(Path(job_dir) / "journal.jsonl").write("you", action, f"{a.ref} {a.tool}: {note}",
-                                                   ref=a.ref, tool=a.tool, **extra)
+    Journal(Path(job_dir) / "journal.jsonl").write(
+        "you", action, f"{a.ref} {a.tool}: {note}", ref=a.ref, tool=a.tool, **extra
+    )
 
 
 def _record(job_dir: Path, a: Action | None = None, line: str | None = None) -> None:
@@ -632,8 +703,10 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
         _settle_locked(job_dir)
         a = _reload(a)
         if a.status != "pending":
-            raise OutboxError(f"{a.ref} is {a.status}, so it cannot be approved"
-                              + (" (settle it with `ombro approvals resolve`)" if a.status == "uncertain" else ""))
+            raise OutboxError(
+                f"{a.ref} is {a.status}, so it cannot be approved"
+                + (" (settle it with `ombro approvals resolve`)" if a.status == "uncertain" else "")
+            )
         if _refused_now(home, a.tool):
             raise OutboxError(f"{a.tool} is set to `permission: refuse` in tools.md, so it cannot run")
         problem = check_arguments(a)
@@ -657,8 +730,7 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
         except SetupError as e:
             raise OutboxError(f"{a.ref} cannot run: the job's tool settings have a problem: {e}") from None
         _save(a, status="executing", executing_at=utc_now(), executing_pid=os.getpid())
-        _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""),
-                 edited=a.edited)
+        _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
         sent: list = []
         try:
             result = pool.call(parts[0], parts[1], a.arguments, sent=sent)
@@ -666,11 +738,17 @@ def approve(home: Home, a: Action, *, pool_factory: PoolFactory | None = None) -
             _save(a, status="pending", last_error=str(e), executing_at=None, executing_pid=None)
             _journal(job_dir, "outbox_not_reached", a, f"not sent: {e}")
             _record(job_dir)
-            raise OutboxError(f"{a.ref} was not sent, because the server could not be reached: {e}. "
-                              "It is still waiting; try again later") from None
+            raise OutboxError(
+                f"{a.ref} was not sent, because the server could not be reached: {e}. "
+                "It is still waiting; try again later"
+            ) from None
         except McpCallLost as e:
-            _save(a, status="uncertain", note=f"{e}; it may or may not have happened. It is never retried.",
-                  decided_at=utc_now())
+            _save(
+                a,
+                status="uncertain",
+                note=f"{e}; it may or may not have happened. It is never retried.",
+                decided_at=utc_now(),
+            )
             _journal(job_dir, "outbox_uncertain", a, str(e))
             _record(job_dir, a, f"approved, but no answer came back ({e}): uncertain")
             return a
@@ -707,8 +785,13 @@ def _approve_api(home: Home, a: Action, composio: bool = False, browser: bool = 
     _journal(job_dir, "outbox_approved", a, "approved" + (" (edited)" if a.edited else ""), edited=a.edited)
     from ombro import browser as browser_mod
 
-    run = (composio_mod.run_approved if composio else
-           (lambda h, t, _tool, args: browser_mod.run_approved(h, t, args)) if browser else apitool.run_approved)
+    run = (
+        composio_mod.run_approved
+        if composio
+        else (lambda h, t, _tool, args: browser_mod.run_approved(h, t, args))
+        if browser
+        else apitool.run_approved
+    )
     what = "Composio" if composio else "the website" if browser else "the API"
     try:
         text = run(home, meta.get("tools"), a.tool, a.arguments)
@@ -716,11 +799,16 @@ def _approve_api(home: Home, a: Action, composio: bool = False, browser: bool = 
         _save(a, status="pending", last_error=str(e), executing_at=None, executing_pid=None)
         _journal(job_dir, "outbox_not_reached", a, f"not sent: {e}")
         _record(job_dir)
-        raise OutboxError(f"{a.ref} was not sent, because {what} could not be reached: {e}. "
-                          "It is still waiting; try again later") from None
+        raise OutboxError(
+            f"{a.ref} was not sent, because {what} could not be reached: {e}. It is still waiting; try again later"
+        ) from None
     except (apitool.ApiCallLost, composio_mod.ComposioCallLost, browser_mod.SubmitUncertain) as e:
-        _save(a, status="uncertain", note=f"{e}; it may or may not have happened. It is never retried.",
-              decided_at=utc_now())
+        _save(
+            a,
+            status="uncertain",
+            note=f"{e}; it may or may not have happened. It is never retried.",
+            decided_at=utc_now(),
+        )
         _journal(job_dir, "outbox_uncertain", a, str(e))
         _record(job_dir, a, f"approved, but no answer came back ({e}): uncertain")
         return a
@@ -764,10 +852,15 @@ def _remember_declined_skill(home: Home, a: Action) -> None:
     except (OutboxError, mdfile.FrontMatterError):
         meta = {}
     try:
-        skills.record_declined(home, name=name, description=str(meta.get("description") or ""),
-                               change=str(a.meta.get("change") or "new"),
-                               base_sha=str(a.meta.get("base_sha256") or ""), job=a.job_id,
-                               date=date.today().isoformat())
+        skills.record_declined(
+            home,
+            name=name,
+            description=str(meta.get("description") or ""),
+            change=str(a.meta.get("change") or "new"),
+            base_sha=str(a.meta.get("base_sha256") or ""),
+            job=a.job_id,
+            date=date.today().isoformat(),
+        )
     except (OSError, mdfile.FrontMatterError):
         pass  # the decline stands; only the reminder to the Lead is lost
 

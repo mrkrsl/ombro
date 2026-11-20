@@ -191,7 +191,10 @@ def cmd_start(args) -> int:
 
             tool_settings = load_tool_settings(home)
             job_dir = record_insufficient_brief(
-                home, jobs.spec_crews(home, {}, given), load_limits(home, None, tool_settings), outcome,
+                home,
+                jobs.spec_crews(home, {}, given),
+                load_limits(home, None, tool_settings),
+                outcome,
                 _first_answer(outcome),
                 tools=tool_settings.to_dict(),
             )
@@ -236,8 +239,10 @@ def cmd_start(args) -> int:
         print(f"Follow it with `ombro status {job_id}` or `ombro journal {job_id}`.")
         return 0
 
-    print(f"Job {job_id} (crew{'s' if len(crews) > 1 else ''} {', '.join(crews)}). "
-          "Ctrl-C stops it and still writes the report.\n")
+    print(
+        f"Job {job_id} (crew{'s' if len(crews) > 1 else ''} {', '.join(crews)}). "
+        "Ctrl-C stops it and still writes the report.\n"
+    )
     status = _execute(home, job_dir, echo=_echo)
     print(f"\nRun {job_id} ended: {status}\n")
     print((job_dir / "report.md").read_text(encoding="utf-8"))
@@ -283,8 +288,10 @@ def cmd_jobs(args) -> int:
         tokens = jobs.usage(meta).get("total_tokens", 0)
         n = outbox.waiting_count(job_dir)
         box = f"{n} waiting" if n else "-"
-        print(f"{job_dir.name:<24} {crew[:16]:<16} {meta.get('status', '?'):<18} {tokens:>9,}  {box:<10} "
-              f"{meta.get('brief', '')[:60]}")
+        print(
+            f"{job_dir.name:<24} {crew[:16]:<16} {meta.get('status', '?'):<18} {tokens:>9,}  {box:<10} "
+            f"{meta.get('brief', '')[:60]}"
+        )
     if any(outbox.waiting_count(d) for d in rows):
         print("\nSee waiting actions with `ombro approvals`.")
     return 0
@@ -311,7 +318,9 @@ def cmd_status(args) -> int:
     print(f"Allowance {lim.get('allowance', 'custom')}")
     print()
     print(f"{'':<14}{'used':>16}  {'limit':>14}")
-    print(f"{'Tokens':<14}{sp.get('counted_tokens', sp.get('total_tokens', 0)):>16,}  {format_tokens(lim.get('max_tokens')):>14}")  # as counted against the limit
+    print(
+        f"{'Tokens':<14}{sp.get('counted_tokens', sp.get('total_tokens', 0)):>16,}  {format_tokens(lim.get('max_tokens')):>14}"
+    )  # as counted against the limit
     print(f"{'Rounds':<14}{sp.get('rounds', 0):>16}  {lim.get('max_rounds', 0):>14}")
     print(
         f"{'Time':<14}{format_duration(sp.get('elapsed_seconds', 0)):>16}  "
@@ -328,8 +337,10 @@ def cmd_status(args) -> int:
     from ombro import outbox, outward
 
     c = outbox.counts(job_dir)
-    print(f"\nApprovals {outbox.describe_counts(c)}"
-          + (" (see them with `ombro approvals`)" if outbox.waiting_count(job_dir) else ""))
+    print(
+        f"\nApprovals {outbox.describe_counts(c)}"
+        + (" (see them with `ombro approvals`)" if outbox.waiting_count(job_dir) else "")
+    )
     if meta.get("outward"):
         print(f"Outward   {outward.describe(meta['outward'])}")
     print(f"\n{int(reserve * 100)}% of the token limit is held back for the report.")
@@ -387,8 +398,9 @@ def _follow_journal(job_dir: Path, args, poll: float = 0.5, clock=time.time, sle
         for ev in events:
             if ev.get("action") == "model_call" and not args.all:
                 continue
-            print(json.dumps(ev, ensure_ascii=False, default=str) if args.json else journal.format_event(ev),
-                  flush=True)
+            print(
+                json.dumps(ev, ensure_ascii=False, default=str) if args.json else journal.format_event(ev), flush=True
+            )
 
     try:
         while True:
@@ -430,11 +442,22 @@ def cmd_summary(args) -> int:
         if not crew["roles"]:
             print("   (no roles yet)")
     print()
-    print(", ".join([f"{n(c['crews_ready'], 'crew')} ready to work", n(c["active_jobs"], "active job"),
-                     n(c["scheduled_jobs"], "scheduled job"), n(c["waiting"], "item") + " to approve"]))
+    print(
+        ", ".join(
+            [
+                f"{n(c['crews_ready'], 'crew')} ready to work",
+                n(c["active_jobs"], "active job"),
+                n(c["scheduled_jobs"], "scheduled job"),
+                n(c["waiting"], "item") + " to approve",
+            ]
+        )
+    )
     if s["unseen"]:
-        print("\nFinished, and not yet looked at: " + ", ".join(r["job_id"] for r in s["unseen"])
-              + ". See one with `ombro report <job_id>`.")
+        print(
+            "\nFinished, and not yet looked at: "
+            + ", ".join(r["job_id"] for r in s["unseen"])
+            + ". See one with `ombro report <job_id>`."
+        )
     return 0
 
 
@@ -459,8 +482,7 @@ def cmd_preferences(args) -> int:
             print(f"Thinking: {THINKING_LABELS[p['thinking']]}" + ("" if p["thinking_set"] else " (the default)"))
         own = [m for m in describe(home) if m["from"] == "models.md"]
         if own:
-            print("Models with their own level in models.md: "
-                  + ", ".join(f"{m['model']} ({m['level']})" for m in own))
+            print("Models with their own level in models.md: " + ", ".join(f"{m['model']} ({m['level']})" for m in own))
         return 0
     if args.action == "edit":
         from ombro.interview import open_in_editor
@@ -540,8 +562,10 @@ def cmd_open(args) -> int:
     job_dir = _resolve_job(home, args.job_id, args.crew)
     folder = job_dir / "workspace"
     if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
-        raise CliError(f"{folder} is not a real folder (it has been replaced, for example by a symlink), so Ombro "
-                       "will not open it. Look at it with care before opening anything in it.")
+        raise CliError(
+            f"{folder} is not a real folder (it has been replaced, for example by a symlink), so Ombro "
+            "will not open it. Look at it with care before opening anything in it."
+        )
     folder.mkdir(exist_ok=True)
     print(folder)
     if not args.print_only and not _launch(folder):
@@ -573,8 +597,10 @@ def cmd_connect(args) -> int:
 
         def opener(url: str) -> None:
             print(f"Open this address in a browser on any computer, and sign in to {args.server}:\n\n  {url}\n")
-            print("Afterwards the browser shows a page that can't be reached. That's expected: copy the "
-                  "whole address from its address bar.")
+            print(
+                "Afterwards the browser shows a page that can't be reached. That's expected: copy the "
+                "whole address from its address bar."
+            )
             while True:
                 text = input("Paste the address here: ").strip()
                 if not text:
@@ -582,8 +608,10 @@ def cmd_connect(args) -> int:
                 answer = oauth.answer_from(text)
                 if answer and receiver.give(answer):
                     return
-                print("That isn't the address from this sign-in. Copy the whole address after signing in, "
-                      "or press Enter to cancel.")
+                print(
+                    "That isn't the address from this sign-in. Copy the whole address after signing in, "
+                    "or press Enter to cancel."
+                )
 
         try:
             done = oauth.connect(home, args.server, cfg, open_browser=opener, say=lambda _t: None, receiver=receiver)
@@ -618,10 +646,14 @@ def _no_browser_here() -> bool:
 def _connected(home, server: str, done) -> int:
     from ombro import oauth
 
-    print(f"Connected {server}, signed in with {done.issuer}"
-          + (f" (access: {done.scope})" if done.scope else "") + ".")
-    print("It renews itself, so jobs can use it unattended." if done.refreshes else
-          "The service gave no renewal token, so you will need to connect again when it expires.")
+    print(
+        f"Connected {server}, signed in with {done.issuer}" + (f" (access: {done.scope})" if done.scope else "") + "."
+    )
+    print(
+        "It renews itself, so jobs can use it unattended."
+        if done.refreshes
+        else "The service gave no renewal token, so you will need to connect again when it expires."
+    )
     print(f"The sign-in is kept in {oauth.store_path(home, server)}, readable only by you.")
     return 0
 
@@ -649,8 +681,10 @@ def cmd_chatgpt(args) -> int:
     if action == "status":
         st = chatgpt.status(home)
         if st["state"] == "signed in":
-            print(f"Signed in with ChatGPT{' as ' + st['email'] if st['email'] else ''}: Ombro uses your ChatGPT "
-                  f"plan for the models ending in -plan. Manage usage: {chatgpt.USAGE_URL}")
+            print(
+                f"Signed in with ChatGPT{' as ' + st['email'] if st['email'] else ''}: Ombro uses your ChatGPT "
+                f"plan for the models ending in -plan. Manage usage: {chatgpt.USAGE_URL}"
+            )
         elif st["state"] == "plan not allowed":
             print(chatgpt.NOT_ALLOWED)
         else:
@@ -661,19 +695,25 @@ def cmd_chatgpt(args) -> int:
         if not done["signed_out"]:
             print("Not signed in with ChatGPT.")
         elif done["revoked"]:
-            print("Signed out of ChatGPT, and the sign-in was revoked. The -plan models stay in models.md but "
-                  "won't work until you sign in again.")
+            print(
+                "Signed out of ChatGPT, and the sign-in was revoked. The -plan models stay in models.md but "
+                "won't work until you sign in again."
+            )
         else:
-            print("Signed out of ChatGPT here, but OpenAI didn't confirm the sign-in was revoked. You can "
-                  "disconnect Ombro in ChatGPT settings.")
+            print(
+                "Signed out of ChatGPT here, but OpenAI didn't confirm the sign-in was revoked. You can "
+                "disconnect Ombro in ChatGPT settings."
+            )
         return 0
     if args.paste or _no_browser_here():
         receiver = oauth.HandOver(path=chatgpt.CALLBACK_PATH)
 
         def opener(url: str) -> None:
             print(f"Open this address in a browser on any computer, and continue with ChatGPT:\n\n  {url}\n")
-            print("Afterwards the browser shows a page that can't be reached. That's expected: copy the "
-                  "whole address from its address bar.")
+            print(
+                "Afterwards the browser shows a page that can't be reached. That's expected: copy the "
+                "whole address from its address bar."
+            )
             while True:
                 text = input("Paste the address here: ").strip()
                 if not text:
@@ -681,14 +721,18 @@ def cmd_chatgpt(args) -> int:
                 answer = oauth.answer_from(text)
                 if answer and receiver.give(answer):
                     return
-                print("That isn't the address from this sign-in. Copy the whole address after signing in, "
-                      "or press Enter to cancel.")
+                print(
+                    "That isn't the address from this sign-in. Copy the whole address after signing in, "
+                    "or press Enter to cancel."
+                )
     else:
         receiver = None
-        opener = (lambda url: print(f"Open this address to sign in:\n\n  {url}\n")) if args.no_browser \
-            else webbrowser.open
-        print(f"Waiting up to {oauth.CONNECT_TIMEOUT / 60:.0f} minutes for you to continue with ChatGPT. "
-              "Ctrl-C cancels.")
+        opener = (
+            (lambda url: print(f"Open this address to sign in:\n\n  {url}\n")) if args.no_browser else webbrowser.open
+        )
+        print(
+            f"Waiting up to {oauth.CONNECT_TIMEOUT / 60:.0f} minutes for you to continue with ChatGPT. Ctrl-C cancels."
+        )
     try:
         done = chatgpt.sign_in(home, open_browser=opener, receiver=receiver, say=lambda _t: None)
     except (oauth.SignInError, ModelError) as e:
@@ -700,8 +744,10 @@ def cmd_chatgpt(args) -> int:
         print(chatgpt.NOT_ALLOWED)
         return 1
     who = f" as {done['email']}" if done["email"] else ""
-    print(f"Signed in with ChatGPT{who}. Added {len(done['models'])} model{'s' if len(done['models']) != 1 else ''} "
-          f"on your plan: {', '.join(done['models'])}.")
+    print(
+        f"Signed in with ChatGPT{who}. Added {len(done['models'])} model{'s' if len(done['models']) != 1 else ''} "
+        f"on your plan: {', '.join(done['models'])}."
+    )
     if done["welcome"]:
         print(done["welcome"])
         chatgpt.mark_welcomed(home)
@@ -946,10 +992,11 @@ def cmd_role(args) -> int:
         title = " ".join((args.name or "").split()) or None
         name = folder_name(title) if title else None
         if title and not (name and NAME.match(name)):
-            raise CliError("Give the role a title made of letters or digits, such as \"Marketing Assistant\".")
+            raise CliError('Give the role a title made of letters or digits, such as "Marketing Assistant".')
         if name and home.roles_dir(crew).joinpath(name).exists():
-            raise CliError(f"Crew {crew} already has a role named {name}. "
-                           f"Change it with `ombro role edit {crew}/{name}`.")
+            raise CliError(
+                f"Crew {crew} already has a role named {name}. Change it with `ombro role edit {crew}/{name}`."
+            )
         limits = load_limits(home)
         outcome = start(home, RolePurpose(home, crew, limits, title), crew, limits)
         if outcome.confirmed:
@@ -967,8 +1014,9 @@ def cmd_role(args) -> int:
         raise CliError(f"Give the role's name, e.g. `ombro role {action} writer`.")
     if args.name == "lead":
         if action == "remove":
-            raise CliError("The Lead cannot be removed; there is one, above every crew. "
-                           "Edit it with `ombro role edit lead`.")
+            raise CliError(
+                "The Lead cannot be removed; there is one, above every crew. Edit it with `ombro role edit lead`."
+            )
         crew, folder = "", home.lead_dir
     else:
         crew, folder = _find_role(home, args.name, args.crew)
@@ -999,17 +1047,23 @@ def cmd_role(args) -> int:
         from ombro.role_edit import edit_role
 
         if not args.value:
-            raise CliError(f"Give the new title, e.g. `ombro role rename {args.name} \"Copy Editor\"`."
-                           if action == "rename" else
-                           f"Give the kind, e.g. `ombro role kind {args.name} helper`.")
+            raise CliError(
+                f'Give the new title, e.g. `ombro role rename {args.name} "Copy Editor"`.'
+                if action == "rename"
+                else f"Give the kind, e.g. `ombro role kind {args.name} helper`."
+            )
         if not crew:
             raise CliError("The Lead keeps its name and kind.")
-        done = edit_role(home, crew, folder.name, **({"title": args.value} if action == "rename" else {"kind": args.value}))
+        done = edit_role(
+            home, crew, folder.name, **({"title": args.value} if action == "rename" else {"kind": args.value})
+        )
         if action == "kind":
             print(f"{label} is now a {args.value}.")
         elif done.renamed_from:
-            print(f"Renamed {label} to {crew}/{done.name}." +
-                  (f" Saved briefs changed to the new name: {', '.join(done.specs)}." if done.specs else ""))
+            print(
+                f"Renamed {label} to {crew}/{done.name}."
+                + (f" Saved briefs changed to the new name: {', '.join(done.specs)}." if done.specs else "")
+            )
         else:
             print(f"{label} is now called {' '.join(args.value.split())}.")
         return 0
@@ -1042,8 +1096,9 @@ def set_key_flow(home: Home, name: str, ui) -> int:
         ui.say("Cancelled; nothing changed.")
         return 1
     keys.set_key(home, name, value)
-    ui.say(f"Saved {name} ({keys.mask(value)}). It is used from the next call, even in a job already going.",
-           level="done")
+    ui.say(
+        f"Saved {name} ({keys.mask(value)}). It is used from the next call, even in a job already going.", level="done"
+    )
     return 0
 
 
@@ -1095,8 +1150,10 @@ def cmd_crew(args) -> int:
         if home.crew_dir(name).exists():
             raise CliError(f"A crew named {name} already exists.")
         ensure_crew(home, name, args.description or "", args.title or "")
-        print(f"Created crew {name} ({crew_title(home, name)}). The Lead can brief its roles once it has some: "
-              f"add them with `ombro role add --crew {name}`.")
+        print(
+            f"Created crew {name} ({crew_title(home, name)}). The Lead can brief its roles once it has some: "
+            f"add them with `ombro role add --crew {name}`."
+        )
         return 0
     if action == "use":
         if not home.crew_dir(name).is_dir():
@@ -1135,19 +1192,25 @@ def cmd_limits(args) -> int:
     print(f"  job time         {format_duration(lim.job_timeout)}")
     print(f"  each interview   {format_tokens(lim.interview_max_tokens)} tokens, {lim.interview_max_turns} answers")
     print(f"  each chat        {format_tokens(lim.chat_max_tokens)} tokens")
-    print(f"  notes.md         {lim.memory_notes_max_chars:,} characters; a job's Lead sees the last "
-          f"{lim.memory_index_entries} index entries")
+    print(
+        f"  notes.md         {lim.memory_notes_max_chars:,} characters; a job's Lead sees the last "
+        f"{lim.memory_index_entries} index entries"
+    )
     print(f"  per model call   {lim.max_output_tokens:,} output tokens")
     from ombro.settings import format_size
 
-    print(f"  each script      {format_duration(lim.code_timeout)}, {format_size(lim.code_max_memory)}, "
-          f"{lim.code_output_chars:,} characters of output to the role (code.run)")
+    print(
+        f"  each script      {format_duration(lim.code_timeout)}, {format_size(lim.code_max_memory)}, "
+        f"{lim.code_output_chars:,} characters of output to the role (code.run)"
+    )
     print(f"  scripts in all   {format_size(lim.code_max_total)} in a job's workspace/ and scratch/ (code.run)")
     print(f"\nLevels: {', '.join(ALLOWANCES)}. Change with `ombro limits set <level>`; details in {home.limits}.")
     retired = [k for k in RETIRED_LIMITS if k in meta]
     if retired:
-        print(f"Note: {', '.join(retired)} in limits.md no longer do anything (Ombro reports tokens only); "
-              "you can delete them.")
+        print(
+            f"Note: {', '.join(retired)} in limits.md no longer do anything (Ombro reports tokens only); "
+            "you can delete them."
+        )
     return 0
 
 
@@ -1177,9 +1240,18 @@ def _mcp_args(args, action: str) -> argparse.Namespace:
     """`ombro tools add --mcp` and `ombro tools remove` in the form the MCP server flows take."""
     if args.api_class == "read-only":
         raise CliError("An MCP server's class is internal or external: its read-only tools say so themselves.")
-    return argparse.Namespace(action=action, name=args.name, command=args.command, url=args.url, env=args.env,
-                              header=args.header, secret=args.secret, server_class=args.api_class,
-                              no_prompt=args.no_prompt, yes=args.yes)
+    return argparse.Namespace(
+        action=action,
+        name=args.name,
+        command=args.command,
+        url=args.url,
+        env=args.env,
+        header=args.header,
+        secret=args.secret,
+        server_class=args.api_class,
+        no_prompt=args.no_prompt,
+        yes=args.yes,
+    )
 
 
 def cmd_tools(args) -> int:
@@ -1203,8 +1275,15 @@ def cmd_tools(args) -> int:
 
         try:
             # Flags only one kind takes say which it is; otherwise it's asked.
-            api = args.api or bool(args.about or args.how_to or args.send_key or args.get_looks_up or args.no_key
-                                   or args.max_calls or args.api_class == "read-only")
+            api = args.api or bool(
+                args.about
+                or args.how_to
+                or args.send_key
+                or args.get_looks_up
+                or args.no_key
+                or args.max_calls
+                or args.api_class == "read-only"
+            )
             mcp = args.mcp or bool(args.command or args.env or args.header or args.secret or args.no_prompt)
             if api and mcp and not (args.api or args.mcp):
                 raise CliError("Those flags are for both a web API and an MCP server: say --api or --mcp.")
@@ -1218,9 +1297,16 @@ def cmd_tools(args) -> int:
     if args.server in ("add", "edit"):
         from ombro.ui import ConsoleUI
 
-        given = {"url": args.url, "about": args.about, "how_to": args.how_to, "access": args.api_class,
-                 "send_key": args.send_key, "max_calls": args.max_calls, "no_key": args.no_key or None,
-                 "get_looks_up": args.get_looks_up}
+        given = {
+            "url": args.url,
+            "about": args.about,
+            "how_to": args.how_to,
+            "access": args.api_class,
+            "send_key": args.send_key,
+            "max_calls": args.max_calls,
+            "no_key": args.no_key or None,
+            "get_looks_up": args.get_looks_up,
+        }
         try:
             return tool_cmd.api_flow(_home(), ConsoleUI(), args.server, args.name, given, yes=args.yes)
         except SetupError as e:
@@ -1274,12 +1360,16 @@ def _serves_this_home(port: int, token: str) -> str | None:
     except urllib.error.HTTPError as e:
         if e.code != 403:
             return f"The Ombro on port {port} of this server answered oddly ({e.code})."
-        return (f"The Ombro on port {port} of this server isn't the one installed here (it may be in Docker), "
-                "so it can't pair over SSH by itself. In the app, give that Ombro's pairing code as well "
-                "(for Docker: docker compose logs ombro).")
+        return (
+            f"The Ombro on port {port} of this server isn't the one installed here (it may be in Docker), "
+            "so it can't pair over SSH by itself. In the app, give that Ombro's pairing code as well "
+            "(for Docker: docker compose logs ombro)."
+        )
     except OSError:
-        return (f"Nothing answers on port {port} of this server. Check that Ombro is running there "
-                "(ombro serve status), and the port.")
+        return (
+            f"Nothing answers on port {port} of this server. Check that Ombro is running there "
+            "(ombro serve status), and the port."
+        )
 
 
 def cmd_pair(args) -> int:
@@ -1305,11 +1395,14 @@ def cmd_pair(args) -> int:
                 print("No device is paired with this server.")
             how = {"ssh": " over SSH", "code": " with a code"}
             for d in rows:
-                print(f"{d.id}  {d.name}  (paired{how.get(d.how, '')} "
-                      f"{datetime.fromtimestamp(d.paired):%d %b %Y %H:%M})")
+                print(
+                    f"{d.id}  {d.name}  (paired{how.get(d.how, '')} {datetime.fromtimestamp(d.paired):%d %b %Y %H:%M})"
+                )
             if len({d.name for d in rows}) < len(rows):
-                print("\nSome names appear more than once: a computer that paired again (over SSH and with a "
-                      "code, say) is listed each time. `ombro pair --forget <id>` forgets just one.")
+                print(
+                    "\nSome names appear more than once: a computer that paired again (over SSH and with a "
+                    "code, say) is listed each time. `ombro pair --forget <id>` forgets just one."
+                )
             return 0
         if args.forget:
             gone = devices.forget(args.forget)
@@ -1328,8 +1421,10 @@ def cmd_pair(args) -> int:
     except PairingError as e:
         raise CliError(str(e)) from None
     print(f"Pairing code: {code}\n")
-    print("Type it into the Ombro app, connecting by address. It works once, until "
-          f"{datetime.fromtimestamp(expires):%a %d %b %H:%M}. A new code replaces this one.")
+    print(
+        "Type it into the Ombro app, connecting by address. It works once, until "
+        f"{datetime.fromtimestamp(expires):%a %d %b %H:%M}. A new code replaces this one."
+    )
     return 0
 
 
@@ -1342,8 +1437,10 @@ def cmd_sandbox(args) -> int:
         return 0
     reason = sandbox.unavailable_reason()
     if reason is None:
-        print(f"The sandbox works here ({'sandbox-exec' if sandbox.kind() == 'macos' else 'bubblewrap'}): "
-              "code a job writes can run, with no internet and only its own files.")
+        print(
+            f"The sandbox works here ({'sandbox-exec' if sandbox.kind() == 'macos' else 'bubblewrap'}): "
+            "code a job writes can run, with no internet and only its own files."
+        )
         return 0
     print(f"Code a job writes can't run here: {reason}")
     return 1
@@ -1366,7 +1463,9 @@ def cmd_tick(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="ombro", description="Brief a crew of AI roles and get bounded, reported work back.")
+    p = argparse.ArgumentParser(
+        prog="ombro", description="Brief a crew of AI roles and get bounded, reported work back."
+    )
     p.add_argument("--version", action="version", version=f"ombro {__version__}")
     sub = p.add_subparsers(dest="command", metavar="command")
 
@@ -1377,11 +1476,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--spec", help="a confirmed spec: a file, or the name of one saved with `ombro brief`")
     s.add_argument("--skip-interview", metavar="BRIEF", help="start from a one-line brief with no interview (recorded)")
     s.add_argument("--detach", action="store_true", help="keep running after the terminal closes")
-    s.add_argument("--crew", action="append",
-                   help="a crew the job may use when the spec names none; repeat for several (default from preferences)")
-    s.add_argument("--role", action="append",
-                   help="for this job only, who does the work (crew/role or a role's name), in place of the spec's "
-                   "roles:; repeat for several")
+    s.add_argument(
+        "--crew",
+        action="append",
+        help="a crew the job may use when the spec names none; repeat for several (default from preferences)",
+    )
+    s.add_argument(
+        "--role",
+        action="append",
+        help="for this job only, who does the work (crew/role or a role's name), in place of the spec's "
+        "roles:; repeat for several",
+    )
     s.set_defaults(func=cmd_start)
 
     s = sub.add_parser("brief", help="interview about a task and save a confirmed spec")
@@ -1390,9 +1495,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_brief)
 
     s = sub.add_parser("chat", help="talk with the Lead (read-only); /brief, /remember, /help inside")
-    s.add_argument("--crew", help="the crew /remember and /brief use unless another is named (default from preferences)")
-    s.add_argument("--resume", nargs="?", const="", metavar="TITLE",
-                   help="carry on a saved chat: the newest whose title contains TITLE (the newest of all if none)")
+    s.add_argument(
+        "--crew", help="the crew /remember and /brief use unless another is named (default from preferences)"
+    )
+    s.add_argument(
+        "--resume",
+        nargs="?",
+        const="",
+        metavar="TITLE",
+        help="carry on a saved chat: the newest whose title contains TITLE (the newest of all if none)",
+    )
     s.set_defaults(func=cmd_chat)
 
     s = sub.add_parser("chats", help="saved chats by title, most recent first")
@@ -1406,9 +1518,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("role", help="list, add, edit, rename or remove roles, or change their kind")
     s.add_argument("action", choices=["list", "add", "edit", "rename", "kind", "remove"])
-    s.add_argument("name", nargs="?", help="for add: the role's title, e.g. \"Marketing Assistant\"")
-    s.add_argument("value", nargs="?", help="for rename: the new title, e.g. \"Copy Editor\"; "
-                                            "for kind: specialist or helper")
+    s.add_argument("name", nargs="?", help='for add: the role\'s title, e.g. "Marketing Assistant"')
+    s.add_argument(
+        "value", nargs="?", help='for rename: the new title, e.g. "Copy Editor"; for kind: specialist or helper'
+    )
     s.add_argument("--crew")
     s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_role)
@@ -1417,7 +1530,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", nargs="?", choices=["list", "add", "use"], help="default: list")
     s.add_argument("name", nargs="?")
     s.add_argument("--description", help="for crew add")
-    s.add_argument("--title", help="for crew add: the title shown, e.g. \"Legal Crew\" (default: the name, then Crew)")
+    s.add_argument("--title", help='for crew add: the title shown, e.g. "Legal Crew" (default: the name, then Crew)')
     s.add_argument("--json", action="store_true", help="for list: print JSON, for interfaces")
     s.set_defaults(func=cmd_crew)
 
@@ -1487,15 +1600,21 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("connect", help="sign in to a remote MCP server in your browser")
     s.add_argument("server", help="the server's name under `servers:` in tools.md")
     s.add_argument("--no-browser", action="store_true", help="print the sign-in address instead of opening it")
-    s.add_argument("--paste", action="store_true", help="sign in with a browser on another computer, then paste "
-                   "the address it ends up on (the default over SSH)")
+    s.add_argument(
+        "--paste",
+        action="store_true",
+        help="sign in with a browser on another computer, then paste the address it ends up on (the default over SSH)",
+    )
     s.set_defaults(func=cmd_connect)
 
     s = sub.add_parser("chatgpt", help="use your ChatGPT plan for model calls: sign in, sign out, or status")
     s.add_argument("action", nargs="?", choices=["status", "sign-in", "sign-out"], help="default: status")
     s.add_argument("--no-browser", action="store_true", help="print the sign-in address instead of opening it")
-    s.add_argument("--paste", action="store_true", help="sign in with a browser on another computer, then paste "
-                   "the address it ends up on (the default over SSH)")
+    s.add_argument(
+        "--paste",
+        action="store_true",
+        help="sign in with a browser on another computer, then paste the address it ends up on (the default over SSH)",
+    )
     s.set_defaults(func=cmd_chatgpt)
 
     # The old name for `ombro tools add --mcp` and `ombro tools remove`, kept working but not listed.
@@ -1504,14 +1623,28 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("name", nargs="?", help="the server's name, e.g. sheets")
     s.add_argument("--command", help='for add: a local server\'s command line, e.g. "uvx some-server==1.2.3"')
     s.add_argument("--url", help="for add: a remote server's address")
-    s.add_argument("--env", action="append", metavar="NAME=VALUE", help="for add: a setting for a local server "
-                   "(not a secret); repeat for several")
-    s.add_argument("--header", action="append", metavar="NAME=VALUE", help="for add: a header for a remote "
-                   "server (not a secret)")
-    s.add_argument("--secret", action="append", metavar="NAME[=KEY]", help="for add: a variable (local) or header "
-                   "(remote) that holds a secret, typed hidden and kept in secrets/keys.env as KEY")
-    s.add_argument("--class", dest="server_class", choices=["internal", "external"],
-                   help="for add: the class of its tools that are not read-only")
+    s.add_argument(
+        "--env",
+        action="append",
+        metavar="NAME=VALUE",
+        help="for add: a setting for a local server (not a secret); repeat for several",
+    )
+    s.add_argument(
+        "--header", action="append", metavar="NAME=VALUE", help="for add: a header for a remote server (not a secret)"
+    )
+    s.add_argument(
+        "--secret",
+        action="append",
+        metavar="NAME[=KEY]",
+        help="for add: a variable (local) or header "
+        "(remote) that holds a secret, typed hidden and kept in secrets/keys.env as KEY",
+    )
+    s.add_argument(
+        "--class",
+        dest="server_class",
+        choices=["internal", "external"],
+        help="for add: the class of its tools that are not read-only",
+    )
     s.add_argument("--no-prompt", action="store_true", help="for add: do not ask about secrets not given")
     s.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     s.set_defaults(func=cmd_server)
@@ -1521,9 +1654,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_disconnect)
 
     s = sub.add_parser("schedule", help="list, show, add, enable, disable or remove schedules; install the scheduler")
-    s.add_argument("action", nargs="?",
-                   choices=["list", "show", "add", "enable", "disable", "remove", "install", "uninstall"],
-                   help="default: list")
+    s.add_argument(
+        "action",
+        nargs="?",
+        choices=["list", "show", "add", "enable", "disable", "remove", "install", "uninstall"],
+        help="default: list",
+    )
     s.add_argument("name", nargs="?")
     s.add_argument("--crew")
     s.add_argument("--spec", help="for add: a spec saved in the crew (by name)")
@@ -1537,62 +1673,101 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_schedule)
 
     s = sub.add_parser("approvals", help="what waits for your approval: list, show, approve, decline, edit, resolve")
-    s.add_argument("action", nargs="?", choices=["list", "show", "approve", "decline", "edit", "resolve"],
-                   help="default: list")
+    s.add_argument(
+        "action", nargs="?", choices=["list", "show", "approve", "decline", "edit", "resolve"], help="default: list"
+    )
     s.add_argument("refs", nargs="*", help="action references, e.g. ab12-3 (see `ombro approvals`)")
     s.add_argument("--crew", help="for list: only this crew")
     s.add_argument("--all", action="store_true", help="for list: include actions already decided")
-    s.add_argument("--yes", action="store_true", help="for approve and decline: do not ask (an interface "
-                   "that has shown the actions passes this)")
+    s.add_argument(
+        "--yes",
+        action="store_true",
+        help="for approve and decline: do not ask (an interface that has shown the actions passes this)",
+    )
     s.add_argument("--arguments", help="for edit: the new arguments as a JSON object, instead of the editor")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_approvals)
 
-    s = sub.add_parser("skills", help="the skills library: list, show <name>, edit <name>, "
-                       "give <skill> <crew/role>, add <folder>")
+    s = sub.add_parser(
+        "skills", help="the skills library: list, show <name>, edit <name>, give <skill> <crew/role>, add <folder>"
+    )
     s.add_argument("action", nargs="?", choices=["list", "show", "edit", "give", "add"], help="default: list")
     s.add_argument("name", nargs="?", help="a skill's name; for add, the folder of a skill to import")
-    s.add_argument("--yes", action="store_true", help="for add: do not ask (an interface that has shown it "
-                   "passes this)")
+    s.add_argument(
+        "--yes", action="store_true", help="for add: do not ask (an interface that has shown it passes this)"
+    )
     s.add_argument("roles", nargs="*", help="for give: roles as crew/role")
     s.add_argument("--json", action="store_true", help="for list and show: print JSON, for interfaces")
     s.set_defaults(func=cmd_skills)
 
-    s = sub.add_parser("tools", help="native tools, MCP servers and web APIs; with a server, its tools, class and "
-                       "permission; add, edit or remove one")
-    s.add_argument("server", nargs="?", help="an MCP server named in tools.md, or a built-in tool such as "
-                   "web.search to see or change it; or add (a web API or an MCP server), edit (a web API) or remove")
+    s = sub.add_parser(
+        "tools",
+        help="native tools, MCP servers and web APIs; with a server, its tools, class and "
+        "permission; add, edit or remove one",
+    )
+    s.add_argument(
+        "server",
+        nargs="?",
+        help="an MCP server named in tools.md, or a built-in tool such as "
+        "web.search to see or change it; or add (a web API or an MCP server), edit (a web API) or remove",
+    )
     s.add_argument("name", nargs="?", help="for add, edit and remove: the tool's name, e.g. podcasts or sheets")
     s.add_argument("--api", action="store_true", help="for add: a web API (otherwise asked)")
     s.add_argument("--mcp", action="store_true", help="for add: an MCP server (otherwise asked)")
     s.add_argument("--command", help='for an MCP server: a local server\'s command line, e.g. "uvx some-server==1.2.3"')
-    s.add_argument("--env", action="append", metavar="NAME=VALUE", help="for an MCP server: a setting for a local "
-                   "server (not a secret); repeat for several")
-    s.add_argument("--header", action="append", metavar="NAME=VALUE", help="for an MCP server: a header for a "
-                   "remote server (not a secret)")
-    s.add_argument("--secret", action="append", metavar="NAME[=KEY]", help="for an MCP server: a variable (local) "
-                   "or header (remote) that holds a secret, typed hidden and kept in secrets/keys.env as KEY")
+    s.add_argument(
+        "--env",
+        action="append",
+        metavar="NAME=VALUE",
+        help="for an MCP server: a setting for a local server (not a secret); repeat for several",
+    )
+    s.add_argument(
+        "--header",
+        action="append",
+        metavar="NAME=VALUE",
+        help="for an MCP server: a header for a remote server (not a secret)",
+    )
+    s.add_argument(
+        "--secret",
+        action="append",
+        metavar="NAME[=KEY]",
+        help="for an MCP server: a variable (local) "
+        "or header (remote) that holds a secret, typed hidden and kept in secrets/keys.env as KEY",
+    )
     s.add_argument("--no-prompt", action="store_true", help="for an MCP server: do not ask about secrets not given")
-    s.add_argument("--confirm", action="store_true", help="for a server: confirm, without asking, that the tools "
-                   "it says stay inside your organisation do (until then they count as external)")
+    s.add_argument(
+        "--confirm",
+        action="store_true",
+        help="for a server: confirm, without asking, that the tools "
+        "it says stay inside your organisation do (until then they count as external)",
+    )
     s.add_argument("--provider", help="for a built-in tool: the provider to use (e.g. duckduckgo, firecrawl)")
     s.add_argument("--max-calls", type=int, help="for a built-in tool or an API: the most calls one job may make")
     s.add_argument("--url", help="for add: an API's address (https://api.example.com/v2) or a remote MCP server's")
     s.add_argument("--about", help="for an API: what it's for, in a line")
     s.add_argument("--how-to", help="for an API: its paths, from its docs")
-    s.add_argument("--class", dest="api_class", choices=["read-only", "internal", "external"],
-                   help="for add: what it can do (external, the default, waits for your approval to change "
-                   "things); an MCP server is internal or external")
-    s.add_argument("--get-looks-up", choices=["yes", "no"], help="for an API: whether its GET requests only "
-                   "look things up (yes, the default); no gives them the API's class")
+    s.add_argument(
+        "--class",
+        dest="api_class",
+        choices=["read-only", "internal", "external"],
+        help="for add: what it can do (external, the default, waits for your approval to change "
+        "things); an MCP server is internal or external",
+    )
+    s.add_argument(
+        "--get-looks-up",
+        choices=["yes", "no"],
+        help="for an API: whether its GET requests only "
+        "look things up (yes, the default); no gives them the API's class",
+    )
     s.add_argument("--send-key", help="for an API: bearer (the default), header:<Name> or query:<param>")
     s.add_argument("--no-key", action="store_true", help="for edit: the API needs no key; its key is removed")
     s.add_argument("--yes", action="store_true", help="for add, edit and remove: do not ask first")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_tools)
 
-    s = sub.add_parser("folder", aliases=["folders"],
-                       help="folders shared with jobs and the Lead: list, add <path>, remove <name>")
+    s = sub.add_parser(
+        "folder", aliases=["folders"], help="folders shared with jobs and the Lead: list, add <path>, remove <name>"
+    )
     s.add_argument("action", nargs="?", choices=["list", "add", "remove"])
     s.add_argument("target", nargs="?", help="a folder's path (add) or a shared folder's name (remove)")
     s.add_argument("--name", help="the name jobs and specs use for it (add)")
@@ -1606,8 +1781,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_tick)
 
     s = sub.add_parser("sandbox", help="whether code a job writes can run here, and if not why")
-    s.add_argument("--apparmor", action="store_true",
-                   help="print the AppArmor profile that lets bubblewrap work where Ubuntu restricts it (24.04, for one)")
+    s.add_argument(
+        "--apparmor",
+        action="store_true",
+        help="print the AppArmor profile that lets bubblewrap work where Ubuntu restricts it (24.04, for one)",
+    )
     s.set_defaults(func=cmd_sandbox)
 
     s = sub.add_parser("pair", help="a code to pair the Ombro app with this server; --list, --forget, --forget-all")
@@ -1619,7 +1797,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, help=argparse.SUPPRESS)  # with --device: the port the app will tunnel to
     s.set_defaults(func=cmd_pair)
 
-    s = sub.add_parser("serve", help="the server the desktop app connects to; `ombro serve install` starts it on its own")
+    s = sub.add_parser(
+        "serve", help="the server the desktop app connects to; `ombro serve install` starts it on its own"
+    )
     from ombro.serve import add_arguments
 
     add_arguments(s)

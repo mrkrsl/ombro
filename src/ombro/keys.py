@@ -56,9 +56,14 @@ def migrate(home: Home) -> str | None:
     if home.env.is_file() and home.env.read_text(encoding="utf-8").strip():
         new_text = home.env.read_text(encoding="utf-8")
         have = set(_parse(new_text))
-        extra = [ln for ln in old_text.splitlines()
-                 if "=" in ln and ln.strip() and not ln.strip().startswith("#")
-                 and ln.strip().removeprefix("export ").split("=", 1)[0].strip() not in have]
+        extra = [
+            ln
+            for ln in old_text.splitlines()
+            if "=" in ln
+            and ln.strip()
+            and not ln.strip().startswith("#")
+            and ln.strip().removeprefix("export ").split("=", 1)[0].strip() not in have
+        ]
         text = new_text.rstrip("\n") + "\n" + "".join(f"{ln}\n" for ln in extra)
     else:
         text = old_text if old_text.endswith("\n") or not old_text else old_text + "\n"
@@ -213,8 +218,9 @@ def scrub(home: Home, text: str) -> tuple[str, int]:
 
     from ombro import chatgpt
 
-    values = {v for v in read_env(home).values() if len(v) >= 8} | oauth.secret_values(home) | \
-        chatgpt.secret_values(home)
+    values = (
+        {v for v in read_env(home).values() if len(v) >= 8} | oauth.secret_values(home) | chatgpt.secret_values(home)
+    )
     for name in key_uses(home):
         v = os.environ.get(name)
         if v and len(v) >= 8:

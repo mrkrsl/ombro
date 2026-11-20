@@ -37,7 +37,9 @@ def test_parses_tool_calls_and_usage():
         return chat_response(tool_calls=[("brief", {"role": "researcher", "task": "x"})])
 
     c = OpenAICompatibleClient("https://models.invalid/v1", "m", lambda: KEY_A, transport=httpx.MockTransport(handler))
-    reply = c.complete([{"role": "user", "content": "hi"}], tools=[{"type": "function"}], max_output_tokens=77, timeout=5)
+    reply = c.complete(
+        [{"role": "user", "content": "hi"}], tools=[{"type": "function"}], max_output_tokens=77, timeout=5
+    )
     assert reply.tool_calls[0].name == "brief"
     assert reply.tool_calls[0].arguments == {"role": "researcher", "task": "x"}
     assert (reply.usage.input_tokens, reply.usage.output_tokens, reply.usage.estimated) == (120, 30, False)
@@ -47,8 +49,19 @@ def test_parses_tool_calls_and_usage():
 
 def test_bad_tool_arguments_are_kept_raw():
     def handler(request):
-        body = {"choices": [{"message": {"role": "assistant", "content": None, "tool_calls": [
-            {"id": "c0", "type": "function", "function": {"name": "brief", "arguments": "{not json"}}]}}]}
+        body = {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {"id": "c0", "type": "function", "function": {"name": "brief", "arguments": "{not json"}}
+                        ],
+                    }
+                }
+            ]
+        }
         return httpx.Response(200, json=body)
 
     c = OpenAICompatibleClient("https://models.invalid", "m", lambda: KEY_A, transport=httpx.MockTransport(handler))
@@ -65,7 +78,9 @@ def test_key_is_read_at_the_moment_of_use(home):
         return chat_response("ok")
 
     c = OpenAICompatibleClient(
-        "https://models.invalid/v1", "m", lambda: keys.get_key(home, "TEST_MODEL_KEY"),
+        "https://models.invalid/v1",
+        "m",
+        lambda: keys.get_key(home, "TEST_MODEL_KEY"),
         transport=httpx.MockTransport(handler),
     )
     c.complete([], max_output_tokens=5, timeout=5)
@@ -81,8 +96,9 @@ def test_retries_transient_errors_then_succeeds():
         attempts.append(1)
         return httpx.Response(503, json={"error": {"message": "busy"}}) if len(attempts) < 3 else chat_response("ok")
 
-    c = OpenAICompatibleClient("https://models.invalid", "m", lambda: KEY_A,
-                               transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    c = OpenAICompatibleClient(
+        "https://models.invalid", "m", lambda: KEY_A, transport=httpx.MockTransport(handler), sleep=lambda s: None
+    )
     assert c.complete([], max_output_tokens=5, timeout=30).content == "ok"
     assert len(attempts) == 3
 
@@ -109,13 +125,24 @@ def test_missing_key_fails_without_a_call():
 def test_keys_never_reach_job_files(home):
     """A whole job through the real client: the key must not appear in any file of the run."""
     keys.set_key(home, "TEST_MODEL_KEY", KEY_A)
-    replies = iter([
-        chat_response(tool_calls=[("brief", {"role": "researcher", "task": "Find invented things."})]),
-        chat_response(json.dumps({"summary": "Found them.", "deliverables": [], "open_questions": [],
-                                  "did_not_do": [], "requests": []})),
-        chat_response(tool_calls=[("finish", {"outcome": "done", "summary": "ok"})]),
-        httpx.Response(401, json={"error": {"message": f"key {KEY_A} expired"}}),
-    ])
+    replies = iter(
+        [
+            chat_response(tool_calls=[("brief", {"role": "researcher", "task": "Find invented things."})]),
+            chat_response(
+                json.dumps(
+                    {
+                        "summary": "Found them.",
+                        "deliverables": [],
+                        "open_questions": [],
+                        "did_not_do": [],
+                        "requests": [],
+                    }
+                )
+            ),
+            chat_response(tool_calls=[("finish", {"outcome": "done", "summary": "ok"})]),
+            httpx.Response(401, json={"error": {"message": f"key {KEY_A} expired"}}),
+        ]
+    )
     sent = []
 
     def handler(request):
@@ -126,8 +153,9 @@ def test_keys_never_reach_job_files(home):
     from ombro.keys import get_key
 
     def factory(spec):
-        return OpenAICompatibleClient(spec.endpoint, spec.model, lambda: get_key(home, spec.key),
-                                      transport=transport, retries=0)
+        return OpenAICompatibleClient(
+            spec.endpoint, spec.model, lambda: get_key(home, spec.key), transport=transport, retries=0
+        )
 
     job_dir = jobs.create_job(home, ["default"], {}, "Find invented things.", load_limits(home), source="test")
     status = Engine(home, job_dir, client_factory=factory).execute()
@@ -148,16 +176,18 @@ def test_attempts_that_timed_out_are_reported_so_they_can_be_counted():
             raise httpx.ReadTimeout("invented timeout", request=request)
         return chat_response("ok")
 
-    c = OpenAICompatibleClient("https://models.invalid", "m", lambda: KEY_A,
-                               transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    c = OpenAICompatibleClient(
+        "https://models.invalid", "m", lambda: KEY_A, transport=httpx.MockTransport(handler), sleep=lambda s: None
+    )
     reply = c.complete([], max_output_tokens=5, timeout=30)
     assert reply.content == "ok" and reply.lost_attempts == 1
 
     def always(request):
         raise httpx.ReadTimeout("invented timeout", request=request)
 
-    c = OpenAICompatibleClient("https://models.invalid", "m", lambda: KEY_A,
-                               transport=httpx.MockTransport(always), sleep=lambda s: None)
+    c = OpenAICompatibleClient(
+        "https://models.invalid", "m", lambda: KEY_A, transport=httpx.MockTransport(always), sleep=lambda s: None
+    )
     with pytest.raises(ModelError) as caught:
         c.complete([], max_output_tokens=5, timeout=30)
     assert caught.value.lost_attempts == c.retries + 1

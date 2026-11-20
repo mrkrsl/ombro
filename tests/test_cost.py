@@ -17,8 +17,10 @@ KEY = "sk-or-INVENTED-cccccccc"
 
 
 def ok(usage=None):
-    body = {"choices": [{"message": {"role": "assistant", "content": "done"}, "finish_reason": "stop"}],
-            "usage": usage or {"prompt_tokens": 100, "completion_tokens": 5}}
+    body = {
+        "choices": [{"message": {"role": "assistant", "content": "done"}, "finish_reason": "stop"}],
+        "usage": usage or {"prompt_tokens": 100, "completion_tokens": 5},
+    }
     return httpx.Response(200, json=body)
 
 
@@ -42,7 +44,8 @@ def test_claude_through_openrouter_asks_for_the_cache_and_sticks_to_one_provider
 def test_other_models_and_endpoints_are_left_alone():
     seen: list[dict] = []
     client("https://openrouter.ai/api/v1", "deepseek/deepseek-v4-pro", seen).complete(
-        [], max_output_tokens=50, timeout=5)
+        [], max_output_tokens=50, timeout=5
+    )
     client("https://api.deepseek.com", "deepseek-v4-pro", seen).complete([], max_output_tokens=50, timeout=5)
     assert "cache_control" not in seen[0] and seen[0]["session_id"]  # caching there is automatic
     assert "cache_control" not in seen[1] and "session_id" not in seen[1]
@@ -50,10 +53,14 @@ def test_other_models_and_endpoints_are_left_alone():
 
 def test_openrouter_cache_reads_count_as_cached_input():
     seen: list[dict] = []
-    usage = {"prompt_tokens": 50_000, "completion_tokens": 300,
-             "prompt_tokens_details": {"cached_tokens": 48_000, "cache_write_tokens": 2_000}}
+    usage = {
+        "prompt_tokens": 50_000,
+        "completion_tokens": 300,
+        "prompt_tokens_details": {"cached_tokens": 48_000, "cache_write_tokens": 2_000},
+    }
     reply = client("https://openrouter.ai/api/v1", "anthropic/claude-sonnet-5.5", seen, usage).complete(
-        [], max_output_tokens=50, timeout=5)
+        [], max_output_tokens=50, timeout=5
+    )
     assert (reply.usage.input_tokens, reply.usage.cached_input) == (50_000, 48_000)
 
 
@@ -73,8 +80,17 @@ def test_a_long_text_result_is_not_escaped_twice():
 
 
 def test_outside_tools_are_not_named_twice_in_the_role_prompt():
-    role = Role(name="helper", title="Helper", kind="specialist", description="d", soul="s", model="default",
-                path=Path("."), max_steps=5, crew="c")
+    role = Role(
+        name="helper",
+        title="Helper",
+        kind="specialist",
+        description="d",
+        soul="s",
+        model="default",
+        path=Path("."),
+        max_steps=5,
+        crew="c",
+    )
     names = ["workspace.read", "web.search"] + [f"composio.gmail.TOOL_{i}" for i in range(150)]
     text = prompts.role_system(role, "", names)
     assert "composio.gmail.TOOL_7" not in text
@@ -86,10 +102,13 @@ def test_deferred_tools_are_listed_by_name_only_grouped_by_service():
     from ombro.tools import Tool, load_tool_schema, load_tools
 
     boiler = "Reaches outside the organisation, through Gmail, through Composio (an outside service). More."
-    tools = [Tool(name=f"composio.gmail.{n}", description=boiler, parameters={"type": "object"}, handler=None)
-             for n in ("FETCH_EMAILS", "CREATE_EMAIL_DRAFT")]
-    tools.append(Tool(name="mcp.notion.notion-fetch", description="Fetch a page.", parameters={"type": "object"},
-                      handler=None))
+    tools = [
+        Tool(name=f"composio.gmail.{n}", description=boiler, parameters={"type": "object"}, handler=None)
+        for n in ("FETCH_EMAILS", "CREATE_EMAIL_DRAFT")
+    ]
+    tools.append(
+        Tool(name="mcp.notion.notion-fetch", description="Fetch a page.", parameters={"type": "object"}, handler=None)
+    )
     text = load_tool_schema(tools)["function"]["description"]
     assert "- composio__gmail__: FETCH_EMAILS, CREATE_EMAIL_DRAFT" in text
     assert "- mcp__notion__: notion-fetch" in text

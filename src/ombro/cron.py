@@ -21,8 +21,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
 
-MONTHS = {m: i for i, m in enumerate(
-    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+MONTHS = {
+    m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)
+}
 DAYS = {d: i for i, d in enumerate(["sun", "mon", "tue", "wed", "thu", "fri", "sat"])}
 ALIASES = {
     "@hourly": "0 * * * *",
@@ -33,8 +34,13 @@ ALIASES = {
     "@yearly": "0 0 1 1 *",
     "@annually": "0 0 1 1 *",
 }
-_FIELDS = (("minute", 0, 59, None), ("hour", 0, 23, None), ("day of month", 1, 31, None),
-           ("month", 1, 12, MONTHS), ("day of week", 0, 7, DAYS))
+_FIELDS = (
+    ("minute", 0, 59, None),
+    ("hour", 0, 23, None),
+    ("day of month", 1, 31, None),
+    ("month", 1, 12, MONTHS),
+    ("day of week", 0, 7, DAYS),
+)
 SLOT_FORMAT = "%Y-%m-%dT%H:%M"
 
 
@@ -118,8 +124,7 @@ def parse(text: str) -> Cron:
         raise CronError(f"a cron expression has five fields (minute hour day month weekday), not {len(parts)}")
     sets = [_field(p, *spec) for p, spec in zip(parts, _FIELDS)]
     weekdays = frozenset(0 if d == 7 else d for d in sets[4])
-    cron = Cron(raw, sets[0], sets[1], sets[2], sets[3], weekdays,
-                parts[2].startswith("*"), parts[4].startswith("*"))
+    cron = Cron(raw, sets[0], sets[1], sets[2], sets[3], weekdays, parts[2].startswith("*"), parts[4].startswith("*"))
     if not next_slots(cron, datetime(2000, 1, 1), 1, horizon_days=366 * 8):
         raise CronError(f"{raw!r} never matches a real date")
     return cron
@@ -275,10 +280,13 @@ def in_words(cron: Cron) -> str:
     if text == f"Runs at {cron.text}":
         return ""
     words = text.removeprefix("Runs ")
-    for plural, single in (("weekdays", "every weekday"), ("weekends", "every weekend"),
-                           *((d, "every " + d[:-1]) for d in DAY_NAMES)):
+    for plural, single in (
+        ("weekdays", "every weekday"),
+        ("weekends", "every weekend"),
+        *((d, "every " + d[:-1]) for d in DAY_NAMES),
+    ):
         if words.startswith(plural + " ") or words.startswith(plural + ","):
-            words = single + words[len(plural):]
+            words = single + words[len(plural) :]
             break
     for d in DAY_NAMES:  # "every Monday, Wednesdays and Fridays" -> "every Monday, Wednesday and Friday"
         words = words.replace(d, d[:-1]) if words.startswith("every ") else words
@@ -287,5 +295,6 @@ def in_words(cron: Cron) -> str:
 
 def next_in_words(cron: Cron, now: datetime, n: int = 3) -> list[str]:
     """The next runs, as "Thu 19 Nov at 9am"."""
-    return [f"{w.strftime('%a')} {w.day} {w.strftime('%b')} at {_clock(w.hour, w.minute)}"
-            for w in next_slots(cron, now, n)]
+    return [
+        f"{w.strftime('%a')} {w.day} {w.strftime('%b')} at {_clock(w.hour, w.minute)}" for w in next_slots(cron, now, n)
+    ]

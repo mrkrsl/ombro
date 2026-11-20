@@ -61,6 +61,8 @@ def ombro_argv() -> list[str]:
     import sys
 
     return [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "ombro"]
+
+
 _WHEN = WHEN
 
 
@@ -360,8 +362,10 @@ def reap_dead_jobs(home: Home) -> list[Path]:
         if meta.get("pid"):
             failure = "The job's process ended without finishing; this report was written from the journal."
         else:  # the engine records its pid first thing, so the process never got going
-            failure = ("The job's process stopped before it could start; process.log in the job's "
-                       "folder says why. This report was written from the journal.")
+            failure = (
+                "The job's process stopped before it could start; process.log in the job's "
+                "folder says why. This report was written from the journal."
+            )
         report.write_mechanical_report(home, job_dir, status="failed", failure=failure)
         reaped.append(job_dir)
     return reaped

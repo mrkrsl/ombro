@@ -23,7 +23,8 @@ def openai_body(endpoint, model, **kw):
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]})
 
     OpenAICompatibleClient(endpoint, model, lambda: KEY, transport=httpx.MockTransport(handler), **kw).complete(
-        [], max_output_tokens=4000, timeout=5)
+        [], max_output_tokens=4000, timeout=5
+    )
     return seen[0]
 
 
@@ -32,34 +33,45 @@ def anthropic_body(model, level, max_tokens=32000):
 
     def handler(request):
         seen.append(json.loads(request.content))
-        return httpx.Response(200, json={"content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn",
-                                         "usage": {"input_tokens": 1, "output_tokens": 1}})
+        return httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
 
-    AnthropicClient("https://api.anthropic.com/v1", model, lambda: KEY, transport=httpx.MockTransport(handler),
-                    thinking=level).complete([{"role": "user", "content": "x"}], max_output_tokens=max_tokens,
-                                             timeout=5)
+    AnthropicClient(
+        "https://api.anthropic.com/v1", model, lambda: KEY, transport=httpx.MockTransport(handler), thinking=level
+    ).complete([{"role": "user", "content": "x"}], max_output_tokens=max_tokens, timeout=5)
     return seen[0]
 
 
-@pytest.mark.parametrize("level,fields", [
-    ("off", {"thinking": {"type": "disabled"}}),
-    ("low", {"reasoning_effort": "low"}),
-    ("medium", {"reasoning_effort": "high"}),  # DeepSeek has no medium: its own default
-    ("xhigh", {"reasoning_effort": "max"}),
-])
+@pytest.mark.parametrize(
+    "level,fields",
+    [
+        ("off", {"thinking": {"type": "disabled"}}),
+        ("low", {"reasoning_effort": "low"}),
+        ("medium", {"reasoning_effort": "high"}),  # DeepSeek has no medium: its own default
+        ("xhigh", {"reasoning_effort": "max"}),
+    ],
+)
 def test_deepseek(level, fields):
     body = openai_body("https://api.deepseek.com", "deepseek-v4-pro", thinking=level)
     assert {k: body[k] for k in ("thinking", "reasoning_effort") if k in body} == fields
 
 
 def test_openrouter_takes_reasoning_effort_in_its_own_form():
-    assert openai_body("https://openrouter.ai/api/v1", "anthropic/claude-opus-5.5", thinking="off")["reasoning"] \
-        == {"effort": "none"}
+    assert openai_body("https://openrouter.ai/api/v1", "anthropic/claude-opus-5.5", thinking="off")["reasoning"] == {
+        "effort": "none"
+    }
     body = openai_body("https://openrouter.ai/api/v1", "anthropic/claude-opus-5.5", thinking="high")
     assert body["reasoning"] == {"effort": "high"} and "reasoning_effort" not in body
     # A provider's own word from models.md goes in OpenRouter's form too
-    assert openai_body("https://openrouter.ai/api/v1", "x/y", reasoning_effort="minimal")["reasoning"] \
-        == {"effort": "minimal"}
+    assert openai_body("https://openrouter.ai/api/v1", "x/y", reasoning_effort="minimal")["reasoning"] == {
+        "effort": "minimal"
+    }
 
 
 def test_openai_compatible_and_models_that_dont_think():
@@ -79,8 +91,13 @@ def test_a_refused_field_is_dropped_and_remembered():
             return httpx.Response(400, json={"error": {"message": "Unrecognized request argument supplied"}})
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]})
 
-    c = OpenAICompatibleClient("https://llm.invented.invalid/v1", "small", lambda: KEY,
-                               transport=httpx.MockTransport(handler), thinking="medium")
+    c = OpenAICompatibleClient(
+        "https://llm.invented.invalid/v1",
+        "small",
+        lambda: KEY,
+        transport=httpx.MockTransport(handler),
+        thinking="medium",
+    )
     c.complete([], max_output_tokens=100, timeout=5)
     c.complete([], max_output_tokens=100, timeout=5)
     assert ["reasoning_effort" in b for b in seen] == [True, False, False]
@@ -96,8 +113,9 @@ def test_off_falls_back_to_low_where_a_model_must_think():
             return httpx.Response(400, json={"error": {"message": "Reasoning is mandatory for this model"}})
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]})
 
-    c = OpenAICompatibleClient("https://openrouter.ai/api/v1", "x/thinker", lambda: KEY,
-                               transport=httpx.MockTransport(handler), thinking="off")
+    c = OpenAICompatibleClient(
+        "https://openrouter.ai/api/v1", "x/thinker", lambda: KEY, transport=httpx.MockTransport(handler), thinking="off"
+    )
     c.complete([], max_output_tokens=100, timeout=5)
     assert seen == [{"effort": "none"}, {"effort": "low"}]
 
@@ -118,12 +136,26 @@ def test_anthropic():
 def test_the_preference_reaches_every_client_and_models_md_wins(home):
     meta, body = mdfile.read(home.models)
     models = meta["models"]
-    models["or-opus"] = {"api": "openai", "endpoint": "https://openrouter.ai/api/v1",
-                         "model": "anthropic/claude-opus-5.5", "key": "OPENROUTER_API_KEY"}
-    models["ds"] = {"api": "openai", "endpoint": "https://api.deepseek.com", "model": "deepseek-v4-pro",
-                    "key": "DEEPSEEK_API_KEY", "thinking": False}  # YAML: `thinking: off`
-    models["ds-raw"] = {"api": "openai", "endpoint": "https://api.deepseek.com", "model": "deepseek-v4-pro",
-                        "key": "DEEPSEEK_API_KEY", "reasoning_effort": "low"}
+    models["or-opus"] = {
+        "api": "openai",
+        "endpoint": "https://openrouter.ai/api/v1",
+        "model": "anthropic/claude-opus-5.5",
+        "key": "OPENROUTER_API_KEY",
+    }
+    models["ds"] = {
+        "api": "openai",
+        "endpoint": "https://api.deepseek.com",
+        "model": "deepseek-v4-pro",
+        "key": "DEEPSEEK_API_KEY",
+        "thinking": False,
+    }  # YAML: `thinking: off`
+    models["ds-raw"] = {
+        "api": "openai",
+        "endpoint": "https://api.deepseek.com",
+        "model": "deepseek-v4-pro",
+        "key": "DEEPSEEK_API_KEY",
+        "reasoning_effort": "low",
+    }
     mdfile.write(home.models, meta, body)
     specs = load_models(home)
     assert make_client(specs["or-opus"], home).thinking == thinking.DEFAULT == "medium"
@@ -146,8 +178,15 @@ def test_a_bad_level_in_models_md_is_named(home):
 
 
 def test_levels_as_people_write_them():
-    assert [thinking.level_of(w) for w in ("none", False, "Extra high", "max", "minimal", "nonsense", None)] == \
-        ["off", "off", "xhigh", "xhigh", "low", None, None]
+    assert [thinking.level_of(w) for w in ("none", False, "Extra high", "max", "minimal", "nonsense", None)] == [
+        "off",
+        "off",
+        "xhigh",
+        "xhigh",
+        "low",
+        None,
+        None,
+    ]
 
 
 def test_cli_sets_and_shows_it(home, capsys):

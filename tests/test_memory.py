@@ -24,8 +24,13 @@ def index_lines(home, crew="default") -> list[str]:
 
 
 def a_job(**extra):
-    return [fake.brief("researcher", "Find invented teapot makers."), fake.result("Found three invented makers."),
-            fake.finish("Done."), *extra.get("notes", [fake.keep_notes()]), LEAD_REPORT]
+    return [
+        fake.brief("researcher", "Find invented teapot makers."),
+        fake.result("Found three invented makers."),
+        fake.finish("Done."),
+        *extra.get("notes", [fake.keep_notes()]),
+        LEAD_REPORT,
+    ]
 
 
 # -- index.md ----------------------------------------------------------------------
@@ -82,8 +87,9 @@ def test_an_insufficient_brief_is_indexed_with_its_task(home):
 
 
 def test_the_lead_is_given_notes_and_the_20_latest_entries_within_their_caps(job, home):
-    entries = [f"- 2026-10-{i:02d} · run-{i:02d} · completed · " + f"invented brief number {i} " * 20
-               for i in range(1, 26)]
+    entries = [
+        f"- 2026-10-{i:02d} · run-{i:02d} · completed · " + f"invented brief number {i} " * 20 for i in range(1, 26)
+    ]
     memory.index_path(home, "default").write_text("# Index\n" + "\n".join(entries) + "\n")
     memory.add_your_entry(home, "default", "- 2026-11-01: Use metric units.", 10_000)
     job([fake.finish("Nothing to do.")])
@@ -98,8 +104,15 @@ def test_the_lead_is_given_notes_and_the_20_latest_entries_within_their_caps(job
 
 def test_the_lead_is_given_nothing_else_from_earlier_jobs(job, home):
     write_role(home, "researcher", tools=["workspace.write"])
-    job([fake.brief("researcher", "Work."), fake.result("PAST-RESULT-MARKER found."), fake.finish(),
-         fake.keep_notes(), LEAD_REPORT])
+    job(
+        [
+            fake.brief("researcher", "Work."),
+            fake.result("PAST-RESULT-MARKER found."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     assert "PAST-RESULT-MARKER" in job.report
     job([fake.finish("Nothing to do.")])
     sent = json.dumps(job.client.calls[0]["messages"])
@@ -108,8 +121,9 @@ def test_the_lead_is_given_nothing_else_from_earlier_jobs(job, home):
 
 
 def test_notes_edited_by_hand_past_the_cap_are_cut_in_the_prompt(job, home):
-    memory.notes_path(home, "default").write_text("# Notes\n\n## From you\n\n" + "- a long lesson\n" * 800
-                                                  + "\n## From jobs\n")
+    memory.notes_path(home, "default").write_text(
+        "# Notes\n\n## From you\n\n" + "- a long lesson\n" * 800 + "\n## From jobs\n"
+    )
     job([fake.finish("Nothing.")], limits={"memory_notes_max_chars": 2000})
     notes = section(job.client.calls[0]["messages"][0]["content"], "Crew notes")
     assert len(notes) <= 2000 and "cut at the cap of 2,000 characters" in notes
@@ -122,8 +136,9 @@ YOURS = "# Notes\n\n## From you\n\n- 2026-10-01: Never guess a figure.\n-   2026
 
 def notes_calls(job) -> list[dict]:
     """The model calls of the notes step, which come before the skill call and the report."""
-    return [c for c in job.client.calls
-            if any(t["function"]["name"] == "memory__write_notes" for t in c["tools"] or [])]
+    return [
+        c for c in job.client.calls if any(t["function"]["name"] == "memory__write_notes" for t in c["tools"] or [])
+    ]
 
 
 def write_notes(home, from_jobs: str) -> None:
@@ -132,8 +147,9 @@ def write_notes(home, from_jobs: str) -> None:
 
 def test_the_lead_rewrites_its_part_and_the_report_says_what_changed(job, home):
     write_notes(home, "- The fake directory is out of date.\n- Ask the researcher for sources.\n")
-    status = job(a_job(notes=[fake.write_notes(
-        "- Ask the researcher for sources.\n- Invented makers cluster in Lowtown.")]))
+    status = job(
+        a_job(notes=[fake.write_notes("- Ask the researcher for sources.\n- Invented makers cluster in Lowtown.")])
+    )
     assert status == "completed"
     text = memory.notes_path(home, "default").read_text()
     assert text.startswith(YOURS)  # the user's part, character for character
@@ -150,8 +166,10 @@ def test_the_lead_rewrites_its_part_and_the_report_says_what_changed(job, home):
 def test_from_you_survives_a_condense(job, home):
     write_notes(home, "".join(f"- Lesson {i}: something learned about invented teapots.\n" for i in range(40)))
     before = memory.read_notes(home, "default")
-    job(a_job(notes=[fake.write_notes("- Lessons 0 to 39: invented teapots vary; check each maker.")]),
-        limits={"memory_notes_max_chars": 1500})
+    job(
+        a_job(notes=[fake.write_notes("- Lessons 0 to 39: invented teapots vary; check each maker.")]),
+        limits={"memory_notes_max_chars": 1500},
+    )
     after = memory.read_notes(home, "default")
     assert after.from_you == before.from_you
     assert after.job_lines() == ["- Lessons 0 to 39: invented teapots vary; check each maker."]
@@ -159,8 +177,10 @@ def test_from_you_survives_a_condense(job, home):
 
 def test_a_write_over_the_cap_is_refused_and_the_lead_condenses(job, home):
     long = "".join(f"- Lesson {i}: an invented and fairly wordy lesson.\n" for i in range(60))
-    job(a_job(notes=[fake.write_notes(long), fake.write_notes("- One condensed invented lesson.")]),
-        limits={"memory_notes_max_chars": 1000})
+    job(
+        a_job(notes=[fake.write_notes(long), fake.write_notes("- One condensed invented lesson.")]),
+        limits={"memory_notes_max_chars": 1000},
+    )
     refusal = json.loads(unfence(notes_calls(job)[-1]["messages"][-1]["content"]))
     assert "over the cap of 1,000" in refusal["error"] and "your part must be at most" in refusal["error"]
     assert memory.read_notes(home, "default").job_lines() == ["- One condensed invented lesson."]
@@ -202,9 +222,18 @@ def test_notes_parsing_keeps_a_hand_broken_file_as_the_users():
 
 
 def past_job(job, home, summary: str, crew="default"):
-    job([fake.brief("researcher", "Research."), fake.result(summary), fake.finish(), fake.keep_notes(),
-         fake.say(f"## What was done\n{summary}\n\n## What was not done and why\nNothing.\n\n"
-                  "## Decisions for you\nNone.")], crew=crew)
+    job(
+        [
+            fake.brief("researcher", "Research."),
+            fake.result(summary),
+            fake.finish(),
+            fake.keep_notes(),
+            fake.say(
+                f"## What was done\n{summary}\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone."
+            ),
+        ],
+        crew=crew,
+    )
     return job.meta["job_id"]
 
 
@@ -214,8 +243,9 @@ def test_the_lead_searches_past_reports_in_its_own_crew_only(job, home):
     teapots = past_job(job, home, "Found the invented Copperkettle teapot works in Lowtown.")
     past_job(job, home, "Listed invented bicycle shops in Hightown.")
     secret = past_job(job, home, "Copperkettle teapot works, seen by the other crew.", crew="other")
-    status = job([fake.call("memory__search", {"query": "Copperkettle teapot"}), fake.finish("Used memory."),
-                  LEAD_REPORT])
+    status = job(
+        [fake.call("memory__search", {"query": "Copperkettle teapot"}), fake.finish("Used memory."), LEAD_REPORT]
+    )
     assert status == "completed"
     result = json.loads(unfence(job.client.calls[1]["messages"][-1]["content"]))
     ids = [r["job_id"] for r in result["results"]]
@@ -229,8 +259,15 @@ def test_the_lead_searches_past_reports_in_its_own_crew_only(job, home):
 
 def test_memory_search_has_a_call_cap(job, home):
     past_job(job, home, "Found invented teapots.")
-    job([fake.call("memory__search", {"query": "teapots"}), fake.call("memory__search", {"query": "kettles"}),
-         fake.finish(), LEAD_REPORT], limits={"tool_max_calls": {"memory.search": 1}})
+    job(
+        [
+            fake.call("memory__search", {"query": "teapots"}),
+            fake.call("memory__search", {"query": "kettles"}),
+            fake.finish(),
+            LEAD_REPORT,
+        ],
+        limits={"tool_max_calls": {"memory.search": 1}},
+    )
     second = json.loads(unfence(job.client.calls[2]["messages"][-1]["content"]))
     assert "has used all 1 calls" in second["error"]
 
@@ -257,19 +294,26 @@ def test_search_skips_cost_and_never_reads_chats(job, home):
 
 def test_only_workspace_files_are_listed_as_deliverables(job, home):
     write_role(home, "researcher", tools=["workspace.write"])
-    job([
-        fake.brief("researcher", "Write it."),
-        fake.call("workspace__write", {"path": "workspace/list.md", "content": "A list."}),
-        fake.call("workspace__write", {"path": "scratch/draft.md", "content": "Draft."}),
-        fake.call("workspace__write", {"path": "workspace/forgotten.md", "content": "Not declared."}),
-        fake.result("Wrote it.", deliverables=[
-            {"name": "list", "path": "workspace/list.md"},
-            {"name": "list again", "path": "workspace/list.md"},
-            {"name": "draft", "path": "scratch/draft.md"},
-            {"name": "remark", "path": "The makers all close on Sundays."},
-        ]),
-        fake.finish(), fake.keep_notes(), LEAD_REPORT,
-    ])
+    job(
+        [
+            fake.brief("researcher", "Write it."),
+            fake.call("workspace__write", {"path": "workspace/list.md", "content": "A list."}),
+            fake.call("workspace__write", {"path": "scratch/draft.md", "content": "Draft."}),
+            fake.call("workspace__write", {"path": "workspace/forgotten.md", "content": "Not declared."}),
+            fake.result(
+                "Wrote it.",
+                deliverables=[
+                    {"name": "list", "path": "workspace/list.md"},
+                    {"name": "list again", "path": "workspace/list.md"},
+                    {"name": "draft", "path": "scratch/draft.md"},
+                    {"name": "remark", "path": "The makers all close on Sundays."},
+                ],
+            ),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     deliverables = job.report.split("## Deliverables")[1].split("## Outward actions")[0]
     ws, sc = (job.job_dir / "workspace").resolve(), (job.job_dir / "scratch").resolve()
     assert f"- list: {ws / 'list.md'}" in deliverables

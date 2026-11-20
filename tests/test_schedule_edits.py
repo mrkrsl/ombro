@@ -8,16 +8,19 @@ import pytest
 from ombro import cron, mdfile, schedules
 
 
-@pytest.mark.parametrize("text, words", [
-    ("0 6 * * 1-5", "Runs weekdays at 6am"),
-    ("0 18 * * 4", "Runs Thursdays at 6pm"),
-    ("30 7 * * *", "Runs every day at 7:30am"),
-    ("0 12 * * 0,6", "Runs weekends at noon"),
-    ("0 9 * * 1,3", "Runs Mondays and Wednesdays at 9am"),
-    ("0 0 1 * *", "Runs on the 1st of each month at midnight"),
-    ("0 9 1 1 *", "Runs on 1 January at 9am"),
-    ("*/15 * * * *", "Runs at */15 * * * *"),
-])
+@pytest.mark.parametrize(
+    "text, words",
+    [
+        ("0 6 * * 1-5", "Runs weekdays at 6am"),
+        ("0 18 * * 4", "Runs Thursdays at 6pm"),
+        ("30 7 * * *", "Runs every day at 7:30am"),
+        ("0 12 * * 0,6", "Runs weekends at noon"),
+        ("0 9 * * 1,3", "Runs Mondays and Wednesdays at 9am"),
+        ("0 0 1 * *", "Runs on the 1st of each month at midnight"),
+        ("0 9 1 1 *", "Runs on 1 January at 9am"),
+        ("*/15 * * * *", "Runs at */15 * * * *"),
+    ],
+)
 def test_when_a_schedule_runs_in_words(text, words):
     assert cron.describe(cron.parse(text)) == words
 

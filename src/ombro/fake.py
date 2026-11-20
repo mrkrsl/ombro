@@ -152,8 +152,9 @@ class ScriptedClient:
             int(u.get("input", estimate_tokens(messages, tools))),
             min(int(u.get("output", out_default)), int(max_output_tokens)),
         )
-        return ModelReply(content=content, tool_calls=calls, usage=usage,
-                          finish_reason=entry.get("finish_reason", "stop"))
+        return ModelReply(
+            content=content, tool_calls=calls, usage=usage, finish_reason=entry.get("finish_reason", "stop")
+        )
 
 
 def _fits(entry, names: set, system: str = "", messages: list | None = None) -> bool:
@@ -163,9 +164,9 @@ def _fits(entry, names: set, system: str = "", messages: list | None = None) -> 
     if not need:
         return True
     if need.startswith("prompt:"):
-        return need[len("prompt:"):] in system
+        return need[len("prompt:") :] in system
     if need.startswith("text:"):
-        return any(need[len("text:"):] in str(m.get("content") or "") for m in messages or [] if isinstance(m, dict))
+        return any(need[len("text:") :] in str(m.get("content") or "") for m in messages or [] if isinstance(m, dict))
     return (need == "no_tools" and not names) or need in names
 
 
@@ -225,10 +226,17 @@ def no_skill(reason: str = "Nothing new to keep as a skill.", **extra) -> dict:
     return {"tool_calls": [{"name": "no_skill", "arguments": {"reason": reason}}], **extra}
 
 
-def propose_skill(name: str, description: str, body: str, *, for_roles: list[str] | None = None,
-                  reason: str = "It worked in this job.",
-                  adds: str | None = "Later jobs of this kind follow it without their brief spelling it out.",
-                  jobs: list[str] | None = None, **extra) -> dict:
+def propose_skill(
+    name: str,
+    description: str,
+    body: str,
+    *,
+    for_roles: list[str] | None = None,
+    reason: str = "It worked in this job.",
+    adds: str | None = "Later jobs of this kind follow it without their brief spelling it out.",
+    jobs: list[str] | None = None,
+    **extra,
+) -> dict:
     args = {"name": name, "description": description, "body": body, "reason": reason}
     if jobs is not None:
         args["jobs"] = jobs

@@ -86,15 +86,22 @@ def _show(a: outbox.Action, home: Home | None = None) -> None:
                 print(f"  Refused   {e}")
         to = str(a.arguments.get("to") or "")
         if to and os.path.lexists(os.path.expanduser(to)):
-            print(f"  Replaces  {to} already exists; " + ("approving replaces it" if a.arguments.get("overwrite")
-                                                          else "approving is refused unless overwrite is true"))
+            print(
+                f"  Replaces  {to} already exists; "
+                + (
+                    "approving replaces it"
+                    if a.arguments.get("overwrite")
+                    else "approving is refused unless overwrite is true"
+                )
+            )
     if a.tool == outbox.SKILL_TOOL and home is not None:
         _show_skill(a, home)
         print(f"  File      {a.path}")
         return
     print("  Arguments")
-    text = yaml.safe_dump(a.arguments if a.arguments is not None else {}, sort_keys=False, allow_unicode=True,
-                          default_flow_style=False).rstrip()
+    text = yaml.safe_dump(
+        a.arguments if a.arguments is not None else {}, sort_keys=False, allow_unicode=True, default_flow_style=False
+    ).rstrip()
     for line in text.splitlines() or ["{}"]:
         print(f"    {line}")
     print(f"  File      {a.path}")
@@ -118,8 +125,10 @@ def _show_skill(a: outbox.Action, home: Home) -> None:
     if v["flags"]:
         print(f"  Warning   signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")
     if v["changed_since"] and a.status == "pending":
-        print("  Changed   the live skill has changed since this was proposed; approving is refused until you "
-              f"save it again with `ombro approvals edit {a.ref}`")
+        print(
+            "  Changed   the live skill has changed since this was proposed; approving is refused until you "
+            f"save it again with `ombro approvals edit {a.ref}`"
+        )
     if v["live"]:
         print("  Diff against today's version:")
         body = v.get("diff") or "(no difference)"
@@ -195,27 +204,33 @@ def _list(home: Home, args) -> int:
     for a in items:
         age, _ = _age(a.meta.get("staged_at"))
         print(f"  {a.ref:<10} {_status_label(a):<16} {a.tool[:32]:<32} {age:<9} {a.summary(70)}")
-    print("\nSee one with `ombro approvals show <ref>`; then `ombro approvals approve <ref> ...` or "
-          "`ombro approvals decline <ref> ...`.")
+    print(
+        "\nSee one with `ombro approvals show <ref>`; then `ombro approvals approve <ref> ...` or "
+        "`ombro approvals decline <ref> ...`."
+    )
     if any(a.status == "uncertain" for a in items):
-        print("An uncertain action may or may not have happened; settle it with "
-              "`ombro approvals resolve <ref> sent` or `not-sent`.")
+        print(
+            "An uncertain action may or may not have happened; settle it with "
+            "`ombro approvals resolve <ref> sent` or `not-sent`."
+        )
     return 0
 
 
 def _decide(home: Home, action: str, refs: list[str], args) -> int:
     cli = _cli()
     if not refs:
-        raise cli.CliError(f"Name the actions to {action}, e.g. `ombro approvals {action} ab12-1 ab12-3`. "
-                           "There is no 'all'.")
+        raise cli.CliError(
+            f"Name the actions to {action}, e.g. `ombro approvals {action} ab12-1 ab12-3`. There is no 'all'."
+        )
     items = _find_all(home, refs)
     for a in items:
         outbox.settle(a.job_dir)
     items = [outbox.load(a.path) for a in items]
     not_pending = [a for a in items if a.status != "pending"]
     if not_pending:
-        raise cli.CliError("; ".join(f"{a.ref} is {_status_label(a)}" for a in not_pending)
-                           + f", so nothing was {action}d")
+        raise cli.CliError(
+            "; ".join(f"{a.ref} is {_status_label(a)}" for a in not_pending) + f", so nothing was {action}d"
+        )
     if not args.json:
         for a in items:
             _show(a, home)
@@ -255,8 +270,10 @@ def _outcome(a: outbox.Action) -> str:
     if a.status == "failed":
         return f"failed: {' '.join(str(m.get('error') or '').split())[:300]}"
     if a.status == "uncertain":
-        return (f"uncertain: {' '.join(str(m.get('note') or '').split())[:300]} Settle it with "
-                f"`ombro approvals resolve {a.ref} sent` or `not-sent`.")
+        return (
+            f"uncertain: {' '.join(str(m.get('note') or '').split())[:300]} Settle it with "
+            f"`ombro approvals resolve {a.ref} sent` or `not-sent`."
+        )
     return a.status
 
 
@@ -277,12 +294,20 @@ def _edit(home: Home, refs: list[str], args) -> int:
 
         cmd = editor_command(home)
         if not cmd:
-            raise cli.CliError(f"No editor is set (`editor` in preferences/config.md, or $EDITOR). Edit "
-                               f"`arguments` in {a.path} by hand, or pass --arguments '<json>'.")
-        current = yaml.safe_dump(a.arguments if a.arguments is not None else {}, sort_keys=False,
-                                 allow_unicode=True, default_flow_style=False)
-        header = (f"# Arguments for {a.ref} ({a.tool}). Change them and save; Ombro checks them before\n"
-                  "# saving. The action then waits for your approval. Lines starting with # are ignored.\n")
+            raise cli.CliError(
+                f"No editor is set (`editor` in preferences/config.md, or $EDITOR). Edit "
+                f"`arguments` in {a.path} by hand, or pass --arguments '<json>'."
+            )
+        current = yaml.safe_dump(
+            a.arguments if a.arguments is not None else {},
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        )
+        header = (
+            f"# Arguments for {a.ref} ({a.tool}). Change them and save; Ombro checks them before\n"
+            "# saving. The action then waits for your approval. Lines starting with # are ignored.\n"
+        )
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as f:
             f.write(header + current)
             tmp = Path(f.name)
@@ -318,9 +343,11 @@ def _edit_skill(home: Home, a: outbox.Action, args) -> int:
 
     cmd = editor_command(home)
     if not cmd:
-        raise cli.CliError(f"No editor is set (`editor` in preferences/config.md, or $EDITOR). Edit "
-                           f"{outbox._kept_skill(a)} by hand, or name the roles with --arguments "
-                           "'{\"name\": ..., \"for\": [...]}'.")
+        raise cli.CliError(
+            f"No editor is set (`editor` in preferences/config.md, or $EDITOR). Edit "
+            f"{outbox._kept_skill(a)} by hand, or name the roles with --arguments "
+            '\'{"name": ..., "for": [...]}\'.'
+        )
     current = outbox.skill_text(a)
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as f:
         f.write(current)
@@ -384,16 +411,19 @@ def cmd_tools(args) -> int:
         extra = f"  provider {r['provider']}" if r["provider"] else ""
         extra += f"  max {r['max_calls']} calls" if r["max_calls"] else ""
         if r["tool"] == "code.run":
-            extra += ("  sandbox: " + (f"not available ({rows['sandbox']})" if rows["sandbox"] else
-                                       {"macos": "macOS system sandbox", "linux": "bubblewrap"}.get(
-                                           sandbox.kind() or "", "ready")))
+            extra += "  sandbox: " + (
+                f"not available ({rows['sandbox']})"
+                if rows["sandbox"]
+                else {"macos": "macOS system sandbox", "linux": "bubblewrap"}.get(sandbox.kind() or "", "ready")
+            )
         print(f"  {r['tool']:<18}{extra}")
-    print("\nShared folders: " + (", ".join(rows["folders"]) if rows["folders"] else "none")
-          + " (`ombro folder`)")
+    print("\nShared folders: " + (", ".join(rows["folders"]) if rows["folders"] else "none") + " (`ombro folder`)")
     print("\nMCP servers (tools.md `servers:`):")
     if not rows["servers"]:
-        print("  none yet. Add one with `ombro tools add --mcp <name>` (or under `servers:` in tools.md), then see "
-              "its tools with `ombro tools <server>`.")
+        print(
+            "  none yet. Add one with `ombro tools add --mcp <name>` (or under `servers:` in tools.md), then see "
+            "its tools with `ombro tools <server>`."
+        )
     for r in rows["servers"]:
         how = r["url"] or " ".join([r["command"] or "", *map(str, r["args"])])
         if r["url"]:
@@ -404,16 +434,21 @@ def cmd_tools(args) -> int:
     print("\nWeb APIs (tools.md `apis:`), offered to every crew member:")
     if not rows["apis"]:
         print("  none yet. Add one with `ombro tools add <name>`, or in the desktop app (Settings › Tools).")
-    what = {"read-only": "only looks things up", "internal": "changes things in your own tools",
-            "external": "can change things or reach outside"}
+    what = {
+        "read-only": "only looks things up",
+        "internal": "changes things in your own tools",
+        "external": "can change things or reach outside",
+    }
     for r in rows["apis"]:
         key = "" if not r["key"] else f", key {r['key']}" + ("" if r["key_set"] else " NOT SET")
         print(f"  {r['name']:<18}{r['url']}  ({what.get(r['access'], r['access'])}, max {r['calls']} calls{key})")
     if rows["apis"]:
         print("  Change one with `ombro tools edit <name>`.")
     print(f"\nOutward permissions by default: {outward.describe(pref)}.")
-    print("  " + "; ".join(f"{p}: {', '.join(f'{c} {v}' for c, v in outward.PRESETS[p].items())}"
-                         for p in outward.PRESETS))
+    print(
+        "  "
+        + "; ".join(f"{p}: {', '.join(f'{c} {v}' for c, v in outward.PRESETS[p].items())}" for p in outward.PRESETS)
+    )
     return 0
 
 
@@ -438,11 +473,13 @@ def _composio_tools(home: Home, settings, pref: dict, args) -> int:
     print(f"  {'TOOL':<52} {'CLASS':<10} {'FROM':<8} {'PERMISSION':<10} DESCRIPTION")
     for r in rows:
         print(f"  {r['tool']:<52} {r['class']:<10} {r['class_from']:<8} {r['permission']:<10} {r['description'][:50]}")
-    print("\nFROM: marking (Composio says it only reads), name (from the words of its name: a reading word "
-          "with\nnothing in the name that makes, shares, links or marks something; one that sends, deletes or "
-          "spends;\nor a change in your own document tools), tool (set in tools.md), or default (composio's "
-          "class in\ntools.md). Change one under `tools:` in tools.md, e.g.\n    "
-          f"{rows[0]['tool'] if rows else 'composio.gmail.FETCH_EMAILS'}: {{class: read-only}}")
+    print(
+        "\nFROM: marking (Composio says it only reads), name (from the words of its name: a reading word "
+        "with\nnothing in the name that makes, shares, links or marks something; one that sends, deletes or "
+        "spends;\nor a change in your own document tools), tool (set in tools.md), or default (composio's "
+        "class in\ntools.md). Change one under `tools:` in tools.md, e.g.\n    "
+        f"{rows[0]['tool'] if rows else 'composio.gmail.FETCH_EMAILS'}: {{class: read-only}}"
+    )
     return 0
 
 
@@ -466,42 +503,61 @@ def _server_tools(home: Home, settings, pref: dict, args) -> int:
     for t in listed:
         full = f"mcp.{name}.{t.name}"
         effect, source = outward.tool_class(settings, full, t.annotations)
-        rows.append({"tool": full, "class": effect, "class_from": source,
-                     "permission": outward.decide(pref, full, effect, settings), "description": t.description})
+        rows.append(
+            {
+                "tool": full,
+                "class": effect,
+                "class_from": source,
+                "permission": outward.decide(pref, full, effect, settings),
+                "description": t.description,
+            }
+        )
     if args.json:
         _print_json(rows)
         return 0
-    print(f"Tools of {name} ({len(rows)}; it speaks MCP {version}), with the permission each gets under "
-          f"{pref['preset']}:\n")
+    print(
+        f"Tools of {name} ({len(rows)}; it speaks MCP {version}), with the permission each gets under "
+        f"{pref['preset']}:\n"
+    )
     print(f"  {'TOOL':<44} {'CLASS':<10} {'FROM':<8} {'PERMISSION':<10} DESCRIPTION")
     for r in rows:
         desc = " ".join(r["description"].split())[:50]
         print(f"  {r['tool']:<44} {r['class']:<10} {r['class_from']:<8} {r['permission']:<10} {desc}")
-    print("\nClasses: read-only changes nothing. internal changes things in your organisation's own tools, "
-          "even when\ncolleagues see it; it runs without approval because the role is trusted, which is not the "
-          "same as harmless.\nexternal reaches people outside your organisation, or the public, or spends "
-          "money. FROM: marking (the\nserver's own claim), server or tool (set in tools.md), unconfirmed (the "
-          "server says internal, which you\nhaven't confirmed yet, so external) or default (a tool that changes "
-          "something and is not classed counts as external).")
+    print(
+        "\nClasses: read-only changes nothing. internal changes things in your organisation's own tools, "
+        "even when\ncolleagues see it; it runs without approval because the role is trusted, which is not the "
+        "same as harmless.\nexternal reaches people outside your organisation, or the public, or spends "
+        "money. FROM: marking (the\nserver's own claim), server or tool (set in tools.md), unconfirmed (the "
+        "server says internal, which you\nhaven't confirmed yet, so external) or default (a tool that changes "
+        "something and is not classed counts as external)."
+    )
     defaulted = [r["tool"] for r in rows if r["class_from"] == "default"]
     marked = [r for r in rows if r["class_from"] == "marking" and r["class"] != "read-only"]
     if defaulted:
-        print(f"\n{len(defaulted)} tool(s) are external only by default, because the server does not say "
-              "otherwise. Leave any that\ncan reach people outside your organisation (email, invitations, posts). "
-              "For one that "
-              f"stays inside, add under `tools:` in tools.md:\n    {defaulted[0]}: {{class: internal}}")
+        print(
+            f"\n{len(defaulted)} tool(s) are external only by default, because the server does not say "
+            "otherwise. Leave any that\ncan reach people outside your organisation (email, invitations, posts). "
+            "For one that "
+            f"stays inside, add under `tools:` in tools.md:\n    {defaulted[0]}: {{class: internal}}"
+        )
         if not marked:
-            print("If every tool of this server that is not read-only stays inside, one line on its entry "
-                  "under `servers:` covers them all:\n    class: internal")
+            print(
+                "If every tool of this server that is not read-only stays inside, one line on its entry "
+                "under `servers:` covers them all:\n    class: internal"
+            )
         else:
-            print("This server marks some tools itself, so its tools are of mixed kinds: set them one by one, "
-                  "not with `class:` on the server.")
+            print(
+                "This server marks some tools itself, so its tools are of mixed kinds: set them one by one, "
+                "not with `class:` on the server."
+            )
     waiting = [r["tool"].split(".", 2)[2] for r in rows if r["class_from"] == "unconfirmed"]
     if waiting:
         from ombro import mcp_servers
 
-        claims = [{"tool": r["tool"].split(".", 2)[2], "description": r["description"], "class_from": r["class_from"]}
-                  for r in rows]
+        claims = [
+            {"tool": r["tool"].split(".", 2)[2], "description": r["description"], "class_from": r["class_from"]}
+            for r in rows
+        ]
         if getattr(args, "confirm", False):
             mcp_servers.confirm_internal(home, name, waiting)
             print(f"\nConfirmed: {len(waiting)} tool(s) of {name} count as internal.")

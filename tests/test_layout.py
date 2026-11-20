@@ -47,7 +47,9 @@ def test_a_script_cannot_rename_remove_or_replace_its_own_folders(job_dir, tmp_p
     shared = {"photos": SharedFolder("photos", photos.resolve(), "write")}
     ctx, _ = make_ctx(job_dir, shared=shared)
     target = str(tmp_path)
-    out = run_script(ctx, f"""
+    out = run_script(
+        ctx,
+        f"""
 import os
 def t(name, f):
     try:
@@ -62,7 +64,8 @@ t("rename shared", lambda: os.rename({str(photos.resolve())!r}, "workspace/photo
 t("symlink at shared", lambda: os.symlink({target!r}, {str(photos.resolve())!r}))
 t("work inside", lambda: (os.rename("workspace/a.txt", "workspace/b.txt"), os.mkdir("workspace/sub"),
                           open("shared/photos/new.txt", "w").write("x")))
-""")
+""",
+    )
     lines = dict(line.rsplit(" ", 1) for line in out["output"].strip().splitlines())
     assert lines.pop("work inside") == "done", out
     assert set(lines.values()) == {"refused"}, out
@@ -101,8 +104,9 @@ def test_scratch_that_has_become_a_symlink_is_refused_too(home, secret):
     swap_for_symlink(job_dir / "scratch", job_dir)
     reg = native_registry(home)
     with pytest.raises(LayoutChanged):
-        reg.get("workspace.write").handler({"path": "scratch/journal.jsonl", "content": "{}"},
-                                           ToolContext(job_dir, "researcher"))
+        reg.get("workspace.write").handler(
+            {"path": "scratch/journal.jsonl", "content": "{}"}, ToolContext(job_dir, "researcher")
+        )
 
 
 @needs_sandbox
@@ -120,8 +124,10 @@ def test_a_shared_folder_that_has_become_a_symlink_is_refused(home, user, tmp_pa
     shared = {"photos": SharedFolder("photos", trip, "write")}
     swap_for_symlink(trip, user / "Documents")
     reg = native_registry(home)
-    for name, args in [("workspace.list", {"path": "shared/photos"}),
-                       ("workspace.write", {"path": "shared/photos/x.md", "content": "x"})]:
+    for name, args in [
+        ("workspace.list", {"path": "shared/photos"}),
+        ("workspace.write", {"path": "shared/photos/x.md", "content": "x"}),
+    ]:
         with pytest.raises(LayoutChanged):
             reg.get(name).handler(args, ToolContext(job_dir, "researcher", shared=shared))
     assert folders.manifest(trip) == {}  # never walked through

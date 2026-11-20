@@ -89,7 +89,7 @@ SUBMIT_TOOL: dict[str, Any] = {
     "function": {
         "name": SUBMIT_NAME,
         "description": "Hand in your result for this brief. This ends the brief. Keep it short: put long content "
-                       "in a workspace file and give its path as a deliverable.",
+        "in a workspace file and give its path as a deliverable.",
         "parameters": RESULT_SCHEMA,
     },
 }

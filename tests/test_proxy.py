@@ -111,8 +111,10 @@ def test_a_plain_http_request_goes_on_a_connection_of_its_own(made):
     dialler = Dialler()
     p = made(lambda host, port: [PUBLIC], dial_to=dialler)
     c = client(p)
-    c.sendall(b"POST http://shop.test/order?x=1 HTTP/1.1\r\nHost: shop.test\r\nProxy-Connection: keep-alive\r\n"
-              b"Content-Length: 5\r\n\r\nhello")
+    c.sendall(
+        b"POST http://shop.test/order?x=1 HTTP/1.1\r\nHost: shop.test\r\nProxy-Connection: keep-alive\r\n"
+        b"Content-Length: 5\r\n\r\nhello"
+    )
 
     def server():
         far = None

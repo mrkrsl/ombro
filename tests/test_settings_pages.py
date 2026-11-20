@@ -19,8 +19,16 @@ from test_serve_sessions import loopback, serve  # noqa: F401 - fixtures
 
 def _running_job(home, crew: str) -> str:
     jid = new_job_id("invented-report")
-    mdfile.write(home.jobs_dir / jid / "job.md", {"status": "running", "pid": os.getpid(), "crews": [crew],
-                                                   "brief": "Invented", "created_at": "2026-11-14T09:00:00"})
+    mdfile.write(
+        home.jobs_dir / jid / "job.md",
+        {
+            "status": "running",
+            "pid": os.getpid(),
+            "crews": [crew],
+            "brief": "Invented",
+            "created_at": "2026-11-14T09:00:00",
+        },
+    )
     return jid
 
 
@@ -69,8 +77,13 @@ def test_a_role_and_a_skill_move_aside(home):
     with pytest.raises(removing.RemoveError):
         removing.remove_role(home, "", "lead")
     write_role(home, "writer", skills=["invented-check"])
-    skills.write(home, "invented-check", skills.compose("invented-check", "Checks invented things.", "Check."),
-                 source="you", accepted="now")
+    skills.write(
+        home,
+        "invented-check",
+        skills.compose("invented-check", "Checks invented things.", "Check."),
+        source="you",
+        accepted="now",
+    )
     assert any("default/writer" in w for w in removing.check_skill(home, "invented-check").warnings)
     moved = removing.remove_skill(home, "invented-check")
     assert moved == home.removed_dir / "skills" / "invented-check" and skills.load(home, "invented-check") is None
@@ -82,13 +95,13 @@ def test_a_role_and_a_skill_move_aside(home):
 def test_a_provider_is_added_edited_and_removed(home):
     lister = ScriptedClient([])
     lister.models = ["invented-pro", "invented-flash"]
-    added = models.add_provider(home, "https://api.invented.invalid/", "INVENTED_API_KEY",
-                                client_factory=lambda spec, h: lister)
+    added = models.add_provider(
+        home, "https://api.invented.invalid/", "INVENTED_API_KEY", client_factory=lambda spec, h: lister
+    )
     assert added == ["invented-flash", "invented-pro"] or set(added) == {"invented-pro", "invented-flash"}
     with pytest.raises(Exception, match="already connected"):
         models.add_provider(home, "https://api.invented.invalid", None, client_factory=lambda spec, h: lister)
-    models.edit_provider(home, "https://api.invented.invalid", new_endpoint="https://v2.invented.invalid",
-                         key_name="")
+    models.edit_provider(home, "https://api.invented.invalid", new_endpoint="https://v2.invented.invalid", key_name="")
     conn = next(c for c in models.connections(home) if c["endpoint"] == "https://v2.invented.invalid")
     assert conn["key"] is None and conn["label"] == "Invented"
     models.set_role_model(home, "default/researcher", "invented-pro")
@@ -119,8 +132,11 @@ def test_the_profile_keeps_its_guidance_and_the_mode_keeps_per_tool_choices(home
 
 def test_a_server_is_updated_in_place(home):
     mcp_servers.add_server(home, "invented", {"url": "https://mcp.invented.invalid", "class": "internal"})
-    mdfile.write(home.tools, {**mdfile.read(home.tools)[0], "tools": {"mcp.invented.post": {"class": "external"}}},
-                 mdfile.read(home.tools)[1])
+    mdfile.write(
+        home.tools,
+        {**mdfile.read(home.tools)[0], "tools": {"mcp.invented.post": {"class": "external"}}},
+        mdfile.read(home.tools)[1],
+    )
     mcp_servers.update_server(home, "invented", {"url": "https://mcp2.invented.invalid", "class": "internal"})
     t = load_tool_settings(home)
     assert t.servers["invented"]["url"] == "https://mcp2.invented.invalid" and "mcp.invented.post" in t.tools
@@ -130,24 +146,34 @@ def test_a_server_is_updated_in_place(home):
 
 
 def test_general_settings_over_http(serve, home):
-    prefs = serve.http.put("/preferences", json={"name": "  Ada   Invented ", "instructions": "Invented profile.",
-                                                  "outward": "manual", "theme": "dark"}).json()
+    prefs = serve.http.put(
+        "/preferences",
+        json={"name": "  Ada   Invented ", "instructions": "Invented profile.", "outward": "manual", "theme": "dark"},
+    ).json()
     assert prefs["name"] == "Ada Invented" and prefs["instructions"] == "Invented profile."
     assert prefs["outward"] == "manual" and prefs["theme"] == "dark"
     assert serve.http.put("/preferences", json={"outward": "reckless"}).status_code == 400
 
     serve.client.models = ["invented-pro"]
-    r = serve.http.post("/models/providers", json={"endpoint": "https://api.invented.invalid",
-                                                  "key": "sk-INVENTED-provider-0000"})
+    r = serve.http.post(
+        "/models/providers", json={"endpoint": "https://api.invented.invalid", "key": "sk-INVENTED-provider-0000"}
+    )
     assert r.status_code == 201, r.text
     assert "sk-INVENTED" not in r.text and keys.get_key(home, "INVENTED_API_KEY") == "sk-INVENTED-provider-0000"
     conn = next(c for c in r.json()["connections"] if c["endpoint"] == "https://api.invented.invalid")
     assert conn["key"] == "INVENTED_API_KEY" and conn["label"] == "Invented"
-    assert serve.http.put("/models/providers", json={"endpoint": "https://api.invented.invalid",
-                                                     "new_endpoint": "https://v2.invented.invalid"}).status_code == 200
+    assert (
+        serve.http.put(
+            "/models/providers",
+            json={"endpoint": "https://api.invented.invalid", "new_endpoint": "https://v2.invented.invalid"},
+        ).status_code
+        == 200
+    )
     blocked = serve.http.post("/models/providers/check", json={"endpoint": "https://models.invalid/v1"}).json()
     assert blocked["blocked"]
-    assert serve.http.post("/models/providers/remove", json={"endpoint": "https://models.invalid/v1"}).status_code == 409
+    assert (
+        serve.http.post("/models/providers/remove", json={"endpoint": "https://models.invalid/v1"}).status_code == 409
+    )
     gone = serve.http.post("/models/providers/remove", json={"endpoint": "https://v2.invented.invalid"})
     assert gone.status_code == 200 and gone.json()["removed"] == ["invented-pro"]
 
@@ -171,8 +197,14 @@ def test_crews_and_roles_over_http(serve, home):
 
 
 def test_tools_over_http_never_show_a_secret(serve, home):
-    r = serve.http.post("/tools/servers", json={"name": "Invented Notes", "url": "https://mcp.invented.invalid",
-                                               "secrets": {"Authorization": "sk-INVENTED-header-0000"}})
+    r = serve.http.post(
+        "/tools/servers",
+        json={
+            "name": "Invented Notes",
+            "url": "https://mcp.invented.invalid",
+            "secrets": {"Authorization": "sk-INVENTED-header-0000"},
+        },
+    )
     assert r.status_code == 201, r.text
     assert "sk-INVENTED" not in r.text
     row = next(x for x in r.json()["servers"] if x["server"] == "invented-notes")
@@ -180,19 +212,23 @@ def test_tools_over_http_never_show_a_secret(serve, home):
     cfg = load_tool_settings(home).servers["invented-notes"]
     assert cfg["headers"] == {"Authorization": "Bearer ${INVENTED_NOTES_AUTHORIZATION}"}
     # An edit with the secret left blank keeps it.
-    serve.http.put("/tools/servers/invented-notes", json={"url": "https://mcp2.invented.invalid",
-                                                         "keep": ["Authorization"]})
+    serve.http.put(
+        "/tools/servers/invented-notes", json={"url": "https://mcp2.invented.invalid", "keep": ["Authorization"]}
+    )
     cfg = load_tool_settings(home).servers["invented-notes"]
     assert cfg["url"] == "https://mcp2.invented.invalid" and "Authorization" in cfg["headers"]
 
-    local = serve.http.post("/tools/servers", json={"name": "files", "command": "uvx invented-mcp",
-                                                   "secrets": {"TOKEN": "sk-INVENTED-env-0000"}}).json()
+    local = serve.http.post(
+        "/tools/servers",
+        json={"name": "files", "command": "uvx invented-mcp", "secrets": {"TOKEN": "sk-INVENTED-env-0000"}},
+    ).json()
     assert "not pinned" in local["warning"] and "sk-INVENTED" not in str(local)
     assert serve.http.post("/tools/servers/files/sign-in").status_code == 400
 
     assert serve.http.put("/tools/web.search", json={"provider": "firecrawl"}).status_code == 400  # no key yet
-    native = serve.http.put("/tools/web.search", json={"provider": "firecrawl", "key": "fc-INVENTED-0000",
-                                                       "max_calls": 12})
+    native = serve.http.put(
+        "/tools/web.search", json={"provider": "firecrawl", "key": "fc-INVENTED-0000", "max_calls": 12}
+    )
     assert native.status_code == 200 and "fc-INVENTED" not in native.text
     search = next(t for t in native.json()["native"] if t["tool"] == "web.search")
     assert search == {"tool": "web.search", "provider": "firecrawl", "max_calls": 12, "calls": 12}
@@ -201,12 +237,16 @@ def test_tools_over_http_never_show_a_secret(serve, home):
 
 
 def test_skills_over_http(serve, home):
-    made = serve.http.post("/skills", json={"title": "Invented Fact Check", "description": "Checks invented facts.",
-                                           "body": "Read it twice."})
+    made = serve.http.post(
+        "/skills",
+        json={"title": "Invented Fact Check", "description": "Checks invented facts.", "body": "Read it twice."},
+    )
     assert made.status_code == 201, made.text
     assert [s["name"] for s in made.json()["skills"]] == ["invented-fact-check"]
-    assert serve.http.post("/skills", json={"title": "Invented fact check", "description": "x",
-                                            "body": "y"}).status_code == 409
+    assert (
+        serve.http.post("/skills", json={"title": "Invented fact check", "description": "x", "body": "y"}).status_code
+        == 409
+    )
     one = serve.get("/skills/invented-fact-check")
     assert one["description"] == "Checks invented facts." and one["body"] == "Read it twice."
     serve.http.put("/skills/invented-fact-check", json={"description": "Checks facts.", "body": "Read it thrice."})
@@ -246,4 +286,7 @@ def test_a_sign_in_from_an_app_on_another_computer(serve, home, monkeypatch):
     assert not row["signing_in"] and not row["problem"]
     assert oauth.store_path(home, "notes").is_file() and CFG["url"] == MCP
     # The app with no port of its own (a browser): the address is pasted, the same way.
-    assert serve.http.post("/tools/servers/notes/sign-in", json={"hand_over": True, "redirect_port": "x"}).status_code == 400
+    assert (
+        serve.http.post("/tools/servers/notes/sign-in", json={"hand_over": True, "redirect_port": "x"}).status_code
+        == 400
+    )

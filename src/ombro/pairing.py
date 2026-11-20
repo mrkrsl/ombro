@@ -254,9 +254,11 @@ class Devices:
         codes in a minute from one address, that address is refused for a minute, right codes
         included. MAX_WRONG_PER_CODE wrong codes in total throw the code away."""
         if self.locked_out(client):
-            raise PairingError("Too many wrong codes, from this address or from several. Wait a while, "
-                               "then try again. If you didn't make these tries, someone else may be "
-                               "guessing codes: pair over SSH, or run `ombro pair` for a new code.")
+            raise PairingError(
+                "Too many wrong codes, from this address or from several. Wait a while, "
+                "then try again. If you didn't make these tries, someone else may be "
+                "guessing codes: pair over SSH, or run `ombro pair` for a new code."
+            )
         token = secrets.token_urlsafe(32)
         device = Device(secrets.token_hex(4), clean_name(name), self.clock(), "code")
         with self._change() as data:
@@ -269,12 +271,15 @@ class Devices:
                     if live["wrong"] >= MAX_WRONG_PER_CODE:
                         data["code"] = None  # thrown away; the change is written as the error leaves
                         self._write(data)
-                        raise PairingError("Too many wrong codes, so that code no longer works. Someone may "
-                                           "be guessing codes. Run `ombro pair` on the server for a new "
-                                           "one, or pair over SSH.")
+                        raise PairingError(
+                            "Too many wrong codes, so that code no longer works. Someone may "
+                            "be guessing codes. Run `ombro pair` on the server for a new "
+                            "one, or pair over SSH."
+                        )
                     self._write(data)
-                raise PairingError("That code isn't right, or it has run out. "
-                                   "Run `ombro pair` on the server for a new one.")
+                raise PairingError(
+                    "That code isn't right, or it has run out. Run `ombro pair` on the server for a new one."
+                )
             data["code"] = None
             data["devices"].append({**device.to_dict(), "token": _hash(token)})
         return device, token

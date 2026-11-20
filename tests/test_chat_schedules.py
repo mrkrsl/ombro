@@ -64,10 +64,15 @@ def test_bad_offers_are_refused_with_the_reason(home):
     saved(home)
     schedules.write_schedule(home, "teapot-makers", "0 6 * * 1-5", "teapot-makers", True)
     s = ChatSession(home)
-    s([fake.call("offer_schedule", {**OFFER, "spec": "kettles"}),
-       fake.call("offer_schedule", {**OFFER, "cron": "8.30 every day"}),
-       fake.call("offer_schedule", OFFER),
-       fake.say("Sorted.")], ["Schedule things"])
+    s(
+        [
+            fake.call("offer_schedule", {**OFFER, "spec": "kettles"}),
+            fake.call("offer_schedule", {**OFFER, "cron": "8.30 every day"}),
+            fake.call("offer_schedule", OFFER),
+            fake.say("Sorted."),
+        ],
+        ["Schedule things"],
+    )
     unknown, bad_cron, taken = s.tool_replies()
     assert "no saved spec called 'kettles'" in unknown["error"] and "teapot-makers" in unknown["error"]
     assert bad_cron["error"].startswith("cron:")
@@ -134,12 +139,20 @@ def test_times_are_put_in_words_and_the_lead_s_words_cover_the_rest(home):
     assert cronmod.in_words(cronmod.parse("0 7 * * 1,3,5")) == "every Monday, Wednesday and Friday at 7am"
     assert cronmod.in_words(cronmod.parse("0 12 1 * *")) == "on the 1st of each month at noon"
     assert cronmod.in_words(cronmod.parse("*/15 * * * *")) == ""
-    assert cronmod.next_in_words(cronmod.parse("0 9 * * 1-5"), datetime(2026, 11, 20, 10, 0), 1) == \
-        ["Mon 23 Nov at 9am"]
+    assert cronmod.next_in_words(cronmod.parse("0 9 * * 1-5"), datetime(2026, 11, 20, 10, 0), 1) == [
+        "Mon 23 Nov at 9am"
+    ]
     saved(home)
     s = ChatSession(home)
-    s([fake.call("offer_schedule", {**OFFER, "cron": "*/15 9-17 * * 1-5",
-                                    "when": "every quarter of an hour in working hours"}), fake.say("OK.")],
-      ["Schedule it", "n"])
+    s(
+        [
+            fake.call(
+                "offer_schedule",
+                {**OFFER, "cron": "*/15 9-17 * * 1-5", "when": "every quarter of an hour in working hours"},
+            ),
+            fake.say("OK."),
+        ],
+        ["Schedule it", "n"],
+    )
     assert "I can schedule 'teapot-makers' to run every quarter of an hour in working hours." in s.output
     assert "*/15" not in s.output

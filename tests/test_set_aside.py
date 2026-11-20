@@ -19,14 +19,28 @@ def test_what_sets_a_question_aside():
     assert not sets_aside(yes, "/help")  # commands still wait for the answer
     assert not sets_aside(Field("go", "Go ahead?", "yesno"), "Something else")  # only where allowed
 
-    how = Field("how", "Report back or live?", "choice", aside=True, other="not now",
-                pattern=r"(?i)(not now|no|n)", options=[Option("report", "Report back"), Option("live", "Do it live")])
+    how = Field(
+        "how",
+        "Report back or live?",
+        "choice",
+        aside=True,
+        other="not now",
+        pattern=r"(?i)(not now|no|n)",
+        options=[Option("report", "Report back"), Option("live", "Do it live")],
+    )
     assert not sets_aside(how, "report") and not sets_aside(how, "Do it live") and not sets_aside(how, "not now")
     assert sets_aside(how, "What's the weather like?")
     assert not sets_aside(Field("t", "Anything?", "text", aside=True), "Some words")  # text is the answer
 
-    remember = Field("remember", "", "choice", aside=True, other="@crew for another crew", pattern=r"@\S.*",
-                     options=[Option("y", "yes"), Option("n", "no")])
+    remember = Field(
+        "remember",
+        "",
+        "choice",
+        aside=True,
+        other="@crew for another crew",
+        pattern=r"@\S.*",
+        options=[Option("y", "yes"), Option("n", "no")],
+    )
     assert not sets_aside(remember, "@writers") and sets_aside(remember, "Tell me more about it")
 
 
@@ -75,8 +89,9 @@ def test_a_message_sets_aside_a_yes_or_no_mid_turn(home, tmp_path, monkeypatch):
     first = fake.call("folders__write", {"path": "shared/invented/notes.md", "content": "Invented notes.\n"})
     second = fake.call("folders__write", {"path": "shared/invented/more.md", "content": "More.\n"})
     both = {"tool_calls": first["tool_calls"] + second["tool_calls"]}
-    s, ui, client = session(home, [both, fake.say("Here are the dates.")],
-                            [("aside", "Hold on, which dates did we agree?")])
+    s, ui, client = session(
+        home, [both, fake.say("Here are the dates.")], [("aside", "Hold on, which dates did we agree?")]
+    )
     assert s.chat_turn("Write my invented notes.") is True
     assert not (folder / "notes.md").exists() and not (folder / "more.md").exists()
     assert ui.asked[0].name == "folder_write" and len(ui.asked) == 1
@@ -102,8 +117,11 @@ def test_after_a_live_job_a_message_sets_aside_keep_it_as_a_brief(home, in_threa
         fake.finish("Listed three."),
         LEAD_REPORT,
     ]
-    s, ui, client = session(home, [offer(), fake.say("Rye is a good start.")],
-                            ["live", "Only ones that open early", ("aside", "What about rye bread?")])
+    s, ui, client = session(
+        home,
+        [offer(), fake.say("Rye is a good start.")],
+        ["live", "Only ones that open early", ("aside", "What about rye bread?")],
+    )
     assert s.chat_turn("Find me bakeries in Lowtown.") is True
     live_answer = next(f for f in ui.asked if f.name == "live_answer")
     assert not sets_aside(live_answer, "Only ones that open early")  # an answer, not a new message

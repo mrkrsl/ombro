@@ -24,12 +24,18 @@ def test_a_rename_moves_the_folder_and_follows_into_saved_briefs(home):
     ensure_crew(home, "legal", title="Legal Crew")
     write_role(home, "counsel", crew="legal", title="Legal Researcher", skills=["fact-check"])
     mdfile.write(home.specs_dir / "invented-terms.md", {"crews": ["legal"], "roles": ["counsel"]}, "# Terms\n")
-    mdfile.write(home.specs_dir / "invented-both.md", {"crews": ["legal", "default"],
-                                                       "roles": ["legal/counsel", "default/researcher"]}, "# Both\n")
+    mdfile.write(
+        home.specs_dir / "invented-both.md",
+        {"crews": ["legal", "default"], "roles": ["legal/counsel", "default/researcher"]},
+        "# Both\n",
+    )
     mdfile.write(home.specs_dir / "invented-other.md", {"crews": ["default"], "roles": ["researcher"]}, "# Other\n")
     done = edit_role(home, "legal", "counsel", title="  Case   Reader ")
-    assert (done.name, done.renamed_from, sorted(done.specs)) == ("case-reader", "counsel",
-                                                                  ["invented-both", "invented-terms"])
+    assert (done.name, done.renamed_from, sorted(done.specs)) == (
+        "case-reader",
+        "counsel",
+        ["invented-both", "invented-terms"],
+    )
     assert not (home.roles_dir("legal") / "counsel").exists()
     r = _role(home, "legal", "case-reader")
     assert (r.title, r.skills) == ("Case Reader", ["fact-check"])
@@ -51,7 +57,9 @@ def test_a_rename_refuses_a_name_the_crew_has(home):
         edit_role(home, "default", "researcher", title="copy editor")  # another member's title
     with pytest.raises(EditError, match="letters or digits"):
         edit_role(home, "default", "researcher", title="  !! ")
-    assert (home.roles_dir("default") / "researcher").is_dir() and _role(home, "default", "writer").title == "Copy Editor"
+    assert (home.roles_dir("default") / "researcher").is_dir() and _role(
+        home, "default", "writer"
+    ).title == "Copy Editor"
     ensure_crew(home, "legal")
     write_role(home, "writer", crew="legal")  # another crew's member of the same name is no clash
     write_role(home, "counsel", crew="legal")
@@ -69,8 +77,12 @@ def test_a_rename_waits_for_the_crews_running_job(home):
 
 def test_kind_model_and_soul_change_together_and_bad_values_change_nothing(home):
     before = (home.roles_dir("default") / "researcher" / "config.md").read_text()
-    for bad in ({"kind": "lead"}, {"model": "invented-missing"}, {"soul": "  "},
-                {"kind": "helper", "model": "invented-missing"}):
+    for bad in (
+        {"kind": "lead"},
+        {"model": "invented-missing"},
+        {"soul": "  "},
+        {"kind": "helper", "model": "invented-missing"},
+    ):
         with pytest.raises(EditError):
             edit_role(home, "default", "researcher", **bad)
     assert (home.roles_dir("default") / "researcher" / "config.md").read_text() == before
@@ -102,8 +114,10 @@ def test_the_member_page_saves_over_http(serve, home):
 def test_rename_and_kind_on_the_command_line(home, capsys):
     mdfile.write(home.specs_dir / "invented-terms.md", {"crews": ["default"], "roles": ["researcher"]}, "# Terms\n")
     assert cli.main(["role", "rename", "researcher", "Market Analyst"]) == 0
-    assert "Renamed default/researcher to default/market-analyst. Saved briefs changed to the new name: invented-terms." \
+    assert (
+        "Renamed default/researcher to default/market-analyst. Saved briefs changed to the new name: invented-terms."
         in capsys.readouterr().out
+    )
     assert cli.main(["role", "kind", "market-analyst", "helper"]) == 0
     assert "default/market-analyst is now a helper." in capsys.readouterr().out
     assert _role(home, "default", "market-analyst").kind == "helper"

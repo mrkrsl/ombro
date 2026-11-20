@@ -28,8 +28,14 @@ def test_a_title_you_set_is_never_replaced(home):
 
 def test_a_confirmed_brief_gives_the_chat_its_specs_title(home):
     s = ChatSession(home)
-    s([fake.call("offer_brief", {"summary": "Find teapot makers"}), fake.call("propose", SPEC_ARGS),
-       fake.say("Saved.")], ["Find me teapot makers", "y", "a", "Thanks"])
+    s(
+        [
+            fake.call("offer_brief", {"summary": "Find teapot makers"}),
+            fake.call("propose", SPEC_ARGS),
+            fake.say("Saved."),
+        ],
+        ["Find me teapot makers", "y", "a", "Thanks"],
+    )
     assert s.chat.title == "Find invented teapot makers" and s.chat.titled_by == "spec"
 
 
@@ -42,8 +48,10 @@ def test_new_names_the_saved_chat_not_its_file(home):
 
 def test_a_past_chat_is_reopened_and_the_lead_gets_the_conversation_again(home):
     first = ChatSession(home)
-    first([fake.say("There are three invented makers:\n\nAda, Bo\n\nand Cy.")],
-          ["/rename Teapot Makers", "Who makes teapots?"])
+    first(
+        [fake.say("There are three invented makers:\n\nAda, Bo\n\nand Cy.")],
+        ["/rename Teapot Makers", "Who makes teapots?"],
+    )
     old = first.chat.path
 
     second = ChatSession(home)
@@ -63,17 +71,23 @@ def test_a_past_chat_is_reopened_and_the_lead_gets_the_conversation_again(home):
 def test_old_untitled_chats_are_listed_by_their_date(home):
     folder = home.chats_dir
     folder.mkdir(parents=True, exist_ok=True)
-    mdfile.write(folder / "20261112-090000.md", {"kind": "chat", "started_at": "2026-11-12T09:00:00Z"},
-                 "# Chat\n\n**Lead:** Hi.\n")
+    mdfile.write(
+        folder / "20261112-090000.md",
+        {"kind": "chat", "started_at": "2026-11-12T09:00:00Z"},
+        "# Chat\n\n**Lead:** Hi.\n",
+    )
     assert views.chat_list(home)[0]["title"] == "Chat of 12/11/2026"
 
 
 def test_an_untitled_chat_is_listed_by_what_you_first_said(home):
     folder = home.chats_dir
     folder.mkdir(parents=True, exist_ok=True)
-    mdfile.write(folder / "new-chat-20261118-1109.md", {"kind": "chat", "title": ""},
-                 "# New chat\n\n**You (Chat):** Can you connect to my invented mailbox and summarise the "
-                 "top three emails?\n\n**Lead:** Done.\n")
+    mdfile.write(
+        folder / "new-chat-20261118-1109.md",
+        {"kind": "chat", "title": ""},
+        "# New chat\n\n**You (Chat):** Can you connect to my invented mailbox and summarise the "
+        "top three emails?\n\n**Lead:** Done.\n",
+    )
     assert views.chat_list(home)[0]["title"] == "Connect to my invented mailbox"
 
 
@@ -86,8 +100,10 @@ def test_a_chat_the_model_gives_no_title_is_named_from_its_first_words(home):
 
 def test_a_first_words_title_gives_way_to_the_models_next_time(home):
     s = ChatSession(home, titles=True)
-    s([fake.say("Happy to help."), fake.say(""), fake.say("More."), fake.say("Lowtown Teapot Makers")],
-      ["Find me teapot makers", "In Lowtown"])
+    s(
+        [fake.say("Happy to help."), fake.say(""), fake.say("More."), fake.say("Lowtown Teapot Makers")],
+        ["Find me teapot makers", "In Lowtown"],
+    )
     assert s.chat.title == "Lowtown Teapot Makers" and s.chat.titled_by == "model"
 
 
@@ -99,8 +115,14 @@ def test_the_title_call_leaves_room_for_a_thinking_model(home):
 
 def test_an_interview_transcript_is_named_for_what_it_made(home):
     s = ChatSession(home)
-    s([fake.call("offer_brief", {"summary": "Find teapot makers"}), fake.call("propose", SPEC_ARGS),
-       fake.say("Saved.")], ["Find me teapot makers", "y", "a", "Thanks"])
+    s(
+        [
+            fake.call("offer_brief", {"summary": "Find teapot makers"}),
+            fake.call("propose", SPEC_ARGS),
+            fake.say("Saved."),
+        ],
+        ["Find me teapot makers", "y", "a", "Thanks"],
+    )
     names = [p.name for p in home.interviews_dir.glob("*.md")]
     assert any(n.startswith("brief-find-teapots-") for n in names), names
 
@@ -134,15 +156,27 @@ def test_a_reopened_chat_has_everything_said_in_it_the_brief_included(home):
     from ombro.ui import JobEnded
 
     first = ChatSession(home)
-    first([fake.call("offer_brief", {"summary": "Find teapot makers"}),
-           fake.call("ask", {"questions": ["Which invented town?"], "covered": []}),
-           fake.call("propose", SPEC_ARGS), fake.say("Saved.")],
-          ["/rename Teapot Makers", "Find me teapot makers", "y", "Lowtown, please.", "a", "Thanks"])
+    first(
+        [
+            fake.call("offer_brief", {"summary": "Find teapot makers"}),
+            fake.call("ask", {"questions": ["Which invented town?"], "covered": []}),
+            fake.call("propose", SPEC_ARGS),
+            fake.say("Saved."),
+        ],
+        ["/rename Teapot Makers", "Find me teapot makers", "y", "Lowtown, please.", "a", "Thanks"],
+    )
     old = first.chat.path
     first.chat.jobs.append("invented-job-1")  # a job it started, which ends while the chat is closed
     first.chat._save()
-    assert record_job_end_in_chat(home, JobEnded("invented-job-1", "Invented job", "stopped_by_limit",
-                                                 "Your job stopped at its job_timeout limit before finishing."))
+    assert record_job_end_in_chat(
+        home,
+        JobEnded(
+            "invented-job-1",
+            "Invented job",
+            "stopped_by_limit",
+            "Your job stopped at its job_timeout limit before finishing.",
+        ),
+    )
     body = mdfile.read(old)[1]
     assert "**Lead:** This sounds like a task. I can brief it: Find teapot makers." in body  # the offer
     assert "**Lead (Brief):**" in body and "Which invented town?" in body  # the brief's question…
@@ -174,4 +208,5 @@ def test_a_reopened_chat_never_shows_its_reopened_notes(home):
     body = mdfile.read(first.chat.path)[1]
     assert body.count("_Reopened ") == 3  # kept in the file
     from ombro.chat import parse_entries
+
     assert all(not e.startswith("**") or "_Reopened" not in e for e in parse_entries(body))

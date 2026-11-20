@@ -29,8 +29,11 @@ TOOLS = [
     {
         "name": "find_rows",
         "description": "Find rows in an invented sheet that contain some words.",
-        "inputSchema": {"type": "object", "properties": {"sheet": {"type": "string"}, "query": {"type": "string"}},
-                        "required": ["sheet"]},
+        "inputSchema": {
+            "type": "object",
+            "properties": {"sheet": {"type": "string"}, "query": {"type": "string"}},
+            "required": ["sheet"],
+        },
         "annotations": {"readOnlyHint": True},
     },
     {
@@ -125,14 +128,22 @@ def handle_modern(msg: dict) -> dict | None:
     meta = params.get("_meta") or {}
     version = meta.get("io.modelcontextprotocol/protocolVersion")
     if method == "initialize" or version != MODERN:
-        return _error(rid, -32022, "Unsupported protocol version",
-                      {"supported": [MODERN], "requested": version or params.get("protocolVersion")})
+        return _error(
+            rid,
+            -32022,
+            "Unsupported protocol version",
+            {"supported": [MODERN], "requested": version or params.get("protocolVersion")},
+        )
     if "io.modelcontextprotocol/clientCapabilities" not in meta:
         return _error(rid, -32602, "missing clientCapabilities")
     if method == "server/discover":
-        result = {"supportedVersions": [MODERN], "capabilities": {"tools": {}},
-                  "_meta": {"io.modelcontextprotocol/serverInfo": {"name": "ombro-fake", "version": "1"}},
-                  "ttlMs": 0, "cacheScope": "public"}
+        result = {
+            "supportedVersions": [MODERN],
+            "capabilities": {"tools": {}},
+            "_meta": {"io.modelcontextprotocol/serverInfo": {"name": "ombro-fake", "version": "1"}},
+            "ttlMs": 0,
+            "cacheScope": "public",
+        }
     elif method == "tools/list":
         result = {"tools": tools(), "ttlMs": 0, "cacheScope": "public"}
     elif method == "tools/call":

@@ -29,15 +29,30 @@ def library_view(home: Home) -> dict[str, Any]:
     named, every = skills.users(home)
     rows = []
     for s in skills.library(home).values():
-        rows.append({"name": s.name, "description": s.description, "source": s.source,
-                     "path": str(s.file), "used_by": named.get(s.name, []), "warning": s.warning or None})
+        rows.append(
+            {
+                "name": s.name,
+                "description": s.description,
+                "source": s.source,
+                "path": str(s.file),
+                "used_by": named.get(s.name, []),
+                "warning": s.warning or None,
+            }
+        )
     waiting = []
     for a in outbox.waiting(home):
         if a.tool == outbox.SKILL_TOOL and a.status == "pending":
             args = a.arguments if isinstance(a.arguments, dict) else {}
-            waiting.append({"ref": a.ref, "name": args.get("name"), "for": list(args.get("for") or []),
-                            "change": a.meta.get("change"), "reason": a.meta.get("reason"),
-                            "flags": list(a.meta.get("flags") or [])})
+            waiting.append(
+                {
+                    "ref": a.ref,
+                    "name": args.get("name"),
+                    "for": list(args.get("for") or []),
+                    "change": a.meta.get("change"),
+                    "reason": a.meta.get("reason"),
+                    "flags": list(a.meta.get("flags") or []),
+                }
+            )
     return {"skills": rows, "all_skills": every, "waiting": waiting}
 
 
@@ -68,8 +83,10 @@ def _list(home: Home, args) -> int:
         return 0
     print(f"Approved ({len(view['skills'])}), in {home.skills_dir}:")
     if not view["skills"]:
-        print("  none yet. The Lead can propose one after a job, or write one in chat when you ask it to "
-              "remember how to do something.")
+        print(
+            "  none yet. The Lead can propose one after a job, or write one in chat when you ask it to "
+            "remember how to do something."
+        )
     for r in view["skills"]:
         who = ", ".join(r["used_by"]) or "no role by name"
         print(f"  {r['name']}  ({'yours' if r['source'] == 'you' else 'from ' + r['source']})")
@@ -107,13 +124,27 @@ def _show(home: Home, args) -> int:
     s = _one(home, args)
     named, every = skills.users(home)
     if args.json:
-        print(json.dumps({"name": s.name, "description": s.description, "source": s.source, "path": str(s.file),
-                          "used_by": named.get(s.name, []), "all_skills": every, "text": s.text},
-                         ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "name": s.name,
+                    "description": s.description,
+                    "source": s.source,
+                    "path": str(s.file),
+                    "used_by": named.get(s.name, []),
+                    "all_skills": every,
+                    "text": s.text,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
     print(f"{s.name}   {s.file}")
-    print(f"Used by: {', '.join(named.get(s.name, [])) or 'no role by name'}"
-          + (f"; and every role with skills: all ({', '.join(every)})" if every else ""))
+    print(
+        f"Used by: {', '.join(named.get(s.name, [])) or 'no role by name'}"
+        + (f"; and every role with skills: all ({', '.join(every)})" if every else "")
+    )
     print()
     print(s.text.rstrip())
     return 0
@@ -142,15 +173,19 @@ def _edit(home: Home, args) -> int:
 
 def describe_import(imp: skills.Import) -> list[str]:
     """What the user reads before saying yes to an import: the whole text, or the diff."""
-    lines = [f"Skill {imp.name}, from {imp.source}"
-             + (": a new version of the one in your library" if imp.live else ": new to your library")]
+    lines = [
+        f"Skill {imp.name}, from {imp.source}"
+        + (": a new version of the one in your library" if imp.live else ": new to your library")
+    ]
     if imp.flags:
         lines.append(f"Warning: signs of injected text in it: {', '.join(imp.flags)}. Read it closely.")
     lines.append("References copied with it: " + (", ".join(imp.references) or "none"))
     if imp.skipped:
-        lines.append("Not copied (scripts, other folders, links, or files that are not text): "
-                     + ", ".join(imp.skipped[:20]) + (f" and {len(imp.skipped) - 20} more" if len(imp.skipped) > 20
-                                                      else ""))
+        lines.append(
+            "Not copied (scripts, other folders, links, or files that are not text): "
+            + ", ".join(imp.skipped[:20])
+            + (f" and {len(imp.skipped) - 20} more" if len(imp.skipped) > 20 else "")
+        )
     lines.append("")
     if imp.live:
         lines.append(skills.diff(imp.live.text, imp.text, imp.name) or "(SKILL.md is the same as today's)")
@@ -168,16 +203,20 @@ def _add(home: Home, args) -> int:
     print("\n".join(describe_import(imp)))
     print()
     if not args.yes and not _cli()._confirm(
-            "Add it to your library? Roles that use it will follow it as your own instructions."):
+        "Add it to your library? Roles that use it will follow it as your own instructions."
+    ):
         print("Nothing was added.")
         return 1
     kept = skills.add(home, imp, date.today().isoformat())
-    print(f"Added {imp.name} to {home.skills_dir / imp.name}." + (f" The old version is kept in {kept}." if kept
-                                                                  else ""))
+    print(
+        f"Added {imp.name} to {home.skills_dir / imp.name}." + (f" The old version is kept in {kept}." if kept else "")
+    )
     missing = skills.without(home, imp.name)
     if missing:
-        print(f"Roles with skills: all use it now. These have a list of skills, so they don't: {', '.join(missing)}. "
-              f"Give it with `ombro skills give {imp.name} <crew/role>`.")
+        print(
+            f"Roles with skills: all use it now. These have a list of skills, so they don't: {', '.join(missing)}. "
+            f"Give it with `ombro skills give {imp.name} <crew/role>`."
+        )
     else:
         print("Every role uses it now (they all have skills: all).")
     return 0
@@ -185,8 +224,9 @@ def _add(home: Home, args) -> int:
 
 def _give(home: Home, args) -> int:
     if not args.name or not args.roles:
-        raise skills.SkillError("name a skill and one or more roles, e.g. "
-                                "`ombro skills give podcast-outreach default/researcher`")
+        raise skills.SkillError(
+            "name a skill and one or more roles, e.g. `ombro skills give podcast-outreach default/researcher`"
+        )
     for who in args.roles:
         print(skills.give(home, args.name, who).capitalize() + ".")
     return 0
@@ -224,13 +264,26 @@ def uploaded(folder: str, files: dict[str, str]) -> Iterator[Path]:
 def import_view(imp: skills.Import, skipped: list[str] | None = None) -> dict[str, Any]:
     """What an interface shows before the user says yes: as `describe_import`, as data."""
     not_copied = sorted({*imp.skipped, *(skipped or [])})
-    return {"name": imp.name, "replaces": imp.live is not None, "flags": list(imp.flags),
-            "references": list(imp.references), "skipped": not_copied, "text": imp.text,
-            "diff": skills.diff(imp.live.text, imp.text, imp.name) if imp.live else None}
+    return {
+        "name": imp.name,
+        "replaces": imp.live is not None,
+        "flags": list(imp.flags),
+        "references": list(imp.references),
+        "skipped": not_copied,
+        "text": imp.text,
+        "diff": skills.diff(imp.live.text, imp.text, imp.name) if imp.live else None,
+    }
 
 
-def import_files(home: Home, folder: str, files: dict[str, str], *, skipped: list[str] | None = None,
-                 label: str | None = None, add: bool = False) -> dict[str, Any]:
+def import_files(
+    home: Home,
+    folder: str,
+    files: dict[str, str],
+    *,
+    skipped: list[str] | None = None,
+    label: str | None = None,
+    add: bool = False,
+) -> dict[str, Any]:
     """Check (and, with `add`, import) a skill from files an interface sent. Returns the import's
     view and, once added, the library and the roles that don't get it."""
     from datetime import date
@@ -241,5 +294,10 @@ def import_files(home: Home, folder: str, files: dict[str, str], *, skipped: lis
         if not add:
             return view
         kept = skills.add(home, imp, date.today().isoformat(), label=label or f"the folder {root.name}")
-    return {**view, "added": imp.name, "kept": str(kept) if kept else None,
-            "not_given": skills.without(home, imp.name), **library_view(home)}
+    return {
+        **view,
+        "added": imp.name,
+        "kept": str(kept) if kept else None,
+        "not_given": skills.without(home, imp.name),
+        **library_view(home),
+    }

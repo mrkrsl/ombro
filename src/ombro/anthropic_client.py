@@ -25,16 +25,32 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ombro.client import (RETRYABLE, BUSY_RETRIES, ModelError, ModelReply, ToolCall, Usage, allowed_max_tokens,
-                          busy_pause, busy_wait, no_slot_error)
+from ombro.client import (
+    RETRYABLE,
+    BUSY_RETRIES,
+    ModelError,
+    ModelReply,
+    ToolCall,
+    Usage,
+    allowed_max_tokens,
+    busy_pause,
+    busy_wait,
+    no_slot_error,
+)
 from ombro.slots import NoSlot
 
 API_VERSION = "2026-10-21"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 _EFFORT_ALIASES = {"minimal": "low"}  # OpenAI's words for the same idea
-_FINISH = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "length", "tool_use": "tool_calls",
-           "pause_turn": "stop", "refusal": "refusal"}
+_FINISH = {
+    "end_turn": "stop",
+    "stop_sequence": "stop",
+    "max_tokens": "length",
+    "tool_use": "tool_calls",
+    "pause_turn": "stop",
+    "refusal": "refusal",
+}
 _THINKING = ("thinking", "redacted_thinking")
 
 
@@ -89,9 +105,13 @@ class AnthropicClient:
         if self.learned_max:
             max_output_tokens = min(int(max_output_tokens), self.learned_max)
         system, converted = to_anthropic(messages, self.stale_thinking)
-        body: dict[str, Any] = {"model": self.model, "max_tokens": int(max_output_tokens), "messages": converted,
-                                # Cache the conversation so far too: each step reads the steps before it.
-                                "cache_control": {"type": "ephemeral"}}
+        body: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": int(max_output_tokens),
+            "messages": converted,
+            # Cache the conversation so far too: each step reads the steps before it.
+            "cache_control": {"type": "ephemeral"},
+        }
         if system:
             # The stable part: tools and the system prompt, cached together (tools come first).
             body["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
@@ -125,10 +145,13 @@ class AnthropicClient:
                 raise err
             retryable = False
             try:
-                with self.slots.hold(deadline) if self.slots else nullcontext(), httpx.Client(
+                with (
+                    self.slots.hold(deadline) if self.slots else nullcontext(),
+                    httpx.Client(
                         transport=self.transport,
-                        timeout=httpx.Timeout(max(0.1, deadline - time.monotonic()),
-                                              connect=min(remaining, 15.0))) as http:
+                        timeout=httpx.Timeout(max(0.1, deadline - time.monotonic()), connect=min(remaining, 15.0)),
+                    ) as http,
+                ):
                     resp = http.post(self.url, json=body, headers=self._headers(key, "fallbacks" in body))
             except NoSlot:
                 err = no_slot_error(self.host)
@@ -205,8 +228,10 @@ class AnthropicClient:
                 except httpx.HTTPError as e:
                     raise ModelError(f"could not reach {self.host}: {type(e).__name__}") from None
                 if resp.status_code != 200:
-                    raise ModelError(f"{self.host} returned HTTP {resp.status_code}: {_error_text(resp, key)}",
-                                     status=resp.status_code)
+                    raise ModelError(
+                        f"{self.host} returned HTTP {resp.status_code}: {_error_text(resp, key)}",
+                        status=resp.status_code,
+                    )
                 try:
                     data = resp.json()
                     page = [str(m["id"]) for m in data["data"] if isinstance(m, dict) and m.get("id")]
@@ -239,9 +264,14 @@ class AnthropicClient:
                 texts.append(str(block.get("text") or ""))
             elif block.get("type") == "tool_use":
                 args = block.get("input")
-                calls.append(ToolCall(id=str(block.get("id") or f"call_{i}"), name=str(block.get("name") or ""),
-                                      arguments=args if isinstance(args, dict) else None,
-                                      raw_arguments=json.dumps(args if args is not None else {}, ensure_ascii=False)))
+                calls.append(
+                    ToolCall(
+                        id=str(block.get("id") or f"call_{i}"),
+                        name=str(block.get("name") or ""),
+                        arguments=args if isinstance(args, dict) else None,
+                        raw_arguments=json.dumps(args if args is not None else {}, ensure_ascii=False),
+                    )
+                )
         stop = data.get("stop_reason")
         text = "".join(texts) or None
         if stop == "refusal" and not text and not calls:
@@ -253,15 +283,23 @@ class AnthropicClient:
             read = int(usage.get("cache_read_input_tokens") or 0)
             written = int(usage.get("cache_creation_input_tokens") or 0)
             # Anthropic counts cached and newly cached input apart from input_tokens; Ombro counts all of it.
-            u = Usage(int(usage.get("input_tokens") or 0) + read + written, int(usage.get("output_tokens") or 0),
-                      cached_input=read)
+            u = Usage(
+                int(usage.get("input_tokens") or 0) + read + written,
+                int(usage.get("output_tokens") or 0),
+                cached_input=read,
+            )
         else:
             out_chars = len(text or "") + sum(len(c.raw_arguments) for c in calls)
             u = Usage(0, out_chars // 3 + 1, estimated=True)
         # Thinking (and a fallback's marker) must go back exactly as sent; plain text and tool calls rebuild.
         exact = any(isinstance(b, dict) and b.get("type") not in ("text", "tool_use") for b in content)
-        return ModelReply(content=text, tool_calls=calls, usage=u, finish_reason=_FINISH.get(stop, stop),
-                          blocks=content if exact else None)
+        return ModelReply(
+            content=text,
+            tool_calls=calls,
+            usage=u,
+            finish_reason=_FINISH.get(stop, stop),
+            blocks=content if exact else None,
+        )
 
 
 # -- turning Ombro's messages into Anthropic's ---------------------------------
@@ -302,15 +340,24 @@ def _images(content: Any) -> list[dict[str, Any]]:
 
 
 def _signatures(messages: list[dict[str, Any]]) -> set[str]:
-    return {str(b.get("signature") or b.get("data")) for m in messages if isinstance(m.get("content"), list)
-            for b in m["content"] if isinstance(b, dict) and b.get("type") in _THINKING}
+    return {
+        str(b.get("signature") or b.get("data"))
+        for m in messages
+        if isinstance(m.get("content"), list)
+        for b in m["content"]
+        if isinstance(b, dict) and b.get("type") in _THINKING
+    }
 
 
 def _assistant_blocks(m: dict[str, Any], stale: set[str], strip_all: bool) -> list[dict[str, Any]]:
     raw = m.get("_blocks")
     if isinstance(raw, list) and raw:
-        return [b for b in raw if isinstance(b, dict) and not (
-            b.get("type") in _THINKING and (strip_all or str(b.get("signature") or b.get("data")) in stale))]
+        return [
+            b
+            for b in raw
+            if isinstance(b, dict)
+            and not (b.get("type") in _THINKING and (strip_all or str(b.get("signature") or b.get("data")) in stale))
+        ]
     blocks: list[dict[str, Any]] = []
     text = _text_of(m.get("content"))
     if text.strip():
@@ -322,13 +369,20 @@ def _assistant_blocks(m: dict[str, Any], stale: set[str], strip_all: bool) -> li
             args = raw_args if isinstance(raw_args, dict) else json.loads(raw_args or "{}")
         except (TypeError, ValueError):
             args = {}
-        blocks.append({"type": "tool_use", "id": str(tc.get("id") or f"call_{i}"), "name": str(fn.get("name") or ""),
-                       "input": args if isinstance(args, dict) else {}})
+        blocks.append(
+            {
+                "type": "tool_use",
+                "id": str(tc.get("id") or f"call_{i}"),
+                "name": str(fn.get("name") or ""),
+                "input": args if isinstance(args, dict) else {},
+            }
+        )
     return blocks
 
 
-def to_anthropic(messages: list[dict[str, Any]], stale: set[str] | None = None, *,
-                 strip_all: bool = False) -> tuple[str, list[dict[str, Any]]]:
+def to_anthropic(
+    messages: list[dict[str, Any]], stale: set[str] | None = None, *, strip_all: bool = False
+) -> tuple[str, list[dict[str, Any]]]:
     """(system, messages) for the Messages API. The system messages at the start become the
     system prompt; a later one goes in as the user's note. Tool results join one user turn, ahead
     of any text, and turns of the same role are joined."""
@@ -365,8 +419,16 @@ def to_anthropic(messages: list[dict[str, Any]], stale: set[str] | None = None, 
         elif role == "assistant":
             add("assistant", _assistant_blocks(m, stale, strip_all))
         elif role == "tool":
-            add("user", [{"type": "tool_result", "tool_use_id": str(m.get("tool_call_id") or ""),
-                          "content": _text_of(m.get("content")) or "(no output)"}])
+            add(
+                "user",
+                [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": str(m.get("tool_call_id") or ""),
+                        "content": _text_of(m.get("content")) or "(no output)",
+                    }
+                ],
+            )
         else:
             images = _images(m.get("content"))
             text = _text_of(m.get("content"))

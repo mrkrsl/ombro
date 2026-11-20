@@ -167,8 +167,13 @@ class LiveSession:
         self.question: Question | None = None
         self.worker: threading.Thread | None = None
         self.ui = ServeUI(self)
-        self.session = Session(sessions.home, self.ui, client_factory=sessions.client_factory,
-                               titles=sessions.titles, on_started=sessions.watch_job)
+        self.session = Session(
+            sessions.home,
+            self.ui,
+            client_factory=sessions.client_factory,
+            titles=sessions.titles,
+            on_started=sessions.watch_job,
+        )
         self.flows = Flows(self.session)
         # The chat is on disk (its first message, or a new name with its title): windows list it now,
         # while the Lead is still answering.
@@ -197,13 +202,18 @@ class LiveSession:
     def describe(self) -> dict[str, Any]:
         chat = self.session.chat
         q = self.question
-        return {"id": self.id, "kind": self.kind, "state": self.state, "seq": self.seq,
-                "chat": chat.path.stem if chat is not None and chat.path.exists() else None,
-                "chat_id": chat.id if chat is not None else None,
-                "title": chat.title if chat is not None else None,
-                "mode": chat.mode if chat is not None else None,
-                "jobs": list(self.session.started),
-                "question": {"id": q.id, "kind": q.kind, **q.payload} if q else None}
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "state": self.state,
+            "seq": self.seq,
+            "chat": chat.path.stem if chat is not None and chat.path.exists() else None,
+            "chat_id": chat.id if chat is not None else None,
+            "title": chat.title if chat is not None else None,
+            "mode": chat.mode if chat is not None else None,
+            "jobs": list(self.session.started),
+            "question": {"id": q.id, "kind": q.kind, **q.payload} if q else None,
+        }
 
     # -- questions -------------------------------------------------------------------
 
@@ -286,8 +296,15 @@ class LiveSession:
             return {"handled": False}
         where, cmd = core_commands.route(text)
         if where in ("screen", "app"):
-            return {"handled": False, "route": {"where": where, "command": cmd.name, "screen": cmd.screen,
-                                                "args": text.partition(" ")[2].strip()}}
+            return {
+                "handled": False,
+                "route": {
+                    "where": where,
+                    "command": cmd.name,
+                    "screen": cmd.screen,
+                    "args": text.partition(" ")[2].strip(),
+                },
+            }
         if where == "chat":
             self.start(lambda: self.session.chat_turn(text, attached))
         else:
@@ -325,8 +342,15 @@ class LiveSession:
 class Sessions:
     """Every live session, by id."""
 
-    def __init__(self, home: Home, hub: Hub, *, client_factory: Callable | None = None, titles: bool = True,
-                 watch_job: Callable[[str, str], None] | None = None):
+    def __init__(
+        self,
+        home: Home,
+        hub: Hub,
+        *,
+        client_factory: Callable | None = None,
+        titles: bool = True,
+        watch_job: Callable[[str, str], None] | None = None,
+    ):
         self.home = home
         self.hub = hub
         self.client_factory = client_factory

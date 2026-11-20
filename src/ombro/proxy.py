@@ -30,8 +30,16 @@ HEAD_MAX = 64 * 1024  # a request's or answer's head
 IDLE = 120.0  # seconds a tunnel may sit with nothing passing before it is closed
 HEAD_TIMEOUT = 30.0
 CONNECT_TIMEOUT = 15.0
-HOP = {b"connection", b"proxy-connection", b"keep-alive", b"proxy-authorization", b"proxy-authenticate", b"te",
-       b"trailer", b"upgrade"}
+HOP = {
+    b"connection",
+    b"proxy-connection",
+    b"keep-alive",
+    b"proxy-authorization",
+    b"proxy-authenticate",
+    b"te",
+    b"trailer",
+    b"upgrade",
+}
 
 Dial = Callable[[str, int, float], socket.socket]
 
@@ -45,8 +53,15 @@ class Proxy:
     """A small HTTP proxy on `host` (127.0.0.1 for a browser Ombro starts; for a browser
     elsewhere, the address Ombro reaches it from), taking connections only from `peers`."""
 
-    def __init__(self, resolver: Resolver, *, host: str = "127.0.0.1", peers: set[str] | None = None,
-                 dial_to: Dial | None = None, ports: range | None = None):
+    def __init__(
+        self,
+        resolver: Resolver,
+        *,
+        host: str = "127.0.0.1",
+        peers: set[str] | None = None,
+        dial_to: Dial | None = None,
+        ports: range | None = None,
+    ):
         self.resolver = resolver
         self.peers = set(peers or {"127.0.0.1", "::1"})
         self._dial = dial_to
@@ -210,7 +225,7 @@ def _host_port(target: str, default: int) -> tuple[str, int | None]:
     host, port = target, default
     if target.startswith("["):
         end = target.find("]")
-        host, after = target[1:end], target[end + 1:]
+        host, after = target[1:end], target[end + 1 :]
         if after.startswith(":"):
             port = int(after[1:]) if after[1:].isdigit() else None
     elif ":" in target:
@@ -237,8 +252,11 @@ def _answer(s: socket.socket, code: int, text: str) -> None:
     body = f"Ombro refused this connection: {text}\n".encode()
     reason = {400: "Bad Request", 403: "Forbidden", 411: "Length Required", 502: "Bad Gateway"}.get(code, "Error")
     try:
-        s.sendall(f"HTTP/1.1 {code} {reason}\r\nContent-Type: text/plain; charset=utf-8\r\n"
-                  f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode() + body)
+        s.sendall(
+            f"HTTP/1.1 {code} {reason}\r\nContent-Type: text/plain; charset=utf-8\r\n"
+            f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+            + body
+        )
     except OSError:
         pass
 

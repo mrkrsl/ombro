@@ -113,11 +113,19 @@ class FakeSystem:
     def installer(self, home):
         from ombro import scheduler
 
-        return scheduler.Installer(home, platform=self.platform, agents_dir=self.agents_dir, run=self.run,
-                                   python="/opt/invented/bin/python3", uid=501)
+        return scheduler.Installer(
+            home,
+            platform=self.platform,
+            agents_dir=self.agents_dir,
+            run=self.run,
+            python="/opt/invented/bin/python3",
+            uid=501,
+        )
 
 
-def write_role(home: Home, name: str, *, kind: str = "specialist", soul: str | None = None, crew: str = "default", **cfg):
+def write_role(
+    home: Home, name: str, *, kind: str = "specialist", soul: str | None = None, crew: str = "default", **cfg
+):
     """A role in a crew; with kind lead, the one Lead (replacing the default one)."""
     folder = home.lead_dir if kind == "lead" and name == "lead" else home.roles_dir(crew) / name
     folder.mkdir(parents=True, exist_ok=True)
@@ -190,12 +198,14 @@ class Runner:
         self.engine: Engine | None = None
         self.job_dir: Path | None = None
 
-    def __call__(self, script, *, limits=None, registry=None, spec=SPEC, crew="default", today=None,
-                 spec_meta=None, crews=None) -> str:
+    def __call__(
+        self, script, *, limits=None, registry=None, spec=SPEC, crew="default", today=None, spec_meta=None, crews=None
+    ) -> str:
         tools = load_tool_settings(self.home)
         lim = load_limits(self.home, limits, tools)
-        self.job_dir = jobs.create_job(self.home, crews or [crew], spec_meta or {}, spec, lim, source="test",
-                                       tools=tools.to_dict())
+        self.job_dir = jobs.create_job(
+            self.home, crews or [crew], spec_meta or {}, spec, lim, source="test", tools=tools.to_dict()
+        )
         self.client = ScriptedClient(script, clock=self.clock)
         self.engine = Engine(
             self.home,
@@ -228,18 +238,29 @@ def job(home) -> Runner:
     return Runner(home)
 
 
-def use_fake_mcp(home: Home, record: Path, *, server: str = "fake", tools: dict | None = None,
-                 server_settings: dict | None = None, confirmed: tuple[str, ...] = ("add_row",), **env) -> None:
+def use_fake_mcp(
+    home: Home,
+    record: Path,
+    *,
+    server: str = "fake",
+    tools: dict | None = None,
+    server_settings: dict | None = None,
+    confirmed: tuple[str, ...] = ("add_row",),
+    **env,
+) -> None:
     """Point both web tools at the fake provider and add Ombro's fake MCP server
     to tools.md. Everything the fake server would have done goes to `record`.
     `confirmed`: the tools whose claim to stay inside (openWorldHint false) the
     user has confirmed, as `ombro tools add --mcp` asks; add_row by default."""
     import sys
 
-    cfg = {"command": sys.executable, "args": ["-m", "ombro.fake_mcp"],
-           "env": {"OMBRO_FAKE_MCP_RECORD": str(record), **{k: str(v) for k, v in env.items()}},
-           **({"confirmed_internal": list(confirmed)} if confirmed else {}),
-           **(server_settings or {})}
+    cfg = {
+        "command": sys.executable,
+        "args": ["-m", "ombro.fake_mcp"],
+        "env": {"OMBRO_FAKE_MCP_RECORD": str(record), **{k: str(v) for k, v in env.items()}},
+        **({"confirmed_internal": list(confirmed)} if confirmed else {}),
+        **(server_settings or {}),
+    }
     all_tools = {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}, **(tools or {})}
     mdfile.write(home.tools, {"tools": all_tools, "servers": {server: cfg}}, "Test tool settings.")
 

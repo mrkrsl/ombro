@@ -80,8 +80,9 @@ def run(port: int = 0, handshake: bool = False, dev: bool = False) -> int:
         print(f"ombro serve on http://{HOST}:{port}", flush=True)
     if dev:
         print(f"Open {DEV_ORIGIN}/?port={port}&token={token}", flush=True)
-    config = uvicorn.Config(build_app(token, dev), log_level="warning", loop="asyncio", http="h11",
-                            ws="websockets-sansio", lifespan="on")
+    config = uvicorn.Config(
+        build_app(token, dev), log_level="warning", loop="asyncio", http="h11", ws="websockets-sansio", lifespan="on"
+    )
     server = uvicorn.Server(config)
     if handshake:
         threading.Thread(target=_exit_on_eof, args=(server,), daemon=True).start()
@@ -114,8 +115,11 @@ def is_tailscale(host: str) -> bool:
 
     try:
         ip = ipaddress.ip_address(host)
-        return any(ip in ipaddress.ip_network(n) for n in ("100.64.0.0/10", "fd7a:115c:a1e0::/48")
-                   if ip.version == ipaddress.ip_network(n).version)
+        return any(
+            ip in ipaddress.ip_network(n)
+            for n in ("100.64.0.0/10", "fd7a:115c:a1e0::/48")
+            if ip.version == ipaddress.ip_network(n).version
+        )
     except ValueError:
         return host.lower().endswith(".ts.net")
 
@@ -141,25 +145,34 @@ def service_lines(host: str, port: int, code: str | None) -> list[str]:
     lines = [f"Ombro {__version__} is serving on {host}:{port}."]
     if host in ("0.0.0.0", "::"):
         if not os.path.exists("/.dockerenv"):
-            lines.append(f"Warning: listening on every address ({host}) puts Ombro, over plain HTTP, on every "
-                         "network this machine is on. Ombro is meant to be reached over SSH or Tailscale: "
-                         "listen on the Tailscale address instead, unless this is a container.")
+            lines.append(
+                f"Warning: listening on every address ({host}) puts Ombro, over plain HTTP, on every "
+                "network this machine is on. Ombro is meant to be reached over SSH or Tailscale: "
+                "listen on the Tailscale address instead, unless this is a container."
+            )
     elif not is_private(host):
-        lines.append(f"Warning: {host} may be reachable from the internet. Ombro is meant to be reached "
-                     "over SSH or Tailscale; anyone who can reach this address can try pairing codes.")
+        lines.append(
+            f"Warning: {host} may be reachable from the internet. Ombro is meant to be reached "
+            "over SSH or Tailscale; anyone who can reach this address can try pairing codes."
+        )
     elif not is_loopback(host) and not is_tailscale(host):
-        lines.append(f"Warning: {host} is not a Tailscale address. In the app's By address mode the device "
-                     "token and everything else would cross this network unencrypted, where anyone on it "
-                     "could take the token. Use Tailscale, or SSH.")
+        lines.append(
+            f"Warning: {host} is not a Tailscale address. In the app's By address mode the device "
+            "token and everything else would cross this network unencrypted, where anyone on it "
+            "could take the token. Use Tailscale, or SSH."
+        )
     if code:
-        lines += ["", "No device is paired yet. In the Ombro app, choose to run Ombro on a server,",
-                  f"connect by address, and type this pairing code: {code}",
-                  "It works once and doesn't run out. Over SSH the app pairs by itself, with no code.", ""]
+        lines += [
+            "",
+            "No device is paired yet. In the Ombro app, choose to run Ombro on a server,",
+            f"connect by address, and type this pairing code: {code}",
+            "It works once and doesn't run out. Over SSH the app pairs by itself, with no code.",
+            "",
+        ]
     return lines
 
 
-def run_service(port: int = SERVICE_PORT, host: str = HOST, allow: list[str] | None = None,
-                tick: bool = False) -> int:
+def run_service(port: int = SERVICE_PORT, host: str = HOST, allow: list[str] | None = None, tick: bool = False) -> int:
     """The long-running server: device tokens and pairing, a fixed port, stays up until stopped."""
     import uvicorn
 
@@ -178,8 +191,7 @@ def run_service(port: int = SERVICE_PORT, host: str = HOST, allow: list[str] | N
     for line in service_lines(host, port, devices.first_code()):
         print(line, flush=True)
     app = build_app(None, home=home, devices=devices, hosts=service_hosts(host, allow or []), tick=tick)
-    config = uvicorn.Config(app, log_level="warning", loop="asyncio", http="h11",
-                            ws="websockets-sansio", lifespan="on")
+    config = uvicorn.Config(app, log_level="warning", loop="asyncio", http="h11", ws="websockets-sansio", lifespan="on")
     uvicorn.Server(config).run(sockets=socks)
     return 0
 
@@ -201,21 +213,43 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def add_arguments(p: argparse.ArgumentParser) -> None:
-    p.add_argument("action", nargs="?", choices=["install", "remove", "status"],
-                   help="install: keep the server running on its own, now and after a restart (systemd or launchd); "
-                        "remove: stop that; status: what is installed")
-    p.add_argument("--port", type=int, default=None,
-                   help=f"the port (default: {SERVICE_PORT}; with --handshake or --dev, a free one)")
-    p.add_argument("--host", default=None,
-                   help=f"the address to listen on (default: {HOST}); for example this machine's Tailscale "
-                        "address, or 0.0.0.0 inside a container")
-    p.add_argument("--allow-host", action="append", default=[], metavar="NAME",
-                   help="also accept requests addressed to this name (for example a Tailscale machine name)")
-    p.add_argument("--tick", action="store_true",
-                   help="also start scheduled jobs each minute, where there is no cron (a container)")
+    p.add_argument(
+        "action",
+        nargs="?",
+        choices=["install", "remove", "status"],
+        help="install: keep the server running on its own, now and after a restart (systemd or launchd); "
+        "remove: stop that; status: what is installed",
+    )
+    p.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=f"the port (default: {SERVICE_PORT}; with --handshake or --dev, a free one)",
+    )
+    p.add_argument(
+        "--host",
+        default=None,
+        help=f"the address to listen on (default: {HOST}); for example this machine's Tailscale "
+        "address, or 0.0.0.0 inside a container",
+    )
+    p.add_argument(
+        "--allow-host",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="also accept requests addressed to this name (for example a Tailscale machine name)",
+    )
+    p.add_argument(
+        "--tick",
+        action="store_true",
+        help="also start scheduled jobs each minute, where there is no cron (a container)",
+    )
     p.add_argument("--yes", action="store_true", help="for install and remove: don't ask first")
-    p.add_argument("--handshake", action="store_true",
-                   help='for the desktop app: print {"port", "token"} as one line of JSON, and exit when stdin closes')
+    p.add_argument(
+        "--handshake",
+        action="store_true",
+        help='for the desktop app: print {"port", "token"} as one line of JSON, and exit when stdin closes',
+    )
     p.add_argument("--dev", action="store_true", help="also accept Vite's dev server, and print a URL to open")
 
 
@@ -226,11 +260,11 @@ def dispatch(args: argparse.Namespace) -> int:
         return service.cmd(args)
     if args.handshake or args.dev:
         if args.host or args.tick or args.allow_host:
-            raise SystemExit("ombro serve: --host, --allow-host and --tick are for the service, "
-                             "not --handshake or --dev")
+            raise SystemExit(
+                "ombro serve: --host, --allow-host and --tick are for the service, not --handshake or --dev"
+            )
         return run(args.port or 0, args.handshake, args.dev)
-    return run_service(SERVICE_PORT if args.port is None else args.port, args.host or HOST,
-                       args.allow_host, args.tick)
+    return run_service(SERVICE_PORT if args.port is None else args.port, args.host or HOST, args.allow_host, args.tick)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -157,8 +157,9 @@ def resolve_role(roles: dict[str, Role], name: str) -> tuple[Role | None, str]:
         return matches[0], ""
     known = ", ".join(roles) or "none"
     if matches:
-        return None, f"more than one crew has a role named {name!r}; name it as crew/role: " + \
-            ", ".join(r.name for r in matches)
+        return None, f"more than one crew has a role named {name!r}; name it as crew/role: " + ", ".join(
+            r.name for r in matches
+        )
     return None, f"there is no role named {name!r}. Roles you can brief: {known}"
 
 

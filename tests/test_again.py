@@ -23,9 +23,16 @@ def detached(monkeypatch):
 def stopped_job(job, home, *, status="stopped_by_limit", limit="max_tokens"):
     """A job that wrote a file, then is recorded as having stopped the given way."""
     write_role(home, "researcher")
-    job([fake.brief("researcher", "Find three invented teapot makers."),
-         fake.result("Found one so far.", deliverables=[{"name": "Makers", "path": "workspace/makers.md"}]),
-         fake.finish(), fake.keep_notes(), LEAD_REPORT], limits={"max_tokens": 40_000})
+    job(
+        [
+            fake.brief("researcher", "Find three invented teapot makers."),
+            fake.result("Found one so far.", deliverables=[{"name": "Makers", "path": "workspace/makers.md"}]),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        limits={"max_tokens": 40_000},
+    )
     (job.job_dir / "workspace" / "makers.md").write_text("# Makers\n\n1. Ada Pots\n")  # what it got done
     jobs.update_job(job.job_dir, status=status, limit_hit=limit)
     return job.job_dir
@@ -42,15 +49,18 @@ def test_a_job_that_ran_out_of_tokens_is_offered_a_restart_with_twice_the_tokens
     assert "Settings › General" in text
     assert [(o.label, o.command) for o in offers] == [
         ("Restart with 4M tokens", "/restart teapots-20261117-1000 more"),
-        ("Restart as it was", "/restart teapots-20261117-1000")]
+        ("Restart as it was", "/restart teapots-20261117-1000"),
+    ]
 
 
 def test_a_job_that_ran_out_of_time_or_was_stopped_or_failed_is_offered_a_resume():
     timeout = again_plan({"status": "stopped_by_limit", "limit_hit": "job_timeout", "limits": {"job_timeout": 7200}})
     assert timeout["kind"] == "resume" and timeout["raise"]["job_timeout"] == 14_400
     text, offers = again_offer("t", timeout)
-    assert text == ("It ran out of time (2 hours) before it finished. I can resume it on the same brief, picking up "
-                    "where it stopped.")
+    assert text == (
+        "It ran out of time (2 hours) before it finished. I can resume it on the same brief, picking up "
+        "where it stopped."
+    )
     assert [o.command for o in offers] == ["/resume t", "/resume t more"]
     stopped = again_plan({"status": "stopped", "limit_hit": None, "limits": {}})
     assert stopped["kind"] == "resume" and stopped["why"] == "It was stopped before it finished."

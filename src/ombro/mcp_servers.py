@@ -66,13 +66,21 @@ def pin_warning(command: str, args: list[str]) -> str | None:
             loose.append(a)
     if not loose:
         return None
-    return (f"{', '.join(loose)} {'is' if len(loose) == 1 else 'are'} not pinned to an exact version "
-            f"(such as name==1.2.3 or name@1.2.3). {command} fetches the newest each time it starts, so the "
-            "server can change or break without warning.")
+    return (
+        f"{', '.join(loose)} {'is' if len(loose) == 1 else 'are'} not pinned to an exact version "
+        f"(such as name==1.2.3 or name@1.2.3). {command} fetches the newest each time it starts, so the "
+        "server can change or break without warning."
+    )
 
 
-def server_entry(*, command: str | None = None, url: str | None = None, env: dict[str, str] | None = None,
-                 headers: dict[str, str] | None = None, server_class: str | None = None) -> dict[str, Any]:
+def server_entry(
+    *,
+    command: str | None = None,
+    url: str | None = None,
+    env: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+    server_class: str | None = None,
+) -> dict[str, Any]:
     """The tools.md entry for one server. `command` is the whole command line, split as a shell would."""
     if bool(command) == bool(url):
         raise ServerError("give either a command (a local server Ombro starts) or a url (a remote server)")
@@ -86,8 +94,10 @@ def server_entry(*, command: str | None = None, url: str | None = None, env: dic
             raise ServerError("the command is empty")
         refs = sorted({m for a in argv for m in _REF.findall(a)})
         if refs:
-            raise ServerError(f"the command puts {', '.join(refs)} on its command line, where other users of "
-                              "this machine can read it in the process list; give it as a secret for `env` instead")
+            raise ServerError(
+                f"the command puts {', '.join(refs)} on its command line, where other users of "
+                "this machine can read it in the process list; give it as a secret for `env` instead"
+            )
         entry["command"] = argv[0]
         if argv[1:]:
             entry["args"] = argv[1:]
@@ -179,8 +189,15 @@ def tool_claims(home: Home, name: str) -> list[dict[str, Any]]:
         a = t.annotations or {}
         claim = "read-only" if a.get("readOnlyHint") is True else "internal" if outward.claims_internal(a) else None
         effect, source = outward.tool_class(settings, f"mcp.{name}.{t.name}", a)
-        rows.append({"tool": t.name, "description": " ".join(str(t.description or "").split()),
-                     "claims": claim, "class": effect, "class_from": source})
+        rows.append(
+            {
+                "tool": t.name,
+                "description": " ".join(str(t.description or "").split()),
+                "claims": claim,
+                "class": effect,
+                "class_from": source,
+            }
+        )
     return rows
 
 
@@ -210,13 +227,18 @@ def confirm_internal(home: Home, name: str, tools: list[str]) -> list[str]:
 def claims_text(name: str, rows: list[dict[str, Any]]) -> list[str]:
     """What the server says of the tools still to confirm, in words, for a terminal."""
     waiting = [r for r in rows if r["class_from"] == "unconfirmed"]
-    out = [f"{len(waiting)} of {name}'s tools say they change things but stay inside your organisation, "
-           "reaching no one outside:"]
-    out += [f"  - mcp.{name}.{r['tool']}" + (f": {r['description'][:120]}" if r["description"] else "")
-            for r in waiting]
-    out.append("Ombro can't check what a server says about itself. Until you confirm it, these count as "
-               "external: each use waits for your approval. Once confirmed, they run without asking, as "
-               "internal changes do (deleting or sharing still asks once a job has read outside material).")
+    out = [
+        f"{len(waiting)} of {name}'s tools say they change things but stay inside your organisation, "
+        "reaching no one outside:"
+    ]
+    out += [
+        f"  - mcp.{name}.{r['tool']}" + (f": {r['description'][:120]}" if r["description"] else "") for r in waiting
+    ]
+    out.append(
+        "Ombro can't check what a server says about itself. Until you confirm it, these count as "
+        "external: each use waits for your approval. Once confirmed, they run without asking, as "
+        "internal changes do (deleting or sharing still asks once a job has read outside material)."
+    )
     return out
 
 
@@ -229,16 +251,17 @@ def confirm_flow(home: Home, name: str, ui: UI, rows: list[dict[str, Any]] | Non
         try:
             rows = tool_claims(home, name)
         except McpError as e:
-            ui.say(f"Its tools could not be listed yet ({e}). Later, `ombro tools {name}` shows what each one "
-                   "says it does and asks you to confirm it.")
+            ui.say(
+                f"Its tools could not be listed yet ({e}). Later, `ombro tools {name}` shows what each one "
+                "says it does and asks you to confirm it."
+            )
             return []
     waiting = unconfirmed(rows)
     if not waiting:
         return []
     ui.say("\n" + "\n".join(claims_text(name, rows)))
     if not ui.yes("confirm_internal", "Confirm these stay inside your organisation?", False):
-        ui.say("They count as external: each use waits for your approval. `ombro tools "
-               f"{name}` asks again.")
+        ui.say(f"They count as external: each use waits for your approval. `ombro tools {name}` asks again.")
         return []
     confirm_internal(home, name, waiting)
     ui.say(f"Confirmed: {len(waiting)} tool(s) of {name} count as internal.")
@@ -271,8 +294,13 @@ def _pair(text: str, flag: str) -> tuple[str, str]:
     return name.strip(), value
 
 
-def cmd_server(args, *, ask: Callable[[str], str] | None = None,
-               ask_secret: Callable[[str], str] | None = None, ui: UI | None = None) -> int:
+def cmd_server(
+    args,
+    *,
+    ask: Callable[[str], str] | None = None,
+    ask_secret: Callable[[str], str] | None = None,
+    ui: UI | None = None,
+) -> int:
     cli = _cli()
     home = cli._home()
     ui = ui or ConsoleUI(ask=ask, ask_secret=ask_secret)
@@ -292,15 +320,28 @@ def add_flow(home: Home, args, ui: UI) -> int:
     except SetupError as e:
         raise cli.CliError(str(e)) from None
     if name in existing:
-        raise cli.CliError(f"There is already a server named {name!r} in tools.md. Remove it first with "
-                           f"`ombro tools remove {name}`, or edit {home.tools}.")
+        raise cli.CliError(
+            f"There is already a server named {name!r} in tools.md. Remove it first with "
+            f"`ombro tools remove {name}`, or edit {home.tools}."
+        )
     command, url = args.command, args.url
     if not command and not url:
-        kind = ui.ask(Field("kind", "Is it local (a command Ombro starts) or remote (an address)?", "choice",
-                            options=[Option("l", "local"), Option("r", "remote")], invalid="Type l or r."))
+        kind = ui.ask(
+            Field(
+                "kind",
+                "Is it local (a command Ombro starts) or remote (an address)?",
+                "choice",
+                options=[Option("l", "local"), Option("r", "remote")],
+                invalid="Type l or r.",
+            )
+        )
         if kind == "l":
-            command = ui.text("command", "Command, with an exact version (e.g. uvx some-mcp-server==1.2.3)",
-                              required=True, invalid="A command is needed.").strip()
+            command = ui.text(
+                "command",
+                "Command, with an exact version (e.g. uvx some-mcp-server==1.2.3)",
+                required=True,
+                invalid="A command is needed.",
+            ).strip()
         elif kind == "r":
             url = ui.text("url", "Address (https://…)", required=True, invalid="An address is needed.").strip()
         else:
@@ -314,8 +355,9 @@ def add_flow(home: Home, args, ui: UI) -> int:
     headers = dict(_pair(h, "--header") for h in args.header or [])
     secrets = list(args.secret or [])
     if not args.secret and command and not args.env and not args.no_prompt:
-        more = ui.text("secrets", "Variables it needs that hold a secret (names, space-separated; Enter for none)"
-                       ).split()
+        more = ui.text(
+            "secrets", "Variables it needs that hold a secret (names, space-separated; Enter for none)"
+        ).split()
         secrets += more
     # Each secret: typed hidden, kept in keys.env, written as ${KEY} in env or headers.
     to_set: dict[str, str] = {}
@@ -329,8 +371,9 @@ def add_flow(home: Home, args, ui: UI) -> int:
             raise cli.CliError(f"{key!r} cannot be a key name: use capitals, digits and underscores")
         have = keys.get_key(home, key)
         hint = " (Enter keeps the one already set)" if have else ""
-        value = str(ui.ask(Field(f"secret_{key}", f"Value for {var}, kept in secrets/keys.env as {key}{hint}",
-                                 "secret")) or "").strip()
+        value = str(
+            ui.ask(Field(f"secret_{key}", f"Value for {var}, kept in secrets/keys.env as {key}{hint}", "secret")) or ""
+        ).strip()
         if value:
             to_set[key] = value
         elif not have:
@@ -356,9 +399,11 @@ def add_flow(home: Home, args, ui: UI) -> int:
     if url and not url.startswith("https://"):
         ui.say("\nWarning: the address is not https, so what is sent to it can be read on the way.")
     if not args.server_class:
-        ui.say("\nIts tools are classed by the server's own markings, but a tool it says stays inside your "
-              "organisation counts as\nexternal (it waits for your approval) until you confirm that. After "
-              f"adding, `ombro tools {name}` shows each tool's class.")
+        ui.say(
+            "\nIts tools are classed by the server's own markings, but a tool it says stays inside your "
+            "organisation counts as\nexternal (it waits for your approval) until you confirm that. After "
+            f"adding, `ombro tools {name}` shows each tool's class."
+        )
     ui.say("")
     if not args.yes and not ui.yes("add", "Add it?"):
         ui.say("Nothing added.")
@@ -372,8 +417,10 @@ def add_flow(home: Home, args, ui: UI) -> int:
     if command and not args.server_class and not args.yes:
         confirm_flow(home, name, ui)  # starts it, to ask what it says of its tools
     if url:
-        ui.say(f"If it asks you to sign in, connect it once with `ombro connect {name}`. Then see its tools with "
-              f"`ombro tools {name}`.")
+        ui.say(
+            f"If it asks you to sign in, connect it once with `ombro connect {name}`. Then see its tools with "
+            f"`ombro tools {name}`."
+        )
     else:
         ui.say(f"See its tools with `ombro tools {name}` (this starts the server, which may download it first).")
     ui.say(f"A role uses a tool by naming it in its config.md `tools:` list, as mcp.{name}.<tool>.")
@@ -403,8 +450,13 @@ def remove_flow(home: Home, args, ui: UI) -> int:
         return 1
     dropped = remove_server(home, name)
     gone = keys.forget_unused(home, refs)
-    ui.say(f"Removed {name}" + (f" and the settings for {len(dropped)} of its tools" if dropped else "")
-          + f" from {home.tools}" + (f", and {', '.join(gone)} from secrets/keys.env" if gone else "") + ".")
+    ui.say(
+        f"Removed {name}"
+        + (f" and the settings for {len(dropped)} of its tools" if dropped else "")
+        + f" from {home.tools}"
+        + (f", and {', '.join(gone)} from secrets/keys.env" if gone else "")
+        + "."
+    )
     if kept:
         ui.say(f"Kept {', '.join(kept)} in secrets/keys.env: something else uses {'it' if len(kept) == 1 else 'them'}.")
     from ombro import oauth

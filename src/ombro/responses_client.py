@@ -38,16 +38,25 @@ RETRY_CODES = {"subscription_sharing_usage_unavailable", "subscription_sharing_u
 
 def _plan_error(status: int | None, code: str, text: str) -> ModelError:
     if code in LIMIT_CODES:
-        return ModelError("Your ChatGPT plan's usage limit was reached (it may be a limit you set for Ombro). "
-                          f"Manage usage: {USAGE_URL}", status=status)
+        return ModelError(
+            "Your ChatGPT plan's usage limit was reached (it may be a limit you set for Ombro). "
+            f"Manage usage: {USAGE_URL}",
+            status=status,
+        )
     if code == "subscription_sharing_user_not_eligible":
-        return ModelError("This ChatGPT account or workspace can't use its plan in Ombro. Use an OpenAI API "
-                          "key instead.", status=status)
+        return ModelError(
+            "This ChatGPT account or workspace can't use its plan in Ombro. Use an OpenAI API key instead.",
+            status=status,
+        )
     if code in ("subscription_sharing_invalid_user",):
-        return ModelError("ChatGPT couldn't confirm your sign-in. Sign in with ChatGPT again: Settings › General, "
-                          "or `ombro chatgpt sign-in`.", status=status)
-    return ModelError(f"ChatGPT plan: HTTP {status}" + (f" ({code})" if code else "") + (f": {text}" if text else ""),
-                      status=status)
+        return ModelError(
+            "ChatGPT couldn't confirm your sign-in. Sign in with ChatGPT again: Settings › General, "
+            "or `ombro chatgpt sign-in`.",
+            status=status,
+        )
+    return ModelError(
+        f"ChatGPT plan: HTTP {status}" + (f" ({code})" if code else "") + (f": {text}" if text else ""), status=status
+    )
 
 
 def _error_of(body: Any) -> tuple[str, str]:
@@ -64,8 +73,16 @@ def _error_of(body: Any) -> tuple[str, str]:
 class ChatGPTClient:
     """One model on the ChatGPT plan. The sign-in's token is fetched (and renewed) on every call."""
 
-    def __init__(self, model: str, session: Session, *, transport: httpx.BaseTransport | None = None,
-                 retries: int = 2, sleep: Callable[[float], None] = time.sleep, effort: str | None = None):
+    def __init__(
+        self,
+        model: str,
+        session: Session,
+        *,
+        transport: httpx.BaseTransport | None = None,
+        retries: int = 2,
+        sleep: Callable[[float], None] = time.sleep,
+        effort: str | None = None,
+    ):
         self.model = model
         self.session = session
         self.transport = transport
@@ -106,11 +123,19 @@ class ChatGPTClient:
                 raise err
             retryable = False
             try:
-                with httpx.Client(transport=self.transport,
-                                  timeout=httpx.Timeout(remaining, connect=min(remaining, 15.0))) as http:
-                    with http.stream("POST", URL, json=body, headers={
-                            "Authorization": f"Bearer {token}", "Content-Type": "application/json",
-                            "Accept": "text/event-stream"}) as resp:
+                with httpx.Client(
+                    transport=self.transport, timeout=httpx.Timeout(remaining, connect=min(remaining, 15.0))
+                ) as http:
+                    with http.stream(
+                        "POST",
+                        URL,
+                        json=body,
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json",
+                            "Accept": "text/event-stream",
+                        },
+                    ) as resp:
                         if resp.status_code == 200:
                             reply = read_stream(resp.iter_lines())
                             reply.lost_attempts = lost
@@ -183,8 +208,13 @@ def read_stream(lines) -> ModelReply:
             final, kind = ev.get("response") or {}, t
         elif t == "response.failed":
             code, msg = _error_of(ev.get("response") or {})
-            raise _plan_error(None, code, msg) if code.startswith("subscription_sharing") else ModelError(
-                "the ChatGPT plan call failed" + (f" ({code})" if code else "") + (f": {msg}" if msg else ""))
+            raise (
+                _plan_error(None, code, msg)
+                if code.startswith("subscription_sharing")
+                else ModelError(
+                    "the ChatGPT plan call failed" + (f" ({code})" if code else "") + (f": {msg}" if msg else "")
+                )
+            )
         elif t == "error":
             code, msg = str(ev.get("code") or ""), str(ev.get("message") or "")
             if not code and isinstance(ev.get("error"), dict):
@@ -227,8 +257,14 @@ def parse_response(resp: dict[str, Any], *, incomplete: bool = False) -> ModelRe
                 args = json.loads(raw_s or "{}")
             except ValueError:
                 args = None
-            calls.append(ToolCall(id=str(item.get("call_id") or f"call_{i}"), name=str(item.get("name") or ""),
-                                  arguments=args if isinstance(args, dict) else None, raw_arguments=raw_s))
+            calls.append(
+                ToolCall(
+                    id=str(item.get("call_id") or f"call_{i}"),
+                    name=str(item.get("name") or ""),
+                    arguments=args if isinstance(args, dict) else None,
+                    raw_arguments=raw_s,
+                )
+            )
         if item.get("type") in _REPLAYED:
             kept.append({k: v for k, v in item.items() if k not in ("id", "status")})
     usage = resp.get("usage") or {}
@@ -236,14 +272,16 @@ def parse_response(resp: dict[str, Any], *, incomplete: bool = False) -> ModelRe
     if usage.get("input_tokens") is not None:
         details = usage.get("input_tokens_details") or {}
         out_details = usage.get("output_tokens_details") or {}
-        u = Usage(int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0),
-                  cached_input=int(details.get("cached_tokens") or 0) if isinstance(details, dict) else 0)
+        u = Usage(
+            int(usage.get("input_tokens") or 0),
+            int(usage.get("output_tokens") or 0),
+            cached_input=int(details.get("cached_tokens") or 0) if isinstance(details, dict) else 0,
+        )
         u.reasoning = int(out_details.get("reasoning_tokens") or 0) if isinstance(out_details, dict) else 0
     else:
         u = Usage(0, (len(content or "") + sum(len(c.raw_arguments) for c in calls)) // 3 + 1, estimated=True)
-    reason = ((resp.get("incomplete_details") or {}).get("reason") if incomplete else None)
-    finish = "length" if incomplete and reason in (None, "max_output_tokens") else (
-        "tool_calls" if calls else "stop")
+    reason = (resp.get("incomplete_details") or {}).get("reason") if incomplete else None
+    finish = "length" if incomplete and reason in (None, "max_output_tokens") else ("tool_calls" if calls else "stop")
     return ModelReply(content=content, tool_calls=calls, usage=u, finish_reason=finish, items=kept or None)
 
 
@@ -297,18 +335,30 @@ def to_responses(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, An
             for i, tc in enumerate(m.get("tool_calls") or []):
                 fn = tc.get("function") or {}
                 raw = fn.get("arguments")
-                items.append({"type": "function_call", "call_id": str(tc.get("id") or f"call_{i}"),
-                              "name": str(fn.get("name") or ""),
-                              "arguments": raw if isinstance(raw, str) else json.dumps(raw or {})})
+                items.append(
+                    {
+                        "type": "function_call",
+                        "call_id": str(tc.get("id") or f"call_{i}"),
+                        "name": str(fn.get("name") or ""),
+                        "arguments": raw if isinstance(raw, str) else json.dumps(raw or {}),
+                    }
+                )
         elif role == "tool":
-            items.append({"type": "function_call_output", "call_id": str(m.get("tool_call_id") or ""),
-                          "output": _text(m.get("content")) or "(no output)"})
+            items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": str(m.get("tool_call_id") or ""),
+                    "output": _text(m.get("content")) or "(no output)",
+                }
+            )
         else:
             content = m.get("content")
             text = _text(content)
-            images = [{"type": "input_image", "image_url": str(p["image_url"].get("url") or "")}
-                      for p in (content if isinstance(content, list) else [])
-                      if isinstance(p, dict) and p.get("type") == "image_url" and isinstance(p.get("image_url"), dict)]
+            images = [
+                {"type": "input_image", "image_url": str(p["image_url"].get("url") or "")}
+                for p in (content if isinstance(content, list) else [])
+                if isinstance(p, dict) and p.get("type") == "image_url" and isinstance(p.get("image_url"), dict)
+            ]
             if images:
                 items.append({"role": "user", "content": [{"type": "input_text", "text": text}, *images]})
             elif text.strip():

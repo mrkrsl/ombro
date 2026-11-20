@@ -70,8 +70,16 @@ def write_soul(folder: Path, text: str) -> None:
         mdfile.write_atomic(path, mdfile.with_comments(body, text))
 
 
-def edit_role(home: Home, crew: str, role: str, *, title: str | None = None, kind: str | None = None,
-              model: str | None = None, soul: str | None = None) -> Edited:
+def edit_role(
+    home: Home,
+    crew: str,
+    role: str,
+    *,
+    title: str | None = None,
+    kind: str | None = None,
+    model: str | None = None,
+    soul: str | None = None,
+) -> Edited:
     """Change what's given and leave the rest. Everything is checked before anything is written."""
     from ombro.removing import check_role, role_folder
     from ombro.roles import NAME, folder_name
@@ -101,13 +109,16 @@ def edit_role(home: Home, crew: str, role: str, *, title: str | None = None, kin
         title = " ".join(title.split())
         new_name = folder_name(title)
         if not title or not NAME.match(new_name):
-            raise EditError("Give them a name made of letters or digits, such as \"Copy Editor\".")
-        others = [p for p in home.roles_dir(crew).iterdir() if p.is_dir() and not p.name.startswith(".")
-                  and p.name != role]
+            raise EditError('Give them a name made of letters or digits, such as "Copy Editor".')
+        others = [
+            p for p in home.roles_dir(crew).iterdir() if p.is_dir() and not p.name.startswith(".") and p.name != role
+        ]
         for other in others:
             if other.name == new_name or _title_of(other).casefold() == title.casefold():
-                raise EditError(f"The {crew_title(home, crew)} already has a member called "
-                                f"{_title_of(other)}. Give them another name.")
+                raise EditError(
+                    f"The {crew_title(home, crew)} already has a member called "
+                    f"{_title_of(other)}. Give them another name."
+                )
         if new_name != role:
             blocked = check_role(home, crew, role).blocked
             if blocked:
@@ -132,8 +143,14 @@ def edit_role(home: Home, crew: str, role: str, *, title: str | None = None, kin
         folder.rename(home.roles_dir(crew) / new_name)
         done.renamed_from = role
         for path, smeta, sbody, roles in specs:
-            smeta["roles"] = [f"{crew}/{new_name}" if str(r).strip() == f"{crew}/{role}"
-                              else new_name if str(r).strip() == role else r for r in roles]
+            smeta["roles"] = [
+                f"{crew}/{new_name}"
+                if str(r).strip() == f"{crew}/{role}"
+                else new_name
+                if str(r).strip() == role
+                else r
+                for r in roles
+            ]
             mdfile.write(path, smeta, sbody)
             done.specs.append(path.stem)
     return done

@@ -14,24 +14,36 @@ from ombro.journal import Follower
 
 def _a_job_with_a_deliverable(job, home):
     write_role(home, "writer", tools=["workspace.write"])
-    status = job([
-        fake.brief("writer", "Write an invented note."),
-        fake.call("workspace__write", {"path": "workspace/note.md", "content": "Invented.\n"}),
-        fake.result("Wrote it.", deliverables=[{"name": "The note", "path": "workspace/note.md"}]),
-        fake.finish(),
-        fake.keep_notes(),
-        LEAD_REPORT,
-    ])
+    status = job(
+        [
+            fake.brief("writer", "Write an invented note."),
+            fake.call("workspace__write", {"path": "workspace/note.md", "content": "Invented.\n"}),
+            fake.result("Wrote it.", deliverables=[{"name": "The note", "path": "workspace/note.md"}]),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     assert status == "completed"
     return job.job_dir
 
 
 def test_every_view_is_plain_data(job, home):
     job_dir = _a_job_with_a_deliverable(job, home)
-    for data in (views.summary(home), views.crews(home), views.job_list(home), views.status(job_dir),
-                 views.report(home, job_dir), views.journal_events(job_dir), views.key_list(home),
-                 views.schedule_list(home), views.spec_list(home), views.folder_list(home),
-                 views.limit_values(home), views.preferences(home)):
+    for data in (
+        views.summary(home),
+        views.crews(home),
+        views.job_list(home),
+        views.status(job_dir),
+        views.report(home, job_dir),
+        views.journal_events(job_dir),
+        views.key_list(home),
+        views.schedule_list(home),
+        views.spec_list(home),
+        views.folder_list(home),
+        views.limit_values(home),
+        views.preferences(home),
+    ):
         json.dumps(data)
 
 
@@ -66,8 +78,14 @@ def test_the_summary_counts_what_is_going_on(home):
     assert s["name"] == "Ada" and s["lead"]["title"] == "Lead"
     assert [c["title"] for c in s["crews"]] == ["Default Crew"]
     assert [r["title"] for r in s["crews"][0]["roles"]] == ["Researcher"]  # the test home's role
-    assert s["counts"] == {"crews": 1, "crews_ready": 1, "active_jobs": 0, "scheduled_jobs": 0, "waiting": 0,
-                           "unseen_jobs": 0}
+    assert s["counts"] == {
+        "crews": 1,
+        "crews_ready": 1,
+        "active_jobs": 0,
+        "scheduled_jobs": 0,
+        "waiting": 0,
+        "unseen_jobs": 0,
+    }
     cli.main(["crew", "add", "legal", "--title", "Legal Team"])  # no roles yet: not ready
     assert views.summary(home)["counts"]["crews_ready"] == 1
 
@@ -81,18 +99,33 @@ def test_the_default_crew_comes_first_then_by_title(home):
 def test_the_keys_view_never_holds_a_value(home):
     keys.set_key(home, "TEST_MODEL_KEY", "sk-test-INVENTED-0123456789")
     data = views.key_list(home)
-    assert {"name": "TEST_MODEL_KEY", "set": True, "source": "keys.env", "used_by": ["model default", "model cheap"]} \
-        in data["keys"]
+    assert {
+        "name": "TEST_MODEL_KEY",
+        "set": True,
+        "source": "keys.env",
+        "used_by": ["model default", "model cheap"],
+    } in data["keys"]
     text = json.dumps(data)
     assert "INVENTED" not in text and "6789" not in text
 
 
 def test_commands_print_json(job, home, capsys):
     job_dir = _a_job_with_a_deliverable(job, home)
-    for argv in (["jobs", "--json"], ["status", job_dir.name, "--json"], ["report", "--json"],
-                 ["journal", "--json"], ["keys", "--json"], ["specs", "--json"], ["role", "list", "--json"],
-                 ["crew", "list", "--json"], ["limits", "--json"], ["schedule", "list", "--json"],
-                 ["folders", "list", "--json"], ["summary", "--json"], ["preferences", "--json"]):
+    for argv in (
+        ["jobs", "--json"],
+        ["status", job_dir.name, "--json"],
+        ["report", "--json"],
+        ["journal", "--json"],
+        ["keys", "--json"],
+        ["specs", "--json"],
+        ["role", "list", "--json"],
+        ["crew", "list", "--json"],
+        ["limits", "--json"],
+        ["schedule", "list", "--json"],
+        ["folders", "list", "--json"],
+        ["summary", "--json"],
+        ["preferences", "--json"],
+    ):
         capsys.readouterr()
         assert cli.main(argv) == 0, argv
         json.loads(capsys.readouterr().out)
@@ -160,8 +193,10 @@ def test_new_starts_a_fresh_chat(home):
 def test_a_confirmed_brief_can_be_started_at_once(home, monkeypatch, capsys):
     from ombro.interview import Outcome, Proposal
 
-    outcome = Outcome("confirmed", proposal=Proposal(files=[SimpleNamespace(path=home.specs_dir / "x.md")],
-                                                     data={"name": "invented-spec"}))
+    outcome = Outcome(
+        "confirmed",
+        proposal=Proposal(files=[SimpleNamespace(path=home.specs_dir / "x.md")], data={"name": "invented-spec"}),
+    )
     monkeypatch.setattr(cli, "_require_model", lambda h: None)
     monkeypatch.setattr(cli, "_brief_interview", lambda *a, **k: outcome)
     monkeypatch.setattr(cli, "_confirm", lambda label: label.startswith("Start it now?"))
@@ -228,8 +263,9 @@ def test_a_job_reaped_after_it_stops_counting_as_active_still_changes_the_counts
     from ombro.session import JobWatcher
     from ombro.settings import load_limits, load_tool_settings
 
-    job_dir = jobs.create_job(home, ["default"], {}, SPEC, load_limits(home, None, load_tool_settings(home)),
-                              source="test")
+    job_dir = jobs.create_job(
+        home, ["default"], {}, SPEC, load_limits(home, None, load_tool_settings(home)), source="test"
+    )
     jobs.update_job(job_dir, pid=999_999_9, status="running")  # its process has gone
     watcher = JobWatcher(home)
     watcher.active = {job_dir.name}

@@ -13,8 +13,22 @@ from ombro.fake import ScriptedClient
 from ombro.interviews import SetupPurpose, start
 from ombro.settings import load_limits
 from ombro.ui import (
-    UI, ConsoleUI, Failure, Field, FileView, Form, LeadSaid, ModeChanged, Note, Option, Progress, ProposalShown,
-    Usage, option_text, prompt_text, render,
+    UI,
+    ConsoleUI,
+    Failure,
+    Field,
+    FileView,
+    Form,
+    LeadSaid,
+    ModeChanged,
+    Note,
+    Option,
+    Progress,
+    ProposalShown,
+    Usage,
+    option_text,
+    prompt_text,
+    render,
 )
 
 
@@ -54,9 +68,13 @@ class ScriptedUI(UI):
 
 def test_events_are_plain_data_with_a_type():
     events = [
-        LeadSaid("Hello", asks=True), Progress("2 of 5"), Note("Saved", items=["a"], level="done"),
-        Failure("It broke"), ProposalShown([FileView("x.md", "/tmp/x.md", "text", False)], ["careful"]),
-        Usage("chat", "Chat", 120, 150_000, 2), ModeChanged("Brief", "Brief mode"),
+        LeadSaid("Hello", asks=True),
+        Progress("2 of 5"),
+        Note("Saved", items=["a"], level="done"),
+        Failure("It broke"),
+        ProposalShown([FileView("x.md", "/tmp/x.md", "text", False)], ["careful"]),
+        Usage("chat", "Chat", 120, 150_000, 2),
+        ModeChanged("Brief", "Brief mode"),
     ]
     data = json.loads(json.dumps([e.to_dict() for e in events]))
     assert [d["type"] for d in data] == ["lead", "progress", "note", "error", "proposal", "usage", "mode"]
@@ -64,10 +82,15 @@ def test_events_are_plain_data_with_a_type():
 
 
 def test_forms_and_fields_are_plain_data():
-    form = Form("model", "Connect a model", [
-        Field("endpoint", "Endpoint", "choice", default="1", options=[Option("1", "DeepSeek")]),
-        Field("key", "API key", "secret", required=True),
-    ], intro=["Keys never reach a model."])
+    form = Form(
+        "model",
+        "Connect a model",
+        [
+            Field("endpoint", "Endpoint", "choice", default="1", options=[Option("1", "DeepSeek")]),
+            Field("key", "API key", "secret", required=True),
+        ],
+        intro=["Keys never reach a model."],
+    )
     data = json.loads(json.dumps(form.to_dict()))
     assert data["fields"][1]["kind"] == "secret" and data["fields"][0]["options"][0]["label"] == "DeepSeek"
     with pytest.raises(ValueError):
@@ -75,11 +98,18 @@ def test_forms_and_fields_are_plain_data():
 
 
 def test_field_checks_are_the_same_for_every_interface():
-    url = Field("url", "Endpoint base URL", pattern=r"https?://\S+", invalid="The URL must start with http:// or https://.")
+    url = Field(
+        "url", "Endpoint base URL", pattern=r"https?://\S+", invalid="The URL must start with http:// or https://."
+    )
     assert url.check("ftp://x") == "The URL must start with http:// or https://."
     assert url.check("https://models.invalid/v1") is None
-    assert Field("m", "Model name", required=True, invalid="A model name is needed.").check("  ") == "A model name is needed."
-    pick = Field("d", "", "choice", options=[Option("a", "accept", ("yes",)), Option("q", "quit")], invalid="Type a or q.")
+    assert (
+        Field("m", "Model name", required=True, invalid="A model name is needed.").check("  ")
+        == "A model name is needed."
+    )
+    pick = Field(
+        "d", "", "choice", options=[Option("a", "accept", ("yes",)), Option("q", "quit")], invalid="Type a or q."
+    )
     assert pick.choose("YES") == "a" and pick.choose("quit") == "q" and pick.check("x") == "Type a or q."
     assert Field("d", "", "choice", options=[Option("y", "yes")], other="@crew").check("@ops") is None
 
@@ -87,24 +117,52 @@ def test_field_checks_are_the_same_for_every_interface():
 # -- the command line keeps its wording ----------------------------------------------
 
 
-@pytest.mark.parametrize("f, expected", [
-    (Field("a", "You", multiline=True), "You: "),
-    (Field("a", "You", mode="Brief"), "[Brief] You: "),
-    (Field("a", "What should change?"), "What should change? "),
-    (Field("a", "Model name", default="deepseek-chat"), "Model name [deepseek-chat]: "),
-    (Field("a", "Connect a different model?", "yesno"), "Connect a different model? [y/N] "),
-    (Field("a", "Start it now?", "yesno", default=True), "Start it now? [Y/n] "),
-    (Field("a", "Press Enter when you have saved them.", "wait"), "Press Enter when you have saved them. "),
-    (Field("a", "", "choice", options=[Option("a", "accept and write these files"), Option("c", "ask for a change"),
-                                         Option("e", "edit by hand"), Option("q", "quit")]),
-     "[a]ccept and write these files, ask for a [c]hange, [e]dit by hand, or [q]uit? "),
-    (Field("a", "Share it with Ombro's jobs as 'brand'?", "choice",
-           options=[Option("w", "write"), Option("r", "read only"), Option("n", "no")]),
-     "Share it with Ombro's jobs as 'brand'? [w]rite, [r]ead only, or [n]o: "),
-    (Field("a", "", "choice", mode="Chat", options=[Option("y", "yes"), Option("e", "edit the wording"),
-                                                      Option("n", "no")], other="@crew for another crew"),
-     "[Chat] [y]es, [e]dit the wording, [n]o, or @crew for another crew? "),
-])
+@pytest.mark.parametrize(
+    "f, expected",
+    [
+        (Field("a", "You", multiline=True), "You: "),
+        (Field("a", "You", mode="Brief"), "[Brief] You: "),
+        (Field("a", "What should change?"), "What should change? "),
+        (Field("a", "Model name", default="deepseek-chat"), "Model name [deepseek-chat]: "),
+        (Field("a", "Connect a different model?", "yesno"), "Connect a different model? [y/N] "),
+        (Field("a", "Start it now?", "yesno", default=True), "Start it now? [Y/n] "),
+        (Field("a", "Press Enter when you have saved them.", "wait"), "Press Enter when you have saved them. "),
+        (
+            Field(
+                "a",
+                "",
+                "choice",
+                options=[
+                    Option("a", "accept and write these files"),
+                    Option("c", "ask for a change"),
+                    Option("e", "edit by hand"),
+                    Option("q", "quit"),
+                ],
+            ),
+            "[a]ccept and write these files, ask for a [c]hange, [e]dit by hand, or [q]uit? ",
+        ),
+        (
+            Field(
+                "a",
+                "Share it with Ombro's jobs as 'brand'?",
+                "choice",
+                options=[Option("w", "write"), Option("r", "read only"), Option("n", "no")],
+            ),
+            "Share it with Ombro's jobs as 'brand'? [w]rite, [r]ead only, or [n]o: ",
+        ),
+        (
+            Field(
+                "a",
+                "",
+                "choice",
+                mode="Chat",
+                options=[Option("y", "yes"), Option("e", "edit the wording"), Option("n", "no")],
+                other="@crew for another crew",
+            ),
+            "[Chat] [y]es, [e]dit the wording, [n]o, or @crew for another crew? ",
+        ),
+    ],
+)
 def test_command_line_prompts(f, expected):
     assert prompt_text(f) == expected
 
@@ -115,15 +173,22 @@ def test_command_line_rendering_of_events():
     assert render(Progress("●○ 1 of 2 covered")) == ["\n[●○ 1 of 2 covered]"]
     assert render(Failure("The model call failed.")) == ["\nThe model call failed."]
     assert render(Note("Gaps:", items=["one"], spaced=True)) == ["\nGaps:", "  - one"]
-    assert render(Usage("interview", "setup", 1200, 100_000, final=True)) == ["(Interview used 1,200 of 100,000 tokens.)"]
+    assert render(Usage("interview", "setup", 1200, 100_000, final=True)) == [
+        "(Interview used 1,200 of 100,000 tokens.)"
+    ]
     assert render(Usage("chat", "Chat", 50, 150_000, 1)) == ["[Chat · 50 of 150,000 tokens · 1 tool call(s)]"]
 
 
 def test_console_asks_again_until_an_answer_fits():
     said, answers = [], iter(["", "x", "https://models.invalid/v1"])
     ui = ConsoleUI(ask=lambda p: next(answers), say=said.append)
-    f = Field("url", "Endpoint base URL", required=True, pattern=r"https?://\S+",
-              invalid="The URL must start with http:// or https://.")
+    f = Field(
+        "url",
+        "Endpoint base URL",
+        required=True,
+        pattern=r"https?://\S+",
+        invalid="The URL must start with http:// or https://.",
+    )
     assert ui.ask(f) == "https://models.invalid/v1"
     assert said == ["The URL must start with http:// or https://."] * 2
 
@@ -139,25 +204,39 @@ def test_console_secret_is_read_hidden_and_yes_no_takes_its_default():
 def test_console_form_asks_each_field_in_turn():
     answers = iter(["2", "invented-model"])
     ui = ConsoleUI(ask=lambda p: next(answers), say=lambda t: None)
-    got = ui.form(Form("f", "F", [Field("n", "N", "choice", options=[Option("1", "one"), Option("2", "two")]),
-                                  Field("m", "Model name", required=True)]))
+    got = ui.form(
+        Form(
+            "f",
+            "F",
+            [
+                Field("n", "N", "choice", options=[Option("1", "one"), Option("2", "two")]),
+                Field("m", "Model name", required=True),
+            ],
+        )
+    )
     assert got == {"n": "2", "m": "invented-model"}
 
 
 # -- an interview through typed events ------------------------------------------------
 
 SETUP = {
-    "name": "Ada", "work": "I run an invented bakery in Lowtown.", "working_style": "Check in when unsure.",
-    "reports": "Short.", "standing_rules": "- Never guess a figure.", "soul": "You are brisk and kind.",
+    "name": "Ada",
+    "work": "I run an invented bakery in Lowtown.",
+    "working_style": "Check in when unsure.",
+    "reports": "Short.",
+    "standing_rules": "- Never guess a figure.",
+    "soul": "You are brisk and kind.",
 }
 
 
 def test_an_interview_speaks_only_in_events(home):
     ui = ScriptedUI(["I run an invented bakery.", "a"])
-    client = ScriptedClient([
-        fake.call("ask", {"questions": ["Who are you?"], "covered": ["work"]}),
-        fake.call("propose", SETUP),
-    ])
+    client = ScriptedClient(
+        [
+            fake.call("ask", {"questions": ["Who are you?"], "covered": ["work"]}),
+            fake.call("propose", SETUP),
+        ]
+    )
     out = start(home, SetupPurpose(home), "default", load_limits(home), ui=ui, client_factory=lambda s: client)
     assert out.status == "confirmed"
     asked = [e for e in ui.of(LeadSaid) if e.asks]
@@ -229,12 +308,29 @@ def test_connecting_a_model_is_a_form_with_a_hidden_key(tmp_path):
 
     home = Home(tmp_path / "fresh")
     from ombro.init_cmd import ENDPOINTS  # the last is "another endpoint"
-    ui = ScriptedUI(["", str(len(ENDPOINTS)), "https://models.invalid/v1", "INVENTED_API_KEY", "sk-test-INVENTED-0123456789",
-                     "invented-model", "", False])
+
+    ui = ScriptedUI(
+        [
+            "",
+            str(len(ENDPOINTS)),
+            "https://models.invalid/v1",
+            "INVENTED_API_KEY",
+            "sk-test-INVENTED-0123456789",
+            "invented-model",
+            "",
+            False,
+        ]
+    )
     assert run_init(home, ui=ui, client_factory=lambda s, h: Client())
     kinds = [(f.name, f.kind) for f in ui.fields]
-    assert kinds[:6] == [("name", "text"), ("endpoint", "choice"), ("url", "text"), ("key_name", "text"),
-                         ("key", "secret"), ("model", "text")]  # the endpoint lists no models, so it is typed
+    assert kinds[:6] == [
+        ("name", "text"),
+        ("endpoint", "choice"),
+        ("url", "text"),
+        ("key_name", "text"),
+        ("key", "secret"),
+        ("model", "text"),
+    ]  # the endpoint lists no models, so it is typed
     assert ui.fields[1].options[0].label.startswith("DeepSeek")
     assert keys.get_key(home, "INVENTED_API_KEY") == "sk-test-INVENTED-0123456789"
     assert connected_model(home).model == "invented-model"
@@ -247,7 +343,9 @@ def test_the_model_form_holds_its_own_checks():
 
     form = model_form(ENDPOINTS[-1])
     by_name = {f.name: f for f in form.fields}
-    assert by_name["url"].check("not a url") and by_name["key_name"].check("lower") and not by_name["key_name"].check("")
+    assert (
+        by_name["url"].check("not a url") and by_name["key_name"].check("lower") and not by_name["key_name"].check("")
+    )
     assert model_form(ENDPOINTS[0]).fields == []  # DeepSeek needs only its key; the model is chosen after
     assert model_name_field("deepseek-chat").check("") is None  # a suggested name is taken on Enter
 
@@ -269,8 +367,17 @@ def test_adding_a_server_from_an_interface(home):
     from ombro.mcp_servers import add_flow
     from ombro.settings import load_tool_settings
 
-    args = argparse.Namespace(name=None, command=None, url=None, env=None, header=None, secret=None,
-                              server_class=None, no_prompt=False, yes=False)
+    args = argparse.Namespace(
+        name=None,
+        command=None,
+        url=None,
+        env=None,
+        header=None,
+        secret=None,
+        server_class=None,
+        no_prompt=False,
+        yes=False,
+    )
     ui = ScriptedUI(["notes", "l", "uvx invented-notes-mcp==1.2.3", "NOTES_TOKEN", "invented-secret-value-123", True])
     assert add_flow(home, args, ui) == 0
     assert [f.kind for f in ui.fields] == ["text", "choice", "text", "text", "secret", "yesno"]
@@ -320,7 +427,12 @@ def test_the_crew_step_can_keep_rename_or_start_a_crew(home):
 def test_progress_words_follow_the_count_and_proposals_read_cleanly():
     from ombro.interview import how_far, readable
 
-    assert [how_far(c, 4) for c in range(5)] == ["just started", "about a third of the way", "about halfway",
-                                                 "nearly done", "ready to wrap up"]
+    assert [how_far(c, 4) for c in range(5)] == [
+        "just started",
+        "about a third of the way",
+        "about halfway",
+        "nearly done",
+        "ready to wrap up",
+    ]
     assert readable("---\n---\n\n<!--\nA hidden note.\n-->\n\n# About me\n\nHello.\n") == "# About me\n\nHello."
     assert readable("---\nname: x\n---\nBody\n").startswith("---\nname: x")  # real settings are kept

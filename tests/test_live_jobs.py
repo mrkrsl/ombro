@@ -21,8 +21,9 @@ TASK = "List three invented bakeries in Lowtown, with one line on each. Done whe
 
 
 def offer() -> dict:
-    return fake.call("offer_work", {"summary": "Three bakeries in Lowtown", "title": "Bakeries in Lowtown",
-                                    "task": TASK})
+    return fake.call(
+        "offer_work", {"summary": "Three bakeries in Lowtown", "title": "Bakeries in Lowtown", "task": TASK}
+    )
 
 
 @pytest.fixture
@@ -55,7 +56,9 @@ def test_the_lead_asks_report_back_or_live_and_report_back_starts_a_brief(home):
     chat = ChatSession(home)
     chat([offer(), fake.say("Fine.")], ["Find me bakeries in Lowtown.", "report", "/quit"])
     asked = chat.answers.asked
-    how = next(a for a in asked if "take this away and report back, shall we do it live, here, or shall we keep chatting" in a)
+    how = next(
+        a for a in asked if "take this away and report back, shall we do it live, here, or shall we keep chatting" in a
+    )
     assert "I'd" not in how  # the Lead doesn't push either way; report back is the default
     assert any(a.startswith("[Brief]") for a in asked)  # the brief interview began
     assert not list(home.jobs_dir.iterdir())  # nothing started yet
@@ -63,8 +66,9 @@ def test_the_lead_asks_report_back_or_live_and_report_back_starts_a_brief(home):
 
 def test_keep_chatting_starts_nothing_and_the_chat_carries_on(home):
     chat = ChatSession(home)
-    chat([offer(), fake.say("Sure, let's talk it through.")],
-         ["Find me bakeries in Lowtown.", "keep chatting", "/quit"])
+    chat(
+        [offer(), fake.say("Sure, let's talk it through.")], ["Find me bakeries in Lowtown.", "keep chatting", "/quit"]
+    )
     assert not list(home.jobs_dir.iterdir())
     assert not any(a.startswith("[Brief]") for a in chat.answers.asked)  # no brief either
     assert any("keep chatting" in r.get("status", "") for r in chat.tool_replies())
@@ -85,8 +89,7 @@ def test_a_live_job_runs_in_the_chat_asks_you_and_can_be_kept_as_a_brief(home, i
         LEAD_REPORT,
     ]
     chat = ChatSession(home)
-    chat([offer(), fake.say("Anything else?")],
-         ["Find me bakeries in Lowtown.", "live", "Sourdough", "save", "/quit"])
+    chat([offer(), fake.say("Anything else?")], ["Find me bakeries in Lowtown.", "live", "Sourdough", "save", "/quit"])
     (job_dir,) = list(home.jobs_dir.iterdir())
     meta, _ = jobs.read_job(job_dir)
     assert meta["live"] is True and meta["chat"] == chat.chat.id and meta["status"] == "completed"
@@ -120,9 +123,15 @@ def test_the_lead_names_the_folders_a_live_job_writes_to(home, in_thread, tmp_pa
     folders.add(home, me / "Documents" / "Notes", "notes", "write")
     in_thread[:] = [fake.finish("Wrote it."), LEAD_REPORT]
     chat = ChatSession(home)
-    named = fake.call("offer_work", {"summary": "New copy", "title": "New copy", "task": "Write shared/brand/x.md.",
-                                     "folders": [{"folder": "brand", "access": "write"},
-                                                 {"folder": "shared/notes", "access": "read"}]})
+    named = fake.call(
+        "offer_work",
+        {
+            "summary": "New copy",
+            "title": "New copy",
+            "task": "Write shared/brand/x.md.",
+            "folders": [{"folder": "brand", "access": "write"}, {"folder": "shared/notes", "access": "read"}],
+        },
+    )
     chat([named, fake.say("Done.")], ["Write the new copy into the brand folder.", "live", "no", "/quit"])
     (job_dir,) = list(home.jobs_dir.iterdir())
     smeta, _ = mdfile.read(job_dir / "spec.md")
@@ -166,8 +175,16 @@ def test_only_a_live_job_gets_ask_you(home, job):
     tools = [t["function"]["name"] for t in job.client.calls[0]["tools"]]
     assert "ask_you" not in tools
     limits = load_limits(home)
-    job_dir = jobs.create_job(home, ["default"], {}, "# Live\n\nInvented.\n", limits, source="test",
-                              tools=load_tool_settings(home).to_dict(), extra={"live": True})
+    job_dir = jobs.create_job(
+        home,
+        ["default"],
+        {},
+        "# Live\n\nInvented.\n",
+        limits,
+        source="test",
+        tools=load_tool_settings(home).to_dict(),
+        extra={"live": True},
+    )
     client = ScriptedClient([fake.finish(), LEAD_REPORT])
     Engine(home, job_dir, client_factory=lambda spec: client).execute()
     first = client.calls[0]
@@ -177,15 +194,20 @@ def test_only_a_live_job_gets_ask_you(home, job):
 
 def test_one_fake_script_serves_a_chat_and_the_job_it_starts():
     """Entries that wait for their call: how the demo profile plays a live job with one script."""
-    client = ScriptedClient([
-        {**fake.say("For the job."), "needs": "brief"},
-        {**fake.say("For the report."), "needs": "prompt:final report"},
-        fake.say("For anyone."),
-    ])
+    client = ScriptedClient(
+        [
+            {**fake.say("For the job."), "needs": "brief"},
+            {**fake.say("For the report."), "needs": "prompt:final report"},
+            fake.say("For anyone."),
+        ]
+    )
     chat_tools = [{"type": "function", "function": {"name": "offer_work"}}]
     job_tools = [{"type": "function", "function": {"name": "brief"}}]
-    say = lambda tools, system="": client.complete(  # noqa: E731
-        [{"role": "system", "content": system}], tools=tools, max_output_tokens=100, timeout=1).content
+    say = lambda tools, system="": (
+        client.complete(  # noqa: E731
+            [{"role": "system", "content": system}], tools=tools, max_output_tokens=100, timeout=1
+        ).content
+    )
     assert say(chat_tools) == "For anyone."
     assert say(None, "Write the final report.") == "For the report."
     assert say(job_tools) == "For the job."
@@ -202,10 +224,17 @@ def test_chat_looks_things_up_itself_and_asks_before_it_changes_anything(home, t
     record = tmp_path / "sent.jsonl"
     use_fake_mcp(home, record)
     chat = ChatSession(home)
-    chat([fake.call(wire_name("mcp.fake.find_rows"), {"query": "invented"}),
-          fake.call(wire_name("mcp.fake.add_row"), {"sheet": "invented", "values": ["x"], "reason": "You asked."}),
-          fake.call(wire_name("mcp.fake.post_message"), {"channel": "news", "text": "Added.", "reason": "To say so."}),
-          fake.say("Done.")], ["Add a row about invented things and tell the channel.", "y" if yes else "n", "/quit"])
+    chat(
+        [
+            fake.call(wire_name("mcp.fake.find_rows"), {"query": "invented"}),
+            fake.call(wire_name("mcp.fake.add_row"), {"sheet": "invented", "values": ["x"], "reason": "You asked."}),
+            fake.call(
+                wire_name("mcp.fake.post_message"), {"channel": "news", "text": "Added.", "reason": "To say so."}
+            ),
+            fake.say("Done."),
+        ],
+        ["Add a row about invented things and tell the channel.", "y" if yes else "n", "/quit"],
+    )
     from conftest import offered_tools
 
     sent = {t["function"]["name"] for t in chat.client.calls[0]["tools"]}
@@ -230,8 +259,13 @@ def test_chat_uses_a_web_apis_get(home, request):
 
     fake_api = request.getfixturevalue("api")
     chat = ChatSession(home)
-    chat([fake.call(wire_name("api.podcasts.get"), {"path": "/episodes", "query": {"q": "reservoir"}}),
-          fake.say("One episode.")], ["Any episodes about the reservoir?", "/quit"])
+    chat(
+        [
+            fake.call(wire_name("api.podcasts.get"), {"path": "/episodes", "query": {"q": "reservoir"}}),
+            fake.say("One episode."),
+        ],
+        ["Any episodes about the reservoir?", "/quit"],
+    )
     offered = {t["function"]["name"] for t in chat.client.calls[0]["tools"]}
     assert wire_name("api.podcasts.get") in offered and wire_name("api.podcasts.request") in offered
     assert [r.method for r in fake_api.seen] == ["GET"]

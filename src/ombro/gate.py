@@ -140,8 +140,12 @@ class Gate:
             raise LimitReached("stopped", self._stop)
         if self.elapsed() >= self.limits.job_timeout:
             limit = format_duration(self.limits.job_timeout)
-            raise LimitReached("job_timeout", f"the job reached its time limit of {limit}" if self.what == "job"
-                               else f"this message reached the {self.what}'s time limit of {limit}")
+            raise LimitReached(
+                "job_timeout",
+                f"the job reached its time limit of {limit}"
+                if self.what == "job"
+                else f"this message reached the {self.what}'s time limit of {limit}",
+            )
 
     def check_model_call(self, model: str, est_input: int, requested_output: int | None = None) -> tuple[int, float]:
         """Raise LimitReached if this call may not happen. Return (max_output_tokens, timeout)."""
@@ -186,8 +190,15 @@ class Gate:
             self.scope_steps += 1
         return max_out, max(timeout, 0.001)
 
-    def record_model_call(self, model: str, input_tokens: int, output_tokens: int, estimated: bool = False,
-                          cached: int = 0, reasoning: int = 0) -> None:
+    def record_model_call(
+        self,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        estimated: bool = False,
+        cached: int = 0,
+        reasoning: int = 0,
+    ) -> None:
         self.usage.model_calls += 1
         self.usage.reasoning_tokens += min(reasoning, output_tokens)
         self.usage.input_tokens += input_tokens

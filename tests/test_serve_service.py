@@ -180,8 +180,9 @@ def test_pairing_over_http_gives_a_token_that_works(home):
     assert body["device"]["name"] == "Mac" and body["protocol"] == PROTOCOL
     auth = {"Authorization": f"Bearer {body['token']}", "Origin": APP}
     assert c.get("/hello", headers=auth).json() == {"version": __version__, "protocol": PROTOCOL, "notes": []}
-    with c.websocket_connect("ws://127.0.0.1/events", subprotocols=["ombro", body["token"]],
-                             headers={"Origin": APP}) as ws:
+    with c.websocket_connect(
+        "ws://127.0.0.1/events", subprotocols=["ombro", body["token"]], headers={"Origin": APP}
+    ) as ws:
         assert ws.receive_json()["type"] == "event"
     # The code worked once.
     assert c.post("/pair", json={"code": code, "name": "Mac"}).status_code == 403
@@ -265,8 +266,14 @@ def test_the_service_prints_its_code_keeps_running_without_stdin_and_pairs(loopb
     import httpx
 
     env = {**os.environ, "OMBRO_HOME": str(tmp_path / "home")}
-    proc = subprocess.Popen([sys.executable, "-m", "ombro.serve", "--port", "0"], stdin=subprocess.DEVNULL,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "ombro.serve", "--port", "0"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
     try:
         first = proc.stdout.readline()
         port = int(first.rsplit(":", 1)[1].rstrip(".\n"))
@@ -291,8 +298,9 @@ def test_the_service_prints_its_code_keeps_running_without_stdin_and_pairs(loopb
 
 def run_cli(args, home_root, input_text=None):
     env = {**os.environ, "OMBRO_HOME": str(home_root)}
-    return subprocess.run([sys.executable, "-m", "ombro", *args], capture_output=True, text=True, env=env,
-                          input=input_text, timeout=60)
+    return subprocess.run(
+        [sys.executable, "-m", "ombro", *args], capture_output=True, text=True, env=env, input=input_text, timeout=60
+    )
 
 
 def test_ombro_pair_commands(tmp_path):
@@ -334,23 +342,39 @@ class FakeRun:
 
 def installer(home, tmp_path, platform="linux", **kw):
     run = kw.pop("run", FakeRun())
-    return ServiceInstaller(home, platform=platform, run=run, python="/opt/ombro/bin/python", uid=501,
-                            units_dir=tmp_path / "units", agents_dir=tmp_path / "agents", user="mark",
-                            has_systemd=kw.pop("has_systemd", True), sleep=lambda s: None, **kw), run
+    return ServiceInstaller(
+        home,
+        platform=platform,
+        run=run,
+        python="/opt/ombro/bin/python",
+        uid=501,
+        units_dir=tmp_path / "units",
+        agents_dir=tmp_path / "agents",
+        user="mark",
+        has_systemd=kw.pop("has_systemd", True),
+        sleep=lambda s: None,
+        **kw,
+    ), run
 
 
 def test_systemd_unit_runs_serve_with_tick_and_lingers(home, tmp_path):
     inst, run = installer(home, tmp_path)
     plan = inst.plan(8765, "100.64.0.5", ["box.ts.net"])
     assert plan.kind == "systemd" and plan.path == tmp_path / "units" / "ombro.service"
-    assert ('ExecStart="/opt/ombro/bin/python" "-m" "ombro" "serve" "--tick" "--port" "8765" '
-            '"--host" "100.64.0.5" "--allow-host" "box.ts.net"') in plan.text
+    assert (
+        'ExecStart="/opt/ombro/bin/python" "-m" "ombro" "serve" "--tick" "--port" "8765" '
+        '"--host" "100.64.0.5" "--allow-host" "box.ts.net"'
+    ) in plan.text
     assert f'Environment="OMBRO_HOME={home.root}"' in plan.text
     assert "KillMode=process" in plan.text and "WantedBy=default.target" in plan.text
     assert inst.install(plan) == []
     assert plan.path.read_text() == plan.text
-    assert run.commands == [["systemctl", "--user", "daemon-reload"], ["systemctl", "--user", "enable", "ombro.service"],
-                            ["systemctl", "--user", "restart", "ombro.service"], ["loginctl", "enable-linger", "mark"]]
+    assert run.commands == [
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", "ombro.service"],
+        ["systemctl", "--user", "restart", "ombro.service"],
+        ["loginctl", "enable-linger", "mark"],
+    ]
     assert inst.running() is True
     assert inst.remove() and not plan.path.exists()
     assert ["systemctl", "--user", "disable", "--now", "ombro.service"] in run.commands
@@ -387,8 +411,10 @@ def test_launch_agent_keeps_serve_alive(home, tmp_path):
     assert again.exists
     inst.install(again)
     changes = [c for c in run.commands if c[1] != "print"]
-    assert changes[-2:] == [["launchctl", "bootout", "gui/501/local.ombro.serve"],
-                            ["launchctl", "bootstrap", "gui/501", str(plan.path)]]
+    assert changes[-2:] == [
+        ["launchctl", "bootout", "gui/501/local.ombro.serve"],
+        ["launchctl", "bootstrap", "gui/501", str(plan.path)],
+    ]
 
 
 # -- ombro sandbox ------------------------------------------------------------------------------
@@ -406,7 +432,9 @@ def test_a_restricted_ubuntu_says_how_to_fix_it(monkeypatch):
     monkeypatch.setattr(sandbox, "kind", lambda: "linux")
     monkeypatch.setattr(sandbox.shutil, "which", lambda name: "/usr/bin/bwrap")
     monkeypatch.setattr(sandbox, "userns_restricted", lambda: True)
-    monkeypatch.setattr(sandbox, "run", lambda *a, **k: sandbox.Outcome(1, 0.1, b"bwrap: loopback: Failed RTM_NEWADDR", 36))
+    monkeypatch.setattr(
+        sandbox, "run", lambda *a, **k: sandbox.Outcome(1, 0.1, b"bwrap: loopback: Failed RTM_NEWADDR", 36)
+    )
     monkeypatch.setattr(sandbox, "_probe", {})
     reason = sandbox.unavailable_reason()
     assert "Ubuntu 24.04" in reason and "apparmor_parser -r /etc/apparmor.d/ombro-bwrap" in reason
@@ -462,7 +490,9 @@ def test_a_service_on_another_address_also_listens_on_127_0_0_1(monkeypatch):
         def getsockname(self):
             return (self.host, self.port)
 
-    monkeypatch.setattr(serve_mod, "bind", lambda port, host="127.0.0.1": bound.append((host, port)) or Sock(host, port))
+    monkeypatch.setattr(
+        serve_mod, "bind", lambda port, host="127.0.0.1": bound.append((host, port)) or Sock(host, port)
+    )
     socks = serve_mod.listen(0, "100.101.102.103")  # a Tailscale address
     assert bound == [("100.101.102.103", 0), ("127.0.0.1", 8765)] and len(socks) == 2
     bound.clear()
@@ -480,7 +510,9 @@ def test_a_serve_service_that_ticks_counts_as_the_scheduler(home, tmp_path, monk
 
     monkeypatch.setenv("OMBRO_HOME", str(home.root))
     ensure_home(home)
-    monkeypatch.setattr(service.Path, "exists", lambda self: False if str(self) == "/.dockerenv" else os.path.exists(self))
+    monkeypatch.setattr(
+        service.Path, "exists", lambda self: False if str(self) == "/.dockerenv" else os.path.exists(self)
+    )
     inst, _ = installer(home, tmp_path)
     monkeypatch.setattr(service, "make_installer", lambda h: inst)
     assert service.serve_ticks(home) is None

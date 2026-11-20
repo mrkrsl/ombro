@@ -41,7 +41,10 @@ def test_set_up_offers_every_listed_model_and_writes_each(tmp_path):
 
     home = Home(tmp_path / "fresh")
     from ombro.init_cmd import ENDPOINTS  # the last is "another endpoint"
-    ui = ScriptedUI(["", str(len(ENDPOINTS)), ENDPOINT, "INVENTED_API_KEY", "sk-test-INVENTED-0123456789", "2", "", False])
+
+    ui = ScriptedUI(
+        ["", str(len(ENDPOINTS)), ENDPOINT, "INVENTED_API_KEY", "sk-test-INVENTED-0123456789", "2", "", False]
+    )
     assert run_init(home, ui=ui, client_factory=lambda s, h: Listing(["invented-chat", "invented-pro"]))
     pick = next(f for f in ui.fields if f.name == "model")
     assert pick.kind == "choice" and [o.label for o in pick.options] == ["invented-chat", "invented-pro"]

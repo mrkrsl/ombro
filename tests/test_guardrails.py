@@ -12,8 +12,15 @@ def assert_reported(job, status: str, limit: str | None = None, by_lead: bool = 
     report = job.report
     assert job.meta["status"] == status
     assert f"**Status:** {status}" in report
-    for section in ("## Summary", "## What was asked", "## What was done",
-                    "## Deliverables", "## Outward actions", "## Changes to notes.md", "## Usage"):
+    for section in (
+        "## Summary",
+        "## What was asked",
+        "## What was done",
+        "## Deliverables",
+        "## Outward actions",
+        "## Changes to notes.md",
+        "## Usage",
+    ):
         assert section in report, section
     # "Decisions for you" only when something waits on the user, never a "None." for the sake of it.
     if "## Decisions for you" in report:
@@ -38,9 +45,12 @@ def test_completed_job(job):
     status = job(
         [
             fake.brief("researcher", "Find three invented teapot makers."),
-            fake.result("Found three makers.", deliverables=[{"name": "makers", "path": "Ada Pots; Brin Ware; Coll Clay"}]),
+            fake.result(
+                "Found three makers.", deliverables=[{"name": "makers", "path": "Ada Pots; Brin Ware; Coll Clay"}]
+            ),
             fake.finish("All done."),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ]
     )
     assert status == "completed"
@@ -61,7 +71,8 @@ def test_report_keeps_closing_note_and_brief_lines_short(job):
             fake.brief("researcher", "Line one of the task.\n\nLine two of the task."),
             fake.result("Summary over\ntwo lines."),
             fake.finish(long_note),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ]
     )
     assert "LEAD-REPORT-MARKER" in job.report
@@ -101,8 +112,7 @@ SPEC_TITLE = "Survey of invented teapot makers"
 def test_every_prompt_gives_todays_date(job):
     from datetime import date
 
-    job([fake.brief("researcher", "Do the thing."), fake.result(), fake.finish(), LEAD_REPORT],
-        today=date(2031, 3, 4))
+    job([fake.brief("researcher", "Do the thing."), fake.result(), fake.finish(), LEAD_REPORT], today=date(2031, 3, 4))
     lead, role, report = (job.client.calls[i]["messages"][0]["content"] for i in (0, 1, -1))
     for system in (lead, role, report):
         assert "Today's date is Tuesday 4 March 2031." in system
@@ -121,7 +131,8 @@ def test_looping_role_ends_its_brief_and_the_lead_is_told(job, home):
             fake.brief("researcher", "Look something up."),
             fake.call("test__echo", {"q": "same"}, times=4),
             fake.finish("The researcher got stuck."),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         registry=echo_registry(calls),
     )
@@ -210,8 +221,13 @@ def test_dollars_are_an_estimate_not_a_limit(job):
 
 def test_unlimited_allowance_has_no_token_cap_but_keeps_rounds(job):
     status = job(
-        [fake.brief("researcher", f"Task {i}.") if i % 2 == 0 else fake.result(usage={"input": 900_000, "output": 10})
-         for i in range(2 * 50)] + [fake.brief("researcher", "One more."), fake.keep_notes(), LEAD_REPORT],
+        [
+            fake.brief("researcher", f"Task {i}.")
+            if i % 2 == 0
+            else fake.result(usage={"input": 900_000, "output": 10})
+            for i in range(2 * 50)
+        ]
+        + [fake.brief("researcher", "One more."), fake.keep_notes(), LEAD_REPORT],
         limits={"allowance": "unlimited"},
     )
     assert status == "stopped_by_limit"
@@ -224,10 +240,13 @@ def test_unlimited_allowance_has_no_token_cap_but_keeps_rounds(job):
 def test_max_rounds(job):
     status = job(
         [
-            fake.brief("researcher", "Task one."), fake.result(),
-            fake.brief("researcher", "Task two."), fake.result(),
+            fake.brief("researcher", "Task one."),
+            fake.result(),
+            fake.brief("researcher", "Task two."),
+            fake.result(),
             fake.brief("researcher", "Task three."),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         limits={"max_rounds": 2},
     )
@@ -241,7 +260,8 @@ def test_timed_out_job(job):
         [
             fake.brief("researcher", "Take your time."),
             fake.result("Took ages.", advance=120),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         limits={"job_timeout": "60s"},
     )
@@ -255,7 +275,8 @@ def test_timeout_during_a_model_call(job):
         [
             fake.brief("researcher", "Take your time."),
             {"error": "the model call ran out of time", "timed_out": True, "advance": 120},
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         limits={"job_timeout": "60s"},
     )
@@ -290,7 +311,8 @@ def test_max_steps_ends_the_brief_and_the_lead_can_brief_again(job, home):
             fake.brief("researcher", "Just the first thing, please."),
             fake.result("Found the first thing."),
             fake.finish(),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         registry=echo_registry(),
     )
@@ -304,8 +326,13 @@ def test_max_steps_ends_the_brief_and_the_lead_can_brief_again(job, home):
 
 def test_lead_steps_still_stop_the_job(job, home):
     write_role(home, "lead", kind="lead", max_steps=2, soul="You are an invented Lead.")
-    status = job([fake.call("brief", {"role": "nobody", "task": "x"}), fake.call("brief", {"role": "nobody", "task": "y"}),
-                  LEAD_REPORT])
+    status = job(
+        [
+            fake.call("brief", {"role": "nobody", "task": "x"}),
+            fake.call("brief", {"role": "nobody", "task": "y"}),
+            LEAD_REPORT,
+        ]
+    )
     assert status == "stopped_by_limit"
     assert_reported(job, "stopped_by_limit", "max_steps")
 
@@ -321,7 +348,8 @@ def test_max_calls_per_tool_refuses_the_call_and_the_role_carries_on(job, home):
             fake.call("test__echo", {"q": "c"}),
             fake.result("Looked up two of three."),
             fake.finish(),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         registry=echo_registry(calls),
         limits={"tool_max_calls": {"test.echo": 2}},
@@ -339,8 +367,13 @@ def test_max_calls_per_tool_refuses_the_call_and_the_role_carries_on(job, home):
 def test_unknown_tools_count_against_caps(job):
     # A role with no tools that keeps calling one anyway is still bounded.
     status = job(
-        [fake.brief("researcher", "Search."), fake.call("web__search", {"q": "teapots"}, times=4),
-         fake.finish(), fake.keep_notes(), LEAD_REPORT]
+        [
+            fake.brief("researcher", "Search."),
+            fake.call("web__search", {"q": "teapots"}, times=4),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
     )
     assert status == "completed"
     assert_reported(job, "completed")
@@ -351,7 +384,12 @@ def test_unknown_tools_count_against_caps(job):
 def test_max_output_tokens_bounds_every_call(job, home):
     write_role(home, "researcher", max_steps=5)
     job(
-        [fake.brief("researcher", "Write."), fake.result(usage={"input": 50, "output": 99999}), fake.finish(), LEAD_REPORT],
+        [
+            fake.brief("researcher", "Write."),
+            fake.result(usage={"input": 50, "output": 99999}),
+            fake.finish(),
+            LEAD_REPORT,
+        ],
         limits={"max_output_tokens": 500, "report_max_output_tokens": 2000},
     )
     assert all(c["max_output_tokens"] <= 500 for c in job.client.calls)
@@ -370,7 +408,8 @@ def test_invalid_result_is_retried_once_then_failed(job):
             fake.say("Here is what I found: lots of teapots."),
             fake.say('{"summary": "Found teapots."}'),
             fake.finish("The researcher failed."),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ]
     )
     assert status == "completed"
@@ -387,7 +426,7 @@ def test_invalid_result_then_valid_is_accepted(job):
     status = job(
         [
             fake.brief("researcher", "Report back."),
-            fake.say("```json\n{\"summary\": 1}\n```"),
+            fake.say('```json\n{"summary": 1}\n```'),
             fake.result("Second time lucky."),
             fake.finish(),
             LEAD_REPORT,
@@ -477,7 +516,10 @@ def test_limits_are_fixed_at_start(job, home):
     assert job.meta["limits"]["max_rounds"] == 1
 
 
-@pytest.mark.parametrize("bad", [{"max_tokens": -1}, {"report_reserve": 0.9}, {"nonsense": 1}, {"job_timeout": "soon"}, {"allowance": "lavish"}])
+@pytest.mark.parametrize(
+    "bad",
+    [{"max_tokens": -1}, {"report_reserve": 0.9}, {"nonsense": 1}, {"job_timeout": "soon"}, {"allowance": "lavish"}],
+)
 def test_bad_limits_are_refused(home, bad):
     from ombro.settings import SetupError, load_limits
 
@@ -503,9 +545,14 @@ def test_the_client_reads_cached_input_from_deepseek_and_openai():
         return httpx.Response(200, json=body, request=httpx.Request("POST", "https://invented.example/v1"))
 
     parse = OpenAICompatibleClient._parse
-    deepseek = parse(None, reply({"prompt_tokens": 1000, "completion_tokens": 10, "prompt_cache_hit_tokens": 900}), None)
-    openai = parse(None, reply({"prompt_tokens": 1000, "completion_tokens": 10,
-                                "prompt_tokens_details": {"cached_tokens": 800}}), None)
+    deepseek = parse(
+        None, reply({"prompt_tokens": 1000, "completion_tokens": 10, "prompt_cache_hit_tokens": 900}), None
+    )
+    openai = parse(
+        None,
+        reply({"prompt_tokens": 1000, "completion_tokens": 10, "prompt_tokens_details": {"cached_tokens": 800}}),
+        None,
+    )
     plain = parse(None, reply({"prompt_tokens": 1000, "completion_tokens": 10}), None)
     assert (deepseek.usage.cached_input, openai.usage.cached_input, plain.usage.cached_input) == (900, 800, 0)
 
@@ -520,10 +567,14 @@ def test_the_client_reads_thinking_tokens_or_counts_the_thinking_text():
         return httpx.Response(200, json=body, request=httpx.Request("POST", "https://invented.example/v1"))
 
     parse = OpenAICompatibleClient._parse
-    said = parse(None, reply({"prompt_tokens": 10, "completion_tokens": 500,
-                              "completion_tokens_details": {"reasoning_tokens": 420}}), None).usage
-    shown = parse(None, reply({"prompt_tokens": 10, "completion_tokens": 500},
-                              reasoning_content="Invented thoughts. " * 30), None).usage
+    said = parse(
+        None,
+        reply({"prompt_tokens": 10, "completion_tokens": 500, "completion_tokens_details": {"reasoning_tokens": 420}}),
+        None,
+    ).usage
+    shown = parse(
+        None, reply({"prompt_tokens": 10, "completion_tokens": 500}, reasoning_content="Invented thoughts. " * 30), None
+    ).usage
     plain = parse(None, reply({"prompt_tokens": 10, "completion_tokens": 500}), None).usage
     assert (said.reasoning, said.reasoning_estimated) == (420, False)
     assert shown.reasoning_estimated and 0 < shown.reasoning <= 500
@@ -567,13 +618,19 @@ def test_a_brief_s_last_call_asks_for_its_result_and_a_stopped_brief_lists_its_f
             fake.brief("researcher", "Write it up."),
             fake.call("workspace__write", {"path": "workspace/notes.md", "content": "# Invented notes\n"}),
             fake.call("test__echo", {"q": "b"}),
-            {"tool_calls": [  # the last call: an echo (not run), the rest of the draft (run), and the result
-                {"name": "test__echo", "arguments": {"q": "c"}},
-                {"name": "workspace__write", "arguments": {"path": "workspace/notes.md", "content": "More.\n",
-                                                         "mode": "append"}},
-                {"name": "submit_result", "arguments": fake.result("Wrote workspace/notes.md.")["content"]}]},
+            {
+                "tool_calls": [  # the last call: an echo (not run), the rest of the draft (run), and the result
+                    {"name": "test__echo", "arguments": {"q": "c"}},
+                    {
+                        "name": "workspace__write",
+                        "arguments": {"path": "workspace/notes.md", "content": "More.\n", "mode": "append"},
+                    },
+                    {"name": "submit_result", "arguments": fake.result("Wrote workspace/notes.md.")["content"]},
+                ]
+            },
             fake.finish(),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         registry=echo_and_files(home),
     )
@@ -597,7 +654,8 @@ def test_the_lead_reads_the_job_s_own_files_and_nothing_else(job, home):
             fake.call("workspace__read", {"path": "workspace/notes.md"}),
             fake.call("workspace__read", {"path": "Library/Mail/secret.md"}),
             fake.finish(),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         registry=echo_and_files(home),
     )
@@ -617,17 +675,22 @@ def test_the_lead_corrects_a_name_itself_with_one_exact_edit(job, home):
             fake.result("Wrote workspace/notes.md."),
             fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "Atelier", "new": "x" * 2001}),
             fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "e", "new": "E"}),
-            fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "Heliotrope Atelier",
-                                          "new": "Helotrope Atelier Limited"}),
+            fake.call(
+                "workspace__edit",
+                {"path": "workspace/notes.md", "old": "Heliotrope Atelier", "new": "Helotrope Atelier Limited"},
+            ),
             fake.finish(),
-            fake.keep_notes(), LEAD_REPORT,
+            fake.keep_notes(),
+            LEAD_REPORT,
         ],
         registry=echo_and_files(home),
     )
     replies = [m["content"] for c in job.client.calls for m in c["messages"] if m.get("role") == "tool"]
     assert (job.job_dir / "workspace" / "notes.md").read_text() == "For Helotrope Atelier Limited.\n"
     replies = [m["content"] for c in job.client.calls for m in c["messages"] if m.get("role") == "tool"]
-    assert any("a small correction" in r for r in replies) and any("give text that occurs exactly once" in r for r in replies)
+    assert any("a small correction" in r for r in replies) and any(
+        "give text that occurs exactly once" in r for r in replies
+    )
     assert any(e.get("tool") == "workspace.edit" and e["role"] == "lead" for e in job.events)
 
 
@@ -646,12 +709,23 @@ def test_reasoning_effort_is_sent_and_dropped_where_an_endpoint_refuses_it():
             sent.append(body.get("reasoning_effort"))
             if refuse and "reasoning_effort" in body:
                 return httpx.Response(400, json={"error": {"message": "Unknown parameter: reasoning_effort"}})
-            return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
-                                             "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                },
+            )
+
         return handler
 
     for refuse in (False, True):
-        c = OpenAICompatibleClient("https://invented.example/v1", "m", lambda: "k", reasoning_effort="low",
-                                   transport=httpx.MockTransport(answer(refuse)))
+        c = OpenAICompatibleClient(
+            "https://invented.example/v1",
+            "m",
+            lambda: "k",
+            reasoning_effort="low",
+            transport=httpx.MockTransport(answer(refuse)),
+        )
         assert c.complete([{"role": "user", "content": "Hi"}], max_output_tokens=10, timeout=5).content == "OK"
     assert sent == ["low", "low", None]

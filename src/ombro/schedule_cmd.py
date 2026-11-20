@@ -46,8 +46,10 @@ def _ago(ts: float, now: float) -> str:
 
 
 def _limits_line(lim) -> str:
-    return (f"allowance {lim.allowance}: {format_tokens(lim.max_tokens)} tokens, {lim.max_rounds} rounds, "
-            f"{format_duration(lim.job_timeout)}")
+    return (
+        f"allowance {lim.allowance}: {format_tokens(lim.max_tokens)} tokens, {lim.max_rounds} rounds, "
+        f"{format_duration(lim.job_timeout)}"
+    )
 
 
 def _above(home: Home, lim) -> list[str]:
@@ -84,14 +86,18 @@ def scheduler_status(home: Home, *, enabled: int) -> list[str]:
         if cur.home and Path(cur.home).resolve() != home.root:
             lines.append(f"  Warning: it ticks another home, {cur.home}, not {home.root}.")
         if cur.loaded is False:
-            lines.append("  Warning: the launch agent file is there but launchd has not loaded it; "
-                         "run `ombro schedule install` again.")
+            lines.append(
+                "  Warning: the launch agent file is there but launchd has not loaded it; "
+                "run `ombro schedule install` again."
+            )
     last = schedules.last_tick(home)
     lines.append(f"Last tick: {_when(last)} ({_ago(last, now)})" if last else "Last tick: never")
     if enabled and (cur is not None or ticker) and (last is None or now - last > STALE_TICK_SECONDS):
-        lines.append(f"  Warning: schedules are enabled but no tick has run in the last "
-                     f"{STALE_TICK_SECONDS // 60} minutes. See {schedules.log_path(home)} and "
-                     f"{home.scheduler_dir / 'scheduler.log'}.")
+        lines.append(
+            f"  Warning: schedules are enabled but no tick has run in the last "
+            f"{STALE_TICK_SECONDS // 60} minutes. See {schedules.log_path(home)} and "
+            f"{home.scheduler_dir / 'scheduler.log'}."
+        )
     return lines
 
 
@@ -150,8 +156,7 @@ def _row(home: Home, s: schedules.Schedule, recent: list[tuple[Path, dict]], now
         n = outbox.waiting_count(rd)
         if n:
             last += f" ({n} waiting for approval)"
-    out = [f"{s.name:<30} {'on' if s.enabled else 'off':<4} {s.cron_text or '?':<18} "
-           f"{nxt:<17} {last}"]
+    out = [f"{s.name:<30} {'on' if s.enabled else 'off':<4} {s.cron_text or '?':<18} {nxt:<17} {last}"]
     if s.error:
         out.append(f"  problem: {s.error}")
     else:
@@ -217,7 +222,7 @@ def cmd_show(home: Home, s: schedules.Schedule) -> int:
 def _spec_name(value: str) -> str:
     v = value.strip()
     if v.startswith("specs/"):
-        v = v[len("specs/"):]
+        v = v[len("specs/") :]
     return v[:-3] if v.endswith(".md") else v
 
 
@@ -227,8 +232,9 @@ def cmd_add(home: Home, args) -> int:
     cli = _cli()
     name = (args.name or "").strip().lower()
     if not NAME.match(name):
-        raise cli.CliError("Give the schedule a name of lower-case letters, digits, - and _, "
-                           "e.g. `ombro schedule add morning-prep`.")
+        raise cli.CliError(
+            "Give the schedule a name of lower-case letters, digits, - and _, e.g. `ombro schedule add morning-prep`."
+        )
     path = home.schedules_dir / f"{name}.md"
     if path.exists():
         raise cli.CliError(f"There is already a schedule named {name} ({path}).")
@@ -236,8 +242,9 @@ def cmd_add(home: Home, args) -> int:
     spec = args.spec
     if not spec:
         if not saved:
-            raise cli.CliError("There are no saved specs. Make one with `ombro brief` first; "
-                               "scheduled jobs never interview.")
+            raise cli.CliError(
+                "There are no saved specs. Make one with `ombro brief` first; scheduled jobs never interview."
+            )
         spec = _ask(f"Spec to start (saved: {', '.join(saved)})")
         if not spec:
             print("Nothing saved.")
@@ -263,8 +270,15 @@ def cmd_add(home: Home, args) -> int:
         limits["max_tokens"] = args.max_tokens
     if args.job_timeout:
         limits["job_timeout"] = args.job_timeout
-    s = schedules.Schedule(name=name, path=path, cron_text=cron.text, cron=cron,
-                           spec=f"specs/{spec}.md", enabled=not args.disabled, limits=limits)
+    s = schedules.Schedule(
+        name=name,
+        path=path,
+        cron_text=cron.text,
+        cron=cron,
+        spec=f"specs/{spec}.md",
+        enabled=not args.disabled,
+        limits=limits,
+    )
     if args.grace:
         try:
             s.grace = schedules.parse_duration(args.grace)
@@ -328,8 +342,10 @@ def cmd_schedule(args) -> int:
             inst.uninstall()
         except OSError as e:
             raise cli.CliError(str(e)) from None
-        print("Removed. Schedule files are kept. If you install it again, slots that fell due while it "
-              "was removed (up to a week back) are noted as missed in index.md, not started.")
+        print(
+            "Removed. Schedule files are kept. If you install it again, slots that fell due while it "
+            "was removed (up to a week back) are noted as missed in index.md, not started."
+        )
         return 0
     if action == "add":
         return cmd_add(home, args)
@@ -360,8 +376,9 @@ def cmd_schedule(args) -> int:
             _offer_install(home)
         return 0
     if action == "remove":
-        if not cli._confirm(f"Remove schedule {s.name}? The file is moved to the "
-                            "removed/schedules/ folder; its jobs are kept."):
+        if not cli._confirm(
+            f"Remove schedule {s.name}? The file is moved to the removed/schedules/ folder; its jobs are kept."
+        ):
             print("Nothing changed.")
             return 1
         target = schedules.remove_schedule(home, s)

@@ -55,8 +55,9 @@ class Guard:
     """Refuses any request without a token `check` accepts, or from an origin that isn't the app's.
     A path in `open_paths` needs no token (the origin check still applies)."""
 
-    def __init__(self, app: ASGIApp, check: Callable[[str], bool], allowed: list[str],
-                 open_paths: tuple[str, ...] = ()):
+    def __init__(
+        self, app: ASGIApp, check: Callable[[str], bool], allowed: list[str], open_paths: tuple[str, ...] = ()
+    ):
         self.app, self.check, self.allowed, self.open_paths = app, check, allowed, open_paths
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -158,14 +159,20 @@ def find_schedule(home: Home, name: str):
 class Serve:
     """What serve keeps while it runs: the home, the live sessions, the open sockets and the job watcher."""
 
-    def __init__(self, home: Home, *, client_factory: Callable | None = None, titles: bool = True,
-                 poll_seconds: float = POLL_SECONDS, tick: bool = False):
+    def __init__(
+        self,
+        home: Home,
+        *,
+        client_factory: Callable | None = None,
+        titles: bool = True,
+        poll_seconds: float = POLL_SECONDS,
+        tick: bool = False,
+    ):
         self.home = home
         self.ticking = tick  # this serve starts scheduled jobs itself (--tick)
         self._ticker: asyncio.Task | None = None
         self.hub = Hub()
-        self.sessions = Sessions(home, self.hub, client_factory=client_factory, titles=titles,
-                                 watch_job=self.watch_job)
+        self.sessions = Sessions(home, self.hub, client_factory=client_factory, titles=titles, watch_job=self.watch_job)
         self.sessions.on_change = self.counts_soon
         self.watcher = JobWatcher(home)
         self.owners: dict[str, str] = {}  # job id: the session that started it
@@ -200,8 +207,16 @@ class Serve:
         for e in events:
             status = "running" if isinstance(e, JobProgress) else getattr(e, "status", "")
             line = full_line(e) if isinstance(e, JobProgress) else e.text  # the side panel shows it whole
-            self.hub.publish({"type": "job", "job_id": e.job_id, "name": e.name, "status": status,
-                              "line": line, "event": e.to_dict()})
+            self.hub.publish(
+                {
+                    "type": "job",
+                    "job_id": e.job_id,
+                    "name": e.name,
+                    "status": status,
+                    "line": line,
+                    "event": e.to_dict(),
+                }
+            )
             owner = self.owners.get(e.job_id)
             if owner and owner in self.sessions.by_id and not self.sessions.by_id[owner].closed:
                 self.sessions.by_id[owner].emit({"type": "event", "event": e.to_dict()})
@@ -218,8 +233,15 @@ class Serve:
     def counts(self) -> dict[str, Any]:
         s = views.summary(self.home)
         c = s["counts"]
-        return {"type": "counts", "active": c["active_jobs"], "running": list(s["active_ids"]), "scheduled": c["scheduled_jobs"],
-                "waiting": c["waiting"], "unseen": c["unseen_jobs"], "crews_ready": c["crews_ready"]}
+        return {
+            "type": "counts",
+            "active": c["active_jobs"],
+            "running": list(s["active_ids"]),
+            "scheduled": c["scheduled_jobs"],
+            "waiting": c["waiting"],
+            "unseen": c["unseen_jobs"],
+            "crews_ready": c["crews_ready"],
+        }
 
     def send_counts(self, force: bool = False) -> None:
         try:
@@ -316,8 +338,10 @@ def _views(s: Serve) -> list[Route]:
         "/jobs/{job_id}/report": lambda r: views.report(home, job_dir(r)),
         "/jobs/{job_id}/brief": lambda r: views.brief(job_dir(r)),
         "/approvals": lambda r: views.approval_list(home),
-        "/approvals/{ref}": lambda r: (find_approval(home, r.path_params["ref"]),
-                                       views.approval(home, r.path_params["ref"]))[1],
+        "/approvals/{ref}": lambda r: (
+            find_approval(home, r.path_params["ref"]),
+            views.approval(home, r.path_params["ref"]),
+        )[1],
         "/schedules": lambda r: views.schedule_list(home),
         "/scheduler": lambda r: scheduler_check(),
         "/specs": lambda r: views.spec_list(home),
@@ -337,8 +361,9 @@ def _views(s: Serve) -> list[Route]:
     return [Route(path, _handler(fn), methods=["GET"]) for path, fn in table.items()]
 
 
-def _handler(fn: Callable[[Request], Any], *, status: int = 200, with_body: bool = False,
-             after: Callable[[], None] | None = None) -> Callable[[Request], Awaitable[Response]]:
+def _handler(
+    fn: Callable[[Request], Any], *, status: int = 200, with_body: bool = False, after: Callable[[], None] | None = None
+) -> Callable[[Request], Awaitable[Response]]:
     async def handle(request: Request) -> Response:
         try:
             data = await _body(request) if with_body else None
@@ -432,8 +457,17 @@ def _session_routes(s: Serve) -> list[Route]:
     ]
 
 
-PREFERENCE_KEYS = {"name": str, "theme": str, "default_crew": str, "editor": str, "background_feed": bool,
-                   "notifications": bool, "instructions": str, "outward": str, "thinking": str}
+PREFERENCE_KEYS = {
+    "name": str,
+    "theme": str,
+    "default_crew": str,
+    "editor": str,
+    "background_feed": bool,
+    "notifications": bool,
+    "instructions": str,
+    "outward": str,
+    "thinking": str,
+}
 
 
 def _action_routes(s: Serve) -> list[Route]:
@@ -473,6 +507,7 @@ def _action_routes(s: Serve) -> list[Route]:
                 except outbox.OutboxError as e:
                     done.append({"ref": a.ref, "status": a.status, "error": str(e)})
             return {"results": done}
+
         return run
 
     def resolve(r: Request, data: dict[str, Any]) -> Any:
@@ -488,6 +523,7 @@ def _action_routes(s: Serve) -> list[Route]:
             if enabled:
                 s.ensure_scheduler()
             return {"name": sch.name, "enabled": enabled}
+
         return run
 
     def add_schedule(r: Request, data: dict[str, Any]) -> Any:
@@ -729,8 +765,9 @@ def _pair_route(devices) -> Route:
         except PairingError as e:
             status = 429 if devices.locked_out(client) else 403
             return _error(status, str(e))
-        return JSONResponse({"token": token, "device": device.to_dict(), "version": __version__,
-                             "protocol": PROTOCOL}, status_code=201)
+        return JSONResponse(
+            {"token": token, "device": device.to_dict(), "version": __version__, "protocol": PROTOCOL}, status_code=201
+        )
 
     return Route("/pair", pair, methods=["POST"])
 
@@ -795,9 +832,18 @@ def _subscribe(s: Serve, client: Client, text: str) -> None:
             client.offer(m)
 
 
-def build_app(token: str | None, dev: bool = False, *, home: Home | None = None, client_factory: Callable | None = None,
-              titles: bool = True, poll_seconds: float = POLL_SECONDS, devices: Any = None,
-              hosts: list[str] | None = None, tick: bool = False) -> Starlette:
+def build_app(
+    token: str | None,
+    dev: bool = False,
+    *,
+    home: Home | None = None,
+    client_factory: Callable | None = None,
+    titles: bool = True,
+    poll_seconds: float = POLL_SECONDS,
+    devices: Any = None,
+    hosts: list[str] | None = None,
+    tick: bool = False,
+) -> Starlette:
     """For the app: one `token`, made for this launch. For a service: `devices` (pairing.Devices),
     whose paired tokens are accepted, `POST /pair` to pair a new one, and the `hosts` it answers to."""
     from ombro.serve.files import file_routes
@@ -808,21 +854,35 @@ def build_app(token: str | None, dev: bool = False, *, home: Home | None = None,
     if devices is not None:
         check, open_paths = devices.valid, OPEN_PATHS
     elif token:
+
         def check(given: str) -> bool:
             return secrets.compare_digest(given.encode(), token.encode())
+
         open_paths = ()
     else:
         raise ValueError("serve needs a token or paired devices")
     middleware = [
         Middleware(TrustedHostMiddleware, allowed_hosts=hosts or ([HOST, "localhost"] if dev else [HOST])),
         # Answers the app's preflight; never a wildcard.
-        Middleware(CORSMiddleware, allow_origins=allowed, allow_methods=["GET", "POST", "PUT", "DELETE"],
-                   allow_headers=["authorization", "content-type"], expose_headers=["x-ombro-save-as"]),
+        Middleware(
+            CORSMiddleware,
+            allow_origins=allowed,
+            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_headers=["authorization", "content-type"],
+            expose_headers=["x-ombro-save-as"],
+        ),
         Middleware(Guard, check=check, allowed=allowed, open_paths=open_paths),
     ]
-    routes = [Route("/hello", _hello), WebSocketRoute("/events", _socket(s)),
-              *([_pair_route(devices)] if devices is not None else []),
-              *file_routes(s), *_action_routes(s), *settings_routes(s), *_session_routes(s), *_views(s)]
+    routes = [
+        Route("/hello", _hello),
+        WebSocketRoute("/events", _socket(s)),
+        *([_pair_route(devices)] if devices is not None else []),
+        *file_routes(s),
+        *_action_routes(s),
+        *settings_routes(s),
+        *_session_routes(s),
+        *_views(s),
+    ]
     from contextlib import asynccontextmanager
 
     @asynccontextmanager

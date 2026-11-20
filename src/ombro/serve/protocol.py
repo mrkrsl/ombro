@@ -23,8 +23,21 @@ from ombro import ui
 from ombro import viewtypes as vt
 
 # What a core event's to_dict() can be. Each also carries its `type` (the class's `kind`).
-CoreEvent = (ui.LeadSaid | ui.Progress | ui.Note | ui.Failure | ui.ProposalShown | ui.Usage | ui.ModeChanged
-             | ui.PastTurn | ui.ChatCleared | ui.JobStarted | ui.JobProgress | ui.JobEnded | ui.OpenPage)
+CoreEvent = (
+    ui.LeadSaid
+    | ui.Progress
+    | ui.Note
+    | ui.Failure
+    | ui.ProposalShown
+    | ui.Usage
+    | ui.ModeChanged
+    | ui.PastTurn
+    | ui.ChatCleared
+    | ui.JobStarted
+    | ui.JobProgress
+    | ui.JobEnded
+    | ui.OpenPage
+)
 FieldDict = ui.Field  # a field's to_dict()
 
 
@@ -69,6 +82,7 @@ class SessionMessage(TypedDict):
 
 class ChatSavedMessage(TypedDict):
     """A session's chat was written for the first time, or renamed with its title: list it now."""
+
     type: Literal["chat_saved"]
     session: str
     seq: int
@@ -94,8 +108,16 @@ class CountsMessage(TypedDict):
     crews_ready: int
 
 
-ServerMessage = (EventMessage | QuestionMessage | QuestionClosedMessage | EditFilesMessage | SessionMessage
-                 | ChatSavedMessage | JobMessage | CountsMessage)
+ServerMessage = (
+    EventMessage
+    | QuestionMessage
+    | QuestionClosedMessage
+    | EditFilesMessage
+    | SessionMessage
+    | ChatSavedMessage
+    | JobMessage
+    | CountsMessage
+)
 
 
 class SubscribeMessage(TypedDict, total=False):

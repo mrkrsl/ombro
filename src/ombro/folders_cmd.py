@@ -58,7 +58,9 @@ def _list(home: Home) -> int:
         print("No folders are shared. Jobs reach only their own workspace.")
         print("Share one with `ombro folder add <path>`; every job may then read it, and a spec names it to write.")
     else:
-        print("Shared folders. Every job may read them; a spec names the ones its job may change (`folders: [name]`).\n")
+        print(
+            "Shared folders. Every job may read them; a spec names the ones its job may change (`folders: [name]`).\n"
+        )
         for g in grants.values():
             try:
                 folders.check_place(g.path, home)
@@ -74,10 +76,18 @@ def _list(home: Home) -> int:
 
 
 def access_field() -> Field:
-    return Field("access", "Access:", "choice", default="n",
-                 options=[Option("r", "read"), Option("w", "write (roles can change, add and remove files in it)"),
-                          Option("n", "no", ("q",))],
-                 invalid="Type r or w, or n to stop.")
+    return Field(
+        "access",
+        "Access:",
+        "choice",
+        default="n",
+        options=[
+            Option("r", "read"),
+            Option("w", "write (roles can change, add and remove files in it)"),
+            Option("n", "no", ("q",)),
+        ],
+        invalid="Type r or w, or n to stop.",
+    )
 
 
 def add_flow(home: Home, target: str, name: str | None, access: str | None, yes: bool, ui: UI) -> int:
@@ -89,8 +99,10 @@ def add_flow(home: Home, target: str, name: str | None, access: str | None, yes:
     grants, _ = folders.load(home)
     existing = folders.find(grants, real)
     if existing is not None and (access is None or access == existing.access):
-        ui.say(f"{folders.display_path(real)} is already shared as {existing.name!r} ({existing.access}). "
-               f"To change that, remove it with `/folder remove {existing.name}` and share it again.")
+        ui.say(
+            f"{folders.display_path(real)} is already shared as {existing.name!r} ({existing.access}). "
+            f"To change that, remove it with `/folder remove {existing.name}` and share it again."
+        )
         return 0
     name = name or (existing.name if existing else folders.suggest_name(real, set(grants)))
     if access is None:
@@ -107,8 +119,11 @@ def add_flow(home: Home, target: str, name: str | None, access: str | None, yes:
     if access == "write" and not yes:
         ui.say(f"Backup before each job that can write to it: {folders.backup_hint(real, home)}.")
         try:
-            go = ui.yes("write", f"Let Ombro change files in {folders.display_path(real)}? Jobs can, and the Lead "
-                                 "can in chat once you say yes to each change.")
+            go = ui.yes(
+                "write",
+                f"Let Ombro change files in {folders.display_path(real)}? Jobs can, and the Lead "
+                "can in chat once you say yes to each change.",
+            )
         except (KeyboardInterrupt, EOFError):
             go = False
         if not go:
@@ -119,8 +134,13 @@ def add_flow(home: Home, target: str, name: str | None, access: str | None, yes:
     return 0
 
 
-def offer_start_folder(home: Home, cwd: Path | None = None, ask: Callable[[str], str] | None = None,
-                       say: Callable[[str], None] | None = None, ui: UI | None = None) -> None:
+def offer_start_folder(
+    home: Home,
+    cwd: Path | None = None,
+    ask: Callable[[str], str] | None = None,
+    say: Callable[[str], None] | None = None,
+    ui: UI | None = None,
+) -> None:
     """Before a brief in a folder that is not shared and could be, ask once. A no is
     remembered in folders.md and not asked again; just pressing Enter asks next time."""
     if ui is None:
@@ -133,10 +153,20 @@ def offer_start_folder(home: Home, cwd: Path | None = None, ask: Callable[[str],
     shown = folders.display_path(here)
     ui.say(f"You are in {shown}, which is not shared with Ombro's jobs.")
     try:
-        choice = ui.ask(Field(
-            "share_here", "Share it?", "choice", default="s",
-            options=[Option("r", "read"), Option("w", "write (roles can change files in it)"),
-                     Option("n", "no (don't ask again)"), Option("s", "skip for now")]))
+        choice = ui.ask(
+            Field(
+                "share_here",
+                "Share it?",
+                "choice",
+                default="s",
+                options=[
+                    Option("r", "read"),
+                    Option("w", "write (roles can change files in it)"),
+                    Option("n", "no (don't ask again)"),
+                    Option("s", "skip for now"),
+                ],
+            )
+        )
     except (KeyboardInterrupt, EOFError):
         return
     say = ui.say
@@ -153,5 +183,8 @@ def offer_start_folder(home: Home, cwd: Path | None = None, ask: Callable[[str],
     except (folders.FolderError, SetupError) as e:
         say(f"It could not be shared: {e}")
         return
-    say(f"Shared as {g.name!r} ({access})" + (f"; backup: {folders.backup_hint(here, home)}" if access == "write"
-                                              else "") + ". The brief can now name it.")
+    say(
+        f"Shared as {g.name!r} ({access})"
+        + (f"; backup: {folders.backup_hint(here, home)}" if access == "write" else "")
+        + ". The brief can now name it."
+    )

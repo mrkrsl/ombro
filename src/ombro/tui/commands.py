@@ -41,8 +41,11 @@ def report_markdown(r: dict[str, Any], full: bool = False) -> str:
             out.append(f"- [{label}]({d['url']})" + ("" if d["exists"] else " (no longer there)"))
     report_url = Path(r["report_path"]).as_uri()
     rid = quote(str(r["job_id"]))
-    out += ["", f"[Open the full report]({report_url}) · "
-                + (f"[Show Ombro's record](ombro:report/{rid}/full)" if not full else "Ombro's record is below.")]
+    out += [
+        "",
+        f"[Open the full report]({report_url}) · "
+        + (f"[Show Ombro's record](ombro:report/{rid}/full)" if not full else "Ombro's record is below."),
+    ]
     if full and record:
         out += ["", "---", "", "# Ombro's record" + record]
     return "\n".join(out) + "\n"
@@ -87,8 +90,7 @@ class Commands(Flows):
             out.append(f"  {r['name']}  ", style=f"bold {p.text}")
             out.append(f"{r['description']}\n", style=p.text)
             origin = "yours" if r["source"] == "you" else f"from {r['source']}"
-            out.append(f"    {origin}; used by {', '.join(r['used_by']) or 'no role by name'}\n",
-                       style=p.muted)
+            out.append(f"    {origin}; used by {', '.join(r['used_by']) or 'no role by name'}\n", style=p.muted)
         if view["all_skills"]:
             out.append(f"  Every skill is used by {', '.join(view['all_skills'])}\n", style=p.muted)
         out.append(f"\nWaiting for your approval ({len(view['waiting'])})\n", style=f"bold {p.text}")
@@ -97,12 +99,16 @@ class Commands(Flows):
         for w in view["waiting"]:
             what = "a new version of" if w["change"] == "update" else "new:"
             out.append(f"  {w['ref']}  ", style=f"bold {p.text}")
-            out.append(f"{what} {w['name']}" + (f", for {', '.join(w['for'])}" if w["for"] else "")
-                       + "\n", style=p.text)
+            out.append(
+                f"{what} {w['name']}" + (f", for {', '.join(w['for'])}" if w["for"] else "") + "\n", style=p.text
+            )
             if w["flags"]:
                 out.append(f"    signs of injected text: {', '.join(w['flags'])}\n", style=p.muted)
-        out.append("\n/skills show <name>; /skills give <skill> <crew/role>; /approvals show <ref>, then "
-                   "/approvals approve or decline <ref>", style=p.muted)
+        out.append(
+            "\n/skills show <name>; /skills give <skill> <crew/role>; /approvals show <ref>, then "
+            "/approvals approve or decline <ref>",
+            style=p.muted,
+        )
         self.rich(out)
 
     def list_crews(self, team: dict[str, Any]) -> None:
@@ -130,8 +136,9 @@ class Commands(Flows):
         for r in rows[-12:]:
             waiting = f"  {r['waiting']} waiting" if r["waiting"] else ""
             unseen = "  new" if not r["seen_at"] and r["status"] != "running" else ""
-            out.append(f"{r['job_id']}  {r['status']:<18} {r['total_tokens']:>9,} tokens{waiting}{unseen}\n",
-                       style=p.text)
+            out.append(
+                f"{r['job_id']}  {r['status']:<18} {r['total_tokens']:>9,} tokens{waiting}{unseen}\n", style=p.text
+            )
             out.append(f"    {r['brief'][:90]}\n", style=p.muted)
         out.append("See one with /report <job_id>.", style=p.muted)
         self.rich(out)
@@ -184,7 +191,6 @@ class Commands(Flows):
         self.say(f"Opened {folder}.")
 
 
-
 # ---------------------------------------------------------------------------
 # Notices
 
@@ -214,14 +220,18 @@ def render_notice(e: JobEnded, app: "OmbroApp") -> Text:
     if e.waiting:
         n = e.waiting
         out.append(f"{_n(n, 'action')} {'is' if n == 1 else 'are'} waiting for approval: /approvals\n", style=p.text)
-    out.append("Read the report", Style(color=p.text, underline=True, bold=True,
-                                         meta={"@click": f"app.run_command({'/report ' + e.job_id!r})"}))
+    out.append(
+        "Read the report",
+        Style(color=p.text, underline=True, bold=True, meta={"@click": f"app.run_command({'/report ' + e.job_id!r})"}),
+    )
     out.append(f"  (or type /report {e.job_id})", style=p.muted)
     if e.offers:  # one that didn't finish: the Lead's offer, and a click for each way to carry on
         out.append(f"\n{e.again_text}\n", style=p.text)
         for i, o in enumerate(e.offers):
             out.append("  " if i else "", style=p.muted)
-            out.append(o.label, Style(color=p.text, underline=True, bold=True,
-                                      meta={"@click": f"app.run_command({o.command!r})"}))
+            out.append(
+                o.label,
+                Style(color=p.text, underline=True, bold=True, meta={"@click": f"app.run_command({o.command!r})"}),
+            )
         out.append(f"  (or type {e.offers[0].command})", style=p.muted)
     return out

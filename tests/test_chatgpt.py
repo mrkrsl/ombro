@@ -74,15 +74,24 @@ def sign(claims: dict, kid: str = "k1", d: int = D) -> str:
     head = b64(json.dumps({"alg": "RS256", "kid": kid, "typ": "JWT"}).encode())
     body = b64(json.dumps(claims).encode())
     k = (N.bit_length() + 7) // 8
-    digest = bytes.fromhex("3031300d060960864801650304020105000420") + hashlib.sha256(f"{head}.{body}".encode()).digest()
+    digest = (
+        bytes.fromhex("3031300d060960864801650304020105000420") + hashlib.sha256(f"{head}.{body}".encode()).digest()
+    )
     em = b"\x00\x01" + b"\xff" * (k - 3 - len(digest)) + b"\x00" + digest
     sig = pow(int.from_bytes(em, "big"), d, N).to_bytes(k, "big")
     return f"{head}.{body}.{b64(sig)}"
 
 
 def id_token(nonce: str, *, aud: str = CLIENT, sub: str = "user-INVENTED", **over) -> str:
-    claims = {"iss": chatgpt.ISSUER, "aud": aud, "sub": sub, "email": "ada@invented.invalid", "nonce": nonce,
-              "exp": time.time() + 3600, "iat": time.time()}
+    claims = {
+        "iss": chatgpt.ISSUER,
+        "aud": aud,
+        "sub": sub,
+        "email": "ada@invented.invalid",
+        "nonce": nonce,
+        "exp": time.time() + 3600,
+        "iat": time.time(),
+    }
     claims.update(over)
     return sign(claims)
 
@@ -113,21 +122,45 @@ class FakeOpenAI:
             if form["grant_type"] == "refresh_token":
                 if self.refresh_error:
                     return httpx.Response(400, json={"error": self.refresh_error})
-                return httpx.Response(200, json={"access_token": ACCESS + "-2", "refresh_token": REFRESH + "-2",
-                                                 "token_type": "Bearer", "expires_in": 3600, "scope": self.scope})
-            return httpx.Response(200, json={
-                "access_token": ACCESS, "refresh_token": REFRESH, "id_token": id_token(self.nonce, sub=self.sub),
-                "token_type": "Bearer", "expires_in": 3600, "scope": self.scope, "earliest_refresh_at": 0})
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": ACCESS + "-2",
+                        "refresh_token": REFRESH + "-2",
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                        "scope": self.scope,
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": ACCESS,
+                    "refresh_token": REFRESH,
+                    "id_token": id_token(self.nonce, sub=self.sub),
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "scope": self.scope,
+                    "earliest_refresh_at": 0,
+                },
+            )
         if url == chatgpt.RESOURCE + "/models":
-            return httpx.Response(200, json={"models": [
-                {"slug": "gpt-invented", "display_name": "GPT Invented", "visibility": "list"},
-                {"slug": "gpt-hidden", "display_name": "Hidden", "visibility": "hide"},
-                {"slug": "gpt-invented-mini", "display_name": "Mini", "visibility": "list"}]})
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {"slug": "gpt-invented", "display_name": "GPT Invented", "visibility": "list"},
+                        {"slug": "gpt-hidden", "display_name": "Hidden", "visibility": "hide"},
+                        {"slug": "gpt-invented-mini", "display_name": "Mini", "visibility": "list"},
+                    ]
+                },
+            )
         return httpx.Response(404)
 
 
 def browser(fake: FakeOpenAI, receiver: HandOver, answer: dict | None = None, seen: list | None = None):
     """Stands in for the browser: reads the sign-in address and gives the callback's answer."""
+
     def open_browser(url: str) -> None:
         q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
         if seen is not None:
@@ -139,13 +172,20 @@ def browser(fake: FakeOpenAI, receiver: HandOver, answer: dict | None = None, se
         if answer is not None:
             got = {**answer, "state": q["state"]}
         receiver.give(got)
+
     return open_browser
 
 
 def sign_in(home, fake: FakeOpenAI, seen=None, answer=None):
     rec = HandOver(1455, path=chatgpt.CALLBACK_PATH)
-    return chatgpt.sign_in(home, open_browser=browser(fake, rec, answer, seen), say=lambda _t: None, receiver=rec,
-                           transport=httpx.MockTransport(fake.handler), timeout=5)
+    return chatgpt.sign_in(
+        home,
+        open_browser=browser(fake, rec, answer, seen),
+        say=lambda _t: None,
+        receiver=rec,
+        transport=httpx.MockTransport(fake.handler),
+        timeout=5,
+    )
 
 
 # -- signing in ------------------------------------------------------------------
@@ -166,9 +206,14 @@ def test_first_sign_in_registers_ombro_and_adds_the_plans_models(home):
     assert exchange["client_id"] == CLIENT and exchange["code_verifier"] and "client_secret" not in exchange
     assert exchange["redirect_uri"] == q["redirect_uri"] and exchange["resource"] == chatgpt.RESOURCE
     assert hashlib.sha256(exchange["code_verifier"].encode()).digest() == base64.urlsafe_b64decode(
-        q["code_challenge"] + "=")
-    assert done == {"email": "ada@invented.invalid", "plan": True, "models": ["gpt-invented-plan",
-                    "gpt-invented-mini-plan"], "welcome": chatgpt.WELCOME}
+        q["code_challenge"] + "="
+    )
+    assert done == {
+        "email": "ada@invented.invalid",
+        "plan": True,
+        "models": ["gpt-invented-plan", "gpt-invented-mini-plan"],
+        "welcome": chatgpt.WELCOME,
+    }
     saved = chatgpt.load(home)
     assert saved["client_id"] == CLIENT and saved["subject"] == "user-INVENTED" and saved["refresh_token"] == REFRESH
     assert (chatgpt.store_path(home).stat().st_mode & 0o777) == 0o600
@@ -246,8 +291,12 @@ def test_tokens_renew_themselves_and_an_ended_sign_in_says_so(home):
     session = chatgpt.Session(home, httpx.MockTransport(fake.handler))
     assert session.token() == ACCESS + "-2"
     form = fake.forms[-1]
-    assert form == {"grant_type": "refresh_token", "client_id": CLIENT, "refresh_token": REFRESH,
-                    "resource": chatgpt.RESOURCE}
+    assert form == {
+        "grant_type": "refresh_token",
+        "client_id": CLIENT,
+        "refresh_token": REFRESH,
+        "resource": chatgpt.RESOURCE,
+    }
     assert chatgpt.load(home)["refresh_token"] == REFRESH + "-2"  # rotated, kept
     fake.refresh_error = "invalid_grant"
     with pytest.raises(SignInNeeded, match="ended"):
@@ -270,10 +319,20 @@ def _empty_models(home):
 
 
 def test_plan_models_sit_beside_api_key_models_and_go_together(home):
-    mdfile.write(home.models, {"models": {
-        "default": "gpt-invented",
-        "gpt-invented": {"api": "openai", "endpoint": "https://api.openai.com/v1", "model": "gpt-invented",
-                         "key": "OPENAI_API_KEY"}}})
+    mdfile.write(
+        home.models,
+        {
+            "models": {
+                "default": "gpt-invented",
+                "gpt-invented": {
+                    "api": "openai",
+                    "endpoint": "https://api.openai.com/v1",
+                    "model": "gpt-invented",
+                    "key": "OPENAI_API_KEY",
+                },
+            }
+        },
+    )
     assert models.add_plan_models(home, ["gpt-invented"]) == ["gpt-invented-plan"]
     entries = mdfile.read(home.models)[0]["models"]
     assert entries["default"] == "gpt-invented"  # left as it was
@@ -303,9 +362,20 @@ def sse(*events: dict) -> bytes:
 
 
 def completed(output, usage=(100, 20, 60, 5)):
-    return {"type": "response.completed", "response": {"id": "resp_1", "status": "completed", "output": output, "usage": {
-        "input_tokens": usage[0], "output_tokens": usage[1], "input_tokens_details": {"cached_tokens": usage[2]},
-        "output_tokens_details": {"reasoning_tokens": usage[3]}}}}
+    return {
+        "type": "response.completed",
+        "response": {
+            "id": "resp_1",
+            "status": "completed",
+            "output": output,
+            "usage": {
+                "input_tokens": usage[0],
+                "output_tokens": usage[1],
+                "input_tokens_details": {"cached_tokens": usage[2]},
+                "output_tokens_details": {"reasoning_tokens": usage[3]},
+            },
+        },
+    }
 
 
 class FixedSession:
@@ -320,8 +390,14 @@ class FixedSession:
         return ACCESS + "-2"
 
 
-TOOL = {"type": "function", "function": {"name": "brief", "description": "Brief a role.",
-                                          "parameters": {"type": "object", "properties": {"task": {"type": "string"}}}}}
+TOOL = {
+    "type": "function",
+    "function": {
+        "name": "brief",
+        "description": "Brief a role.",
+        "parameters": {"type": "object", "properties": {"task": {"type": "string"}}},
+    },
+}
 
 
 def test_a_plan_call_streams_with_store_off_and_no_output_limit():
@@ -329,18 +405,42 @@ def test_a_plan_call_streams_with_store_off_and_no_output_limit():
 
     def handler(request):
         seen.append((request.headers["authorization"], json.loads(request.content)))
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse(
-            {"type": "response.created", "response": {"id": "resp_1"}},
-            {"type": "response.output_text.delta", "delta": "Hel"},
-            completed([{"id": "rs_1", "type": "reasoning", "summary": []},
-                       {"id": "msg_1", "type": "message", "role": "assistant", "status": "completed",
-                        "content": [{"type": "output_text", "text": "Hello"}]},
-                       {"id": "fc_1", "type": "function_call", "call_id": "call_1", "name": "brief",
-                        "arguments": "{\"task\": \"x\"}", "status": "completed"}])))
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=sse(
+                {"type": "response.created", "response": {"id": "resp_1"}},
+                {"type": "response.output_text.delta", "delta": "Hel"},
+                completed(
+                    [
+                        {"id": "rs_1", "type": "reasoning", "summary": []},
+                        {
+                            "id": "msg_1",
+                            "type": "message",
+                            "role": "assistant",
+                            "status": "completed",
+                            "content": [{"type": "output_text", "text": "Hello"}],
+                        },
+                        {
+                            "id": "fc_1",
+                            "type": "function_call",
+                            "call_id": "call_1",
+                            "name": "brief",
+                            "arguments": '{"task": "x"}',
+                            "status": "completed",
+                        },
+                    ]
+                ),
+            ),
+        )
 
     c = ChatGPTClient("gpt-invented", FixedSession(), transport=httpx.MockTransport(handler), effort="low")
-    reply = c.complete([{"role": "system", "content": "You are the Lead."}, {"role": "user", "content": "hi"}],
-                       tools=[TOOL], max_output_tokens=900, timeout=5)
+    reply = c.complete(
+        [{"role": "system", "content": "You are the Lead."}, {"role": "user", "content": "hi"}],
+        tools=[TOOL],
+        max_output_tokens=900,
+        timeout=5,
+    )
     auth, body = seen[0]
     assert auth == f"Bearer {ACCESS}"
     assert body["store"] is False and body["stream"] is True and body["model"] == "gpt-invented"
@@ -356,41 +456,67 @@ def test_a_plan_call_streams_with_store_off_and_no_output_limit():
     # The reply goes back as it came (no item ids: nothing is stored), the reasoning left out.
     msg = reply.as_message()
     assert [i["type"] for i in msg["_items"]] == ["message", "function_call"] and "id" not in msg["_items"][1]
-    _, items = to_responses([{"role": "user", "content": "hi"}, msg,
-                             {"role": "tool", "tool_call_id": "call_1", "content": "done"}])
-    assert items[2]["call_id"] == "call_1" and items[3] == {"type": "function_call_output", "call_id": "call_1",
-                                                             "output": "done"}
+    _, items = to_responses(
+        [{"role": "user", "content": "hi"}, msg, {"role": "tool", "tool_call_id": "call_1", "content": "done"}]
+    )
+    assert items[2]["call_id"] == "call_1" and items[3] == {
+        "type": "function_call_output",
+        "call_id": "call_1",
+        "output": "done",
+    }
 
 
 def test_conversion_without_kept_items():
-    instructions, items = to_responses([
-        {"role": "system", "content": "S"}, {"role": "user", "content": "go"},
-        {"role": "assistant", "content": None, "tool_calls": [
-            {"id": "c1", "type": "function", "function": {"name": "brief", "arguments": "{}"}}]},
-        {"role": "tool", "tool_call_id": "c1", "content": ""}, {"role": "system", "content": "later"}])
+    instructions, items = to_responses(
+        [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": "go"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "brief", "arguments": "{}"}}],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": ""},
+            {"role": "system", "content": "later"},
+        ]
+    )
     assert instructions == "S"
-    assert items == [{"role": "user", "content": "go"},
-                     {"type": "function_call", "call_id": "c1", "name": "brief", "arguments": "{}"},
-                     {"type": "function_call_output", "call_id": "c1", "output": "(no output)"},
-                     {"role": "developer", "content": "later"}]
+    assert items == [
+        {"role": "user", "content": "go"},
+        {"type": "function_call", "call_id": "c1", "name": "brief", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "c1", "output": "(no output)"},
+        {"role": "developer", "content": "later"},
+    ]
     assert to_namespace([TOOL])["tools"][0]["strict"] is False
 
 
 def test_a_usage_limit_stops_and_says_where_to_manage_it():
     def handler(request):
-        return httpx.Response(429, json={"error": {"code": "subscription_sharing_usage_limit_exceeded",
-                                                   "message": "limit"}})
+        return httpx.Response(
+            429, json={"error": {"code": "subscription_sharing_usage_limit_exceeded", "message": "limit"}}
+        )
 
     tries = []
-    c = ChatGPTClient("m", FixedSession(), transport=httpx.MockTransport(lambda r: (tries.append(1), handler(r))[1]),
-                      sleep=lambda s: None)
+    c = ChatGPTClient(
+        "m",
+        FixedSession(),
+        transport=httpx.MockTransport(lambda r: (tries.append(1), handler(r))[1]),
+        sleep=lambda s: None,
+    )
     with pytest.raises(ModelError, match="chatgpt.com/settings/usage"):
         c.complete([{"role": "user", "content": "a"}], max_output_tokens=5, timeout=5)
     assert len(tries) == 1  # never tried again, never another way
 
     def mid_stream(request):
-        return httpx.Response(200, content=sse({"type": "response.failed", "response": {
-            "error": {"code": "subscription_sharing_usage_limit_exceeded", "message": "limit"}}}))
+        return httpx.Response(
+            200,
+            content=sse(
+                {
+                    "type": "response.failed",
+                    "response": {"error": {"code": "subscription_sharing_usage_limit_exceeded", "message": "limit"}},
+                }
+            ),
+        )
 
     c = ChatGPTClient("m", FixedSession(), transport=httpx.MockTransport(mid_stream), sleep=lambda s: None)
     with pytest.raises(ModelError, match="usage limit"):
@@ -405,8 +531,9 @@ def test_an_expired_token_is_renewed_once():
         seen.append(request.headers["authorization"])
         if len(seen) == 1:
             return httpx.Response(401, json={"detail": "token expired"})
-        return httpx.Response(200, content=sse(completed([{"type": "message", "content": [
-            {"type": "output_text", "text": "ok"}]}])))
+        return httpx.Response(
+            200, content=sse(completed([{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]))
+        )
 
     c = ChatGPTClient("m", session, transport=httpx.MockTransport(handler))
     assert c.complete([{"role": "user", "content": "a"}], max_output_tokens=5, timeout=5).content == "ok"
@@ -416,7 +543,14 @@ def test_an_expired_token_is_renewed_once():
 def test_a_stream_that_stops_early_is_not_a_reply():
     with pytest.raises(ModelError, match="stopped before it finished"):
         read_stream(iter(["event: response.created", 'data: {"type": "response.created"}', ""]))
-    reply = read_stream(iter([f"data: {json.dumps({'type': 'response.incomplete', 'response': {'output': [], 'incomplete_details': {'reason': 'max_output_tokens'}}})}", ""]))
+    reply = read_stream(
+        iter(
+            [
+                f"data: {json.dumps({'type': 'response.incomplete', 'response': {'output': [], 'incomplete_details': {'reason': 'max_output_tokens'}}})}",
+                "",
+            ]
+        )
+    )
     assert reply.finish_reason == "length"
 
 

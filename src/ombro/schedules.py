@@ -39,7 +39,15 @@ from ombro import cron as cronmod
 from ombro import mdfile, memory, report, jobs
 from ombro.home import LIMITS_META, Home
 from ombro.journal import Journal, utc_now
-from ombro.settings import Limits, SetupError, ToolSettings, load_limits, load_tool_settings, parse_duration, resolve_allowance
+from ombro.settings import (
+    Limits,
+    SetupError,
+    ToolSettings,
+    load_limits,
+    load_tool_settings,
+    parse_duration,
+    resolve_allowance,
+)
 
 FIELDS = ("name", "cron", "spec", "enabled", "limits", "grace")
 LOOKBACK_SECONDS = 7 * 24 * 3600
@@ -99,7 +107,7 @@ def spec_ref_path(home: Home, ref: Any) -> Path:
     text = str(ref or "").strip()
     if not text:
         raise SetupError("no spec is named (spec: specs/<name>.md)")
-    name = text[len("specs/"):] if text.startswith("specs/") else text
+    name = text[len("specs/") :] if text.startswith("specs/") else text
     if not name.endswith(".md"):
         name += ".md"
     if "/" in name or "\\" in name or name.startswith("."):
@@ -351,7 +359,13 @@ def record_failed_start(home: Home, s: Schedule, slot: str, reason: str, limits:
     except (OSError, mdfile.FrontMatterError, SetupError):
         pass
     job_dir = jobs.create_job(
-        home, s.crews or jobs.spec_crews(home, {}), {}, spec_text, limits, source=_source(s, slot, note), tools={},
+        home,
+        s.crews or jobs.spec_crews(home, {}),
+        {},
+        spec_text,
+        limits,
+        source=_source(s, slot, note),
+        tools={},
         extra={"schedule": s.name, "due": slot},
     )
     jobs.update_job(job_dir, started_at=utc_now())
@@ -434,9 +448,13 @@ def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: 
         grace = s.grace_for(base)
         start = now - grace if last is None else max(min(last, now) - grace, now - LOOKBACK_SECONDS)
         # Slots after the last tick, plus any the last tick left waiting; the rest it already decided.
-        slots = [(name, fire) for name, fire in
-                 ((cronmod.slot_name(w), fire) for w, fire in cronmod.slots_between(s.cron, start, now, tz))
-                 if fire >= s.mtime and (last is None or fire > last or f"{s.name}@{name}" in state.pending)]
+        slots = [
+            (name, fire)
+            for name, fire in (
+                (cronmod.slot_name(w), fire) for w, fire in cronmod.slots_between(s.cron, start, now, tz)
+            )
+            if fire >= s.mtime and (last is None or fire > last or f"{s.name}@{name}" in state.pending)
+        ]
         if not slots:
             continue
         for c in s.crews:
@@ -445,8 +463,7 @@ def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: 
         own = by_schedule.get(s.name, [])
         ran = {str(m.get("due")) for _, m in own}
         ranges = [(a, b) for c in s.crews for n, a, b in noted_by_crew[c] if n == s.name]
-        todo = [(slot, fire) for slot, fire in slots
-                if slot not in ran and not any(a <= slot <= b for a, b in ranges)]
+        todo = [(slot, fire) for slot, fire in slots if slot not in ran and not any(a <= slot <= b for a, b in ranges)]
         if not todo:
             continue
         stale = [(slot, fire) for slot, fire in todo if now - fire > grace]
@@ -489,9 +506,11 @@ def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: 
                 skipped += [(sl, f"a later slot, {_fmt_slot(slot)}, was started instead") for sl, _ in fresh[:-1]]
         if missed:
             if last is not None and last < now - grace:
-                why = (f"the machine was off or asleep (no tick from "
-                       f"{datetime.fromtimestamp(last).strftime('%d %b %H:%M')} to "
-                       f"{datetime.fromtimestamp(now).strftime('%d %b %H:%M')})")
+                why = (
+                    f"the machine was off or asleep (no tick from "
+                    f"{datetime.fromtimestamp(last).strftime('%d %b %H:%M')} to "
+                    f"{datetime.fromtimestamp(now).strftime('%d %b %H:%M')})"
+                )
             else:
                 why = "no tick ran within the grace period; the machine was off or asleep"
             _note(home, s, missed, "missed", why, base, dry_run, res)
@@ -502,16 +521,24 @@ def _tick(home: Home, now: float, tz: tzinfo | None, starter: Starter, dry_run: 
             _note(home, s, group, "skipped", why, base, dry_run, res)
 
     enabled = sum(1 for s in schedules if s.enabled and not s.error)
-    counts = (f"would start {len(res.started) + len(res.failed)}, would note {len(res.noted)}" if dry_run else
-              f"started {len(res.started) + len(res.failed)}, noted {len(res.noted)}")
+    counts = (
+        f"would start {len(res.started) + len(res.failed)}, would note {len(res.noted)}"
+        if dry_run
+        else f"started {len(res.started) + len(res.failed)}, noted {len(res.noted)}"
+    )
     res.lines.append(f"tick: {len(schedules)} schedule(s), {enabled} enabled; {counts}, waiting {len(res.waiting)}")
     if not dry_run:
         write_state(home, TickState(last_tick=now, pending=pending, reported=reported))
 
 
-def _note(home: Home, s: Schedule, slots: list[str], status: str, why: str, base: Limits, dry_run: bool,
-          res: TickResult) -> None:
-    what = _fmt_slot(slots[0]) if len(slots) == 1 else f"{len(slots)} slots from {_fmt_slot(slots[0])} to {_fmt_slot(slots[-1])}"
+def _note(
+    home: Home, s: Schedule, slots: list[str], status: str, why: str, base: Limits, dry_run: bool, res: TickResult
+) -> None:
+    what = (
+        _fmt_slot(slots[0])
+        if len(slots) == 1
+        else f"{len(slots)} slots from {_fmt_slot(slots[0])} to {_fmt_slot(slots[-1])}"
+    )
     if dry_run:
         res.lines.append(f"{s.name}: would note {what} as {status}: {why}")
         res.noted.append(slots[0])
@@ -524,8 +551,9 @@ def _note(home: Home, s: Schedule, slots: list[str], status: str, why: str, base
         res.lines.append(f"{s.name}: {what} {status}: {why}; noted in index.md")
 
 
-def _start(home: Home, s: Schedule, slot: str, base: Limits, starter: Starter, dry_run: bool, res: TickResult,
-           note: str) -> None:
+def _start(
+    home: Home, s: Schedule, slot: str, base: Limits, starter: Starter, dry_run: bool, res: TickResult, note: str
+) -> None:
     label = f"{s.name} due {_fmt_slot(slot)}"
     try:
         p = prepare(home, s)
@@ -542,13 +570,18 @@ def _start(home: Home, s: Schedule, slot: str, base: Limits, starter: Starter, d
         res.lines.append(f"{label}: could not start ({e}); recorded failed job {job_dir.name}")
         return
     if dry_run:
-        res.lines.append(f"{label}: would start a job (allowance {p.limits.allowance}, "
-                         f"{p.limits.max_tokens:,} tokens)")
+        res.lines.append(f"{label}: would start a job (allowance {p.limits.allowance}, {p.limits.max_tokens:,} tokens)")
         res.started.append(Path("."))
         return
     job_dir = jobs.create_job(
-        home, jobs.spec_crews(home, p.spec_meta), p.spec_meta, p.spec_body, p.limits, source=_source(s, slot, note),
-        tools=p.tools.to_dict(), extra={"schedule": s.name, "due": slot},
+        home,
+        jobs.spec_crews(home, p.spec_meta),
+        p.spec_meta,
+        p.spec_body,
+        p.limits,
+        source=_source(s, slot, note),
+        tools=p.tools.to_dict(),
+        extra={"schedule": s.name, "due": slot},
     )
     try:
         starter(home, job_dir)
@@ -566,8 +599,15 @@ def _start(home: Home, s: Schedule, slot: str, base: Limits, starter: Starter, d
 # Writing schedule files (for `ombro schedule add|enable|disable`)
 
 
-def write_schedule(home: Home, name: str, cron_text: str, spec_name: str, enabled: bool,
-                   limits: dict | None = None, grace: str | None = None) -> Path:
+def write_schedule(
+    home: Home,
+    name: str,
+    cron_text: str,
+    spec_name: str,
+    enabled: bool,
+    limits: dict | None = None,
+    grace: str | None = None,
+) -> Path:
     meta: dict[str, Any] = {"name": name, "cron": cron_text, "spec": f"specs/{spec_name}.md", "enabled": enabled}
     if limits:
         meta["limits"] = limits
@@ -578,8 +618,15 @@ def write_schedule(home: Home, name: str, cron_text: str, spec_name: str, enable
     return path
 
 
-def add_schedule(home: Home, name: str, spec: str, cron_text: str, enabled: bool = True,
-                 limits: dict | None = None, grace: str | None = None) -> Path:
+def add_schedule(
+    home: Home,
+    name: str,
+    spec: str,
+    cron_text: str,
+    enabled: bool = True,
+    limits: dict | None = None,
+    grace: str | None = None,
+) -> Path:
     """A new schedule, checked, for the Scheduled page, `ombro schedule add` and the chat's offer:
     a new name, a saved spec, and a cron expression. Raises SetupError with the reason."""
     from ombro.roles import NAME

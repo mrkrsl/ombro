@@ -43,9 +43,15 @@ class ChatSession:
         self.client = ScriptedClient(script)
         self.answers = Answers(answers)
         self.chat = Chat(
-            self.home, crew=crew, ask=self.answers, say=self.said.append, edit=edit,
-            client_factory=lambda spec: self.client, today=TODAY,
-            registry=native_registry(self.home, load_tool_settings(self.home)), titles=self.titles,
+            self.home,
+            crew=crew,
+            ask=self.answers,
+            say=self.said.append,
+            edit=edit,
+            client_factory=lambda spec: self.client,
+            today=TODAY,
+            registry=native_registry(self.home, load_tool_settings(self.home)),
+            titles=self.titles,
         )
         return self.chat.run()
 
@@ -73,16 +79,28 @@ def chat(home):
 
 
 def past_job(job, summary: str, crew: str = "default") -> str:
-    job([fake.brief("researcher", "Research."), fake.result(summary), fake.finish(), fake.keep_notes(),
-         fake.say(f"## What was done\n{summary}\n\n## What was not done and why\nNothing.\n\n"
-                  "## Decisions for you\nNone.")], crew=crew)
+    job(
+        [
+            fake.brief("researcher", "Research."),
+            fake.result(summary),
+            fake.finish(),
+            fake.keep_notes(),
+            fake.say(
+                f"## What was done\n{summary}\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone."
+            ),
+        ],
+        crew=crew,
+    )
     return job.meta["job_id"]
 
 
 def snapshot(home) -> dict[str, bytes]:
     """Every file in the home except chat transcripts and fake-provider records."""
-    return {str(p.relative_to(home.root)): p.read_bytes() for p in home.root.rglob("*")
-            if p.is_file() and "chats" not in p.parts}
+    return {
+        str(p.relative_to(home.root)): p.read_bytes()
+        for p in home.root.rglob("*")
+        if p.is_file() and "chats" not in p.parts
+    }
 
 
 # -- answering about past work, across crews ---------------------------------------
@@ -93,11 +111,14 @@ def test_chat_answers_about_a_past_job_from_every_crew(chat, job, home):
     write_role(home, "researcher", crew="podcast")
     teapots = past_job(job, "Found the invented Copperkettle teapot works.")
     podcast = past_job(job, "Booked the invented Copperkettle podcast guest.", crew="podcast")
-    chat([
-        fake.call("memory__search", {"query": "Copperkettle"}),
-        fake.call("memory__read", {"path": f"jobs/{teapots}/report.md"}),
-        fake.say(f"Run {teapots} found the Copperkettle teapot works."),
-    ], ["What did we find about Copperkettle?"])
+    chat(
+        [
+            fake.call("memory__search", {"query": "Copperkettle"}),
+            fake.call("memory__read", {"path": f"jobs/{teapots}/report.md"}),
+            fake.say(f"Run {teapots} found the Copperkettle teapot works."),
+        ],
+        ["What did we find about Copperkettle?"],
+    )
     search, read = chat.tool_replies()
     assert {r["job_id"] for r in search["results"]} == {teapots, podcast}
     assert "Copperkettle teapot works" in read["content"]
@@ -111,9 +132,16 @@ def test_chat_answers_about_a_past_job_from_every_crew(chat, job, home):
 def test_chat_reads_only_reports_notes_indexes_specs_and_deliverables(chat, job, home):
     rid = past_job(job, "Found invented teapots.")
     (home.chats_dir / "20261101-090000.md").write_text("An old chat.")
-    paths = [f"jobs/{rid}/journal.jsonl", "chats/20261101-090000.md", ".env", "models.md",
-             f"jobs/{rid}/../../../../.env", "crews/default/roles/lead/soul.md",
-             "crews/default/memory/notes.md", f"jobs/{rid}/spec.md"]
+    paths = [
+        f"jobs/{rid}/journal.jsonl",
+        "chats/20261101-090000.md",
+        ".env",
+        "models.md",
+        f"jobs/{rid}/../../../../.env",
+        "crews/default/roles/lead/soul.md",
+        "crews/default/memory/notes.md",
+        f"jobs/{rid}/spec.md",
+    ]
     reads = {"tool_calls": [{"name": "memory__read", "arguments": {"path": p}} for p in paths]}
     chat([reads, fake.say("Done.")], ["Read things."])
     replies = chat.tool_replies()
@@ -136,8 +164,10 @@ def test_chat_refuses_every_write_and_delegation_tool(chat, job, home):
         ("workspace__read", {"path": "workspace/x.md"}),
         ("email__send", {"to": "someone@example.invalid"}),
     ]
-    chat([{"tool_calls": [{"name": n, "arguments": a} for n, a in attempts]}, fake.say("I cannot do that here.")],
-         ["Just do the task and save it."])
+    chat(
+        [{"tool_calls": [{"name": n, "arguments": a} for n, a in attempts]}, fake.say("I cannot do that here.")],
+        ["Just do the task and save it."],
+    )
     replies = chat.tool_replies()
     assert len(replies) == len(attempts)
     assert all("not available in chat" in r["error"] for r in replies)
@@ -149,9 +179,13 @@ def test_chat_refuses_every_write_and_delegation_tool(chat, job, home):
 # -- moving into a brief -----------------------------------------------------------
 
 SPEC_ARGS = {
-    "name": "find-teapots", "title": "Find invented teapot makers",
-    "done_looks_like": "A list of three.", "users": "Me, to pick one.", "binding_constraint": "Lowtown only.",
-    "waste": "Makers outside Lowtown.", "non_goals": "No prices.",
+    "name": "find-teapots",
+    "title": "Find invented teapot makers",
+    "done_looks_like": "A list of three.",
+    "users": "Me, to pick one.",
+    "binding_constraint": "Lowtown only.",
+    "waste": "Makers outside Lowtown.",
+    "non_goals": "No prices.",
 }
 
 
@@ -163,11 +197,14 @@ def test_the_lead_offers_a_brief_and_the_chat_becomes_its_starting_point(chat, h
         assert tools[0]["function"]["name"] == "ask"  # the task interview, not chat
         return fake.call("propose", SPEC_ARGS)
 
-    chat([
-        fake.call("offer_brief", {"summary": "Find three teapot makers in Lowtown"}),
-        brief_opening,
-        fake.say("Saved. Anything else?"),
-    ], ["I want three invented teapot makers in Lowtown.", "y", "a", "Thanks."])
+    chat(
+        [
+            fake.call("offer_brief", {"summary": "Find three teapot makers in Lowtown"}),
+            brief_opening,
+            fake.say("Saved. Anything else?"),
+        ],
+        ["I want three invented teapot makers in Lowtown.", "y", "a", "Thanks."],
+    )
     assert (home.specs_dir / "find-teapots.md").is_file()
     assert "ombro start --spec find-teapots" in chat.output
     asked = chat.answers.asked
@@ -186,13 +223,16 @@ def test_the_brief_knows_what_the_lead_read_in_the_chat(chat, home):
         assert "You said: The invented run stopped at its token limit." in opening
         return fake.call("propose", SPEC_ARGS)
 
-    chat([
-        fake.call("memory__list", {"crew": "default"}),
-        fake.say("The invented run stopped at its token limit."),
-        fake.call("offer_brief", {"summary": "Run it again from where it stopped"}),
-        brief_opening,
-        fake.say("Saved."),
-    ], ["Why did the run stop?", "Can we pick it up again?", "y", "a", "Thanks."])
+    chat(
+        [
+            fake.call("memory__list", {"crew": "default"}),
+            fake.say("The invented run stopped at its token limit."),
+            fake.call("offer_brief", {"summary": "Run it again from where it stopped"}),
+            brief_opening,
+            fake.say("Saved."),
+        ],
+        ["Why did the run stop?", "Can we pick it up again?", "y", "a", "Thanks."],
+    )
     assert (home.specs_dir / "find-teapots.md").is_file()
 
 
@@ -214,13 +254,16 @@ def test_a_brief_looks_things_up_and_the_chat_knows_what_it_said(chat, home):
         assert "Which invented teapots?" in last and "The blue ones." in last  # what was asked and answered
         return fake.say("Good, it's saved.")
 
-    chat([
-        fake.call("offer_brief", {"summary": "Find teapot makers"}),
-        looks_it_up,
-        after_the_lookup,
-        fake.call("propose", SPEC_ARGS),
-        back_in_chat,
-    ], ["I want teapot makers found.", "y", "The blue ones.", "a", "Thanks."])
+    chat(
+        [
+            fake.call("offer_brief", {"summary": "Find teapot makers"}),
+            looks_it_up,
+            after_the_lookup,
+            fake.call("propose", SPEC_ARGS),
+            back_in_chat,
+        ],
+        ["I want teapot makers found.", "y", "The blue ones.", "a", "Thanks."],
+    )
     assert (home.specs_dir / "find-teapots.md").is_file()
 
 
@@ -228,26 +271,38 @@ def test_the_chat_starts_a_role_interview_from_what_was_said(chat, home):
     def interview(messages, tools):
         assert "I want an invented listening post for teapot news." in messages[1]["content"]  # said in the chat
         assert "memory__read" in [t["function"]["name"] for t in tools]  # the chat's lookups, here too
-        return fake.call("propose", {"title": "Teapot Watcher", "kind": "specialist",
-                                     "description": "Watches invented teapot news.", "tools": ["all"],
-                                     "soul": "You watch invented teapot news and report what matters."})
+        return fake.call(
+            "propose",
+            {
+                "title": "Teapot Watcher",
+                "kind": "specialist",
+                "description": "Watches invented teapot news.",
+                "tools": ["all"],
+                "soul": "You watch invented teapot news and report what matters.",
+            },
+        )
 
     def back_in_chat(messages, tools):
         assert "the role interview (adding a crew member) you just held" in messages[-1]["content"]
         return fake.say("Good.")
 
-    chat([
-        fake.call("offer_role", {"summary": "A listening post for teapot news"}),
-        interview,
-        back_in_chat,
-    ], ["I want an invented listening post for teapot news.", "y", "a", "Thanks."])
+    chat(
+        [
+            fake.call("offer_role", {"summary": "A listening post for teapot news"}),
+            interview,
+            back_in_chat,
+        ],
+        ["I want an invented listening post for teapot news.", "y", "a", "Thanks."],
+    )
     assert (home.roles_dir("default") / "teapot-watcher" / "soul.md").is_file()
     assert "Your new Teapot Watcher is ready to take on jobs" in chat.output
 
 
 def test_the_lead_never_switches_on_its_own(chat, home):
-    chat([fake.call("offer_brief", {"summary": "Find teapots"}), fake.say("All right, we can keep talking.")],
-         ["I might want some teapot makers found.", "n"])
+    chat(
+        [fake.call("offer_brief", {"summary": "Find teapots"}), fake.say("All right, we can keep talking.")],
+        ["I might want some teapot makers found.", "n"],
+    )
     assert chat.client.calls[-1]["tools"][0]["function"]["name"] == "memory__search"  # still chat
     assert all(not a.startswith("[Brief]") for a in chat.answers.asked)
     assert not list((home.specs_dir).glob("*.md"))
@@ -284,10 +339,13 @@ def test_remember_writes_a_dated_entry_only_once_confirmed(chat, home):
 
 def test_the_lead_offers_to_remember_and_the_user_picks_the_crew(chat, home):
     ensure_crew(home, "podcast")
-    chat([
-        fake.call("offer_remember", {"text": "Guests want questions a week ahead."}),
-        fake.say("Noted in the podcast crew."),
-    ], ["Tell the crew guests want questions a week ahead.", "@podcast", "y"])
+    chat(
+        [
+            fake.call("offer_remember", {"text": "Guests want questions a week ahead."}),
+            fake.say("Noted in the podcast crew."),
+        ],
+        ["Tell the crew guests want questions a week ahead.", "@podcast", "y"],
+    )
     assert memory.read_notes(home, "podcast").your_entries() == ["- 2026-11-11: Guests want questions a week ahead."]
     assert memory.read_notes(home, "default").your_entries() == []
     assert chat.tool_replies()[0]["status"] == "saved"
@@ -300,7 +358,9 @@ def test_remember_names_a_crew(chat, home):
 
 
 def test_a_remember_over_the_cap_asks_what_to_trim(chat, home):
-    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "memory_notes_max_chars": 300}, mdfile.read(home.limits)[1])
+    mdfile.write(
+        home.limits, {**mdfile.read(home.limits)[0], "memory_notes_max_chars": 300}, mdfile.read(home.limits)[1]
+    )
     notes = memory.read_notes(home, "default")
     for i in range(1, 6):
         notes = memory.with_your_entry(notes, f"- 2026-10-0{i}: An invented lesson number {i}.")
@@ -310,7 +370,10 @@ def test_a_remember_over_the_cap_asks_what_to_trim(chat, home):
     assert memory.read_notes(home, "default").your_entries() == notes.your_entries()  # cancelled: unchanged
     chat([], ["/remember A new invented lesson that does not fit.", "y", "1 2 3"])
     entries = memory.read_notes(home, "default").your_entries()
-    assert entries[0].startswith("- 2026-10-04") and entries[-1] == "- 2026-11-11: A new invented lesson that does not fit."
+    assert (
+        entries[0].startswith("- 2026-10-04")
+        and entries[-1] == "- 2026-11-11: A new invented lesson that does not fit."
+    )
     assert memory.notes_path(home, "default").stat().st_size <= 300
 
 
@@ -332,17 +395,32 @@ def test_chat_usage_has_its_own_cap(chat, job, home):
 
 def test_chat_tool_calls_are_capped(chat, job, home):
     past_job(job, "Found invented teapots.")
-    mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_tool_max_calls": {"memory.search": 1}},
-                 mdfile.read(home.limits)[1])
-    chat([fake.call("memory__search", {"query": "teapots"}), fake.call("memory__search", {"query": "kettles"}),
-          fake.say("Done.")], ["Search twice."])
+    mdfile.write(
+        home.limits,
+        {**mdfile.read(home.limits)[0], "chat_tool_max_calls": {"memory.search": 1}},
+        mdfile.read(home.limits)[1],
+    )
+    chat(
+        [
+            fake.call("memory__search", {"query": "teapots"}),
+            fake.call("memory__search", {"query": "kettles"}),
+            fake.say("Done."),
+        ],
+        ["Search twice."],
+    )
     assert "has used all 1 calls" in chat.tool_replies()[1]["error"]
 
 
 def test_the_lead_gets_a_set_number_of_calls_per_message(chat, home):
     mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_calls_per_message": 2}, mdfile.read(home.limits)[1])
-    chat([fake.call("memory__list", {}), fake.call("memory__list", {"crew": "default"}), fake.say("Here's what I have.")],
-         ["List things.", "/quit"])
+    chat(
+        [
+            fake.call("memory__list", {}),
+            fake.call("memory__list", {"crew": "default"}),
+            fake.say("Here's what I have."),
+        ],
+        ["List things.", "/quit"],
+    )
     # The calls ran out, so one more is told to answer now with what it has.
     assert len(chat.client.calls) == 3
     last = chat.client.calls[2]["messages"][-1]
@@ -353,8 +431,10 @@ def test_the_lead_gets_a_set_number_of_calls_per_message(chat, home):
 
 def test_a_tool_asked_for_after_the_last_call_is_not_run(chat, home):
     mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_calls_per_message": 1}, mdfile.read(home.limits)[1])
-    chat([fake.call("memory__list", {}), fake.call("memory__list", {"crew": "default"}), fake.say("Next message.")],
-         ["List things.", "/quit"])
+    chat(
+        [fake.call("memory__list", {}), fake.call("memory__list", {"crew": "default"}), fake.say("Next message.")],
+        ["List things.", "/quit"],
+    )
     assert len(chat.client.calls) == 2
     assert len(chat.tool_replies()) == 1
     assert "without answering" in chat.output and "carry on" in chat.output
@@ -362,8 +442,12 @@ def test_a_tool_asked_for_after_the_last_call_is_not_run(chat, home):
 
 def test_a_long_chat_keeps_its_opening_and_trims_the_middle_in_one_step(chat, home):
     mdfile.write(home.limits, {**mdfile.read(home.limits)[0], "chat_history_chars": 3000}, mdfile.read(home.limits)[1])
-    msgs = [f"FIRST-MARKER {'x' * 400}"] + [f"MIDDLE-{i} {'y' * 400}" for i in range(6)] + ["LAST-MARKER"] + \
-        [f"AFTER-{i}" for i in range(3)]
+    msgs = (
+        [f"FIRST-MARKER {'x' * 400}"]
+        + [f"MIDDLE-{i} {'y' * 400}" for i in range(6)]
+        + ["LAST-MARKER"]
+        + [f"AFTER-{i}" for i in range(3)]
+    )
     chat([fake.say("Noted.")] * len(msgs), msgs)
     sent = [json.dumps(c["messages"]) for c in chat.client.calls]
     assert "FIRST-MARKER" in sent[-1] and "AFTER-2" in sent[-1]  # the opening and the latest stay
@@ -373,8 +457,8 @@ def test_a_long_chat_keeps_its_opening_and_trims_the_middle_in_one_step(chat, ho
     assert chat.output.count("This chat is long") == 1  # trimmed once, not on every turn
     # After the trim, each call only adds to the end of what was sent before: the cache keeps working.
     trimmed = next(i for i, s in enumerate(sent) if "earlier turns were left out" in s)
-    for before, after in zip(chat.client.calls[trimmed:], chat.client.calls[trimmed + 1:]):
-        assert after["messages"][:len(before["messages"])] == before["messages"]
+    for before, after in zip(chat.client.calls[trimmed:], chat.client.calls[trimmed + 1 :]):
+        assert after["messages"][: len(before["messages"])] == before["messages"]
 
 
 def test_old_file_contents_are_shortened_before_turns_are_left_out(chat, home):
@@ -386,10 +470,12 @@ def test_old_file_contents_are_shortened_before_turns_are_left_out(chat, home):
 
     def exchange(i: int, result: str) -> list[dict]:
         call = {"id": f"c{i}", "type": "function", "function": {"name": "folders__read", "arguments": "{}"}}
-        return [{"role": "user", "content": f"TURN-{i}"},
-                {"role": "assistant", "content": None, "tool_calls": [call]},
-                {"role": "tool", "tool_call_id": f"c{i}", "content": result},
-                {"role": "assistant", "content": f"Read {i}."}]
+        return [
+            {"role": "user", "content": f"TURN-{i}"},
+            {"role": "assistant", "content": None, "tool_calls": [call]},
+            {"role": "tool", "tool_call_id": f"c{i}", "content": result},
+            {"role": "assistant", "content": f"Read {i}."},
+        ]
 
     c.exchanges = [exchange(i, f"FILE-{i} " + "z" * 2000) for i in range(8)]
     sent = json.dumps(c._messages())
@@ -417,8 +503,10 @@ def test_transcripts_are_saved_but_never_loaded_into_later_chats_or_jobs(chat, j
     assert "PLUMTREE-MARKER" in chat.transcript
     assert chat.chat.path.parent == home.chats_dir
     first = chat.chat.path
-    chat([fake.call("memory__search", {"query": "PLUMTREE-MARKER"}), fake.say("I have no record of that.")],
-         ["What is my secret word?"])
+    chat(
+        [fake.call("memory__search", {"query": "PLUMTREE-MARKER"}), fake.say("I have no record of that.")],
+        ["What is my secret word?"],
+    )
     assert chat.chat.path != first
     assert "PLUMTREE-MARKER" not in json.dumps(chat.client.calls[0]["messages"])
     assert chat.tool_replies()[0]["results"] == []

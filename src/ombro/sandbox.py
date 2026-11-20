@@ -51,10 +51,13 @@ profile ombro-bwrap /usr/bin/bwrap flags=(unconfined) {
 }
 """
 APPARMOR_PATH = "/etc/apparmor.d/ombro-bwrap"
-APPARMOR_FIX = (f"ombro sandbox --apparmor | sudo tee {APPARMOR_PATH} >/dev/null && "
-                f"sudo apparmor_parser -r {APPARMOR_PATH}")
-APPARMOR_FIX_DOCKER = (f"docker compose exec -T ombro ombro sandbox --apparmor | sudo tee {APPARMOR_PATH} >/dev/null "
-                       f"&& sudo apparmor_parser -r {APPARMOR_PATH}, then docker compose restart")
+APPARMOR_FIX = (
+    f"ombro sandbox --apparmor | sudo tee {APPARMOR_PATH} >/dev/null && sudo apparmor_parser -r {APPARMOR_PATH}"
+)
+APPARMOR_FIX_DOCKER = (
+    f"docker compose exec -T ombro ombro sandbox --apparmor | sudo tee {APPARMOR_PATH} >/dev/null "
+    f"&& sudo apparmor_parser -r {APPARMOR_PATH}, then docker compose restart"
+)
 
 
 def userns_restricted() -> bool:
@@ -179,8 +182,7 @@ def _linux_system_binds(exe: Path, prefix: Path) -> list[tuple[str, str]]:
     """What Python needs to start, read-only. A system Python (/usr) is bound by
     its library folders and the one binary, so no other program is present."""
     binds: list[tuple[str, str]] = []
-    for p in ("/usr/lib", "/usr/lib64", "/lib", "/lib64", "/usr/share/zoneinfo", "/etc/ld.so.cache",
-              "/etc/localtime"):
+    for p in ("/usr/lib", "/usr/lib64", "/lib", "/lib64", "/usr/share/zoneinfo", "/etc/ld.so.cache", "/etc/localtime"):
         binds.append(("--ro-bind-try", p))
     if str(prefix) in ("/usr", "/usr/local", "/"):
         for sub in ("lib", "lib64"):
@@ -194,8 +196,20 @@ def _linux_system_binds(exe: Path, prefix: Path) -> list[tuple[str, str]]:
 def linux_command(box: Box) -> list[str]:
     exe, prefix = interpreter()
     bwrap = shutil.which("bwrap") or "bwrap"
-    cmd = [bwrap, "--unshare-all", "--die-with-parent", "--new-session", "--cap-drop", "ALL",
-           "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
+    cmd = [
+        bwrap,
+        "--unshare-all",
+        "--die-with-parent",
+        "--new-session",
+        "--cap-drop",
+        "ALL",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+    ]
     for flag, p in _linux_system_binds(exe, prefix):
         cmd += [flag, p, p]
     cmd += ["--dir", str(box.job_dir)]
@@ -205,8 +219,16 @@ def linux_command(box: Box) -> list[str]:
         cmd += ["--ro-bind", str(p), str(p)]
     for where, real in box.mounts.items():
         cmd += ["--bind" if real in box.write else "--ro-bind", str(real), str(where)]
-    cmd += ["--ro-bind", str(box.script), str(box.script), "--chdir", str(box.job_dir),
-            str(exe), *PY_FLAGS, str(box.script)]
+    cmd += [
+        "--ro-bind",
+        str(box.script),
+        str(box.script),
+        "--chdir",
+        str(box.job_dir),
+        str(exe),
+        *PY_FLAGS,
+        str(box.script),
+    ]
     return cmd
 
 
@@ -254,15 +276,19 @@ def unavailable_reason() -> str | None:
                     reason = f"the sandbox could not start Python: {detail[0][:200]}"
                     if k == "linux" and userns_restricted():
                         if Path("/.dockerenv").exists():
-                            reason = ("the machine running Docker (Ubuntu 24.04, say) limits the Linux "
-                                      "namespaces the sandbox needs. Allow them for bubblewrap once, on that "
-                                      "machine, from the folder with compose.yaml: " + APPARMOR_FIX_DOCKER
-                                      + ". With Colima on a Mac, that machine is Colima's VM: put "
-                                      "`colima ssh --` before each sudo")
+                            reason = (
+                                "the machine running Docker (Ubuntu 24.04, say) limits the Linux "
+                                "namespaces the sandbox needs. Allow them for bubblewrap once, on that "
+                                "machine, from the folder with compose.yaml: "
+                                + APPARMOR_FIX_DOCKER
+                                + ". With Colima on a Mac, that machine is Colima's VM: put "
+                                "`colima ssh --` before each sudo"
+                            )
                         else:
-                            reason = ("this machine (Ubuntu 24.04, say) limits the Linux namespaces the "
-                                      "sandbox needs. Allow them for bubblewrap once, as an administrator: "
-                                      + APPARMOR_FIX)
+                            reason = (
+                                "this machine (Ubuntu 24.04, say) limits the Linux namespaces the "
+                                "sandbox needs. Allow them for bubblewrap once, as an administrator: " + APPARMOR_FIX
+                            )
     _probe[k] = reason
     return reason
 
@@ -395,8 +421,9 @@ def run(
             limit = None  # may be memory; the output says
     if limit is None and k == "linux" and b"MemoryError" in bytes(kept[-4000:]):
         limit = "code_max_memory"
-    return Outcome(exit_code=None if limit else code, seconds=seconds, output=bytes(kept),
-                   output_total=total[0], limit=limit)
+    return Outcome(
+        exit_code=None if limit else code, seconds=seconds, output=bytes(kept), output_total=total[0], limit=limit
+    )
 
 
 def _kill(proc: subprocess.Popen) -> None:

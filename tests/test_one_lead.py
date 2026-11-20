@@ -144,8 +144,9 @@ def test_each_briefed_crew_gets_its_own_notes_and_every_named_crew_an_index_entr
     assert "The bakery likes short notices." in memory.read_notes(crews, "bakery").from_jobs
     assert memory.read_notes(crews, "ops").from_jobs.strip() == ""
     # The notes call names its crew.
-    notes_calls = [c for c in job.client.calls if c.get("tools") and
-                   c["tools"][0]["function"]["name"] == "memory__write_notes"]
+    notes_calls = [
+        c for c in job.client.calls if c.get("tools") and c["tools"][0]["function"]["name"] == "memory__write_notes"
+    ]
     assert "These are the notes of crew bakery" in notes_calls[0]["messages"][1]["content"]
     assert "These are the notes of crew ops" in notes_calls[1]["messages"][1]["content"]
     report = job.report
@@ -168,8 +169,14 @@ def test_a_crew_named_but_not_briefed_gets_no_notes_call(job, crews):
 
 def test_an_ambiguous_brief_is_refused_with_the_choices(job, crews):
     status = job(
-        [fake.brief("writer", "Draft it."), fake.brief("garden/writer", "Draft it."), fake.result(),
-         fake.finish(), fake.keep_notes(), LEAD_REPORT],
+        [
+            fake.brief("writer", "Draft it."),
+            fake.brief("garden/writer", "Draft it."),
+            fake.result(),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
         crews=["bakery", "garden"],
     )
     assert status == "completed"
@@ -195,8 +202,16 @@ def test_the_lead_starts_with_the_memory_of_the_named_crews_only(crews):
 
 
 def test_memory_search_is_held_to_the_spec_crews(job, crews):
-    job([fake.brief("garden/writer", "Write about invented ferns."), fake.result("Wrote about ferns."),
-         fake.finish("Ferns of Lowtown were covered."), fake.keep_notes(), LEAD_REPORT], crews=["garden"])
+    job(
+        [
+            fake.brief("garden/writer", "Write about invented ferns."),
+            fake.result("Wrote about ferns."),
+            fake.finish("Ferns of Lowtown were covered."),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        crews=["garden"],
+    )
     found = memory.search(crews, ["garden"], "ferns")
     assert found["results"] and found["results"][0]["crew"] == "garden"
     assert memory.search(crews, ["bakery", "ops"], "ferns")["results"] == []
@@ -218,8 +233,10 @@ SPEC_ARGS = {
 def test_the_brief_proposes_crews_and_shows_them(talk, crews):
     out = talk(
         BriefPurpose(crews, "default", load_limits(crews)),
-        [fake.call("propose", {**SPEC_ARGS, "crews": ["nowhere"]}),
-         fake.call("propose", {**SPEC_ARGS, "crews": ["bakery", "ops"]})],
+        [
+            fake.call("propose", {**SPEC_ARGS, "crews": ["nowhere"]}),
+            fake.call("propose", {**SPEC_ARGS, "crews": ["bakery", "ops"]}),
+        ],
         ["a"],
     )
     assert "no crew named 'nowhere'" in talk.tool_replies()[0]
@@ -233,8 +250,9 @@ def test_the_brief_proposes_crews_and_shows_them(talk, crews):
 
 
 def test_a_brief_started_for_a_crew_uses_it_when_the_lead_names_none(talk, crews):
-    out = talk(BriefPurpose(crews, "default", load_limits(crews), crews=["garden"]),
-               [fake.call("propose", SPEC_ARGS)], ["a"])
+    out = talk(
+        BriefPurpose(crews, "default", load_limits(crews), crews=["garden"]), [fake.call("propose", SPEC_ARGS)], ["a"]
+    )
     assert out.status == "confirmed"
     assert mdfile.read(crews.specs_dir / "notice.md")[0]["crews"] == ["garden"]
 

@@ -32,10 +32,10 @@ OUT = GUI / "src-tauri" / "binaries"
 
 # The whole command line, not serve alone: a job serve starts runs as `<this binary> _exec <job>`
 # (jobs.ombro_argv), so the frozen binary must be able to run it.
-ENTRY = '''from ombro.cli import main
+ENTRY = """from ombro.cli import main
 
 raise SystemExit(main())
-'''
+"""
 
 
 def target() -> str:
@@ -58,14 +58,33 @@ def main() -> int:
     entry = BUILD / "ombro_serve.py"
     entry.write_text(ENTRY)
     cmd = [
-        sys.executable, "-m", "PyInstaller", str(entry),
-        "--onefile", "--name", "ombro-serve", "--noconfirm", "--clean", "--log-level", "WARN",
-        "--distpath", str(BUILD / "dist"), "--workpath", str(BUILD / "work"), "--specpath", str(BUILD),
-        "--paths", str(REPO / "src"),
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        str(entry),
+        "--onefile",
+        "--name",
+        "ombro-serve",
+        "--noconfirm",
+        "--clean",
+        "--log-level",
+        "WARN",
+        "--distpath",
+        str(BUILD / "dist"),
+        "--workpath",
+        str(BUILD / "work"),
+        "--specpath",
+        str(BUILD),
+        "--paths",
+        str(REPO / "src"),
         *[a for m in core_modules() for a in ("--hidden-import", m)],
         # uvicorn picks its loop, HTTP and WebSocket implementations by name at run time.
-        "--collect-submodules", "uvicorn",
-        "--exclude-module", "ombro.tui", "--exclude-module", "textual",
+        "--collect-submodules",
+        "uvicorn",
+        "--exclude-module",
+        "ombro.tui",
+        "--exclude-module",
+        "textual",
     ]
     identity = os.environ.get("APPLE_SIGNING_IDENTITY")
     if sys.platform == "darwin" and identity:
@@ -91,11 +110,31 @@ def main() -> int:
 
 PYTHON_OUT = GUI / "src-tauri" / "python"
 # Not needed to run a script with the standard library: the Tk GUI kit, tests, headers, docs.
-PRUNE = ["include", "share", "BUILD", "lib/pkgconfig", "lib/itcl*", "lib/tcl*", "lib/tk*", "lib/thread*",
-         "lib/libtcl*", "lib/libtk*", "lib/python3.*/test", "lib/python3.*/idlelib", "lib/python3.*/tkinter",
-         "lib/python3.*/turtledemo", "lib/python3.*/ensurepip", "lib/python3.*/site-packages",
-         "lib/python3.*/config-*", "lib/python3.*/lib-dynload/_tkinter*", "lib/python3.*/lib-dynload/*test*",
-         "bin/idle*", "bin/pip*", "bin/pydoc*", "bin/*-config"]
+PRUNE = [
+    "include",
+    "share",
+    "BUILD",
+    "lib/pkgconfig",
+    "lib/itcl*",
+    "lib/tcl*",
+    "lib/tk*",
+    "lib/thread*",
+    "lib/libtcl*",
+    "lib/libtk*",
+    "lib/python3.*/test",
+    "lib/python3.*/idlelib",
+    "lib/python3.*/tkinter",
+    "lib/python3.*/turtledemo",
+    "lib/python3.*/ensurepip",
+    "lib/python3.*/site-packages",
+    "lib/python3.*/config-*",
+    "lib/python3.*/lib-dynload/_tkinter*",
+    "lib/python3.*/lib-dynload/*test*",
+    "bin/idle*",
+    "bin/pip*",
+    "bin/pydoc*",
+    "bin/*-config",
+]
 
 
 def bundle_python() -> None:
@@ -118,8 +157,11 @@ def bundle_python() -> None:
         machos = [p for p in PYTHON_OUT.rglob("*") if p.is_file() and not p.is_symlink() and _is_macho(p)]
         machos.sort(key=lambda p: p.parent.name == "bin")
         for p in machos:
-            subprocess.run(["codesign", "--force", "--timestamp", "--options", "runtime", "--sign", identity, str(p)],
-                           check=True, capture_output=True)
+            subprocess.run(
+                ["codesign", "--force", "--timestamp", "--options", "runtime", "--sign", identity, str(p)],
+                check=True,
+                capture_output=True,
+            )
     size = sum(p.stat().st_size for p in PYTHON_OUT.rglob("*") if p.is_file() and not p.is_symlink()) / 1e6
     print(f"{PYTHON_OUT.relative_to(GUI)}: Python {sys.version.split()[0]}, {size:.1f} MB")
 

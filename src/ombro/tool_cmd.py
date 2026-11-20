@@ -9,15 +9,27 @@ from ombro.home import Home
 from ombro.settings import PROVIDER_KEYS, PROVIDER_TOOLS, SetupError, load_tool_settings
 from ombro.ui import UI, Field, Option
 
-NATIVE = ("web.search", "web.fetch", "workspace.read", "workspace.write", "workspace.list", "workspace.place",
-          "workspace.set_aside", "code.run", "browser.open", "browser.click", "browser.type", "browser.screenshot",
-          "browser.submit")
+NATIVE = (
+    "web.search",
+    "web.fetch",
+    "workspace.read",
+    "workspace.write",
+    "workspace.list",
+    "workspace.place",
+    "workspace.set_aside",
+    "code.run",
+    "browser.open",
+    "browser.click",
+    "browser.type",
+    "browser.screenshot",
+    "browser.submit",
+)
 ABOUT = {
     "firecrawl": "Firecrawl: a paid service, needs a key; good results, billed in credits",
     "duckduckgo": "DuckDuckGo: free, no key; unofficial and rate-limited, so best effort",
     "direct": "direct: free, no key; downloads the page itself (refuses local and private addresses)",
     "browser": "browser: free, no key; opens the page in a headless browser on this machine, for pages that need "
-               "JavaScript (refuses local and private addresses)",
+    "JavaScript (refuses local and private addresses)",
 }
 
 
@@ -52,8 +64,10 @@ def set_browser(home: Home, choice: str) -> None:
     choice = str(choice or "").strip()
     paths = {b["path"] for b in browser.installed()}
     if choice not in ("auto", "off") and choice not in paths:
-        raise SetupError(f"{choice!r} is not a browser on this machine; choose auto, off or one of: "
-                         + (", ".join(sorted(paths)) or "none found"))
+        raise SetupError(
+            f"{choice!r} is not a browser on this machine; choose auto, off or one of: "
+            + (", ".join(sorted(paths)) or "none found")
+        )
     meta, body = mdfile.read(home.tools) if home.tools.is_file() else ({}, "")
     providers = meta.get("providers") if isinstance(meta.get("providers"), dict) else {}
     entry = {k: v for k, v in (providers.get("browser") or {}).items() if k not in ("path", "off")}
@@ -100,22 +114,46 @@ def flow(home: Home, ui: UI, tool: str, provider: str | None = None, max_calls: 
     if asked and tool in PROVIDER_TOOLS:
         current = load_tool_settings(home).provider_for(tool)
         choices = [p for p in PROVIDER_TOOLS[tool][0] if p != "fake"]
-        pick = ui.ask(Field("provider", f"Which provider should {tool} use?", "choice",
-                            default=str(choices.index(current) + 1) if current in choices else "1",
-                            options=[Option(str(i), ABOUT.get(p, p)) for i, p in enumerate(choices, 1)],
-                            invalid="Please choose one of the numbers shown."))
+        pick = ui.ask(
+            Field(
+                "provider",
+                f"Which provider should {tool} use?",
+                "choice",
+                default=str(choices.index(current) + 1) if current in choices else "1",
+                options=[Option(str(i), ABOUT.get(p, p)) for i, p in enumerate(choices, 1)],
+                invalid="Please choose one of the numbers shown.",
+            )
+        )
         provider = choices[int(pick) - 1]
     if provider and PROVIDER_KEYS.get(provider) and not keys.get_key(home, PROVIDER_KEYS[provider]):
         name = PROVIDER_KEYS[provider]
-        value = str(ui.ask(Field("key", f"{provider} needs a key ({name}). Paste it now (hidden), or press Enter "
-                                 "to keep the current provider", "secret")) or "").strip()
+        value = str(
+            ui.ask(
+                Field(
+                    "key",
+                    f"{provider} needs a key ({name}). Paste it now (hidden), or press Enter "
+                    "to keep the current provider",
+                    "secret",
+                )
+            )
+            or ""
+        ).strip()
         if not value:
             ui.say(f"Nothing changed: {provider} has no key.")
             return 1
         keys.set_key(home, name, value)
     if asked:
-        raw = str(ui.ask(Field("max_calls", f"How many {tool} calls may one job make? (Enter keeps it as it is)",
-                               pattern=r"\d*", invalid="A whole number, or Enter.")) or "").strip()
+        raw = str(
+            ui.ask(
+                Field(
+                    "max_calls",
+                    f"How many {tool} calls may one job make? (Enter keeps it as it is)",
+                    pattern=r"\d*",
+                    invalid="A whole number, or Enter.",
+                )
+            )
+            or ""
+        ).strip()
         max_calls = int(raw) if raw else None
     try:
         set_tool(home, tool, provider=provider, max_calls=max_calls)
@@ -137,24 +175,40 @@ API_CLASSES = {
 }
 GET_QUESTION = "Do GET requests to this API only look things up?"
 GET_ANSWERS = {True: "only look things up", False: "can send or change things, so they follow what it can do"}
-SEND_KEY = {"bearer": "as a bearer token (Authorization: Bearer …), the usual way",
-            "header": "in a header of its own, such as X-API-Key",
-            "query": "in the address, such as ?api_key=…"}
+SEND_KEY = {
+    "bearer": "as a bearer token (Authorization: Bearer …), the usual way",
+    "header": "in a header of its own, such as X-API-Key",
+    "query": "in the address, such as ?api_key=…",
+}
 
 
 def _form_of(entry: dict) -> dict:
     """An entry in tools.md as the form's answers, for an edit to start from."""
     how, _, param = str(entry.get("send_key") or "bearer").partition(":")
-    return {"url": entry.get("url", ""), "send_key": how, "key_param": param, "about": entry.get("about", ""),
-            "how_to": entry.get("how_to", ""), "access": entry.get("class", "external"),
-            "get_looks_up": entry.get("get_looks_up", True), "max_calls": entry.get("max_calls")}
+    return {
+        "url": entry.get("url", ""),
+        "send_key": how,
+        "key_param": param,
+        "about": entry.get("about", ""),
+        "how_to": entry.get("how_to", ""),
+        "access": entry.get("class", "external"),
+        "get_looks_up": entry.get("get_looks_up", True),
+        "max_calls": entry.get("max_calls"),
+    }
 
 
 def _choice(ui: UI, name: str, label: str, choices: dict[str, str], current: str) -> str:
     keys_ = list(choices)
-    pick = ui.ask(Field(name, label, "choice", default=str(keys_.index(current) + 1) if current in keys_ else "1",
-                        options=[Option(str(i), text) for i, text in enumerate(choices.values(), 1)],
-                        invalid="Please choose one of the numbers shown."))
+    pick = ui.ask(
+        Field(
+            name,
+            label,
+            "choice",
+            default=str(keys_.index(current) + 1) if current in keys_ else "1",
+            options=[Option(str(i), text) for i, text in enumerate(choices.values(), 1)],
+            invalid="Please choose one of the numbers shown.",
+        )
+    )
     return keys_[int(pick) - 1]
 
 
@@ -165,8 +219,15 @@ def api_flow(home: Home, ui: UI, action: str, name: str | None, given: dict, yes
 
     apis = load_tool_settings(home).apis
     if action == "add":
-        name = apitool.clean_name(name or ui.text("name", "What should the API be called? (for example podcasts)",
-                                                  required=True, invalid="A name is needed."))
+        name = apitool.clean_name(
+            name
+            or ui.text(
+                "name",
+                "What should the API be called? (for example podcasts)",
+                required=True,
+                invalid="A name is needed.",
+            )
+        )
         if name in apis or name in load_tool_settings(home).servers:
             raise SetupError(f"There's already a tool called {name}. Change it with `ombro tools edit {name}`.")
         old = None
@@ -184,53 +245,91 @@ def api_flow(home: Home, ui: UI, action: str, name: str | None, given: dict, yes
         how, _, param = str(given["send_key"]).partition(":")
         form["send_key"], form["key_param"] = how, param or form.get("key_param", "")
     if asking or (old is None and not form.get("url")):
-        form["url"] = ui.text("url", "Its address, the part before the paths its docs list (https://…)",
-                              default=form.get("url") or None, required=True, pattern=r"https?://\S+",
-                              invalid="The address must start with https:// (or http:// on your own network).")
+        form["url"] = ui.text(
+            "url",
+            "Its address, the part before the paths its docs list (https://…)",
+            default=form.get("url") or None,
+            required=True,
+            pattern=r"https?://\S+",
+            invalid="The address must start with https:// (or http:// on your own network).",
+        )
     if asking:
-        form["about"] = ui.text("about", "What it's for, in a line: the Lead decides from this when it helps",
-                                default=form.get("about") or None)
+        form["about"] = ui.text(
+            "about",
+            "What it's for, in a line: the Lead decides from this when it helps",
+            default=form.get("about") or None,
+        )
         form["access"] = _choice(ui, "access", "What can it do?", API_CLASSES, form.get("access", "external"))
         if form["access"] != "read-only":
             form["get_looks_up"] = ui.yes("get_looks_up", GET_QUESTION, form.get("get_looks_up") is not False)
     key_value = ""
     if asking or (old is None and not given.get("no_key")):
         have = bool(old and old.get("key") and keys.get_key(home, old["key"]))
-        key_value = str(ui.ask(Field("key", "Its key (hidden). " + ("Enter keeps the one set." if have else
-                                     "Enter if it needs none."), "secret")) or "").strip()
+        key_value = str(
+            ui.ask(
+                Field(
+                    "key",
+                    "Its key (hidden). " + ("Enter keeps the one set." if have else "Enter if it needs none."),
+                    "secret",
+                )
+            )
+            or ""
+        ).strip()
     if key_value and asking:
         form["send_key"] = _choice(ui, "send_key", "How does it take the key?", SEND_KEY, form.get("send_key"))
         if form["send_key"] in ("header", "query"):
-            form["key_param"] = ui.text("key_param", f"What is the {form['send_key']} value called, as its docs say?",
-                                        default=form.get("key_param") or None, required=True,
-                                        invalid="A name is needed, such as X-API-Key.")
+            form["key_param"] = ui.text(
+                "key_param",
+                f"What is the {form['send_key']} value called, as its docs say?",
+                default=form.get("key_param") or None,
+                required=True,
+                invalid="A name is needed, such as X-API-Key.",
+            )
     form["key"] = key_value
     entry = apitool.entry_from(name, form, old)
-    ui.say(f"{'Adding' if old is None else 'Changing'} the API {name}:", items=[
-        f"address: {entry['url']}", f"what it can do: {API_CLASSES[entry['class']]}",
-        *([f"GET requests: {GET_ANSWERS[apitool.gets_look_up(entry)]}"] if entry["class"] != "read-only" else []),
-        f"what it's for: {entry['about'] or '(not said)'}",
-        f"key: {entry['key'] + (' (typed now)' if key_value else '') if entry.get('key') else 'none'}"
-        + (f", sent {entry['send_key']}" if entry.get("key") else ""),
-        f"max calls in a job: {entry.get('max_calls') or apitool.DEFAULT_CALLS}"])
+    ui.say(
+        f"{'Adding' if old is None else 'Changing'} the API {name}:",
+        items=[
+            f"address: {entry['url']}",
+            f"what it can do: {API_CLASSES[entry['class']]}",
+            *([f"GET requests: {GET_ANSWERS[apitool.gets_look_up(entry)]}"] if entry["class"] != "read-only" else []),
+            f"what it's for: {entry['about'] or '(not said)'}",
+            f"key: {entry['key'] + (' (typed now)' if key_value else '') if entry.get('key') else 'none'}"
+            + (f", sent {entry['send_key']}" if entry.get("key") else ""),
+            f"max calls in a job: {entry.get('max_calls') or apitool.DEFAULT_CALLS}",
+        ],
+    )
     if not yes and not ui.yes("save", "Save it?", True):
         ui.say("Nothing changed.")
         return 1
     apitool.save(home, name, entry, key_value, old)
-    ui.say(f"Saved {name} in {home.tools}." + (f" Its key is in secrets/keys.env as {entry['key']}."
-                                                 if key_value else ""), level="done")
+    ui.say(
+        f"Saved {name} in {home.tools}." + (f" Its key is in secrets/keys.env as {entry['key']}." if key_value else ""),
+        level="done",
+    )
     if old is None:
         ui.say("Every crew member is offered it from the next job.")
     return 0
 
 
 def which_kind(ui: UI, api: bool = False, mcp: bool = False) -> str:
-    """"api" or "mcp": what `ombro tools add` and `/tools add` add, from --api or --mcp, or asked."""
+    """ "api" or "mcp": what `ombro tools add` and `/tools add` add, from --api or --mcp, or asked."""
     if api and mcp:
         raise SetupError("Say --api or --mcp, not both.")
     if api or mcp:
         return "api" if api else "mcp"
-    return str(ui.ask(Field("kind", "What are you adding: a web API, or an MCP server?", "choice", default="api",
-                            options=[Option("api", "a web API (an address and a key)", ("a", "web api")),
-                                     Option("mcp", "an MCP server (a program, or a remote server)",
-                                            ("m", "server", "mcp server"))])) or "api")
+    return str(
+        ui.ask(
+            Field(
+                "kind",
+                "What are you adding: a web API, or an MCP server?",
+                "choice",
+                default="api",
+                options=[
+                    Option("api", "a web API (an address and a key)", ("a", "web api")),
+                    Option("mcp", "an MCP server (a program, or a remote server)", ("m", "server", "mcp server")),
+                ],
+            )
+        )
+        or "api"
+    )

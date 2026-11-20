@@ -47,15 +47,30 @@ def test_an_old_home_has_its_runs_moved_to_jobs(home, tmp_path):
     assert load_limits(home).job_timeout == 300  # the old name in limits.md is still read
     assert migrate_jobs(home) is None  # nothing left to move
 
+
 def test_fresh_home_layout(tmp_path):
     h = Home(tmp_path / "h")
     ensure_home(h)
     for rel in (
-        "secrets/keys.env", "limits.md", "models.md", "tools.md",
-        "preferences/config.md", "preferences/instructions.md", "skills", "chats",
-        "lead/config.md", "lead/soul.md", "specs", "schedules", "jobs", "interviews",
-        "crews/default/crew.md", "crews/default/memory/index.md", "crews/default/memory/notes.md",
-        "crews/default/roles/general-assistant/config.md", "crews/default/roles/general-assistant/soul.md",
+        "secrets/keys.env",
+        "limits.md",
+        "models.md",
+        "tools.md",
+        "preferences/config.md",
+        "preferences/instructions.md",
+        "skills",
+        "chats",
+        "lead/config.md",
+        "lead/soul.md",
+        "specs",
+        "schedules",
+        "jobs",
+        "interviews",
+        "crews/default/crew.md",
+        "crews/default/memory/index.md",
+        "crews/default/memory/notes.md",
+        "crews/default/roles/general-assistant/config.md",
+        "crews/default/roles/general-assistant/soul.md",
     ):
         assert (h.root / rel).exists(), rel
     assert stat.S_IMODE(os.stat(h.env).st_mode) == 0o600
@@ -137,7 +152,9 @@ def test_a_role_prompt_lists_its_skills_by_name_and_description_only(home):
     from ombro import skills
 
     (home.skills_dir / "neat").mkdir()
-    (home.skills_dir / "neat" / "skill.md").write_text("---\n---\nAlways fold the corners.\n<!-- not for the model -->\n")
+    (home.skills_dir / "neat" / "skill.md").write_text(
+        "---\n---\nAlways fold the corners.\n<!-- not for the model -->\n"
+    )
     write_role(home, "tidier", skills=["neat", "missing"])
     role = load_role(home.roles_dir("default") / "tidier", load_limits(home))
     have, missing = skills.names_for(home, role)
@@ -314,8 +331,12 @@ def test_any_command_moves_an_old_env_and_says_so(home):
     keys.remove_key(home, "DEEPSEEK_API_KEY")
     home.env.unlink(missing_ok=True)
     home.legacy_env.write_text("INVENTED_KEY=abc12345\n")
-    r = subprocess.run([sys.executable, "-m", "ombro", "keys"], capture_output=True, text=True,
-                       env={**os.environ, "OMBRO_HOME": str(home.root)})
+    r = subprocess.run(
+        [sys.executable, "-m", "ombro", "keys"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "OMBRO_HOME": str(home.root)},
+    )
     assert r.returncode == 0, r.stderr
     assert "Moved 1 key(s)" in r.stderr and "abc12345" not in r.stdout + r.stderr
     assert not home.legacy_env.exists() and keys.read_env(home) == {"INVENTED_KEY": "abc12345"}

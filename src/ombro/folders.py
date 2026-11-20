@@ -132,7 +132,7 @@ def _key(p: Path) -> tuple[str, ...]:
 
 def _same_or_inside(p: Path, folder: Path) -> bool:
     a, b = _key(p), _key(folder)
-    return a[:len(b)] == b
+    return a[: len(b)] == b
 
 
 def check_place(path: str | Path, home: Home, *, must_exist: bool = True) -> Path:
@@ -170,9 +170,8 @@ def check_place(path: str | Path, home: Home, *, must_exist: bool = True) -> Pat
         if _key(real) == _key(me):
             raise FolderError("your whole home folder cannot be shared; share a folder inside it")
         where = ", ".join(str(r) for r in mount_roots())
-        raise FolderError(f"{path} is not in your home folder or on a mounted drive ({where}), "
-                          "so it cannot be shared")
-    parts = real.parts[len(base.parts):]
+        raise FolderError(f"{path} is not in your home folder or on a mounted drive ({where}), so it cannot be shared")
+    parts = real.parts[len(base.parts) :]
     if any(p.startswith(".") for p in parts):
         raise FolderError(f"{path} is a hidden folder or inside one, so it cannot be shared")
     if base == me and parts and _key(Path(parts[0])) == _key(Path("Library")):
@@ -308,8 +307,10 @@ def offer_wanted(home: Home, path: str | Path) -> bool:
         grants, declined = load(home)
     except (FolderError, SetupError):
         return False
-    if any(real == Path(g.path).expanduser().resolve() or real.is_relative_to(expand(g.path).resolve())
-           for g in grants.values()):
+    if any(
+        real == Path(g.path).expanduser().resolve() or real.is_relative_to(expand(g.path).resolve())
+        for g in grants.values()
+    ):
         return False
     return not any(_same(d, real) for d in declined)
 
@@ -364,8 +365,7 @@ def for_job(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
     for name, access in wanted.items():
         g = grants.get(name)
         if g is None:
-            left.append(f"the spec names folder {name!r}, which is not shared (`ombro folder add`), so it was "
-                        "left out")
+            left.append(f"the spec names folder {name!r}, which is not shared (`ombro folder add`), so it was left out")
             continue
         try:
             real = check_place(g.path, home)
@@ -375,8 +375,10 @@ def for_job(home: Home, spec_meta: dict[str, Any] | None) -> tuple[list[dict[str
         if _key(real) != _key(written_path(g.path)):
             # Somewhere on the way the path now passes through a symlink (perhaps one a
             # script made), so it would lead to a different folder from the one granted.
-            left.append(f"folder {name!r} was left out: {g.path} now leads to {display_path(real)} through a "
-                        "symlink. Check it, then share the folder again with `ombro folder add`")
+            left.append(
+                f"folder {name!r} was left out: {g.path} now leads to {display_path(real)} through a "
+                "symlink. Check it, then share the folder again with `ombro folder add`"
+            )
             continue
         final = "read" if "read" in (access, g.access) or ceiling else "write"
         out.append({"name": name, "path": str(real), "access": final})
@@ -530,9 +532,13 @@ def backup(job_dir: Path, folder: dict[str, str]) -> dict[str, Any]:
     except OSError as e:
         import errno
 
-        why = ("it is on a different disk from Ombro's home" if e.errno == errno.EXDEV
-               else "the disk cannot clone files" if e.errno in (errno.ENOTSUP, errno.EOPNOTSUPP)
-               else str(e.strerror or e))
+        why = (
+            "it is on a different disk from Ombro's home"
+            if e.errno == errno.EXDEV
+            else "the disk cannot clone files"
+            if e.errno in (errno.ENOTSUP, errno.EOPNOTSUPP)
+            else str(e.strerror or e)
+        )
         return {"backup": None, "backup_note": f"no backup was taken: {why}"}
     return {"backup": str(dst), "backup_note": "cloned before the job started"}
 

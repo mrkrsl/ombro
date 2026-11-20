@@ -184,6 +184,9 @@ def file_routes(s: "Serve") -> list[Route]:
         except Refused as e:
             return JSONResponse({"error": str(e)}, status_code=e.status)
 
-    return [Route("/files", get_file, methods=["GET"]), Route("/files", put_file, methods=["PUT"]),
-            Route("/attachments", attach, methods=["POST"]),
-            Route("/files/list", list_files, methods=["GET"])]
+    return [
+        Route("/files", get_file, methods=["GET"]),
+        Route("/files", put_file, methods=["PUT"]),
+        Route("/attachments", attach, methods=["POST"]),
+        Route("/files/list", list_files, methods=["GET"]),
+    ]

@@ -52,8 +52,9 @@ def start_saved_spec(home: Home, spec: str, roles: list[str] | None = None, *, c
         limits = load_limits(home, overrides, tool_settings)
         if connected_model(home) is None:
             raise StartError("no model is connected; set Ombro up first")
-        job_dir = jobs.create_job(home, crews, spec_meta, spec_body, limits, source=source,
-                                  tools=tool_settings.to_dict())
+        job_dir = jobs.create_job(
+            home, crews, spec_meta, spec_body, limits, source=source, tools=tool_settings.to_dict()
+        )
     except (SetupError, mdfile.FrontMatterError, OSError) as e:
         raise StartError(str(e)) from None
     if chat:
@@ -122,13 +123,20 @@ def again_offer(job_id: str, plan: dict[str, Any]) -> tuple[str, list[JobOffer]]
     """The Lead's offer to carry on a job that didn't finish, and the buttons that answer it."""
     kind, more = plan["kind"], plan.get("raise")
     if kind == "restart":
-        text = (f"{plan['why']} I can restart it on the same brief, keeping what's already done. "
-                + (f"It may need more room: I can give this run {more['words']}, or you can raise the limit for "
-                   "every job in Settings › General." if more else ""))
-        offers = ([JobOffer(f"Restart with {more['words']}", f"/restart {job_id} more")] if more else []) +             [JobOffer("Restart as it was", f"/restart {job_id}")]
+        text = f"{plan['why']} I can restart it on the same brief, keeping what's already done. " + (
+            f"It may need more room: I can give this run {more['words']}, or you can raise the limit for "
+            "every job in Settings › General."
+            if more
+            else ""
+        )
+        offers = ([JobOffer(f"Restart with {more['words']}", f"/restart {job_id} more")] if more else []) + [
+            JobOffer("Restart as it was", f"/restart {job_id}")
+        ]
     else:
         text = f"{plan['why']} I can resume it on the same brief, picking up where it stopped."
-        offers = [JobOffer("Resume it", f"/resume {job_id}")] +             ([JobOffer(f"Resume with {more['words']}", f"/resume {job_id} more")] if more else [])
+        offers = [JobOffer("Resume it", f"/resume {job_id}")] + (
+            [JobOffer(f"Resume with {more['words']}", f"/resume {job_id} more")] if more else []
+        )
     return text.strip(), offers
 
 
@@ -153,17 +161,24 @@ def _copy_tree(src: Path, dest: Path, budget: list[int]) -> list[str]:
     return copied
 
 
-def carry_on_note(earlier: str, plan: dict[str, Any], files: list[str], scratch: list[str], left: bool,
-                  workspace: Path) -> str:
+def carry_on_note(
+    earlier: str, plan: dict[str, Any], files: list[str], scratch: list[str], left: bool, workspace: Path
+) -> str:
     """What a restarted or resumed job is told, after the brief: follow it, don't redo what's done."""
-    lines = ["", "## Carrying on from an earlier run", "",
-             f"This brief ran before as job {earlier}. {plan['why']} Follow the same brief, but don't redo work "
-             "that is already done: check what's there, build on it, and finish what was left.", "",
-             "- The earlier job's report is in scratch/earlier-report.md. Read it first: it says what was done "
-             "and what wasn't."]
+    lines = [
+        "",
+        "## Carrying on from an earlier run",
+        "",
+        f"This brief ran before as job {earlier}. {plan['why']} Follow the same brief, but don't redo work "
+        "that is already done: check what's there, build on it, and finish what was left.",
+        "",
+        "- The earlier job's report is in scratch/earlier-report.md. Read it first: it says what was done "
+        "and what wasn't.",
+    ]
     if files:
-        shown = ", ".join(f"workspace/{f}" for f in files[:30]) + (f" and {len(files) - 30} more" if len(files) > 30
-                                                                    else "")
+        shown = ", ".join(f"workspace/{f}" for f in files[:30]) + (
+            f" and {len(files) - 30} more" if len(files) > 30 else ""
+        )
         lines.append(f"- Its files are copied into this job's workspace, where they were: {shown}.")
     else:
         lines.append("- It left no files in its workspace.")
@@ -192,8 +207,14 @@ def start_again(home: Home, job_id: str, *, more: bool = False, chat: str | None
         meta, _ = jobs.read_job(job_dir)
         plan = again_plan(meta)
         if plan is None:
-            raise StartError(f"job {job_dir.name} " + ("is still running" if meta.get("status") == "running"
-                                                       else "finished, so there's nothing to carry on"))
+            raise StartError(
+                f"job {job_dir.name} "
+                + (
+                    "is still running"
+                    if meta.get("status") == "running"
+                    else "finished, so there's nothing to carry on"
+                )
+            )
         spec_meta, spec_body = mdfile.read(job_dir / "spec.md")
         spec_meta = {k: v for k, v in spec_meta.items() if k != "limits"}  # the earlier job's own limits stand
         limits = Limits.from_dict(meta.get("limits") or {})
@@ -206,19 +227,34 @@ def start_again(home: Home, job_id: str, *, more: bool = False, chat: str | None
         tool_settings = load_tool_settings(home)
         how = AGAIN_DONE[plan["kind"]]
         new_dir = jobs.create_job(
-            home, crews, spec_meta, spec_body, limits,
+            home,
+            crews,
+            spec_meta,
+            spec_body,
+            limits,
             source=f"{how} from job {job_dir.name}" + (f", with {raised['words']}" if raised else ""),
-            tools=tool_settings.to_dict(), outward=meta.get("outward") or None,
-            extra={"again_of": job_dir.name, "again": plan["kind"]})
+            tools=tool_settings.to_dict(),
+            outward=meta.get("outward") or None,
+            extra={"again_of": job_dir.name, "again": plan["kind"]},
+        )
         budget = [COPY_CAP]
         files = _copy_tree(job_dir / "workspace", new_dir / "workspace", budget)
         scratch = _copy_tree(job_dir / "scratch", new_dir / "scratch" / "earlier", budget)
         if (job_dir / "report.md").is_file():
             (new_dir / "scratch" / "earlier-report.md").write_bytes((job_dir / "report.md").read_bytes())
-        every = sum(1 for d in ("workspace", "scratch") for f in (job_dir / d).rglob("*")
-                    if f.is_file() and not f.is_symlink()) if job_dir.is_dir() else 0
-        note = carry_on_note(job_dir.name, plan, files, scratch, every > len(files) + len(scratch),
-                             job_dir / "workspace")
+        every = (
+            sum(
+                1
+                for d in ("workspace", "scratch")
+                for f in (job_dir / d).rglob("*")
+                if f.is_file() and not f.is_symlink()
+            )
+            if job_dir.is_dir()
+            else 0
+        )
+        note = carry_on_note(
+            job_dir.name, plan, files, scratch, every > len(files) + len(scratch), job_dir / "workspace"
+        )
         mdfile.write(new_dir / "spec.md", spec_meta, spec_body.rstrip() + "\n" + note)
     except (SetupError, mdfile.FrontMatterError, OSError) as e:
         raise StartError(str(e)) from None
@@ -252,10 +288,19 @@ def setup_needed(home: Home) -> str | None:
 # ---------------------------------------------------------------------------
 # Jobs as events
 
-PROGRESS = {"briefed": "briefed", "returned": "returned", "staged": "asked for approval",
-            "outward_done": "did an outward action", "limit_reached": "hit a limit", "finish": "finished the work",
-            "report_written": "wrote the report", "failed": "failed", "asked": "asked you",
-            "answered": "answered", "unanswered": "had no answer, so carried on"}
+PROGRESS = {
+    "briefed": "briefed",
+    "returned": "returned",
+    "staged": "asked for approval",
+    "outward_done": "did an outward action",
+    "limit_reached": "hit a limit",
+    "finish": "finished the work",
+    "report_written": "wrote the report",
+    "failed": "failed",
+    "asked": "asked you",
+    "answered": "answered",
+    "unanswered": "had no answer, so carried on",
+}
 
 
 # How much of a step's note the conversation shows; the app's side panel shows it whole (the
@@ -283,8 +328,14 @@ def job_progress(job_id: str, ev: dict) -> JobProgress | None:
     line = progress_line(job_id, ev)
     if line is None:
         return None
-    return JobProgress(job_id, jobs.job_name(job_id), str(ev.get("role") or ""), str(ev.get("action")),
-                       " ".join(str(ev.get("note") or "").split()), line)
+    return JobProgress(
+        job_id,
+        jobs.job_name(job_id),
+        str(ev.get("role") or ""),
+        str(ev.get("action")),
+        " ".join(str(ev.get("note") or "").split()),
+        line,
+    )
 
 
 def ended_line(status: str, limit: str | None) -> str:
@@ -308,8 +359,9 @@ def job_ended(home: Home, job_id: str) -> JobEnded:
     except (jobs.JobNotFound, LookupError):
         return JobEnded(job_id, name, "unknown", f"Job {job_id} has ended.")
     r = views.report(home, job_dir)
-    files = [JobFile(d["name"], d["path"], d["url"], d["exists"]) for d in r["deliverables"]
-             if d["kind"] == "deliverable"]
+    files = [
+        JobFile(d["name"], d["path"], d["url"], d["exists"]) for d in r["deliverables"] if d["kind"] == "deliverable"
+    ]
     status = str(r["status"] or "unknown")
     from ombro.report import summary_of
 
@@ -321,9 +373,20 @@ def job_ended(home: Home, job_id: str) -> JobEnded:
     if plan:
         kind = plan["kind"]
         again_text, offers = again_offer(job_id, plan)
-    return JobEnded(job_id, name, status, ended_line(status, r.get("limit_hit")), brief=r["brief"],
-                    limit_hit=r.get("limit_hit"), files=files, waiting=r["waiting"],
-                    summary=summary_of(r.get("report") or ""), again=kind, again_text=again_text, offers=offers)
+    return JobEnded(
+        job_id,
+        name,
+        status,
+        ended_line(status, r.get("limit_hit")),
+        brief=r["brief"],
+        limit_hit=r.get("limit_hit"),
+        files=files,
+        waiting=r["waiting"],
+        summary=summary_of(r.get("report") or ""),
+        again=kind,
+        again_text=again_text,
+        offers=offers,
+    )
 
 
 class JobWatcher:
@@ -381,8 +444,12 @@ class JobWatcher:
                     pass
         # Unseen too: a job that died is marked failed and given its report a moment after it stops
         # counting as active, and the menu bar's alert must hear of that.
-        counts = {"active": sorted(active), "waiting": sum(r["waiting"] for r in rows), "jobs": len(rows),
-                  "unseen": sum(1 for r in rows if views.is_unseen(r))}
+        counts = {
+            "active": sorted(active),
+            "waiting": sum(r["waiting"] for r in rows),
+            "jobs": len(rows),
+            "unseen": sum(1 for r in rows if views.is_unseen(r)),
+        }
         changed = counts != self.last_counts or active != self.active
         self.active = active
         self.last_counts = counts
@@ -400,9 +467,16 @@ class Session:
     an interface may pass its own. `on_started(job_id)` is called once a job is going,
     so the interface can follow it."""
 
-    def __init__(self, home: Home, ui: UI, *, client_factory: Callable | None = None, titles: bool = True,
-                 start_job: Callable[[str, list[str]], str | None] | None = None,
-                 on_started: Callable[[str], None] | None = None):
+    def __init__(
+        self,
+        home: Home,
+        ui: UI,
+        *,
+        client_factory: Callable | None = None,
+        titles: bool = True,
+        start_job: Callable[[str, list[str]], str | None] | None = None,
+        on_started: Callable[[str], None] | None = None,
+    ):
         self.home = home
         self.ui = ui
         self.client_factory = client_factory
@@ -486,21 +560,35 @@ class Session:
         self.on_started(new_id)
         name = jobs.job_name(new_id)
         how = jobs.read_job(jobs.find_job(self.home, new_id))[0].get("again") or "restart"
-        self.ui.show(JobStarted(new_id, name, f"{'Resumed' if how == 'resume' else 'Restarted'} '{name}' "
-                                              f"({new_id}), building on what the last run did. Keep chatting; "
-                                              "its progress and its notice appear here."))
+        self.ui.show(
+            JobStarted(
+                new_id,
+                name,
+                f"{'Resumed' if how == 'resume' else 'Restarted'} '{name}' "
+                f"({new_id}), building on what the last run did. Keep chatting; "
+                "its progress and its notice appear here.",
+            )
+        )
         return new_id
 
-    def offer_start(self, spec: str, shown: str | None = None, *, roles: list[str] | None = None,
-                    ask: bool = True, aside: bool = False) -> str | None:
+    def offer_start(
+        self,
+        spec: str,
+        shown: str | None = None,
+        *,
+        roles: list[str] | None = None,
+        ask: bool = True,
+        aside: bool = False,
+    ) -> str | None:
         """Start a saved spec now, in the background, after the user's yes: after a confirmed brief, on /start,
         or when the Lead offered it in chat and the user said yes there.
         `aside`: asked in the chat, where a new message may set the question aside."""
         if shown:
             self.ui.say(f"Saved spec {shown}")
         try:
-            go = not ask or self.ui.yes("start_now", "Start it now? It works in the background, and its progress "
-                                                     "shows here.", True, aside=aside)
+            go = not ask or self.ui.yes(
+                "start_now", "Start it now? It works in the background, and its progress shows here.", True, aside=aside
+            )
         except SetAside as e:
             self.chat.set_aside(e)
             go = False
@@ -515,9 +603,11 @@ class Session:
             self.chat.note_job(job_id)
         self.on_started(job_id)
         name = jobs.job_name(job_id)
-        self.ui.show(JobStarted(job_id, name,
-                                f"Started '{name}' ({job_id}). Keep chatting; its progress and its notice "
-                                "appear here."))
+        self.ui.show(
+            JobStarted(
+                job_id, name, f"Started '{name}' ({job_id}). Keep chatting; its progress and its notice appear here."
+            )
+        )
         return job_id
 
     def start_job(self, spec: str, roles: list[str] | None = None) -> str | None:
@@ -555,9 +645,11 @@ def record_job_end_in_chat(home: Home, e: JobEnded) -> bool:
             continue
         if e.job_id not in [str(j) for j in meta.get("jobs") or []]:
             continue
-        line = (f"**Ombro:** {e.text} ('{jobs.job_name(e.job_id)}', job {e.job_id}; its report is "
-                f"jobs/{e.job_id}/report.md.)" + (f" It can be {AGAIN_DONE[e.again]} with /{e.again} {e.job_id}."
-                                                  if e.again else ""))
+        line = (
+            f"**Ombro:** {e.text} ('{jobs.job_name(e.job_id)}', job {e.job_id}; its report is "
+            f"jobs/{e.job_id}/report.md.)"
+            + (f" It can be {AGAIN_DONE[e.again]} with /{e.again} {e.job_id}." if e.again else "")
+        )
         if line in body:
             return True
         mdfile.write(path, meta, body.rstrip("\n") + "\n\n" + line + "\n")

@@ -36,7 +36,6 @@ def user(tmp_path, monkeypatch):
     return me.resolve()
 
 
-
 def test_changes_someone_else_makes_while_a_job_runs_are_not_the_job_s(job, home, user):
     from ombro.settings import load_tool_settings
     from ombro.tools import Tool
@@ -51,13 +50,19 @@ def test_changes_someone_else_makes_while_a_job_runs_are_not_the_job_s(job, home
     reg = native_registry(home, load_tool_settings(home))
     reg.register(Tool(name="test.wait", description="Wait a moment.", handler=elsewhere))
     write_role(home, "researcher", max_steps=10, tools=["workspace.write", "test.wait"])
-    job([
-        fake.brief("researcher", "Note the colour."),
-        fake.call("test__wait", {}),
-        fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
-        fake.result("Noted the colour."),
-        fake.finish(), fake.keep_notes(), LEAD_REPORT,
-    ], spec_meta={"folders": ["photos"]}, registry=reg)
+    job(
+        [
+            fake.brief("researcher", "Note the colour."),
+            fake.call("test__wait", {}),
+            fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
+            fake.result("Noted the colour."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        spec_meta={"folders": ["photos"]},
+        registry=reg,
+    )
     ev = next(e for e in job.events if e["action"] == "folder_changes")
     assert ev["created"] == ["colour.md"] and ev["outside"]["created"] == ["plan.md"]
     assert "Changed while the job ran, but not by the job (by you or another program): plan.md." in job.report
@@ -107,8 +112,9 @@ def test_mounted_drives_can_be_shared(home, user, tmp_path, monkeypatch):
 
 
 def folders_args(action=None, target=None, **kw):
-    return argparse.Namespace(action=action, target=target, name=kw.get("name"), access=kw.get("access"),
-                              yes=kw.get("yes", True))
+    return argparse.Namespace(
+        action=action, target=target, name=kw.get("name"), access=kw.get("access"), yes=kw.get("yes", True)
+    )
 
 
 def test_grants_are_added_listed_and_removed(home, user, capsys):
@@ -116,7 +122,9 @@ def test_grants_are_added_listed_and_removed(home, user, capsys):
     assert cmd_folders(folders_args("add", "~/Pictures/Trip", name="photos", access="write")) == 0
     grants, declined = folders.load(home)
     assert {n: (g.path, g.access) for n, g in grants.items()} == {
-        "brand": ("~/Documents/Brand", "read"), "photos": ("~/Pictures/Trip", "write")}
+        "brand": ("~/Documents/Brand", "read"),
+        "photos": ("~/Pictures/Trip", "write"),
+    }
     cmd_folders(folders_args())
     out = capsys.readouterr().out
     assert "brand" in out and "photos" in out and "backup:" in out
@@ -208,8 +216,9 @@ def test_a_live_job_that_names_a_folder_may_write_there_and_reads_only_what_it_n
 def test_only_folders_a_job_can_write_to_are_backed_up(job, home, user):
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
     folders.add(home, user / "Documents" / "Brand", "brand", "write")
-    status = job([fake.brief("researcher", "Look."), fake.result("Looked."), fake.finish(), fake.keep_notes(),
-                  LEAD_REPORT])
+    status = job(
+        [fake.brief("researcher", "Look."), fake.result("Looked."), fake.finish(), fake.keep_notes(), LEAD_REPORT]
+    )
     assert status == "completed"
     assert {f["name"]: f["access"] for f in job.meta["folders"]} == {"photos": "read", "brand": "read"}
     assert not (job.job_dir / "backup").exists()
@@ -221,8 +230,10 @@ def test_with_no_folders_shared_a_job_gets_none_and_no_warning(home, user):
 
 
 def ctx_for(job_dir, user, access="read"):
-    shared = {"brand": SharedFolder("brand", user / "Documents" / "Brand", "read"),
-              "photos": SharedFolder("photos", user / "Pictures" / "Trip", access)}
+    shared = {
+        "brand": SharedFolder("brand", user / "Documents" / "Brand", "read"),
+        "photos": SharedFolder("photos", user / "Pictures" / "Trip", access),
+    }
     return ToolContext(job_dir, "researcher", shared=shared)
 
 
@@ -256,15 +267,20 @@ def test_a_job_backs_up_and_lists_changes_in_a_writable_folder(job, home, user):
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
     folders.add(home, user / "Documents" / "Brand", "brand", "read")
     write_role(home, "researcher", max_steps=10, tools=["workspace.read", "workspace.write", "workspace.list"])
-    status = job([
-        fake.brief("researcher", "Note the brand colour in the photos folder."),
-        fake.call("workspace__read", {"path": "shared/brand/guide.md"}),
-        fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
-        fake.call("workspace__write", {"path": "shared/photos/IMG_0000.jpg", "content": "changed"}),
-        fake.call("workspace__read", {"path": str(user / "Library" / "Mail" / "x")}),
-        fake.result("Noted the colour.", did_not_do=["Could not read the mail folder."]),
-        fake.finish(), fake.keep_notes(), LEAD_REPORT,
-    ], spec_meta={"folders": ["photos", "brand", "missing"]})
+    status = job(
+        [
+            fake.brief("researcher", "Note the brand colour in the photos folder."),
+            fake.call("workspace__read", {"path": "shared/brand/guide.md"}),
+            fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
+            fake.call("workspace__write", {"path": "shared/photos/IMG_0000.jpg", "content": "changed"}),
+            fake.call("workspace__read", {"path": str(user / "Library" / "Mail" / "x")}),
+            fake.result("Noted the colour.", did_not_do=["Could not read the mail folder."]),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        spec_meta={"folders": ["photos", "brand", "missing"]},
+    )
     assert status == "completed"
     assert_reported(job, "completed")
     meta = job.meta
@@ -300,16 +316,25 @@ def test_a_job_backs_up_and_lists_changes_in_a_writable_folder(job, home, user):
 
 def place_job(job, home, user, to, **kw):
     write_role(home, "researcher", max_steps=10, tools=["workspace.write", "workspace.place"])
-    return job([
-        fake.brief("researcher", "Write the summary and save it in the reports folder."),
-        fake.call("workspace__write", {"path": "workspace/summary.md", "content": "Invented summary.\n"}),
-        fake.call("workspace__place", {"from": "workspace/summary.md", "to": to,
-                                       "reason": "The user keeps reports there.", **kw}),
-        fake.call("workspace__place", {"from": "workspace/summary.md", "to": to,
-                                       "reason": "The user keeps reports there.", **kw}),
-        fake.result("Wrote the summary."),
-        fake.finish(), fake.keep_notes(), LEAD_REPORT,
-    ], spec_meta={"folders": ["photos"]} if folders.load(home)[0] else None)
+    return job(
+        [
+            fake.brief("researcher", "Write the summary and save it in the reports folder."),
+            fake.call("workspace__write", {"path": "workspace/summary.md", "content": "Invented summary.\n"}),
+            fake.call(
+                "workspace__place",
+                {"from": "workspace/summary.md", "to": to, "reason": "The user keeps reports there.", **kw},
+            ),
+            fake.call(
+                "workspace__place",
+                {"from": "workspace/summary.md", "to": to, "reason": "The user keeps reports there.", **kw},
+            ),
+            fake.result("Wrote the summary."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        spec_meta={"folders": ["photos"]} if folders.load(home)[0] else None,
+    )
 
 
 def test_a_placement_outside_the_shared_folders_waits_for_approval(job, home, user):
@@ -370,9 +395,22 @@ def test_the_brief_asks_before_sharing_a_folder_the_spec_needs(home, user):
     talk = Session(home)
     out = talk(
         BriefPurpose(home, "default", load_limits(home), "Use the brand guide.", start_dir=user),
-        [fake.call("propose", {**SPEC, "folders": [
-            {"folder": str(user / "Documents" / "Brand"), "access": "read", "why": "the brand guide is there"},
-            {"folder": "~/Pictures/Trip", "access": "write", "why": "photos to rename"}]})],
+        [
+            fake.call(
+                "propose",
+                {
+                    **SPEC,
+                    "folders": [
+                        {
+                            "folder": str(user / "Documents" / "Brand"),
+                            "access": "read",
+                            "why": "the brand guide is there",
+                        },
+                        {"folder": "~/Pictures/Trip", "access": "write", "why": "photos to rename"},
+                    ],
+                },
+            )
+        ],
         ["a", "r", "n"],
     )
     assert out.status == "confirmed"
@@ -392,8 +430,10 @@ def test_the_brief_refuses_a_folder_that_can_never_be_shared(home, user):
     talk = Session(home)
     talk(
         BriefPurpose(home, "default", load_limits(home), "Read my keys."),
-        [fake.call("propose", {**SPEC, "folders": [{"folder": "~/.ssh", "access": "read"}]}),
-         fake.call("propose", SPEC)],
+        [
+            fake.call("propose", {**SPEC, "folders": [{"folder": "~/.ssh", "access": "read"}]}),
+            fake.call("propose", SPEC),
+        ],
         ["a"],
     )
     assert "hidden" in talk.tool_replies()[0]
@@ -414,8 +454,11 @@ def test_a_placement_never_writes_through_a_planted_symlink(home, user, tmp_path
         (trip / name).symlink_to(victim)
     (job_dir / "workspace" / "summary.md").write_text("Invented summary.\n")
     ctx = ToolContext(job_dir, "researcher", shared={"photos": SharedFolder("photos", trip, "write")})
-    out = native_registry(home).get("workspace.place").handler(
-        {"from": "workspace/summary.md", "to": "shared/photos/summary.md", "reason": "invented"}, ctx)
+    out = (
+        native_registry(home)
+        .get("workspace.place")
+        .handler({"from": "workspace/summary.md", "to": "shared/photos/summary.md", "reason": "invented"}, ctx)
+    )
     assert out["status"] == "done"
     assert victim.read_text() == "the user's own file\n"
     assert (trip / "summary.md").read_text() == "Invented summary.\n" and not (trip / "summary.md").is_symlink()
@@ -516,12 +559,17 @@ def test_approving_a_placement_copies_only_the_file_kept_with_it(job, home, user
 def test_a_deliverable_in_a_shared_folder_is_listed_with_its_full_path(job, home, user):
     folders.add(home, user / "Pictures" / "Trip", "photos", "write")
     write_role(home, "researcher", max_steps=10, tools=["workspace.write"])
-    job([
-        fake.brief("researcher", "Write the colour note into the photos folder."),
-        fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
-        fake.result("Wrote the note.", deliverables=[{"name": "Colour note", "path": "shared/photos/colour.md"}]),
-        fake.finish(), fake.keep_notes(), LEAD_REPORT,
-    ], spec_meta={"folders": ["photos"]})
+    job(
+        [
+            fake.brief("researcher", "Write the colour note into the photos folder."),
+            fake.call("workspace__write", {"path": "shared/photos/colour.md", "content": "teal\n"}),
+            fake.result("Wrote the note.", deliverables=[{"name": "Colour note", "path": "shared/photos/colour.md"}]),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        spec_meta={"folders": ["photos"]},
+    )
     report = job.report
     deliverables = report.split("## Deliverables", 1)[1].split("\n## ", 1)[0]
     assert f"- Colour note: {user / 'Pictures' / 'Trip' / 'colour.md'}" in deliverables

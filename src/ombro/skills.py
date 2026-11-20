@@ -132,6 +132,7 @@ def names_for(home: Home, role) -> tuple[list[str], list[str]]:
 def listing(skills: list[Skill], cap: int = LIST_CHARS) -> tuple[str, list[str]]:
     """Name and description of each skill, one per line, within `cap` characters.
     Past the cap descriptions are shortened, then skills left out. Returns (text, left out)."""
+
     def line(s: Skill, n: int | None) -> str:
         d = s.description
         if n is not None and len(d) > n:
@@ -165,8 +166,9 @@ def read(home: Home, allowed: list[str] | None, name: Any, file: Any = None, cap
         out: dict[str, Any] = {"skill": s.name, "description": s.description}
         refs = s.folder / "references"
         if refs.is_dir() and not refs.is_symlink():
-            out["references"] = sorted(p.relative_to(s.folder).as_posix() for p in refs.rglob("*")
-                                       if p.is_file() and not p.is_symlink())[:50]
+            out["references"] = sorted(
+                p.relative_to(s.folder).as_posix() for p in refs.rglob("*") if p.is_file() and not p.is_symlink()
+            )[:50]
     else:
         rel = str(file).strip().lstrip("/")
         parts = [p for p in rel.split("/") if p not in ("", ".")]
@@ -217,8 +219,10 @@ def pasted(body: str) -> tuple[dict[str, Any], str]:
     try:
         meta, rest = mdfile.parse(str(body or "").lstrip())
     except mdfile.FrontMatterError as e:
-        raise SkillError(f"The instructions start with front matter (the lines between ---) that can't be read: "
-                         f"{str(e).removeprefix('invalid front matter: ')}. Fix it, or take it out.") from None
+        raise SkillError(
+            f"The instructions start with front matter (the lines between ---) that can't be read: "
+            f"{str(e).removeprefix('invalid front matter: ')}. Fix it, or take it out."
+        ) from None
     if not meta:
         return {}, str(body or "")
     return meta, rest
@@ -227,8 +231,10 @@ def pasted(body: str) -> tuple[dict[str, Any], str]:
 def check(text: str, name: str, max_chars: int | None = MAX_CHARS) -> tuple[dict, str]:
     """A SKILL.md a model wrote, or the user edited, before it is staged or made live."""
     if not NAME.match(name or "") or len(name) > NAME_MAX:
-        raise SkillError(f"{name!r} is not a skill name: lower-case letters, digits and single hyphens, "
-                         f"at most {NAME_MAX} characters")
+        raise SkillError(
+            f"{name!r} is not a skill name: lower-case letters, digits and single hyphens, "
+            f"at most {NAME_MAX} characters"
+        )
     if name == ARCHIVE.lower():
         raise SkillError(f"{name!r} is kept for the archive of old versions; choose another name")
     if max_chars is not None and len(text) > max_chars:
@@ -281,8 +287,11 @@ def write(home: Home, name: str, text: str, *, source: str, accepted: str) -> Pa
 
 
 def diff(old: str, new: str, name: str) -> str:
-    return "".join(difflib.unified_diff(old.splitlines(keepends=True), new.splitlines(keepends=True),
-                                        f"{name} (now)", f"{name} (proposed)"))
+    return "".join(
+        difflib.unified_diff(
+            old.splitlines(keepends=True), new.splitlines(keepends=True), f"{name} (now)", f"{name} (proposed)"
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -312,15 +321,23 @@ def declined(home: Home) -> list[dict[str, Any]]:
     return [x for x in items if isinstance(x, dict) and x.get("name")] if isinstance(items, list) else []
 
 
-def record_declined(home: Home, *, name: str, description: str, change: str, base_sha: str, job: str,
-                    date: str) -> None:
+def record_declined(
+    home: Home, *, name: str, description: str, change: str, base_sha: str, job: str, date: str
+) -> None:
     items = declined(home)
-    entry = {"name": name, "description": " ".join(description.split())[:SHORT_DESCRIPTION], "change": change,
-             "declined": date, "job": job}
+    entry = {
+        "name": name,
+        "description": " ".join(description.split())[:SHORT_DESCRIPTION],
+        "change": change,
+        "declined": date,
+        "job": job,
+    }
     if change == "update":
         entry["base_sha256"] = base_sha
-    if any(x.get("name") == name and x.get("change") == change and x.get("base_sha256", "") == entry.get(
-            "base_sha256", "") for x in items):
+    if any(
+        x.get("name") == name and x.get("change") == change and x.get("base_sha256", "") == entry.get("base_sha256", "")
+        for x in items
+    ):
         return
     home.skills_dir.mkdir(parents=True, exist_ok=True)
     mdfile.write(declined_path(home), {"declined": [*items, entry]}, DECLINED_BODY)
@@ -337,15 +354,20 @@ def declined_block(home: Home, name: str) -> str:
         if not live and x.get("change") != "update":
             return f"the user declined a new skill called {name} on {x.get('declined')}; do not propose it again"
         if live and x.get("change") == "update" and x.get("base_sha256") == live:
-            return (f"the user declined a change to {name} on {x.get('declined')} and the skill has not changed "
-                    "since; do not propose another change to it")
+            return (
+                f"the user declined a change to {name} on {x.get('declined')} and the skill has not changed "
+                "since; do not propose another change to it"
+            )
     return ""
 
 
 def declined_listing(home: Home) -> str:
-    return "\n".join(f"- {x['name']} ({'a change to it' if x.get('change') == 'update' else 'new'}, declined "
-                     f"{x.get('declined', '')}): {x.get('description') or '(no description)'}"
-                     for x in declined(home) if declined_block(home, str(x["name"])))
+    return "\n".join(
+        f"- {x['name']} ({'a change to it' if x.get('change') == 'update' else 'new'}, declined "
+        f"{x.get('declined', '')}): {x.get('description') or '(no description)'}"
+        for x in declined(home)
+        if declined_block(home, str(x["name"]))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -397,8 +419,16 @@ def earlier_jobs(home: Home, current: str) -> list[dict[str, Any]]:
             brief = f"{brief}. {body}" if brief else body
         if len(brief) > HISTORY_BRIEF_CHARS:
             brief = brief[: HISTORY_BRIEF_CHARS - 1] + "…"
-        out.append({"id": d.name, "date": str(meta.get("finished_at") or meta.get("created_at") or "")[:10],
-                    "from": origin, "crews": jobs.job_crews(meta), "skills": used, "brief": brief or "(no brief)"})
+        out.append(
+            {
+                "id": d.name,
+                "date": str(meta.get("finished_at") or meta.get("created_at") or "")[:10],
+                "from": origin,
+                "crews": jobs.job_crews(meta),
+                "skills": used,
+                "brief": brief or "(no brief)",
+            }
+        )
         if len(out) >= HISTORY_JOBS:
             break
     return out
@@ -423,13 +453,17 @@ def check_evidence(given: Any, earlier: list[dict[str, Any]], current: str) -> t
     unknown = [n for n in names if n not in known and n != current]
     need = MIN_JOBS - 1
     if unknown:
-        return ok, (f"not earlier completed jobs: {', '.join(unknown)}. Name jobs in `jobs` exactly as the earlier "
-                    "jobs are listed")
+        return ok, (
+            f"not earlier completed jobs: {', '.join(unknown)}. Name jobs in `jobs` exactly as the earlier "
+            "jobs are listed"
+        )
     if len(ok) < need:
-        return ok, (f"a skill needs at least {MIN_JOBS} jobs of the same kind: this one and at least {need} "
-                    "earlier one, named in `jobs` from the earlier jobs listed, that did the same kind of work "
-                    "and would have followed the same method. One job shows how it went, not what the next "
-                    "will share. If no earlier job is of this kind, call no_skill")
+        return ok, (
+            f"a skill needs at least {MIN_JOBS} jobs of the same kind: this one and at least {need} "
+            "earlier one, named in `jobs` from the earlier jobs listed, that did the same kind of work "
+            "and would have followed the same method. One job shows how it went, not what the next "
+            "will share. If no earlier job is of this kind, call no_skill"
+        )
     return ok, ""
 
 
@@ -476,8 +510,12 @@ def inspect_import(home: Home, path: str | Path) -> Import:
         rel = p.relative_to(folder).as_posix()
         if p == f or (p.is_dir() and not p.is_symlink()) or any(x.startswith(".") for x in rel.split("/")):
             continue
-        if not rel.startswith("references/") or p.is_symlink() or not p.is_file() \
-                or p.stat().st_size > REFERENCE_MAX_BYTES:
+        if (
+            not rel.startswith("references/")
+            or p.is_symlink()
+            or not p.is_file()
+            or p.stat().st_size > REFERENCE_MAX_BYTES
+        ):
             skipped.append(rel)
             continue
         try:

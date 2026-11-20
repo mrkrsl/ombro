@@ -28,8 +28,15 @@ class NoSlot(Exception):
 
 
 class ProviderSlots:
-    def __init__(self, folder: Path, host: str, size: int = DEFAULT_PER_PROVIDER, *,
-                 clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep):
+    def __init__(
+        self,
+        folder: Path,
+        host: str,
+        size: int = DEFAULT_PER_PROVIDER,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
         self.folder = Path(folder) / (re.sub(r"[^A-Za-z0-9.-]+", "_", host.lower()) or "provider")
         self.size = max(1, int(size))
         self.clock = clock

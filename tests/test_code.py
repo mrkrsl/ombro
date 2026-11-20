@@ -27,8 +27,14 @@ needs_sandbox = pytest.mark.skipif(SANDBOX is not None, reason=f"no sandbox here
 def make_ctx(job_dir: Path, shared=None, **limits) -> tuple[ToolContext, list]:
     events: list = []
     lim = Limits.from_dict({**load_limits_dict(), **limits})
-    ctx = ToolContext(job_dir, "coder", timeout=30, shared=shared or {}, limits=lim,
-                      event=lambda action, note, **f: events.append({"action": action, "note": note, **f}))
+    ctx = ToolContext(
+        job_dir,
+        "coder",
+        timeout=30,
+        shared=shared or {},
+        limits=lim,
+        event=lambda action, note, **f: events.append({"action": action, "note": note, **f}),
+    )
     return ctx, events
 
 
@@ -61,8 +67,11 @@ def run_script(ctx, code: str) -> dict:
 def test_a_script_works_in_the_workspace(job_dir):
     (job_dir / "workspace" / "a.txt").write_text("one")
     ctx, events = make_ctx(job_dir)
-    out = run_script(ctx, "import os, shutil\nshutil.move('workspace/a.txt', 'workspace/b.txt')\n"
-                          "open('scratch/n.txt','w').write('x')\nprint(sorted(os.listdir('workspace')))")
+    out = run_script(
+        ctx,
+        "import os, shutil\nshutil.move('workspace/a.txt', 'workspace/b.txt')\n"
+        "open('scratch/n.txt','w').write('x')\nprint(sorted(os.listdir('workspace')))",
+    )
     assert out["exit_code"] == 0, out
     assert "['b.txt']" in out["output"]
     assert (job_dir / "workspace" / "b.txt").read_text() == "one"
@@ -99,10 +108,17 @@ def test_a_script_cannot_reach_anything_else(job_dir, home, tmp_path, monkeypatc
         ctx, _ = make_ctx(job_dir)
         out = run_script(ctx, code)
         assert out["exit_code"] != 0, f"{label}: {out}"
-        assert "PermissionError" in out["output"] or "Operation not permitted" in out["output"] or \
-            "No such file" in out["output"], f"{label}: {out['output']}"
-        for leaked in ("invented journal line", "invented-secret-value-123", "invented private text",
-                       "hello from a program"):
+        assert (
+            "PermissionError" in out["output"]
+            or "Operation not permitted" in out["output"]
+            or "No such file" in out["output"]
+        ), f"{label}: {out['output']}"
+        for leaked in (
+            "invented journal line",
+            "invented-secret-value-123",
+            "invented private text",
+            "hello from a program",
+        ):
             assert leaked not in out["output"], label
     assert not outside.exists()
     assert "invented journal line" in (job_dir / "journal.jsonl").read_text()
@@ -201,12 +217,17 @@ def test_a_script_works_in_a_writable_folder_and_not_a_read_only_one(job_dir, tm
     for i in range(3):
         (photos / f"IMG_{i}.jpg").write_text(f"invented photo {i}")
     (brand / "guide.md").write_text("invented brand guide")
-    shared = {"photos": SharedFolder("photos", photos.resolve(), "write"),
-              "brand": SharedFolder("brand", brand.resolve(), "read")}
+    shared = {
+        "photos": SharedFolder("photos", photos.resolve(), "write"),
+        "brand": SharedFolder("brand", brand.resolve(), "read"),
+    }
     ctx, events = make_ctx(job_dir, shared=shared)
-    out = run_script(ctx, "import os\nfor i, n in enumerate(sorted(os.listdir('shared/photos'))):\n"
-                          "    os.rename(f'shared/photos/{n}', f'shared/photos/trip-{i:02d}.jpg')\n"
-                          "print(open('shared/brand/guide.md').read())")
+    out = run_script(
+        ctx,
+        "import os\nfor i, n in enumerate(sorted(os.listdir('shared/photos'))):\n"
+        "    os.rename(f'shared/photos/{n}', f'shared/photos/trip-{i:02d}.jpg')\n"
+        "print(open('shared/brand/guide.md').read())",
+    )
     assert out["exit_code"] == 0, out
     assert sorted(p.name for p in photos.iterdir()) == ["trip-00.jpg", "trip-01.jpg", "trip-02.jpg"]
     assert "invented brand guide" in out["output"]
@@ -223,14 +244,23 @@ def test_a_script_works_in_a_writable_folder_and_not_a_read_only_one(job_dir, tm
 @needs_sandbox
 def test_a_job_records_each_script_in_the_journal_and_report(job, home):
     write_role(home, "coder", max_steps=10, tools=["code.run", "workspace.read"])
-    status = job([
-        fake.brief("coder", "Make three numbered files in the workspace."),
-        fake.call("code__run", {"code": "for i in range(3):\n    open(f'workspace/n{i}.txt','w').write(str(i))\n"
-                                         "print('made 3')", "purpose": "make three numbered files"}),
-        fake.call("code__run", {"code": "raise SystemExit(2)"}),
-        fake.result("Made three files.", deliverables=[{"name": "n0", "path": "workspace/n0.txt"}]),
-        fake.finish(), fake.keep_notes(), LEAD_REPORT,
-    ])
+    status = job(
+        [
+            fake.brief("coder", "Make three numbered files in the workspace."),
+            fake.call(
+                "code__run",
+                {
+                    "code": "for i in range(3):\n    open(f'workspace/n{i}.txt','w').write(str(i))\nprint('made 3')",
+                    "purpose": "make three numbered files",
+                },
+            ),
+            fake.call("code__run", {"code": "raise SystemExit(2)"}),
+            fake.result("Made three files.", deliverables=[{"name": "n0", "path": "workspace/n0.txt"}]),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     assert status == "completed"
     assert_reported(job, "completed")
     code_events = [e for e in job.events if e["action"] == "code_run"]
@@ -248,12 +278,16 @@ def test_a_job_records_each_script_in_the_journal_and_report(job, home):
 def test_code_run_is_left_out_where_no_sandbox_can_be_set_up(job, home, monkeypatch):
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "bubblewrap is not installed (invented)")
     write_role(home, "coder", max_steps=10, tools=["code.run", "workspace.write"])
-    status = job([
-        fake.brief("coder", "Rename the files."),
-        fake.call("code__run", {"code": "print('should never run')"}),
-        fake.result("Could not run code."),
-        fake.finish(), fake.keep_notes(), LEAD_REPORT,
-    ])
+    status = job(
+        [
+            fake.brief("coder", "Rename the files."),
+            fake.call("code__run", {"code": "print('should never run')"}),
+            fake.result("Could not run code."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     assert status == "completed"
     offered = {t["function"]["name"] for t in job.client.calls[1]["tools"]}
     # a role that writes can set a file aside, and every role can hand in its result
@@ -264,10 +298,16 @@ def test_code_run_is_left_out_where_no_sandbox_can_be_set_up(job, home, monkeypa
 
 
 def test_the_linux_sandbox_binds_only_what_it_names(tmp_path):
-    box = sandbox.Box(job_dir=tmp_path / "run", script=tmp_path / "run" / "code" / "001.py",
-                      write=[tmp_path / "run" / "workspace", tmp_path / "photos"], read=[tmp_path / "brand"],
-                      mounts={tmp_path / "run" / "shared" / "photos": tmp_path / "photos",
-                              tmp_path / "run" / "shared" / "brand": tmp_path / "brand"})
+    box = sandbox.Box(
+        job_dir=tmp_path / "run",
+        script=tmp_path / "run" / "code" / "001.py",
+        write=[tmp_path / "run" / "workspace", tmp_path / "photos"],
+        read=[tmp_path / "brand"],
+        mounts={
+            tmp_path / "run" / "shared" / "photos": tmp_path / "photos",
+            tmp_path / "run" / "shared" / "brand": tmp_path / "brand",
+        },
+    )
     cmd = sandbox.linux_command(box)
     joined = " ".join(cmd)
     assert "--unshare-all" in cmd and "--die-with-parent" in cmd and "--cap-drop" in cmd
@@ -279,8 +319,12 @@ def test_the_linux_sandbox_binds_only_what_it_names(tmp_path):
 
 
 def test_the_macos_profile_denies_by_default(tmp_path):
-    box = sandbox.Box(job_dir=tmp_path / "run", script=tmp_path / "run" / "code" / "001.py",
-                      write=[tmp_path / "run" / "workspace"], read=[tmp_path / 'brand "quoted"'])
+    box = sandbox.Box(
+        job_dir=tmp_path / "run",
+        script=tmp_path / "run" / "code" / "001.py",
+        write=[tmp_path / "run" / "workspace"],
+        read=[tmp_path / 'brand "quoted"'],
+    )
     profile = sandbox.macos_profile(box, Path("/opt/invented/python3"), Path("/opt/invented"))
     assert "(deny default)" in profile
     assert '(allow process-exec (literal "/opt/invented/python3"))' in profile

@@ -9,14 +9,23 @@ from ombro import fake
 
 
 def submit(summary="Done.", **extra):
-    return fake.call("submit_result", {"summary": summary, "deliverables": [], "open_questions": [],
-                                       "did_not_do": [], "requests": [], **extra})
+    return fake.call(
+        "submit_result",
+        {"summary": summary, "deliverables": [], "open_questions": [], "did_not_do": [], "requests": [], **extra},
+    )
 
 
 def test_a_role_hands_in_its_result_with_submit_result(job, home):
     write_role(home, "researcher")
-    job([fake.brief("researcher", "Do it."), submit("Found three invented makers."),
-         fake.finish(), fake.keep_notes(), LEAD_REPORT])
+    job(
+        [
+            fake.brief("researcher", "Do it."),
+            submit("Found three invented makers."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     returned = [e for e in job.events if e["action"] == "returned"]
     assert returned[0]["status"] == "ok" and "Found three invented makers." in returned[0]["note"]
 
@@ -24,8 +33,17 @@ def test_a_role_hands_in_its_result_with_submit_result(job, home):
 def test_a_reply_cut_off_at_the_output_limit_is_said_so_and_the_role_carries_on(job, home):
     write_role(home, "researcher", tools=["workspace.write"])
     cut = {"content": '{"summary": "A very long', "usage": {"input": 100, "output": 1000}, "finish_reason": "length"}
-    job([fake.brief("researcher", "Write a long report."), cut, submit("Wrote it in parts."),
-         fake.finish(), fake.keep_notes(), LEAD_REPORT], limits={"max_output_tokens": 1000})
+    job(
+        [
+            fake.brief("researcher", "Write a long report."),
+            cut,
+            submit("Wrote it in parts."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        limits={"max_output_tokens": 1000},
+    )
     assert any(e["action"] == "reply_cut_off" for e in job.events)
     assert not any(e["action"] == "result_invalid" for e in job.events)
     told = [m["content"] for c in job.client.calls for m in c["messages"] if m["role"] == "user"]
@@ -36,8 +54,10 @@ def test_a_reply_cut_off_at_the_output_limit_is_said_so_and_the_role_carries_on(
 def test_three_cut_off_replies_end_the_brief_with_a_reason(job, home):
     write_role(home, "researcher")
     cut = {"content": "{", "usage": {"input": 100, "output": 1000}, "finish_reason": "length"}
-    job([fake.brief("researcher", "Write."), cut, cut, cut, fake.finish(), fake.keep_notes(), LEAD_REPORT],
-        limits={"max_output_tokens": 1000})
+    job(
+        [fake.brief("researcher", "Write."), cut, cut, cut, fake.finish(), fake.keep_notes(), LEAD_REPORT],
+        limits={"max_output_tokens": 1000},
+    )
     returned = [e for e in job.events if e["action"] == "returned"]
     assert returned[0]["status"] == "failed" and "cut off at the output limit three times" in returned[0]["note"]
 
@@ -48,21 +68,48 @@ def test_reading_a_file_again_after_writing_it_is_not_a_loop(job, home):
     steps = [fake.call("workspace__write", {"path": "workspace/draft.md", "content": "v0"})]
     for v in range(1, 5):
         steps += [read, fake.call("workspace__write", {"path": "workspace/draft.md", "content": f"v{v}"})]
-    job([fake.brief("editor", "Edit the draft four times."), *steps, submit("Edited it four times."),
-         fake.finish(), fake.keep_notes(), LEAD_REPORT])
+    job(
+        [
+            fake.brief("editor", "Edit the draft four times."),
+            *steps,
+            submit("Edited it four times."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     assert [e["status"] for e in job.events if e["action"] == "returned"] == ["ok"]
 
 
 def test_the_report_puts_the_reader_first_and_ombros_record_after(job, home):
     write_role(home, "researcher")
-    narrative = ("## Summary\nThree invented makers found; one is closed.\n\n## What was done\nThe researcher "
-                 "searched.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone.")
-    job([fake.brief("researcher", "Do it."), submit("Found three."), fake.finish(), fake.keep_notes(),
-         fake.say(narrative)])
+    narrative = (
+        "## Summary\nThree invented makers found; one is closed.\n\n## What was done\nThe researcher "
+        "searched.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone."
+    )
+    job(
+        [
+            fake.brief("researcher", "Do it."),
+            submit("Found three."),
+            fake.finish(),
+            fake.keep_notes(),
+            fake.say(narrative),
+        ]
+    )
     report = job.report
-    order = [report.index(h) for h in ("## Summary", "## Deliverables", "## What was done",
-                                       "# Ombro's record", "## The job", "## Briefs (harness record)",
-                                       "## Changes to notes.md", "## Usage")]
+    order = [
+        report.index(h)
+        for h in (
+            "## Summary",
+            "## Deliverables",
+            "## What was done",
+            "# Ombro's record",
+            "## The job",
+            "## Briefs (harness record)",
+            "## Changes to notes.md",
+            "## Usage",
+        )
+    ]
     assert order == sorted(order)
     assert "## Decisions for you" not in report  # "None." is no decision: the section is left out
     assert report.startswith("# ") and "**Completed.**" in report.split("## Summary")[0]
@@ -109,13 +156,20 @@ def test_a_models_own_output_maximum_is_learned_from_its_refusal():
         n = json.loads(request.content)["max_tokens"]
         asked.append(n)
         if n > 8192:
-            return httpx.Response(400, json={"error": {"message": "Invalid max_tokens value, the valid range of "
-                                                                  "max_tokens is [1, 8192]"}})
-        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
-                                         "usage": {"prompt_tokens": 5, "completion_tokens": 1}})
+            return httpx.Response(
+                400, json={"error": {"message": "Invalid max_tokens value, the valid range of max_tokens is [1, 8192]"}}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 1},
+            },
+        )
 
-    c = OpenAICompatibleClient("https://models.invalid/v1", "m", lambda: "sk-test-INVENTED",
-                               transport=httpx.MockTransport(handler))
+    c = OpenAICompatibleClient(
+        "https://models.invalid/v1", "m", lambda: "sk-test-INVENTED", transport=httpx.MockTransport(handler)
+    )
     assert c.complete([{"role": "user", "content": "hi"}], max_output_tokens=32000, timeout=10).content == "ok"
     c.complete([{"role": "user", "content": "again"}], max_output_tokens=32000, timeout=10)
     assert asked == [32000, 8192, 8192] and c.learned_max == 8192
@@ -128,7 +182,10 @@ def test_free_providers_get_more_calls_than_billed_ones(home):
     def calls(tool):
         return load_limits(home, None, load_tool_settings(home)).max_calls_for(tool)
 
-    assert (calls("web.search"), calls("web.fetch")) == (120, 200)  # DuckDuckGo and the browser: free, doubled on generous
+    assert (calls("web.search"), calls("web.fetch")) == (
+        120,
+        200,
+    )  # DuckDuckGo and the browser: free, doubled on generous
     tool_cmd.set_tool(home, "web.search", provider="firecrawl")
     assert calls("web.search") == 20  # billed per call
     tool_cmd.set_tool(home, "web.search", max_calls=45)
@@ -156,11 +213,20 @@ def test_near_the_cap_the_reply_allowance_shrinks_rather_than_refusing(home):
 
 def test_decisions_for_you_appear_only_for_a_real_decision(job, home):
     write_role(home, "researcher")
-    narrative = ("## Summary\nThe list is ready; one maker may have closed.\n\n## What was done\nThe researcher "
-                 "searched.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\n- Keep the "
-                 "closed maker in the list, or drop it?")
-    job([fake.brief("researcher", "Do it."), submit("Found three."), fake.finish(), fake.keep_notes(),
-         fake.say(narrative)])
+    narrative = (
+        "## Summary\nThe list is ready; one maker may have closed.\n\n## What was done\nThe researcher "
+        "searched.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\n- Keep the "
+        "closed maker in the list, or drop it?"
+    )
+    job(
+        [
+            fake.brief("researcher", "Do it."),
+            submit("Found three."),
+            fake.finish(),
+            fake.keep_notes(),
+            fake.say(narrative),
+        ]
+    )
     report = job.report
     assert report.index("## Deliverables") < report.index("## Decisions for you") < report.index("## What was done")
     assert "Keep the closed maker" in report.split("## Decisions for you")[1].split("## ")[0]
@@ -170,8 +236,17 @@ def test_the_summary_is_what_the_chat_shows(job, home):
     from ombro.report import summary_of
 
     write_role(home, "researcher")
-    job([fake.brief("researcher", "Do it."), submit("Found three."), fake.finish(), fake.keep_notes(),
-         fake.say("## Summary\nToday's report is ready.\n\n## What was done\nIt.\n\n"
-                  "## What was not done and why\nNothing.")])
+    job(
+        [
+            fake.brief("researcher", "Do it."),
+            submit("Found three."),
+            fake.finish(),
+            fake.keep_notes(),
+            fake.say(
+                "## Summary\nToday's report is ready.\n\n## What was done\nIt.\n\n"
+                "## What was not done and why\nNothing."
+            ),
+        ]
+    )
     assert summary_of(job.report) == "Today's report is ready."
     assert summary_of("# A report with no summary\n\n## What was done\nIt.") == ""

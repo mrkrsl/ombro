@@ -146,10 +146,24 @@ class ChatDetail(ChatRow):
 
 # -- approvals ---------------------------------------------------------------------
 
-ApprovalRow = TypedDict("ApprovalRow", {
-    "ref": str, "crews": list[str], "long_ref": str, "job_id": str, "job_name": str, "status": str, "tool": str, "summary": str,
-    "role": str, "reason": str, "class": str, "edited": bool, "arguments": Any,
-})
+ApprovalRow = TypedDict(
+    "ApprovalRow",
+    {
+        "ref": str,
+        "crews": list[str],
+        "long_ref": str,
+        "job_id": str,
+        "job_name": str,
+        "status": str,
+        "tool": str,
+        "summary": str,
+        "role": str,
+        "reason": str,
+        "class": str,
+        "edited": bool,
+        "arguments": Any,
+    },
+)
 
 
 class ApprovalDetail(ApprovalRow):
@@ -200,6 +214,7 @@ class ScheduleRow(TypedDict):
 
 class SchedulerState(TypedDict):
     """Whether scheduled jobs can run: the scheduler service (scheduler.check)."""
+
     ok: bool
     message: str  # why not, for the Scheduled page; empty when ok
     can_install: bool  # Install now would put it right
@@ -346,6 +361,7 @@ class ProviderPreset(TypedDict):
 
 class ChatGPTPlan(TypedDict):
     """Signing in with ChatGPT, so model calls use the person's ChatGPT plan (no key)."""
+
     state: str  # "signed in", "plan not allowed", "not signed in"
     email: str | None
     signing_in: bool  # waiting for the browser

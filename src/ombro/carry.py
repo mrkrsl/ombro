@@ -145,11 +145,11 @@ class Carry:
             i = self.sources.index(source)
             if self._kept >= KEEP_MAX or not text:
                 return
-            text = text[:KEEP_MAX - self._kept]
+            text = text[: KEEP_MAX - self._kept]
             self._kept += len(text)
             words = _words(text)
             for n in range(max(0, len(words) - RUN_WORDS + 1)):
-                self._runs.setdefault(hash(" ".join(words[n:n + RUN_WORDS])), i)
+                self._runs.setdefault(hash(" ".join(words[n : n + RUN_WORDS])), i)
             for w in words:
                 if _long_token(w):
                     self._tokens.setdefault(w, i)
@@ -167,7 +167,7 @@ class Carry:
             how = "an encoded copy of" if n and t not in (unquote(text), unquote_plus(text)) else "words from"
             words = _words(t)
             for k in range(max(0, len(words) - RUN_WORDS + 1)):
-                i = self._runs.get(hash(" ".join(words[k:k + RUN_WORDS])))
+                i = self._runs.get(hash(" ".join(words[k : k + RUN_WORDS])))
                 if i is not None:
                     return f"it carries {how} {self.sources[i]}"
             for w in words:
@@ -187,8 +187,10 @@ class Carry:
             why.append(problem)
         used, more = self.typed.get(where, 0), len(text) if count is None else count
         if more and used + more > BUDGET:
-            why.append(f"it would take what this job has typed into {where} to {used + more} characters, "
-                       f"over the {BUDGET} allowed without asking")
+            why.append(
+                f"it would take what this job has typed into {where} to {used + more} characters, "
+                f"over the {BUDGET} allowed without asking"
+            )
         return why
 
     def spend(self, where: str, n: int) -> None:
@@ -209,16 +211,19 @@ class Carry:
         coded = [m.group(0) for p in pieces for m in SEGMENT.finditer(p) if looks_encoded(m.group(0))]
         if coded:
             why.append(f"it has a long encoded-looking part ({coded[0][:24]}…)")
-        problem = self.found(" ".join([unquote_plus(parts.path), unquote_plus(parts.query),
-                                       unquote_plus(parts.fragment)]))
+        problem = self.found(
+            " ".join([unquote_plus(parts.path), unquote_plus(parts.query), unquote_plus(parts.fragment)])
+        )
         if problem:
             why.append(problem)
         return why
 
     def held(self, what: str, why: list[str]) -> str:
         """What the role is told when something is held back."""
-        return (f"{what}: this job has read private material ({self.what()}), and " + "; ".join(why) + ". Ombro "
-                "holds this back so private material is not carried to another site.")
+        return (
+            f"{what}: this job has read private material ({self.what()}), and " + "; ".join(why) + ". Ombro "
+            "holds this back so private material is not carried to another site."
+        )
 
 
 def ask_or_hold(ctx: Any, what: str, items: list[str], why: list[str], **fields: Any) -> bool:

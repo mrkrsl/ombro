@@ -29,7 +29,11 @@ class World:
 
     def __init__(self, *, s256=True, iss_supported=True, metadata_issuer=ISSUER, registration=True):
         self.s256, self.iss_supported, self.metadata_issuer, self.registration = (
-            s256, iss_supported, metadata_issuer, registration)
+            s256,
+            iss_supported,
+            metadata_issuer,
+            registration,
+        )
         self.codes: dict[str, dict] = {}
         self.valid_access = set()
         self.refresh = {}
@@ -43,8 +47,13 @@ class World:
         access, refresh = f"access-token-{self.n:04d}-invented", f"refresh-token-{self.n:04d}-invented"
         self.valid_access.add(access)
         self.refresh[refresh] = client_id
-        return {"access_token": access, "token_type": "Bearer", "expires_in": 3600, "refresh_token": refresh,
-                "scope": "notes offline_access"}
+        return {
+            "access_token": access,
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "refresh_token": refresh,
+            "scope": "notes offline_access",
+        }
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url).split("?")[0]
@@ -53,9 +62,15 @@ class World:
         if url == MCP:
             auth = request.headers.get("authorization", "")
             if auth.removeprefix("Bearer ") not in self.valid_access:
-                return httpx.Response(401, headers={"WWW-Authenticate": (
-                    'Bearer realm="OAuth", resource_metadata="https://mcp.invalid/.well-known/'
-                    'oauth-protected-resource/mcp", scope="notes"')})
+                return httpx.Response(
+                    401,
+                    headers={
+                        "WWW-Authenticate": (
+                            'Bearer realm="OAuth", resource_metadata="https://mcp.invalid/.well-known/'
+                            'oauth-protected-resource/mcp", scope="notes"'
+                        )
+                    },
+                )
             msg = json.loads(body)
             if "id" not in msg:
                 return httpx.Response(202)
@@ -67,14 +82,19 @@ class World:
                 result = {"content": [{"type": "text", "text": "page added"}]}
             return httpx.Response(200, json={"jsonrpc": "2.0", "id": msg["id"], "result": result})
         if url == "https://mcp.invalid/.well-known/oauth-protected-resource/mcp":
-            return httpx.Response(200, json={"resource": MCP, "authorization_servers": [ISSUER],
-                                             "scopes_supported": ["notes"]})
+            return httpx.Response(
+                200, json={"resource": MCP, "authorization_servers": [ISSUER], "scopes_supported": ["notes"]}
+            )
         if url == f"{ISSUER}/.well-known/oauth-authorization-server":
-            meta = {"issuer": self.metadata_issuer, "authorization_endpoint": f"{ISSUER}/authorize",
-                    "token_endpoint": f"{ISSUER}/token", "revocation_endpoint": f"{ISSUER}/revoke",
-                    "scopes_supported": ["notes", "offline_access"],
-                    "code_challenge_methods_supported": ["S256"] if self.s256 else ["plain"],
-                    "authorization_response_iss_parameter_supported": self.iss_supported}
+            meta = {
+                "issuer": self.metadata_issuer,
+                "authorization_endpoint": f"{ISSUER}/authorize",
+                "token_endpoint": f"{ISSUER}/token",
+                "revocation_endpoint": f"{ISSUER}/revoke",
+                "scopes_supported": ["notes", "offline_access"],
+                "code_challenge_methods_supported": ["S256"] if self.s256 else ["plain"],
+                "authorization_response_iss_parameter_supported": self.iss_supported,
+            }
             if self.registration:
                 meta["registration_endpoint"] = f"{ISSUER}/register"
             return httpx.Response(200, json=meta)
@@ -88,8 +108,11 @@ class World:
                 return httpx.Response(400, json={"error": "invalid_target"})
             if form["grant_type"] == "authorization_code":
                 grant = self.codes.pop(form.get("code"), None)
-                challenge = base64.urlsafe_b64encode(
-                    hashlib.sha256(form.get("code_verifier", "").encode()).digest()).rstrip(b"=").decode()
+                challenge = (
+                    base64.urlsafe_b64encode(hashlib.sha256(form.get("code_verifier", "").encode()).digest())
+                    .rstrip(b"=")
+                    .decode()
+                )
                 if not grant or grant["code_challenge"] != challenge or grant["redirect_uri"] != form["redirect_uri"]:
                     return httpx.Response(400, json={"error": "invalid_grant"})
                 return httpx.Response(200, json=self._token_pair(form["client_id"]))
@@ -119,8 +142,10 @@ class FakeBrowser:
     def __call__(self, url: str):
         self.params = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
         code = "invented-code-1"
-        self.world.codes[code] = {"code_challenge": self.params["code_challenge"],
-                                  "redirect_uri": self.params["redirect_uri"]}
+        self.world.codes[code] = {
+            "code_challenge": self.params["code_challenge"],
+            "redirect_uri": self.params["redirect_uri"],
+        }
         self._answer = self.tamper({"code": code, "state": self.params["state"], "iss": ISSUER})
 
     def wait(self, timeout):
@@ -132,8 +157,9 @@ class FakeBrowser:
 
 def connect(home, world, browser=None):
     browser = browser or FakeBrowser(world)
-    return oauth.connect(home, "notes", CFG, open_browser=browser, say=lambda s: None,
-                         transport=world.transport(), receiver=browser), browser
+    return oauth.connect(
+        home, "notes", CFG, open_browser=browser, say=lambda s: None, transport=world.transport(), receiver=browser
+    ), browser
 
 
 def test_connect_signs_in_and_the_server_is_then_used_with_its_token(home):
@@ -155,12 +181,15 @@ def test_connect_signs_in_and_the_server_is_then_used_with_its_token(home):
     assert oauth.status(home, "notes") == "signed in (renews itself)"
 
 
-@pytest.mark.parametrize("tamper, msg", [
-    (lambda a: {**a, "iss": "https://elsewhere.invalid"}, "different service"),
-    (lambda a: {k: v for k, v in a.items() if k != "iss"}, "did not say which service"),
-    (lambda a: {**a, "state": "forged"}, "did not match"),
-    (lambda a: {"error": "access_denied", "state": a["state"], "iss": ISSUER}, "access_denied"),
-])
+@pytest.mark.parametrize(
+    "tamper, msg",
+    [
+        (lambda a: {**a, "iss": "https://elsewhere.invalid"}, "different service"),
+        (lambda a: {k: v for k, v in a.items() if k != "iss"}, "did not say which service"),
+        (lambda a: {**a, "state": "forged"}, "did not match"),
+        (lambda a: {"error": "access_denied", "state": a["state"], "iss": ISSUER}, "access_denied"),
+    ],
+)
 def test_a_bad_sign_in_answer_is_refused_and_nothing_is_kept(home, tamper, msg):
     world = World()
     with pytest.raises(oauth.SignInError, match=msg):
@@ -168,11 +197,14 @@ def test_a_bad_sign_in_answer_is_refused_and_nothing_is_kept(home, tamper, msg):
     assert oauth.load(home, "notes") is None
 
 
-@pytest.mark.parametrize("world, msg", [
-    (World(metadata_issuer="https://attacker.invalid"), "claim to be from"),
-    (World(s256=False), "S256"),
-    (World(registration=False), "client_id"),
-])
+@pytest.mark.parametrize(
+    "world, msg",
+    [
+        (World(metadata_issuer="https://attacker.invalid"), "claim to be from"),
+        (World(s256=False), "S256"),
+        (World(registration=False), "client_id"),
+    ],
+)
 def test_an_unsafe_or_unusable_sign_in_service_is_refused(home, world, msg):
     with pytest.raises(oauth.SignInError, match=msg):
         connect(home, world)
@@ -181,8 +213,15 @@ def test_an_unsafe_or_unusable_sign_in_service_is_refused(home, world, msg):
 def test_a_client_id_in_tools_md_skips_registration(home):
     world = World(registration=False)
     browser = FakeBrowser(world)
-    oauth.connect(home, "notes", {**CFG, "client_id": "given-client"}, open_browser=browser, say=lambda s: None,
-                  transport=world.transport(), receiver=browser)
+    oauth.connect(
+        home,
+        "notes",
+        {**CFG, "client_id": "given-client"},
+        open_browser=browser,
+        say=lambda s: None,
+        transport=world.transport(),
+        receiver=browser,
+    )
     assert browser.params["client_id"] == "given-client"
 
 
@@ -195,7 +234,9 @@ def test_an_expired_token_renews_itself_and_the_new_one_is_kept(home):
     with McpClient(home, ServerConfig(name="notes", url=MCP), transport=world.transport()) as c:
         c.list_tools()
     kept = oauth.load(home, "notes")["tokens"]
-    assert kept["access_token"] == "access-token-0002-invented" and kept["refresh_token"] == "refresh-token-0002-invented"
+    assert (
+        kept["access_token"] == "access-token-0002-invented" and kept["refresh_token"] == "refresh-token-0002-invented"
+    )
     assert world.token_forms[-1]["grant_type"] == "refresh_token" and world.token_forms[-1]["resource"] == MCP
 
 
@@ -252,7 +293,7 @@ def test_only_https_or_a_local_address_is_accepted(home):
 def test_challenges_and_addresses_are_read_correctly():
     ch = oauth.parse_www_authenticate('Bearer realm="OAuth", resource_metadata="https://x.invalid/a", scope="a b"')
     assert ch == {"realm": "OAuth", "resource_metadata": "https://x.invalid/a", "scope": "a b"}
-    assert oauth.parse_www_authenticate('Bearer error=insufficient_scope')["error"] == "insufficient_scope"
+    assert oauth.parse_www_authenticate("Bearer error=insufficient_scope")["error"] == "insufficient_scope"
     assert oauth.canonical("HTTPS://MCP.Example.invalid/mcp/") == "https://mcp.example.invalid/mcp"
 
 
@@ -277,22 +318,34 @@ def _json_without(key):
         data = resp.json()
         data.pop(key, None)
         return httpx.Response(resp.status_code, json=data)
+
     return change
 
 
 def _json_with(**extra):
     def change(resp):
         return httpx.Response(resp.status_code, json={**resp.json(), **extra})
+
     return change
 
 
-@pytest.mark.parametrize("world, msg", [
-    (_Changed("https://mcp.invalid/.well-known/oauth-protected-resource/mcp", _json_without("resource")),
-     "no `resource`"),
-    (_Changed(f"{ISSUER}/.well-known/oauth-authorization-server",
-              _json_with(revocation_endpoint="http://auth.invalid/revoke")), "revocation_endpoint"),
-    (_Changed(f"{ISSUER}/register", lambda r: httpx.Response(201, text="<html>registered</html>")), "not JSON"),
-])
+@pytest.mark.parametrize(
+    "world, msg",
+    [
+        (
+            _Changed("https://mcp.invalid/.well-known/oauth-protected-resource/mcp", _json_without("resource")),
+            "no `resource`",
+        ),
+        (
+            _Changed(
+                f"{ISSUER}/.well-known/oauth-authorization-server",
+                _json_with(revocation_endpoint="http://auth.invalid/revoke"),
+            ),
+            "revocation_endpoint",
+        ),
+        (_Changed(f"{ISSUER}/register", lambda r: httpx.Response(201, text="<html>registered</html>")), "not JSON"),
+    ],
+)
 def test_unchecked_or_unsafe_sign_in_details_are_refused(home, world, msg):
     with pytest.raises(oauth.SignInError, match=msg):
         connect(home, world)
@@ -305,8 +358,9 @@ def test_disconnect_never_sends_tokens_to_a_plain_http_address(home):
     data = oauth.load(home, "notes")
     oauth.save(home, "notes", {**data, "revocation_endpoint": "http://auth.invalid/revoke"})
     sent = []
-    assert oauth.disconnect(home, "notes", transport=httpx.MockTransport(lambda r: sent.append(r) or
-                                                                         httpx.Response(200)))
+    assert oauth.disconnect(
+        home, "notes", transport=httpx.MockTransport(lambda r: sent.append(r) or httpx.Response(200))
+    )
     assert sent == [] and oauth.load(home, "notes") is None
 
 
@@ -363,7 +417,10 @@ def test_the_apps_signed_in_page_is_ombros():
 def browse(world, url: str) -> str:
     """The user signing in, in a browser elsewhere: the address it is sent back to."""
     params = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
-    world.codes["invented-code-9"] = {"code_challenge": params["code_challenge"], "redirect_uri": params["redirect_uri"]}
+    world.codes["invented-code-9"] = {
+        "code_challenge": params["code_challenge"],
+        "redirect_uri": params["redirect_uri"],
+    }
     answer = urllib.parse.urlencode({"code": "invented-code-9", "state": params["state"], "iss": ISSUER})
     return f"{params['redirect_uri']}?{answer}"
 
@@ -378,8 +435,9 @@ def test_the_answer_can_be_handed_over_from_another_computer(home):
         assert not receiver.give({"code": "x", "state": "not-this-one"})  # a stray answer is refused
         assert receiver.give(oauth.answer_from(back))
 
-    done = oauth.connect(home, "notes", CFG, open_browser=elsewhere, say=lambda s: None,
-                         transport=world.transport(), receiver=receiver)
+    done = oauth.connect(
+        home, "notes", CFG, open_browser=elsewhere, say=lambda s: None, transport=world.transport(), receiver=receiver
+    )
     assert done.issuer == ISSUER and world.registered["redirect_uris"] == ["http://127.0.0.1:5555/callback"]
     assert oauth.store_path(home, "notes").is_file()
 

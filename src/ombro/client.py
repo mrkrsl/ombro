@@ -113,8 +113,11 @@ _IN_FLIGHT = ("in-flight", "in_flight", "in flight")
 
 THINKING_KEYS = ("reasoning_effort", "reasoning", "thinking")
 # An endpoint's refusal of a field it doesn't take, or of a value it doesn't know.
-_REFUSED_FIELD = re.compile(r"reason|think|effort|unrecogni[sz]ed|unknown|extra|not permitted|not allowed|"
-                            r"unsupported|not supported|invalid param", re.IGNORECASE)
+_REFUSED_FIELD = re.compile(
+    r"reason|think|effort|unrecogni[sz]ed|unknown|extra|not permitted|not allowed|"
+    r"unsupported|not supported|invalid param",
+    re.IGNORECASE,
+)
 
 
 def busy_wait(resp: httpx.Response, detail: str) -> float | None:
@@ -137,24 +140,29 @@ def busy_wait(resp: httpx.Response, detail: str) -> float | None:
 def busy_pause(wait: float, busy: int) -> float:
     """How long to wait before the `busy`th try again: what the provider asked, or a growing pause, with a little
     jitter so calls that were turned away together don't come back together."""
-    return max(wait, min(BUSY_MAX_PAUSE, 2.0 ** busy)) + random.uniform(0, 0.5)
+    return max(wait, min(BUSY_MAX_PAUSE, 2.0**busy)) + random.uniform(0, 0.5)
 
 
 def no_slot_error(host: str) -> ModelError:
-    return ModelError(f"every connection Ombro allows to {host} stayed busy until the model call ran out of time",
-                      timed_out=True)
+    return ModelError(
+        f"every connection Ombro allows to {host} stayed busy until the model call ran out of time", timed_out=True
+    )
 
 
 def public(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Messages without Ombro's own keys (those that start with "_"), for a provider."""
-    return [{k: v for k, v in m.items() if not k.startswith("_")} if any(k.startswith("_") for k in m) else m
-            for m in messages]
+    return [
+        {k: v for k, v in m.items() if not k.startswith("_")} if any(k.startswith("_") for k in m) else m
+        for m in messages
+    ]
 
 
 _RANGE = re.compile(r"\[\s*\d+\s*,\s*(\d{3,7})\s*\]|max_tokens:\s*\d+\s*>\s*(\d{3,7})")
-_AT_MOST = re.compile(r"(?:<=|less than or equal to|at most|no more than|maximum(?: value)?(?: of| is)?|up to|"
-                      r"must not exceed|cannot exceed|exceeds?(?: the)?(?: maximum| limit)?(?: of)?)"
-                      r"\s*:?\s*`?(\d{3,7})")
+_AT_MOST = re.compile(
+    r"(?:<=|less than or equal to|at most|no more than|maximum(?: value)?(?: of| is)?|up to|"
+    r"must not exceed|cannot exceed|exceeds?(?: the)?(?: maximum| limit)?(?: of)?)"
+    r"\s*:?\s*`?(\d{3,7})"
+)
 
 
 def allowed_max_tokens(text: str) -> int | None:
@@ -239,10 +247,13 @@ class OpenAICompatibleClient:
                 raise err
             retryable = False
             try:
-                with self.slots.hold(deadline) if self.slots else nullcontext(), httpx.Client(
-                    transport=self.transport,
-                    timeout=httpx.Timeout(max(0.1, deadline - time.monotonic()), connect=min(remaining, 15.0)),
-                ) as http:
+                with (
+                    self.slots.hold(deadline) if self.slots else nullcontext(),
+                    httpx.Client(
+                        transport=self.transport,
+                        timeout=httpx.Timeout(max(0.1, deadline - time.monotonic()), connect=min(remaining, 15.0)),
+                    ) as http,
+                ):
                     resp = http.post(self.url, json=body, headers=headers)
             except NoSlot:
                 err = no_slot_error(self.host)
@@ -320,8 +331,9 @@ class OpenAICompatibleClient:
         except httpx.HTTPError as e:
             raise ModelError(f"could not reach {self.host}: {type(e).__name__}") from None
         if resp.status_code != 200:
-            raise ModelError(f"{self.host} returned HTTP {resp.status_code}: {self._error_text(resp, key)}",
-                             status=resp.status_code)
+            raise ModelError(
+                f"{self.host} returned HTTP {resp.status_code}: {self._error_text(resp, key)}", status=resp.status_code
+            )
         try:
             data = resp.json().get("data")
             ids = sorted({str(m["id"]) for m in data if isinstance(m, dict) and m.get("id")})
@@ -371,10 +383,14 @@ class OpenAICompatibleClient:
         if usage.get("prompt_tokens") is not None:
             # DeepSeek says prompt_cache_hit_tokens; OpenAI (and those like it) prompt_tokens_details.cached_tokens.
             details = usage.get("prompt_tokens_details") or {}
-            cached = usage.get("prompt_cache_hit_tokens") or (details.get("cached_tokens") if isinstance(details, dict)
-                                                              else 0) or 0
-            u = Usage(int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0),
-                      cached_input=int(cached))
+            cached = (
+                usage.get("prompt_cache_hit_tokens")
+                or (details.get("cached_tokens") if isinstance(details, dict) else 0)
+                or 0
+            )
+            u = Usage(
+                int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0), cached_input=int(cached)
+            )
             # Thinking: OpenAI and DeepSeek say completion_tokens_details.reasoning_tokens; failing that, a
             # reasoning_content (or reasoning) text is counted roughly, as estimate_tokens counts.
             out_details = usage.get("completion_tokens_details") or {}

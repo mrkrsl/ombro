@@ -11,8 +11,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # Colours
 
-OMBRO = {100: "#EDF8FB", 200: "#C7EBF4", 300: "#8CC2D0", 400: "#2F8196", 500: "#1C5665", 600: "#0E2C33",
-         700: "#031216"}
+OMBRO = {100: "#EDF8FB", 200: "#C7EBF4", 300: "#8CC2D0", 400: "#2F8196", 500: "#1C5665", 600: "#0E2C33", 700: "#031216"}
 
 
 @dataclass(frozen=True)
@@ -29,12 +28,30 @@ class Palette:
     logo_shadow: str
 
 
-LIGHT = Palette(background="#FFFFFF", text=OMBRO[700], strong=OMBRO[500], muted=OMBRO[500], dim=OMBRO[300],
-                band=OMBRO[200], band_text=OMBRO[500], logo_box=OMBRO[500], logo_text=OMBRO[100],
-                logo_shadow=OMBRO[400])
-DARK = Palette(background=OMBRO[700], text=OMBRO[200], strong=OMBRO[300], muted=OMBRO[300], dim=OMBRO[500],
-               band=OMBRO[600], band_text=OMBRO[200], logo_box=OMBRO[200], logo_text=OMBRO[700],
-               logo_shadow=OMBRO[400])
+LIGHT = Palette(
+    background="#FFFFFF",
+    text=OMBRO[700],
+    strong=OMBRO[500],
+    muted=OMBRO[500],
+    dim=OMBRO[300],
+    band=OMBRO[200],
+    band_text=OMBRO[500],
+    logo_box=OMBRO[500],
+    logo_text=OMBRO[100],
+    logo_shadow=OMBRO[400],
+)
+DARK = Palette(
+    background=OMBRO[700],
+    text=OMBRO[200],
+    strong=OMBRO[300],
+    muted=OMBRO[300],
+    dim=OMBRO[500],
+    band=OMBRO[600],
+    band_text=OMBRO[200],
+    logo_box=OMBRO[200],
+    logo_text=OMBRO[700],
+    logo_shadow=OMBRO[400],
+)
 
 
 def palette(dark: bool) -> Palette:
@@ -152,8 +169,14 @@ def stats_lines(s: dict[str, Any]) -> list[str]:
 def stats_line(s: dict[str, Any]) -> str:
     """The narrow tier's one line of stats."""
     c = s["counts"]
-    return " · ".join([f"{_n(c['crews_ready'], 'crew')} ready", _n(c["active_jobs"], "active job"),
-                       _n(c["scheduled_jobs"], "scheduled job"), f"{c['waiting']} to approve"])
+    return " · ".join(
+        [
+            f"{_n(c['crews_ready'], 'crew')} ready",
+            _n(c["active_jobs"], "active job"),
+            _n(c["scheduled_jobs"], "scheduled job"),
+            f"{c['waiting']} to approve",
+        ]
+    )
 
 
 def welcome(name: str, first: bool) -> str:
@@ -211,7 +234,7 @@ LOGO_WIDTH = max(len(r) for r in LOGO_ART)
 # Ghostty draws block characters itself, and its ░ is a fine dot pattern that reads
 # as a flat block. There the shadow is drawn with U+1FB99 instead: diagonal lines,
 # which Ghostty also draws itself. Elsewhere ░ comes from the font, which hatches it.
-HATCH = "\U0001FB99"
+HATCH = "\U0001fb99"
 
 
 def shade_char(term_program: str | None = None) -> str:
@@ -226,8 +249,13 @@ def logo_cells(dark: bool, term_program: str | None = None) -> list[list[tuple[s
     p = palette(dark)
     shade = shade_char(term_program)
     width = max(len(r) for r in LOGO_ART)
-    return [[(shade if ch == "░" else ch, p.logo_box if ch == "█" else p.logo_shadow if ch == "░" else None, None)
-             for ch in row.ljust(width)] for row in LOGO_ART]
+    return [
+        [
+            (shade if ch == "░" else ch, p.logo_box if ch == "█" else p.logo_shadow if ch == "░" else None, None)
+            for ch in row.ljust(width)
+        ]
+        for row in LOGO_ART
+    ]
 
 
 def logo_text(dark: bool):

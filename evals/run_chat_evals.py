@@ -35,7 +35,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from ombro.ui import UI, Field, render
+from ombro.ui import UI, render
 
 HERE = Path(__file__).resolve().parent
 LIVE_JOB_WAIT = 8 * 60  # a live job still running after this is asked to stop
@@ -202,30 +202,59 @@ class Case:
     setup: Callable[[Any], None] | None = None  # more for the throwaway home: saved specs, skills
 
 
-PARAGRAPH = ("Lowtown Lanterns is an invented maker of paper lanterns, founded in 2019 by two "
-             "friends who met at a night market. ")
+PARAGRAPH = (
+    "Lowtown Lanterns is an invented maker of paper lanterns, founded in 2019 by two "
+    "friends who met at a night market. "
+)
 
-TOPICS = ["paper", "frames", "lighting", "pricing", "stalls", "weather", "packaging", "wholesale",
-          "repairs", "colours", "workshop", "online orders"]
+TOPICS = [
+    "paper",
+    "frames",
+    "lighting",
+    "pricing",
+    "stalls",
+    "weather",
+    "packaging",
+    "wholesale",
+    "repairs",
+    "colours",
+    "workshop",
+    "online orders",
+]
 
 
 def interview(n: int) -> str:
     """Invented interview notes, different for each n: twelve points, one per topic."""
-    who = ["a tea room owner", "a wedding planner", "a market trader", "a theatre designer", "a gift shop buyer",
-           "a florist", "a café manager", "an events student"][(n - 1) % 8]
+    who = [
+        "a tea room owner",
+        "a wedding planner",
+        "a market trader",
+        "a theatre designer",
+        "a gift shop buyer",
+        "a florist",
+        "a café manager",
+        "an events student",
+    ][(n - 1) % 8]
     lines = [f"# Interview {n}: {who}\n"]
     for j, topic in enumerate(TOPICS, 1):
         mood = ["liked", "worried about", "asked about", "wanted more on"][(n + j) % 4]
-        lines.append(f"- {topic.capitalize()}: {who.capitalize()} {mood} the {topic}. They said it mattered "
-                     f"because their customers notice it {n + j} times out of ten, and gave the example of "
-                     f"a {['spring', 'summer', 'autumn', 'winter'][(n * j) % 4]} order that went "
-                     f"{['well', 'badly', 'late', 'early'][(n + 2 * j) % 4]}.")
+        lines.append(
+            f"- {topic.capitalize()}: {who.capitalize()} {mood} the {topic}. They said it mattered "
+            f"because their customers notice it {n + j} times out of ten, and gave the example of "
+            f"a {['spring', 'summer', 'autumn', 'winter'][(n * j) % 4]} order that went "
+            f"{['well', 'badly', 'late', 'early'][(n + 2 * j) % 4]}."
+        )
     return "\n".join(lines) + "\n"
 
 
-LONG_FILE = "# Lowtown Lanterns: the story so far\n\n" + "\n\n".join(
-    f"## Part {i}\n\n" + PARAGRAPH * 3 + f"In year {i} they sold {i * 120} lanterns at {i + 2} markets."
-    for i in range(1, 9)) + "\n"
+LONG_FILE = (
+    "# Lowtown Lanterns: the story so far\n\n"
+    + "\n\n".join(
+        f"## Part {i}\n\n" + PARAGRAPH * 3 + f"In year {i} they sold {i * 120} lanterns at {i + 2} markets."
+        for i in range(1, 9)
+    )
+    + "\n"
+)
 
 HOME_PAGE = """\
 # Home page copy (draft)
@@ -480,12 +509,23 @@ def check_schedule(r: Record) -> list[str]:
         fails.append(f"the cron offered was {offers[-1].get('cron')!r}, not '15 7 * * 1-5'")
     if not r.asked("schedule"):
         fails.append("no 'Shall I set it up?' question")
-    if len(r.schedules) != 1 or r.schedules[0].get("spec") != "specs/stall-digest.md" \
-            or r.schedules[0].get("cron") != "15 7 * * 1-5":
+    if (
+        len(r.schedules) != 1
+        or r.schedules[0].get("spec") != "specs/stall-digest.md"
+        or r.schedules[0].get("cron") != "15 7 * * 1-5"
+    ):
         fails.append(f"the schedule was not set up as asked: {r.schedules}")
     said = " ".join(t for turn in r.turns for t in turn["texts"]).lower()
-    for words in ("ombro schedule add", "add it yourself", "set it up yourself", "you'll need to add",
-                  "can't see the time", "cannot see the time", "can't set a schedule", "cannot set a schedule"):
+    for words in (
+        "ombro schedule add",
+        "add it yourself",
+        "set it up yourself",
+        "you'll need to add",
+        "can't see the time",
+        "cannot see the time",
+        "can't set a schedule",
+        "cannot set a schedule",
+    ):
         if words in said:
             fails.append(f"the Lead said {words!r}: it sent the user elsewhere, or claimed not to know the zone")
     if r.called("offer_work") or r.called("offer_brief") or r.jobs:
@@ -504,7 +544,7 @@ def check_brief_names_skill(r: Record) -> list[str]:
     fails = []
     if not r.specs:
         return ["no spec was saved (the brief interview did not finish)"]
-    (name, text), = list(r.specs.items())[-1:]
+    ((name, text),) = list(r.specs.items())[-1:]
     body = text.split("---", 2)[-1]
     if "lantern-stall-digest" not in body:
         fails.append("the spec doesn't name the skill lantern-stall-digest")
@@ -523,74 +563,155 @@ def cases() -> list[Case]:
     work = {"how": "not now"}
     research = {"access": "read", "files": {"interview-1.md": interview(1), "interview-2.md": interview(2)}}
     return [
-        Case("offer-short-version", "Read two files, write a short version, save it in another folder",
-             {"research": research, "drafts": {"access": "write", "files": {"README.md": "Drafts go here.\n"}}},
-             ["Read shared/research/interview-1.md and shared/research/interview-2.md, write a short version "
-              "of the two, and save it as a new file in shared/drafts."],
-             work, lambda r: offered(r)),
-        Case("offer-combine", "Combine two files into a one-page summary saved next to them",
-             {"plans": {"access": "write", "files": {"plan-a.md": LONG_FILE,
-                                                      "plan-b.md": LONG_FILE.replace("Part", "Stage")}}},
-             ["Combine shared/plans/plan-a.md and shared/plans/plan-b.md into a one-page summary, saved next "
-              "to them."],
-             work, lambda r: offered(r)),
-        Case("offer-halve", "Rewrite a file to half its length",
-             {"plans": {"access": "write", "files": {"story.md": LONG_FILE}}},
-             ["Rewrite shared/plans/story.md to half its length."],
-             work, lambda r: offered(r)),
-        Case("small-edit", "Add a line to notes.md",
-             {"notes": {"access": "write", "files": {"notes.md": "# Notes\n\n- Tuesday stall: bring the teal "
-                                                                  "lanterns.\n"}}},
-             ["Add a line to shared/notes/notes.md saying we're booked at Harbour Market on 5 December."],
-             {"folder_write": True}, check_small_edit),
-        Case("question", "A question answered from a read",
-             {"site": {"access": "write", "files": {"home.md": HOME_PAGE}}},
-             ["What does the home page copy in shared/site say about who it's for?"],
-             {}, check_question),
-        Case("follow-up-job", "A follow-up job reads the shared folder",
-             {"drafts": {"access": "write", "files": {"summary.md": SUMMARY}}},
-             ["Pick up the summary from earlier in the drafts folder and add a section on the risks of "
-              "selling outdoors, about half a page, saved back in the same file."],
-             {"how": "live", "after_live": "no", "live_answer": "Use your best judgement."},
-             check_follow_up, live=True),
-        Case("live-job-folders", "A live job reads every folder and writes only where it saves (M4)",
-             {"research": {"access": "write", "files": {"notes.md": SUMMARY}},
-              "brand": {"access": "write", "files": {"voice.md": "Plain, warm, no exclamation marks.\n"}},
-              "drafts": {"access": "write", "files": {}}},
-             ["Read shared/research/notes.md and shared/brand/voice.md, write a 150-word post for the "
-              "newsletter in that voice, and save it as a new file in shared/drafts."],
-             {"how": "live", "after_live": "no", "live_answer": "Use your best judgement."},
-             check_live_folders, live=True),
-        Case("model-call-limit", "A long task ends with an answer and 'say carry on'",
-             {"research": {"access": "read", "files": {f"interview-{i}.md": interview(i) for i in range(1, 9)}}},
-             ["Read every file in shared/research, one at a time, and tell me which points come up in all of "
-              "them."],
-             {"how": "not now"}, check_limit, limits={"chat_calls_per_message": 2}),
-        Case("length-once", "'300 words' is written once",
-             {},
-             ["Write me a 300-word introduction to Lowtown Lanterns, an invented maker of paper lanterns, here "
-              "in the chat. Make it 300 words."],
-             {"how": "not now"}, check_length),
-        Case("set-aside", "A question on screen, then a new message: the message goes to the Lead",
-             {"research": research, "drafts": {"access": "write", "files": {}},
-              "site": {"access": "read", "files": {"home.md": HOME_PAGE}}},
-             ["Read shared/research/interview-1.md and shared/research/interview-2.md, write a short version "
-              "of the two, and save it as a new file in shared/drafts.",
-              "Actually, first: who does the home page copy in shared/site say it's for?"],
-             {"how": SetAsideAnswer(), "folder_write": SetAsideAnswer()}, set_aside_check, needs=needs_set_aside),
-        Case("schedule-offer", "Putting a saved spec on a schedule is offered and set up here (T5)",
-             {},
-             ["Can you run my saved stall-digest brief every weekday at 7.15am?"],
-             {"schedule": True}, check_schedule, setup=add_saved_spec),
-        Case("brief-names-skill", "A brief for work a skill covers names the skill and doesn't restate it (T4)",
-             {"notes": {"access": "write", "files": {"week-1.md": "Mon: 3 teal, 1 amber. Rain.\n"
-                                                                   "Tue: 5 teal, 2 red. Sun.\n"}}},
-             ["Brief a job for the crew: use the lantern-stall-digest skill on this week's notes in shared/notes "
-              "and save the digest there as digest.md. Report back, don't do it live."],
-             {"how": "report", "start_brief": True,
-              "answer": "That's all it needs: follow the skill as it is. Use your judgement.",
-              "decision": "a"},
-             check_brief_names_skill, setup=add_lantern_skill),
+        Case(
+            "offer-short-version",
+            "Read two files, write a short version, save it in another folder",
+            {"research": research, "drafts": {"access": "write", "files": {"README.md": "Drafts go here.\n"}}},
+            [
+                "Read shared/research/interview-1.md and shared/research/interview-2.md, write a short version "
+                "of the two, and save it as a new file in shared/drafts."
+            ],
+            work,
+            lambda r: offered(r),
+        ),
+        Case(
+            "offer-combine",
+            "Combine two files into a one-page summary saved next to them",
+            {
+                "plans": {
+                    "access": "write",
+                    "files": {"plan-a.md": LONG_FILE, "plan-b.md": LONG_FILE.replace("Part", "Stage")},
+                }
+            },
+            ["Combine shared/plans/plan-a.md and shared/plans/plan-b.md into a one-page summary, saved next to them."],
+            work,
+            lambda r: offered(r),
+        ),
+        Case(
+            "offer-halve",
+            "Rewrite a file to half its length",
+            {"plans": {"access": "write", "files": {"story.md": LONG_FILE}}},
+            ["Rewrite shared/plans/story.md to half its length."],
+            work,
+            lambda r: offered(r),
+        ),
+        Case(
+            "small-edit",
+            "Add a line to notes.md",
+            {
+                "notes": {
+                    "access": "write",
+                    "files": {"notes.md": "# Notes\n\n- Tuesday stall: bring the teal lanterns.\n"},
+                }
+            },
+            ["Add a line to shared/notes/notes.md saying we're booked at Harbour Market on 5 December."],
+            {"folder_write": True},
+            check_small_edit,
+        ),
+        Case(
+            "question",
+            "A question answered from a read",
+            {"site": {"access": "write", "files": {"home.md": HOME_PAGE}}},
+            ["What does the home page copy in shared/site say about who it's for?"],
+            {},
+            check_question,
+        ),
+        Case(
+            "follow-up-job",
+            "A follow-up job reads the shared folder",
+            {"drafts": {"access": "write", "files": {"summary.md": SUMMARY}}},
+            [
+                "Pick up the summary from earlier in the drafts folder and add a section on the risks of "
+                "selling outdoors, about half a page, saved back in the same file."
+            ],
+            {"how": "live", "after_live": "no", "live_answer": "Use your best judgement."},
+            check_follow_up,
+            live=True,
+        ),
+        Case(
+            "live-job-folders",
+            "A live job reads every folder and writes only where it saves (M4)",
+            {
+                "research": {"access": "write", "files": {"notes.md": SUMMARY}},
+                "brand": {"access": "write", "files": {"voice.md": "Plain, warm, no exclamation marks.\n"}},
+                "drafts": {"access": "write", "files": {}},
+            },
+            [
+                "Read shared/research/notes.md and shared/brand/voice.md, write a 150-word post for the "
+                "newsletter in that voice, and save it as a new file in shared/drafts."
+            ],
+            {"how": "live", "after_live": "no", "live_answer": "Use your best judgement."},
+            check_live_folders,
+            live=True,
+        ),
+        Case(
+            "model-call-limit",
+            "A long task ends with an answer and 'say carry on'",
+            {"research": {"access": "read", "files": {f"interview-{i}.md": interview(i) for i in range(1, 9)}}},
+            ["Read every file in shared/research, one at a time, and tell me which points come up in all of them."],
+            {"how": "not now"},
+            check_limit,
+            limits={"chat_calls_per_message": 2},
+        ),
+        Case(
+            "length-once",
+            "'300 words' is written once",
+            {},
+            [
+                "Write me a 300-word introduction to Lowtown Lanterns, an invented maker of paper lanterns, here "
+                "in the chat. Make it 300 words."
+            ],
+            {"how": "not now"},
+            check_length,
+        ),
+        Case(
+            "set-aside",
+            "A question on screen, then a new message: the message goes to the Lead",
+            {
+                "research": research,
+                "drafts": {"access": "write", "files": {}},
+                "site": {"access": "read", "files": {"home.md": HOME_PAGE}},
+            },
+            [
+                "Read shared/research/interview-1.md and shared/research/interview-2.md, write a short version "
+                "of the two, and save it as a new file in shared/drafts.",
+                "Actually, first: who does the home page copy in shared/site say it's for?",
+            ],
+            {"how": SetAsideAnswer(), "folder_write": SetAsideAnswer()},
+            set_aside_check,
+            needs=needs_set_aside,
+        ),
+        Case(
+            "schedule-offer",
+            "Putting a saved spec on a schedule is offered and set up here (T5)",
+            {},
+            ["Can you run my saved stall-digest brief every weekday at 7.15am?"],
+            {"schedule": True},
+            check_schedule,
+            setup=add_saved_spec,
+        ),
+        Case(
+            "brief-names-skill",
+            "A brief for work a skill covers names the skill and doesn't restate it (T4)",
+            {
+                "notes": {
+                    "access": "write",
+                    "files": {"week-1.md": "Mon: 3 teal, 1 amber. Rain.\nTue: 5 teal, 2 red. Sun.\n"},
+                }
+            },
+            [
+                "Brief a job for the crew: use the lantern-stall-digest skill on this week's notes in shared/notes "
+                "and save the digest there as digest.md. Report back, don't do it live."
+            ],
+            {
+                "how": "report",
+                "start_brief": True,
+                "answer": "That's all it needs: follow the skill as it is. Use your judgement.",
+                "decision": "a",
+            },
+            check_brief_names_skill,
+            setup=add_lantern_skill,
+        ),
     ]
 
 
@@ -636,8 +757,11 @@ def make_home(root: Path, model: dict[str, Any], case: Case) -> tuple[Any, dict[
     home = Home(root / "home")
     ensure_home(home)
     entry = {k: v for k, v in model.items() if k != "name"}
-    mdfile.write(home.models, {"models": {"default": entry, "cheap": "default"}},
-                 "Copied from your home for this run: the Lead's model only.")
+    mdfile.write(
+        home.models,
+        {"models": {"default": entry, "cheap": "default"}},
+        "Copied from your home for this run: the Lead's model only.",
+    )
     if case.limits:
         meta, body = mdfile.read(home.limits) if home.limits.is_file() else ({}, "")
         mdfile.write(home.limits, {**meta, **case.limits}, body)
@@ -691,8 +815,7 @@ def job_record(job_dir: Path) -> LiveJob:
                 texts.append(f"===== {p.relative_to(job_dir)}\n" + p.read_text(encoding="utf-8"))
             except (UnicodeDecodeError, OSError):
                 pass
-    return LiveJob(job_dir, meta, spec_meta, list(meta.get("folders") or []), str(meta.get("status")),
-                   "\n".join(texts))
+    return LiveJob(job_dir, meta, spec_meta, list(meta.get("folders") or []), str(meta.get("status")), "\n".join(texts))
 
 
 # ---------------------------------------------------------------------------
@@ -710,8 +833,7 @@ def run_case(case: Case, model: dict[str, Any], keep: Path | None) -> Record:
         before = snapshot(made)
         started = [time.time()]
         ui = ScriptedUI(case.answers, record, lambda: time.time() - started[0] > LIVE_JOB_WAIT)
-        chat = Chat(home, ui=ui, client_factory=lambda spec: Recorder(make_client(spec, home), record),
-                    titles=False)
+        chat = Chat(home, ui=ui, client_factory=lambda spec: Recorder(make_client(spec, home), record), titles=False)
         try:
             for message in case.messages:
                 record.turns.append({"message": message, "calls": [], "texts": [], "model_calls": 0})
@@ -734,8 +856,9 @@ def run_case(case: Case, model: dict[str, Any], keep: Path | None) -> Record:
             record.transcript = chat.path.read_text()
         from ombro import mdfile
 
-        record.specs = {p.stem: p.read_text() for p in sorted(home.specs_dir.glob("*.md"))
-                        if not p.name.endswith(".previous.md")}
+        record.specs = {
+            p.stem: p.read_text() for p in sorted(home.specs_dir.glob("*.md")) if not p.name.endswith(".previous.md")
+        }
         record.schedules = [mdfile.read(p)[0] for p in sorted(home.schedules_dir.glob("*.md"))]
     except Exception:
         record.error = traceback.format_exc()
@@ -768,8 +891,10 @@ def describe(r: Record) -> str:
     out.append("Questions: " + (", ".join(f"{n}={a!r}" for n, _, a in r.questions) or "none"))
     out.append("Shared folder changes: " + (json.dumps(r.changes) if r.changes else "none"))
     for j in r.jobs:
-        out.append(f"Live job {j.job_dir.name}: {j.status}; spec folders {j.spec_folders}; given "
-                   f"{[(f['name'], f['access']) for f in j.folders]}; tokens {j.tokens:,}")
+        out.append(
+            f"Live job {j.job_dir.name}: {j.status}; spec folders {j.spec_folders}; given "
+            f"{[(f['name'], f['access']) for f in j.folders]}; tokens {j.tokens:,}"
+        )
     return "\n".join(out)
 
 
@@ -778,9 +903,12 @@ def main() -> int:
     p.add_argument("--repeat", type=int, default=1, help="run each case this many times")
     p.add_argument("--case", action="append", help="run only this case (by name); may be given again")
     p.add_argument("--list", action="store_true", help="list the cases and stop")
-    p.add_argument("--from-home", type=Path,
-                   default=Path(os.environ.get("OMBRO_HOME") or Path.home() / ".config" / "ombro"),
-                   help="the home to read the model and its key from (only read)")
+    p.add_argument(
+        "--from-home",
+        type=Path,
+        default=Path(os.environ.get("OMBRO_HOME") or Path.home() / ".config" / "ombro"),
+        help="the home to read the model and its key from (only read)",
+    )
     p.add_argument("--model", help="a model entry in that home's models.md (default: the Lead's)")
     p.add_argument("--keep", action="store_true", help="keep each run's throwaway home under evals/results/")
     p.add_argument("--no-live", action="store_true", help="skip the cases that start a live job")
@@ -830,26 +958,50 @@ def main() -> int:
             note = "; ".join(fails) or info
             label = case.name + (f" #{n}" if args.repeat > 1 else "")
             rows.append((label, result, r.tokens, r.counted, note))
-            print(f"{label:22} {result}  {r.tokens:>9,} tokens ({r.counted:>7,} counted)  {time.time() - t0:5.0f}s  "
-                  f"{note}")
+            print(
+                f"{label:22} {result}  {r.tokens:>9,} tokens ({r.counted:>7,} counted)  {time.time() - t0:5.0f}s  "
+                f"{note}"
+            )
             if fails:
                 failures.append((label, case, r, fails))
 
     passed = sum(1 for row in rows if row[1] == "PASS")
     failed = sum(1 for row in rows if row[1] == "FAIL")
     skipped = sum(1 for row in rows if row[1] == "skip")
-    summary = (f"{passed} passed, {failed} failed, {skipped} skipped. Tokens used: {total:,} "
-               f"({counted:,} counted against limits, cached input at a fraction).")
+    summary = (
+        f"{passed} passed, {failed} failed, {skipped} skipped. Tokens used: {total:,} "
+        f"({counted:,} counted against limits, cached input at a fraction)."
+    )
     print("\n" + summary)
 
     report = out_dir / f"chat-evals-{stamp}.md"
-    lines = [f"# Chat behaviour checks, {stamp}", "", f"Model: {model['name']} ({model.get('model')})", "",
-             "| Case | Result | Tokens | Counted | Note |", "|---|---|---|---|---|"]
+    lines = [
+        f"# Chat behaviour checks, {stamp}",
+        "",
+        f"Model: {model['name']} ({model.get('model')})",
+        "",
+        "| Case | Result | Tokens | Counted | Note |",
+        "|---|---|---|---|---|",
+    ]
     lines += [f"| {c} | {res} | {tok:,} | {cnt:,} | {note.replace('|', '/')} |" for c, res, tok, cnt, note in rows]
     lines += ["", summary, ""]
     for label, case, r, fails in failures:
-        lines += [f"## {label}: {case.title}", "", "Failed: " + "; ".join(fails), "", "```", describe(r), "```",
-                  "", "### What was shown", "", "```", "\n".join(r.events), "```", ""]
+        lines += [
+            f"## {label}: {case.title}",
+            "",
+            "Failed: " + "; ".join(fails),
+            "",
+            "```",
+            describe(r),
+            "```",
+            "",
+            "### What was shown",
+            "",
+            "```",
+            "\n".join(r.events),
+            "```",
+            "",
+        ]
         if r.error:
             lines += ["### Error", "", "```", r.error, "```", ""]
         if r.transcript:

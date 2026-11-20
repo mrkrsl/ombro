@@ -71,10 +71,15 @@ def _tool_list(value: Any, where: str, key: str) -> list[str]:
         if name == "browser.submit":
             out.append(name)
             continue
-        if not name.startswith(("mcp.", "api.", "composio.")) or len(name.split(".", 2)) != 3 \
-                or not all(name.split(".", 2)):
-            raise SetupError(f"{where}: outward.{key} names tools as mcp.<server>.<tool>, api.<name>.request or "
-                             f"composio.<toolkit>.<tool>, not {name!r}")
+        if (
+            not name.startswith(("mcp.", "api.", "composio."))
+            or len(name.split(".", 2)) != 3
+            or not all(name.split(".", 2))
+        ):
+            raise SetupError(
+                f"{where}: outward.{key} names tools as mcp.<server>.<tool>, api.<name>.request or "
+                f"composio.<toolkit>.<tool>, not {name!r}"
+            )
         out.append(name)
     return out
 
@@ -128,8 +133,12 @@ def describe(setting: dict[str, Any]) -> str:
     return text
 
 
-def classify_with_source(annotations: dict[str, Any] | None, override: str | None = None,
-                         server_class: str | None = None, confirmed: bool = False) -> tuple[str, str]:
+def classify_with_source(
+    annotations: dict[str, Any] | None,
+    override: str | None = None,
+    server_class: str | None = None,
+    confirmed: bool = False,
+) -> tuple[str, str]:
     """A tool's class and where it came from: tool (tools.md), server (tools.md),
     marking (the server's own claim; for internal, one the user confirmed), unconfirmed
     (the server says internal, the user hasn't confirmed it, so external) or default."""
@@ -145,8 +154,12 @@ def classify_with_source(annotations: dict[str, Any] | None, override: str | Non
     return "external", "default"
 
 
-def classify(annotations: dict[str, Any] | None, override: str | None = None,
-             server_class: str | None = None, confirmed: bool = False) -> str:
+def classify(
+    annotations: dict[str, Any] | None,
+    override: str | None = None,
+    server_class: str | None = None,
+    confirmed: bool = False,
+) -> str:
     return classify_with_source(annotations, override, server_class, confirmed)[0]
 
 
@@ -161,8 +174,7 @@ def tool_class(settings: ToolSettings, name: str, annotations: dict[str, Any] | 
     parts = split_name(name)
     server = settings.servers.get(parts[0], {}) if parts else {}
     confirmed = bool(parts) and parts[1] in (server.get("confirmed_internal") or [])
-    return classify_with_source(annotations, settings.tools.get(name, {}).get("class"), server.get("class"),
-                                confirmed)
+    return classify_with_source(annotations, settings.tools.get(name, {}).get("class"), server.get("class"), confirmed)
 
 
 def refused(name: str, tool_settings: ToolSettings) -> bool:
@@ -193,18 +205,56 @@ def decide(setting: dict[str, Any] | None, name: str, effect: str, tool_settings
 
 # Words in a tool's name that mean a call is risky whatever service it is in: it reaches other people,
 # deletes, or spends. Such a call always asks, even in a service whose other changes are the user's own work.
-RISKY_WORDS = frozenset({
-    "SEND", "REPLY", "FORWARD", "SHARE", "INVITE", "PUBLISH", "POST", "PERMISSION", "PERMISSIONS",
-    "DELETE", "TRASH", "REMOVE", "PURGE", "EMPTY", "DESTROY",
-    "PAY", "PAYMENT", "PURCHASE", "BUY", "CHARGE", "REFUND", "TRANSFER", "ORDER", "SUBSCRIBE",
-})
+RISKY_WORDS = frozenset(
+    {
+        "SEND",
+        "REPLY",
+        "FORWARD",
+        "SHARE",
+        "INVITE",
+        "PUBLISH",
+        "POST",
+        "PERMISSION",
+        "PERMISSIONS",
+        "DELETE",
+        "TRASH",
+        "REMOVE",
+        "PURGE",
+        "EMPTY",
+        "DESTROY",
+        "PAY",
+        "PAYMENT",
+        "PURCHASE",
+        "BUY",
+        "CHARGE",
+        "REFUND",
+        "TRANSFER",
+        "ORDER",
+        "SUBSCRIBE",
+    }
+)
 # Argument names that say which document, sheet, page or file a call works on.
-TARGET_KEYS = ("spreadsheet_id", "spreadsheetid", "document_id", "documentid", "file_id", "fileid",
-               "presentation_id", "presentationid", "page_id", "pageid", "database_id", "databaseid",
-               "doc_id", "docid", "sheet_file_id")
+TARGET_KEYS = (
+    "spreadsheet_id",
+    "spreadsheetid",
+    "document_id",
+    "documentid",
+    "file_id",
+    "fileid",
+    "presentation_id",
+    "presentationid",
+    "page_id",
+    "pageid",
+    "database_id",
+    "databaseid",
+    "doc_id",
+    "docid",
+    "sheet_file_id",
+)
 # A result's text is often JSON inside JSON, so its quotes may come escaped.
-_ID_IN_RESULT = re.compile(r'\\?"(' + "|".join(TARGET_KEYS) + r'|id)\\?"\s*:\s*\\?"([A-Za-z0-9_-]{10,})\\?"',
-                           re.IGNORECASE)
+_ID_IN_RESULT = re.compile(
+    r'\\?"(' + "|".join(TARGET_KEYS) + r'|id)\\?"\s*:\s*\\?"([A-Za-z0-9_-]{10,})\\?"', re.IGNORECASE
+)
 
 
 def name_words(name: str) -> set[str]:
@@ -250,12 +300,29 @@ MAKE_WORDS = frozenset({"CREATE", "NEW", "ADD", "COPY", "DUPLICATE", "UPLOAD", "
 # After a brief or chat has read material (a web page, an email...), an internal change still runs,
 # unless it deletes something or changes who can see or reach it: those then wait for the user,
 # since an injected "trash this" or "make it public" is not undone by page history or a job's backup.
-SHARING_WORDS = frozenset({"SHARE", "UNSHARE", "INVITE", "PERMISSION", "PERMISSIONS", "PUBLISH", "UNPUBLISH",
-                           "PUBLIC", "ACCESS", "ACL", "COLLABORATOR", "COLLABORATORS", "GRANT", "REVOKE",
-                           "VISIBILITY"})
+SHARING_WORDS = frozenset(
+    {
+        "SHARE",
+        "UNSHARE",
+        "INVITE",
+        "PERMISSION",
+        "PERMISSIONS",
+        "PUBLISH",
+        "UNPUBLISH",
+        "PUBLIC",
+        "ACCESS",
+        "ACL",
+        "COLLABORATOR",
+        "COLLABORATORS",
+        "GRANT",
+        "REVOKE",
+        "VISIBILITY",
+    }
+)
 _SHARING_KEYS = ("share", "permission", "public", "visib", "access", "invite", "collaborator", "acl", "anyone")
-_SHARING_VALUES = frozenset({"public", "anyone", "anyonewithlink", "anyone_with_link", "anyone-with-link",
-                             "domain", "everyone", "published"})
+_SHARING_VALUES = frozenset(
+    {"public", "anyone", "anyonewithlink", "anyone_with_link", "anyone-with-link", "domain", "everyone", "published"}
+)
 
 
 def _sharing_args(args: Any, depth: int = 0) -> bool:
@@ -263,8 +330,12 @@ def _sharing_args(args: Any, depth: int = 0) -> bool:
         return False
     for k, v in args.items():
         key = str(k).lower()
-        if (any(p in key for p in _SHARING_KEYS) and "token" not in key and "key" not in key
-                and v not in (None, False, "", [], {})):
+        if (
+            any(p in key for p in _SHARING_KEYS)
+            and "token" not in key
+            and "key" not in key
+            and v not in (None, False, "", [], {})
+        ):
             return True
         if isinstance(v, str) and v.strip().lower() in _SHARING_VALUES:
             return True
@@ -336,11 +407,53 @@ class Scope:
 
 # Argument names that say who or where a call reaches, or who can see what it changes: shown first, so
 # a long body can never push a recipient or a sharing setting out of sight.
-_REACH_WORDS = frozenset({"to", "cc", "bcc", "from", "recipient", "recipients", "user", "users", "group", "groups",
-                          "role", "target", "address", "addresses", "number", "audience", "owner", "owners"})
-_REACH_PARTS = ("recipient", "email", "mail", "url", "uri", "link", "href", "channel", "invite", "attendee",
-                "share", "permission", "visib", "public", "access", "webhook", "phone", "domain", "destination",
-                "member", "collaborator", "acl", "anyone")
+_REACH_WORDS = frozenset(
+    {
+        "to",
+        "cc",
+        "bcc",
+        "from",
+        "recipient",
+        "recipients",
+        "user",
+        "users",
+        "group",
+        "groups",
+        "role",
+        "target",
+        "address",
+        "addresses",
+        "number",
+        "audience",
+        "owner",
+        "owners",
+    }
+)
+_REACH_PARTS = (
+    "recipient",
+    "email",
+    "mail",
+    "url",
+    "uri",
+    "link",
+    "href",
+    "channel",
+    "invite",
+    "attendee",
+    "share",
+    "permission",
+    "visib",
+    "public",
+    "access",
+    "webhook",
+    "phone",
+    "domain",
+    "destination",
+    "member",
+    "collaborator",
+    "acl",
+    "anyone",
+)
 
 
 def reaches(key: str) -> bool:
@@ -379,7 +492,7 @@ def folded(item: str) -> str | None:
     lines = item.split("\n")
     if len(item) <= FOLD_CHARS and len(lines) <= FOLD_LINES:
         return None
-    return "\n".join(lines[:FOLD_LINES])[:FOLD_CHARS // 2].rstrip()
+    return "\n".join(lines[:FOLD_LINES])[: FOLD_CHARS // 2].rstrip()
 
 
 def split_name(name: str) -> tuple[str, str] | None:
@@ -418,8 +531,7 @@ def _with_reason(schema: dict[str, Any]) -> tuple[dict[str, Any], str]:
     return out, key
 
 
-def make_tool(server: str, remote: str, description: str, schema: dict[str, Any], effect: str,
-              call: Any) -> Tool:
+def make_tool(server: str, remote: str, description: str, schema: dict[str, Any], effect: str, call: Any) -> Tool:
     """An Ombro tool for one MCP tool. `call(remote, args, timeout)` runs it on the server."""
     schema = schema if isinstance(schema, dict) else {"type": "object", "properties": {}}
     if effect == "read-only":
@@ -427,14 +539,17 @@ def make_tool(server: str, remote: str, description: str, schema: dict[str, Any]
         params.setdefault("type", "object")
     else:
         params, reason_key = _with_reason(schema)
-    label = {"read-only": "Reads from", "internal": "Changes things in",
-             "external": "Reaches outside the organisation, through"}[effect]
+    label = {
+        "read-only": "Reads from",
+        "internal": "Changes things in",
+        "external": "Reaches outside the organisation, through",
+    }[effect]
     # The description is the server's own words: marked as such and kept short, so it
     # reads as a description, not as instructions.
     said = " ".join(str(description or "").split())
     if len(said) > DESCRIPTION_MAX_CHARS:
-        said = said[:DESCRIPTION_MAX_CHARS - 1] + "…"
-    text = f"{label} {server} (an outside service)." + (f" The server describes it as: \"{said}\"" if said else "")
+        said = said[: DESCRIPTION_MAX_CHARS - 1] + "…"
+    text = f"{label} {server} (an outside service)." + (f' The server describes it as: "{said}"' if said else "")
 
     def handler(args: dict, ctx: ToolContext) -> dict[str, Any]:
         result = call(remote, args, ctx.timeout)
@@ -443,15 +558,26 @@ def make_tool(server: str, remote: str, description: str, schema: dict[str, Any]
             raise McpError(text_out or f"{remote} reported an error")
         return {"result": text_out or "(no content)", "note": MCP_NOTE}
 
-    return Tool(name=f"mcp.{server}.{remote}", description=text[:1000], parameters=params, handler=handler,
-                outward=True, effect=effect, input_schema=schema, reason_key=reason_key)
+    return Tool(
+        name=f"mcp.{server}.{remote}",
+        description=text[:1000],
+        parameters=params,
+        handler=handler,
+        outward=True,
+        effect=effect,
+        input_schema=schema,
+        reason_key=reason_key,
+    )
 
 
 def external_apis(settings: ToolSettings) -> list[str]:
     """The web APIs whose changes are external (every crew member is offered each API), as the tool a
     brief's answer applies to: api.<name>.request. One refused in tools.md is never offered, so isn't asked about."""
-    return sorted(f"api.{name}.request" for name, cfg in settings.apis.items()
-                  if (cfg.get("class") or "external") == "external" and not refused(f"api.{name}.request", settings))
+    return sorted(
+        f"api.{name}.request"
+        for name, cfg in settings.apis.items()
+        if (cfg.get("class") or "external") == "external" and not refused(f"api.{name}.request", settings)
+    )
 
 
 def external_tools(home: Home, settings: ToolSettings, names: list[str]) -> list[str]:
@@ -505,8 +631,9 @@ class McpPool:
             self.clients[server] = c
         return self.clients[server]
 
-    def call(self, server: str, remote: str, args: dict, timeout: float | None = None,
-             sent: list | None = None) -> dict[str, Any]:
+    def call(
+        self, server: str, remote: str, args: dict, timeout: float | None = None, sent: list | None = None
+    ) -> dict[str, Any]:
         return self.client(server).call_tool(remote, args, timeout, sent=sent)
 
     def tools(self, names: list[str]) -> tuple[list[Tool], list[str]]:
@@ -522,8 +649,10 @@ class McpPool:
         out: list[Tool] = []
         for server, remotes in wanted.items():
             if server not in self.settings.servers:
-                warnings.append(f"no MCP server named {server!r} in tools.md, so its tools are not offered: "
-                                + ", ".join(f"mcp.{server}.{r}" for r in remotes))
+                warnings.append(
+                    f"no MCP server named {server!r} in tools.md, so its tools are not offered: "
+                    + ", ".join(f"mcp.{server}.{r}" for r in remotes)
+                )
                 continue
             try:
                 listed = {t.name: t for t in self.client(server).list_tools()}
@@ -537,8 +666,16 @@ class McpPool:
                     continue
                 name = f"mcp.{server}.{remote}"
                 effect = tool_class(self.settings, name, t.annotations)[0]
-                out.append(make_tool(server, remote, t.description, t.input_schema, effect,
-                                     lambda r, a, timeout, s=server: self.call(s, r, a, timeout)))
+                out.append(
+                    make_tool(
+                        server,
+                        remote,
+                        t.description,
+                        t.input_schema,
+                        effect,
+                        lambda r, a, timeout, s=server: self.call(s, r, a, timeout),
+                    )
+                )
         return out, warnings
 
     def close(self) -> None:

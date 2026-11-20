@@ -24,9 +24,18 @@ def saved(home, name="teapot-makers", meta=None, body=BODY):
 def test_the_spec_gives_the_work_to_its_roles_and_the_report_says_who_else(job, home):
     write_role(home, "researcher")
     write_role(home, "checker")
-    job([fake.brief("researcher", "Research."), fake.result("Found three."),
-         fake.brief("checker", "Check them."), fake.result("Checked."),
-         fake.finish(), fake.keep_notes(), LEAD_REPORT], spec_meta={"roles": ["researcher"]})
+    job(
+        [
+            fake.brief("researcher", "Research."),
+            fake.result("Found three."),
+            fake.brief("checker", "Check them."),
+            fake.result("Checked."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        spec_meta={"roles": ["researcher"]},
+    )
     lead = job.client.calls[0]["messages"][0]["content"]
     assert "=== Who the spec gives the work to ===" in lead and "The user chose: researcher" in lead
     assert "The spec gave the work to researcher." in job.report
@@ -79,9 +88,16 @@ def test_roles_given_to_the_offer_apply_to_this_job_only(home, monkeypatch):
     started = []
     monkeypatch.setattr("ombro.cli.main", lambda argv: started.append(argv) or 0)
     s = ChatSession(home)
-    s([fake.call("offer_start", {"spec": "teapot-makers", "roles": ["researcher"],
-                               "how": "with the researcher leading the whole job"}),
-       fake.say("Starting it.")], ["Restart it, with the researcher doing it", "y"])
+    s(
+        [
+            fake.call(
+                "offer_start",
+                {"spec": "teapot-makers", "roles": ["researcher"], "how": "with the researcher leading the whole job"},
+            ),
+            fake.say("Starting it."),
+        ],
+        ["Restart it, with the researcher doing it", "y"],
+    )
     assert "I can restart it with the researcher leading the whole job." in s.output
     assert started == [["start", "--spec", "teapot-makers", "--detach", "--role", "researcher"]]
     assert path.read_text() == before  # the saved spec is unchanged
@@ -95,8 +111,10 @@ def test_change_it_opens_the_saved_spec_for_changing(home):
         return fake.call("propose", {**SPEC_ARGS, "name": "teapot-makers"})
 
     s = ChatSession(home)
-    s([fake.call("offer_start", {"spec": "teapot-makers"}), interview, fake.say("Changed.")],
-      ["Restart the teapot task", "change it", "a", "Thanks"])
+    s(
+        [fake.call("offer_start", {"spec": "teapot-makers"}), interview, fake.say("Changed.")],
+        ["Restart the teapot task", "change it", "a", "Thanks"],
+    )
     assert (home.specs_dir / "teapot-makers.previous.md").is_file()
 
 
@@ -140,9 +158,14 @@ def test_revising_a_saved_spec_starts_from_its_text_and_keeps_the_old_one(home):
         return fake.call("propose", {**SPEC_ARGS, "name": "teapot-makers", "roles": ["researcher"]})
 
     s = ChatSession(home)
-    s([fake.call("offer_brief", {"summary": "The researcher should do it", "revise": "teapot-makers"}),
-       interview, fake.say("Changed.")],
-      ["Same task, but the researcher should do it", "y", "a", "Thanks"])
+    s(
+        [
+            fake.call("offer_brief", {"summary": "The researcher should do it", "revise": "teapot-makers"}),
+            interview,
+            fake.say("Changed."),
+        ],
+        ["Same task, but the researcher should do it", "y", "a", "Thanks"],
+    )
     assert "I can open your saved spec 'teapot-makers' and change it" in s.output
     assert mdfile.read(path)[0]["roles"] == ["researcher"]
     assert (home.specs_dir / "teapot-makers.previous.md").read_text().count("a list of three") == 1
@@ -153,9 +176,17 @@ def test_the_offer_is_said_once_and_enter_starts_it(home, monkeypatch):
     started = []
     monkeypatch.setattr("ombro.cli.main", lambda argv: started.append(argv) or 0)
     s = ChatSession(home)
-    s([fake.call("offer_start", {"spec": "teapot-makers", "note": "It stopped on the token limit"},
-                 content="Found it, Mark. It's the saved spec teapot-makers."),
-       fake.say("Starting it.")], ["Restart the teapot task", ""])
+    s(
+        [
+            fake.call(
+                "offer_start",
+                {"spec": "teapot-makers", "note": "It stopped on the token limit"},
+                content="Found it, Mark. It's the saved spec teapot-makers.",
+            ),
+            fake.say("Starting it."),
+        ],
+        ["Restart the teapot task", ""],
+    )
     assert "Found it, Mark" not in s.output  # the offer speaks for the Lead, once
     assert "I found it. It's the spec 'teapot-makers'. It stopped on the token limit. I can restart it" in s.output
     assert started == [["start", "--spec", "teapot-makers", "--detach"]]  # Enter means yes

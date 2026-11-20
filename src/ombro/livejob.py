@@ -43,8 +43,11 @@ ASK_TOOL = {
             "type": "object",
             "properties": {
                 "question": {"type": "string", "description": "The question, in one or two sentences."},
-                "options": {"type": "array", "items": {"type": "string"},
-                            "description": "Optional: two to four short answers to choose from."},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: two to four short answers to choose from.",
+                },
             },
             "required": ["question"],
         },
@@ -67,17 +70,26 @@ def _dir(job_dir: Path) -> Path:
 # -- the job's side -------------------------------------------------------------------
 
 
-def ask(job_dir: Path, question: str, options: list[str] | None = None, *,
-        cancelled: Callable[[], bool] = lambda: False, wait: float = ANSWER_WAIT,
-        clock: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep) -> str | None:
+def ask(
+    job_dir: Path,
+    question: str,
+    options: list[str] | None = None,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+    wait: float = ANSWER_WAIT,
+    clock: Callable[[], float] = time.time,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str | None:
     """Put a question to the user and wait for the answer. None if none came in time, or the job
     was told to stop."""
     folder = _dir(job_dir)
     folder.mkdir(exist_ok=True)
     qid = secrets.token_hex(6)
     (folder / "answer.json").unlink(missing_ok=True)
-    mdfile.write_atomic(folder / "question.json", json.dumps(
-        {"id": qid, "question": question, "options": [o for o in (options or []) if o][:4]}))
+    mdfile.write_atomic(
+        folder / "question.json",
+        json.dumps({"id": qid, "question": question, "options": [o for o in (options or []) if o][:4]}),
+    )
     deadline = clock() + wait
     try:
         while clock() < deadline and not cancelled():
@@ -117,23 +129,36 @@ def spec_text(title: str, task: str) -> str:
     return f"# {title}\n\n{str(task).strip()}\n"
 
 
-def start(home: Home, crews: list[str], title: str, task: str, *, chat: str | None = None,
-          inputs: list[str] | None = None, folders: dict[str, str] | None = None) -> Path:
+def start(
+    home: Home,
+    crews: list[str],
+    title: str,
+    task: str,
+    *,
+    chat: str | None = None,
+    inputs: list[str] | None = None,
+    folders: dict[str, str] | None = None,
+) -> Path:
     """Create a live job from what the Lead wrote in the chat, and start it in the background.
     `folders` are the shared folders the Lead named, as {name: read or write}: the job then gets
     only those. With none it may read every shared folder and change none."""
     from ombro.settings import load_limits, load_tool_settings
 
-    spec_meta: dict[str, Any] = {"crews": crews, "live": True, **({"inputs": list(inputs)} if inputs else {}),
-                                 **({"folders": dict(folders)} if folders else {})}
+    spec_meta: dict[str, Any] = {
+        "crews": crews,
+        "live": True,
+        **({"inputs": list(inputs)} if inputs else {}),
+        **({"folders": dict(folders)} if folders else {}),
+    }
     body = spec_text(title, task)
     tools = load_tool_settings(home)
     limits = load_limits(home, None, tools)
     extra: dict[str, Any] = {"live": True}
     if chat:
         extra["chat"] = chat
-    job_dir = jobs.create_job(home, crews, spec_meta, body, limits, source="a live job from a chat",
-                              tools=tools.to_dict(), extra=extra)
+    job_dir = jobs.create_job(
+        home, crews, spec_meta, body, limits, source="a live job from a chat", tools=tools.to_dict(), extra=extra
+    )
     jobs.start_detached(home, job_dir)
     return job_dir
 
@@ -174,8 +199,7 @@ def save_as_brief(home: Home, job_dir: Path) -> str:
     return name
 
 
-def follow(home: Home, ui, job_dir: Path, *, sleep: Callable[[float], None] = time.sleep,
-           poll: float = POLL) -> str:
+def follow(home: Home, ui, job_dir: Path, *, sleep: Callable[[float], None] = time.sleep, poll: float = POLL) -> str:
     """Show a live job in the chat until it ends: its steps, its questions (asked here, answered
     by you), and how it ended. Esc (an interrupt) asks it to stop; it then reports. Returns the
     job's status."""
@@ -212,9 +236,18 @@ def follow(home: Home, ui, job_dir: Path, *, sleep: Callable[[float], None] = ti
             if q and q["id"] not in asked and not stopping:
                 asked.add(q["id"])
                 options = [str(o) for o in q.get("options") or []]
-                f = (Field("live_answer", str(q["question"]), "choice", mode="Chat", other="your own answer",
-                           options=[Option(o, o) for o in options])
-                     if options else Field("live_answer", str(q["question"]), "text", mode="Chat"))
+                f = (
+                    Field(
+                        "live_answer",
+                        str(q["question"]),
+                        "choice",
+                        mode="Chat",
+                        other="your own answer",
+                        options=[Option(o, o) for o in options],
+                    )
+                    if options
+                    else Field("live_answer", str(q["question"]), "text", mode="Chat")
+                )
                 got = ui.ask(f)
                 if pending(job_dir) and pending(job_dir)["id"] == q["id"]:
                     answer(job_dir, q["id"], str(got or ""))

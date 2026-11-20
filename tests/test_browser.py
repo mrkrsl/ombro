@@ -85,7 +85,9 @@ class Site:
             def do_GET(self):
                 site.requests.append(("GET", self.path, ""))
                 if self.path.startswith("/menu"):
-                    self._send("<html><head><title>Menu</title></head><body><p>Menu: invented rye, invented spelt.</p></body></html>")
+                    self._send(
+                        "<html><head><title>Menu</title></head><body><p>Menu: invented rye, invented spelt.</p></body></html>"
+                    )
                 elif self.path == "/":
                     self._send(page(site.port))
                 else:
@@ -97,7 +99,9 @@ class Site:
                 site.requests.append(("POST", self.path, body))
                 if self.path == "/availability":
                     q = parse_qs(body)
-                    self._send(f"<html><body><p>{q['n'][0]} invented loaves on {q['day'][0]}: in stock.</p></body></html>")
+                    self._send(
+                        f"<html><body><p>{q['n'][0]} invented loaves on {q['day'][0]}: in stock.</p></body></html>"
+                    )
                     return
                 name = parse_qs(body).get("name", ["?"])[0]
                 self._send(f"<html><body><p>Thank you {name}, your invented order is placed.</p></body></html>")
@@ -228,11 +232,13 @@ def test_a_form_without_your_details_is_sent_in_the_job(tools, site):
     staged = t["browser.submit"].prepare({"button": ref(out, '"Place order"')}, ctx)
     assert staged["_effect"] == "external" and "Your name" in staged["_why"]
     assert staged["fields"][0]["value"] == "Ada"  # typed earlier, so it goes with the form
-    filters = t["browser.submit"].prepare({"button": ref(out, '"Check availability"'),
-                                           "fields": {ref(out, '"How many"'): "2"}}, ctx)
+    filters = t["browser.submit"].prepare(
+        {"button": ref(out, '"Check availability"'), "fields": {ref(out, '"How many"'): "2"}}, ctx
+    )
     assert filters["_effect"] == "internal"
-    email = t["browser.submit"].prepare({"button": ref(out, '"Check availability"'),
-                                         "fields": {ref(out, '"How many"'): "ada@example.invalid"}}, ctx)
+    email = t["browser.submit"].prepare(
+        {"button": ref(out, '"Check availability"'), "fields": {ref(out, '"How many"'): "ada@example.invalid"}}, ctx
+    )
     assert email["_effect"] == "external" and "email" in email["_why"]
     assert len([r for r in site.requests if r[0] == "POST"]) == 1
 
@@ -279,18 +285,29 @@ def test_a_job_stages_a_form_and_approval_submits_it(job, home, site, monkeypatc
     from conftest import write_role
 
     monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
-    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}},
-                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    mdfile.write(
+        home.tools,
+        {
+            "tools": {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}},
+            "providers": {"browser": site.settings},
+        },
+        "Test tool settings.",
+    )
     write_role(home, "researcher", max_steps=8, tools=["browser.open", "browser.submit"])
-    job([
-        fake.brief("researcher", "Order an invented loaf for Ada."),
-        fake.call("browser__open", {"url": site.url}),
-        fake.call("browser__submit", {"button": "e7", "fields": {"e5": "Ada"},
-                                      "reason": "Ada asked for an invented loaf."}),
-        fake.result("The order waits for approval."),
-        fake.finish("Staged."), fake.keep_notes(),
-        fake.say("## Summary\nThe order waits for you.\n\n## What was done\nThe researcher filled in the form."),
-    ])
+    job(
+        [
+            fake.brief("researcher", "Order an invented loaf for Ada."),
+            fake.call("browser__open", {"url": site.url}),
+            fake.call(
+                "browser__submit",
+                {"button": "e7", "fields": {"e5": "Ada"}, "reason": "Ada asked for an invented loaf."},
+            ),
+            fake.result("The order waits for approval."),
+            fake.finish("Staged."),
+            fake.keep_notes(),
+            fake.say("## Summary\nThe order waits for you.\n\n## What was done\nThe researcher filled in the form."),
+        ]
+    )
     opened = next(e for e in job.events if e["action"] == "tool_call" and e.get("tool") == "browser.open")
     assert opened
     [a] = outbox.actions(job.job_dir)
@@ -309,16 +326,27 @@ def _order_job(job, home, site, monkeypatch, outward):
     from conftest import write_role
 
     monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
-    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}},
-                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    mdfile.write(
+        home.tools,
+        {
+            "tools": {"web.search": {"provider": "fake"}, "web.fetch": {"provider": "fake"}},
+            "providers": {"browser": site.settings},
+        },
+        "Test tool settings.",
+    )
     write_role(home, "researcher", max_steps=8, tools=["browser.open", "browser.submit"])
-    job([
-        fake.brief("researcher", "Order an invented loaf for Ada."),
-        fake.call("browser__open", {"url": site.url}),
-        fake.call("browser__submit", {"button": "e7", "fields": {"e5": "Ada"}, "reason": "Ada asked for it."}),
-        fake.result("Done."), fake.finish("Done."), fake.keep_notes(),
-        fake.say("## Summary\nDone.\n\n## What was done\nThe researcher filled in the form."),
-    ], spec_meta={"outward": outward})
+    job(
+        [
+            fake.brief("researcher", "Order an invented loaf for Ada."),
+            fake.call("browser__open", {"url": site.url}),
+            fake.call("browser__submit", {"button": "e7", "fields": {"e5": "Ada"}, "reason": "Ada asked for it."}),
+            fake.result("Done."),
+            fake.finish("Done."),
+            fake.keep_notes(),
+            fake.say("## Summary\nDone.\n\n## What was done\nThe researcher filled in the form."),
+        ],
+        spec_meta={"outward": outward},
+    )
 
 
 def test_after_reading_a_page_a_submit_waits_even_under_auto(job, home, site, monkeypatch):
@@ -344,8 +372,11 @@ def _chat_with_site(home, site, monkeypatch, script, answers):
     from test_chat import ChatSession
 
     monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
-    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}},
-                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    mdfile.write(
+        home.tools,
+        {"tools": {"web.search": {"provider": "fake"}}, "providers": {"browser": site.settings}},
+        "Test tool settings.",
+    )
     session = ChatSession(home)
     session(script, answers)
     return session
@@ -353,11 +384,17 @@ def _chat_with_site(home, site, monkeypatch, script, answers):
 
 @pytest.mark.parametrize("yes", [True, False])
 def test_the_lead_reads_with_the_browser_in_chat_and_a_form_asks_first(home, site, monkeypatch, yes):
-    session = _chat_with_site(home, site, monkeypatch, [
-        fake.call("browser__open", {"url": site.url}),
-        fake.call("browser__submit", {"button": "e7", "fields": {"e5": "Ada"}, "reason": "You asked for a loaf."}),
-        fake.say("Done." if yes else "Not sent."),
-    ], ["Order a loaf for Ada.", "y" if yes else "n"])
+    session = _chat_with_site(
+        home,
+        site,
+        monkeypatch,
+        [
+            fake.call("browser__open", {"url": site.url}),
+            fake.call("browser__submit", {"button": "e7", "fields": {"e5": "Ada"}, "reason": "You asked for a loaf."}),
+            fake.say("Done." if yes else "Not sent."),
+        ],
+        ["Order a loaf for Ada.", "y" if yes else "n"],
+    )
     read, sent = session.tool_replies()
     assert "Made by script" in read["text"]
     posts = [r for r in site.requests if r[0] == "POST"]
@@ -373,11 +410,22 @@ def test_a_role_that_reads_the_web_gets_the_browser(job, home, site, monkeypatch
     from conftest import write_role
 
     monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
-    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}},
-                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    mdfile.write(
+        home.tools,
+        {"tools": {"web.search": {"provider": "fake"}}, "providers": {"browser": site.settings}},
+        "Test tool settings.",
+    )
     write_role(home, "researcher", max_steps=8, tools=["web.fetch"])
-    job([fake.brief("researcher", "Read the bakery's page."), fake.call("browser__open", {"url": site.url}),
-         fake.result("Read it."), fake.finish("Done."), fake.keep_notes(), fake.say("## Summary\nDone.")])
+    job(
+        [
+            fake.brief("researcher", "Read the bakery's page."),
+            fake.call("browser__open", {"url": site.url}),
+            fake.result("Read it."),
+            fake.finish("Done."),
+            fake.keep_notes(),
+            fake.say("## Summary\nDone."),
+        ]
+    )
     assert any(e["action"] == "tool_call" and e.get("tool") == "browser.open" for e in job.events)
 
 
@@ -385,13 +433,26 @@ def test_in_a_job_a_form_of_choices_is_sent_without_approval(job, home, site, mo
     from conftest import write_role
 
     monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
-    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}},
-                              "providers": {"browser": site.settings}}, "Test tool settings.")
+    mdfile.write(
+        home.tools,
+        {"tools": {"web.search": {"provider": "fake"}}, "providers": {"browser": site.settings}},
+        "Test tool settings.",
+    )
     write_role(home, "researcher", max_steps=8, tools=["browser.open", "browser.submit"])
-    job([fake.brief("researcher", "Check Friday's loaves."), fake.call("browser__open", {"url": site.url}),
-         fake.call("browser__submit", {"button": "e10", "fields": {"e8": "Friday", "e9": "2"},
-                                       "reason": "To see what's in stock."}),
-         fake.result("In stock."), fake.finish("Done."), fake.keep_notes(), fake.say("## Summary\nDone.")])
+    job(
+        [
+            fake.brief("researcher", "Check Friday's loaves."),
+            fake.call("browser__open", {"url": site.url}),
+            fake.call(
+                "browser__submit",
+                {"button": "e10", "fields": {"e8": "Friday", "e9": "2"}, "reason": "To see what's in stock."},
+            ),
+            fake.result("In stock."),
+            fake.finish("Done."),
+            fake.keep_notes(),
+            fake.say("## Summary\nDone."),
+        ]
+    )
     assert outbox.actions(job.job_dir) == []
     [post] = [r for r in site.requests if r[0] == "POST"]
     assert post[1] == "/availability" and parse_qs(post[2]) == {"day": ["Friday"], "n": ["2"]}
@@ -421,8 +482,10 @@ def test_the_browser_setting_is_auto_one_browser_or_off(home):
 
 # -- once a job has read private material ---------------------------------------------
 
-PRIVATE = ("Invented client notes: the agreed fee for Halloway is forty thousand pounds, paid in two parts, "
-           "reference HX4471920033.")
+PRIVATE = (
+    "Invented client notes: the agreed fee for Halloway is forty thousand pounds, paid in two parts, "
+    "reference HX4471920033."
+)
 
 
 def _private_job(job, home, site, monkeypatch, tmp_path, calls, outward="auto"):
@@ -438,15 +501,25 @@ def _private_job(job, home, site, monkeypatch, tmp_path, calls, outward="auto"):
     monkeypatch.setenv("HOME", str(me))
     folders.add(home, me / "Documents" / "Clients", "clients", "read")
     monkeypatch.setattr("ombro.providers.addresses.system_resolver", resolver)
-    mdfile.write(home.tools, {"tools": {"web.search": {"provider": "fake"}},
-                              "providers": {"browser": site.settings}}, "Test tool settings.")
-    write_role(home, "researcher", max_steps=12,
-               tools=["workspace.read", "browser.open", "browser.type", "browser.submit"])
-    job([
-        fake.brief("researcher", "Look up loaves for the client."),
-        *calls(b64),
-        fake.result("Done."), fake.finish("Done."), fake.keep_notes(), fake.say("## Summary\nDone."),
-    ], spec_meta={"folders": ["clients"], "outward": outward})
+    mdfile.write(
+        home.tools,
+        {"tools": {"web.search": {"provider": "fake"}}, "providers": {"browser": site.settings}},
+        "Test tool settings.",
+    )
+    write_role(
+        home, "researcher", max_steps=12, tools=["workspace.read", "browser.open", "browser.type", "browser.submit"]
+    )
+    job(
+        [
+            fake.brief("researcher", "Look up loaves for the client."),
+            *calls(b64),
+            fake.result("Done."),
+            fake.finish("Done."),
+            fake.keep_notes(),
+            fake.say("## Summary\nDone."),
+        ],
+        spec_meta={"folders": ["clients"], "outward": outward},
+    )
     from ombro import material
 
     # The role's tool replies, as its last model call had them (the call with the most of them).
@@ -456,13 +529,20 @@ def _private_job(job, home, site, monkeypatch, tmp_path, calls, outward="auto"):
 
 def test_a_job_that_read_private_material_cannot_type_or_open_it_out(job, home, site, monkeypatch, tmp_path):
     secret = "the agreed fee for Halloway is forty thousand pounds"
-    replies = _private_job(job, home, site, monkeypatch, tmp_path, lambda b64: [
-        fake.call("workspace__read", {"path": "shared/clients/halloway.md"}),
-        fake.call("browser__open", {"url": site.url}),
-        fake.call("browser__type", {"ref": "e3", "text": "rye loaves"}),  # ordinary searching still works
-        fake.call("browser__type", {"ref": "e3", "text": secret}),
-        fake.call("browser__open", {"url": site.url + "t/" + b64.b64encode(secret.encode()).decode()}),
-    ])
+    replies = _private_job(
+        job,
+        home,
+        site,
+        monkeypatch,
+        tmp_path,
+        lambda b64: [
+            fake.call("workspace__read", {"path": "shared/clients/halloway.md"}),
+            fake.call("browser__open", {"url": site.url}),
+            fake.call("browser__type", {"ref": "e3", "text": "rye loaves"}),  # ordinary searching still works
+            fake.call("browser__type", {"ref": "e3", "text": secret}),
+            fake.call("browser__open", {"url": site.url + "t/" + b64.b64encode(secret.encode()).decode()}),
+        ],
+    )
     read, opened, typed, held, refused = replies[-5:]
     assert typed["value"] == "rye loaves"
     assert "Not typed into shop.test" in held["error"] and "shared/clients/halloway.md" in held["error"]
@@ -478,22 +558,43 @@ def test_a_job_that_read_private_material_cannot_type_or_open_it_out(job, home, 
 
 def test_a_job_that_only_read_the_web_types_as_before(job, home, site, monkeypatch, tmp_path):
     secret = "the agreed fee for Halloway is forty thousand pounds"
-    replies = _private_job(job, home, site, monkeypatch, tmp_path, lambda b64: [
-        fake.call("browser__open", {"url": site.url}),
-        fake.call("browser__type", {"ref": "e3", "text": secret}),
-    ])
+    replies = _private_job(
+        job,
+        home,
+        site,
+        monkeypatch,
+        tmp_path,
+        lambda b64: [
+            fake.call("browser__open", {"url": site.url}),
+            fake.call("browser__type", {"ref": "e3", "text": secret}),
+        ],
+    )
     assert replies[-1]["value"] == secret
     assert not any(e["action"] == "carry_held" for e in job.events)
 
 
 def test_a_form_carrying_private_material_waits_for_approval(job, home, site, monkeypatch, tmp_path):
     # A form of choices would be sent in the job; carrying the client's reference, it waits.
-    _private_job(job, home, site, monkeypatch, tmp_path, lambda b64: [
-        fake.call("workspace__read", {"path": "shared/clients/halloway.md"}),
-        fake.call("browser__open", {"url": site.url}),
-        fake.call("browser__submit", {"button": "e10", "fields": {"e8": "Friday", "e9": "HX4471920033"},
-                                      "reason": "To see what's in stock."}),
-    ], outward={"preset": "balanced", "allow": ["browser.submit"]})
+    _private_job(
+        job,
+        home,
+        site,
+        monkeypatch,
+        tmp_path,
+        lambda b64: [
+            fake.call("workspace__read", {"path": "shared/clients/halloway.md"}),
+            fake.call("browser__open", {"url": site.url}),
+            fake.call(
+                "browser__submit",
+                {
+                    "button": "e10",
+                    "fields": {"e8": "Friday", "e9": "HX4471920033"},
+                    "reason": "To see what's in stock.",
+                },
+            ),
+        ],
+        outward={"preset": "balanced", "allow": ["browser.submit"]},
+    )
     [a] = outbox.actions(job.job_dir)
     assert a.status == "pending" and "private material" in a.arguments["_why"]
     assert not [r for r in site.requests if r[0] == "POST"]
@@ -509,13 +610,19 @@ def test_in_chat_typing_private_material_asks_you_first(home, site, monkeypatch,
     monkeypatch.setenv("HOME", str(me))
     folders.add(home, me / "Documents" / "Clients", "clients", "read")
     secret = "the agreed fee for Halloway is forty thousand pounds"
-    session = _chat_with_site(home, site, monkeypatch, [
-        fake.call("folders__read", {"path": "shared/clients/halloway.md"}),
-        fake.call("browser__open", {"url": site.url}),
-        fake.call("browser__type", {"ref": "e3", "text": "rye"}),  # ordinary: no question
-        fake.call("browser__type", {"ref": "e3", "text": secret}),
-        fake.say("Done." if yes else "Not typed."),
-    ], ["Look up loaves for Halloway.", "y" if yes else "n"])
+    session = _chat_with_site(
+        home,
+        site,
+        monkeypatch,
+        [
+            fake.call("folders__read", {"path": "shared/clients/halloway.md"}),
+            fake.call("browser__open", {"url": site.url}),
+            fake.call("browser__type", {"ref": "e3", "text": "rye"}),  # ordinary: no question
+            fake.call("browser__type", {"ref": "e3", "text": secret}),
+            fake.say("Done." if yes else "Not typed."),
+        ],
+        ["Look up loaves for Halloway.", "y" if yes else "n"],
+    )
     *_, plain, typed = session.tool_replies()
     assert plain["value"] == "rye"
     assert "I'd like to type into" in session.output and f"Text: {secret}" in session.output

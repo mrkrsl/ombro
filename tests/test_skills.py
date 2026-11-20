@@ -36,13 +36,18 @@ def add_skill(home, name: str, text: str | None = None, file: str = "SKILL.md") 
 
 def a_job(*middle, notes=None):
     """Brief the researcher, which returns; then whatever comes next (the skill call); then the report."""
-    return [fake.brief("researcher", "Survey invented kettle makers."), fake.result("Found three invented makers."),
-            fake.finish("Done."), notes or fake.keep_notes(), *middle, LEAD_REPORT]
+    return [
+        fake.brief("researcher", "Survey invented kettle makers."),
+        fake.result("Found three invented makers."),
+        fake.finish("Done."),
+        notes or fake.keep_notes(),
+        *middle,
+        LEAD_REPORT,
+    ]
 
 
 def skill_calls(job) -> list[dict]:
-    return [c for c in job.client.calls
-            if any(t["function"]["name"] == "skills__propose" for t in c["tools"] or [])]
+    return [c for c in job.client.calls if any(t["function"]["name"] == "skills__propose" for t in c["tools"] or [])]
 
 
 # -- the library --------------------------------------------------------------------
@@ -110,10 +115,17 @@ def test_a_role_sees_names_and_descriptions_and_reads_a_skill_when_it_needs_it(j
     add_skill(home, "kettle-survey")
     add_skill(home, "teapot-check")
     write_role(home, "researcher", skills=["kettle-survey"])
-    status = job([fake.brief("researcher", "Survey invented kettle makers."),
-                  fake.call("skills__read", {"name": "kettle-survey"}),
-                  fake.call("skills__read", {"name": "teapot-check"}),
-                  fake.result("Followed the method."), fake.finish(), fake.keep_notes(), LEAD_REPORT])
+    status = job(
+        [
+            fake.brief("researcher", "Survey invented kettle makers."),
+            fake.call("skills__read", {"name": "kettle-survey"}),
+            fake.call("skills__read", {"name": "teapot-check"}),
+            fake.result("Followed the method."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     assert status == "completed"
     role_call = job.client.calls[1]
     system = role_call["messages"][0]["content"]
@@ -153,17 +165,25 @@ def test_a_listed_skill_that_does_not_exist_is_a_warning(job, home):
 EARLIER = "kettle-survey-of-another-town-20261101-0900"
 
 
-def add_past_job(home, job_id: str, brief: str, status: str = "completed", spec: str = "",
-                 skills_read: tuple[str, ...] = ()) -> None:
+def add_past_job(
+    home, job_id: str, brief: str, status: str = "completed", spec: str = "", skills_read: tuple[str, ...] = ()
+) -> None:
     d = home.jobs_dir / job_id
     d.mkdir(parents=True, exist_ok=True)
-    meta = {"job_id": job_id, "crews": ["default"], "status": status, "brief": brief,
-            "created_at": "2026-11-01T09:00:00Z", "finished_at": "2026-11-01T09:20:00Z"}
+    meta = {
+        "job_id": job_id,
+        "crews": ["default"],
+        "status": status,
+        "brief": brief,
+        "created_at": "2026-11-01T09:00:00Z",
+        "finished_at": "2026-11-01T09:20:00Z",
+    }
     if spec:
         meta["source"] = f"spec file {home.specs_dir / (spec + '.md')}"
     mdfile.write(d / "job.md", meta, "")
-    (d / "journal.jsonl").write_text("".join(json.dumps({"action": "skill_read", "skill": n}) + "\n"
-                                             for n in skills_read))
+    (d / "journal.jsonl").write_text(
+        "".join(json.dumps({"action": "skill_read", "skill": n}) + "\n" for n in skills_read)
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -174,8 +194,13 @@ def an_earlier_job_of_the_same_kind(home):
 
 def propose(name="kettle-survey", body="1. Search the invented directory.\n2. Check each workshop.", **kw):
     kw.setdefault("jobs", [EARLIER])
-    return fake.propose_skill(name, "Surveys invented kettle makers in a town.", body,
-                              for_roles=kw.pop("for_roles", ["default/researcher"]), **kw)
+    return fake.propose_skill(
+        name,
+        "Surveys invented kettle makers in a town.",
+        body,
+        for_roles=kw.pop("for_roles", ["default/researcher"]),
+        **kw,
+    )
 
 
 def test_a_proposal_waits_in_the_outbox_and_approving_makes_it_live(job, home):
@@ -201,9 +226,15 @@ def test_a_proposal_waits_in_the_outbox_and_approving_makes_it_live(job, home):
 
 def test_a_new_version_shows_a_diff_and_keeps_the_old_one(job, home):
     add_skill(home, "kettle-survey")
-    job(a_job(fake.call("skills__read", {"name": "kettle-survey"}),
-              propose(body="1. Search the invented directory.\n2. Keep makers with a named workshop.\n"
-                           "3. Ask the fact-checker to confirm each.")))
+    job(
+        a_job(
+            fake.call("skills__read", {"name": "kettle-survey"}),
+            propose(
+                body="1. Search the invented directory.\n2. Keep makers with a named workshop.\n"
+                "3. Ask the fact-checker to confirm each."
+            ),
+        )
+    )
     reads = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"]
     assert "named workshop" in reads[0]["content"]  # the Lead read the skill it improves
     (a,) = outbox.waiting(home)
@@ -251,8 +282,10 @@ def test_declining_leaves_the_library_alone(job, home):
 
 
 def test_a_proposal_over_the_cap_is_refused_and_the_lead_may_condense(job, home):
-    job(a_job(propose(body="An invented step. " * 100), propose(body="One condensed invented step.")),
-        limits={"skill_max_chars": 600})
+    job(
+        a_job(propose(body="An invented step. " * 100), propose(body="One condensed invented step.")),
+        limits={"skill_max_chars": 600},
+    )
     refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
     assert "over the cap of 600" in refusal["content"]
     (a,) = outbox.waiting(home)
@@ -279,8 +312,16 @@ def test_no_proposal_is_made_while_ten_wait(job, home):
 def test_only_a_completed_job_with_a_result_is_asked(job, home):
     job([fake.finish("Nothing to do."), LEAD_REPORT])
     assert not skill_calls(job)
-    job([fake.brief("researcher", "Work."), fake.result("Partial.", advance=10_000), fake.finish(),
-         fake.keep_notes(), LEAD_REPORT], limits={"job_timeout": "1m"})
+    job(
+        [
+            fake.brief("researcher", "Work."),
+            fake.result("Partial.", advance=10_000),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        limits={"job_timeout": "1m"},
+    )
     assert job.meta["status"] != "completed" and not skill_calls(job)
     assert "## Skills" not in job.report
 
@@ -315,12 +356,22 @@ def test_the_cli_lists_and_shows_a_proposal(job, home, capsys):
 def test_ombro_skills_give_adds_a_skill_to_a_role(home):
     add_skill(home, "kettle-survey")
     env = {**os.environ, "OMBRO_HOME": str(home.root)}
-    r = subprocess.run([sys.executable, "-m", "ombro", "skills", "give", "kettle-survey", "default/researcher"],
-                       capture_output=True, text=True, env=env, timeout=60)
+    r = subprocess.run(
+        [sys.executable, "-m", "ombro", "skills", "give", "kettle-survey", "default/researcher"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
     assert r.returncode == 0 and "Gave kettle-survey to default/researcher" in r.stdout
     assert mdfile.read(home.roles_dir("default") / "researcher" / "config.md")[0]["skills"] == ["kettle-survey"]
-    r = subprocess.run([sys.executable, "-m", "ombro", "skills", "give", "no-such", "default/researcher"],
-                       capture_output=True, text=True, env=env, timeout=60)
+    r = subprocess.run(
+        [sys.executable, "-m", "ombro", "skills", "give", "no-such", "default/researcher"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
     assert r.returncode == 2 and "no skill named" in r.stderr
 
 
@@ -328,9 +379,16 @@ def test_ombro_skills_give_adds_a_skill_to_a_role(home):
 
 
 def offer(name="kettle-survey", **kw):
-    return fake.call("offer_skill", {"name": name, "description": "Surveys invented kettle makers.",
-                                     "body": "1. Search.\n2. Check each workshop.", "for": ["default/researcher"],
-                                     **kw})
+    return fake.call(
+        "offer_skill",
+        {
+            "name": name,
+            "description": "Surveys invented kettle makers.",
+            "body": "1. Search.\n2. Check each workshop.",
+            "for": ["default/researcher"],
+            **kw,
+        },
+    )
 
 
 def test_chat_writes_a_skill_only_after_yes(home):
@@ -352,8 +410,10 @@ def test_chat_shows_a_diff_for_a_new_version_and_keeps_the_old(home):
 
     add_skill(home, "kettle-survey")
     chat = ChatSession(home)
-    chat([fake.call("skills__read", {"name": "kettle-survey"}), offer(), fake.say("Done.")],
-         ["Improve the kettle method.", "y"])
+    chat(
+        [fake.call("skills__read", {"name": "kettle-survey"}), offer(), fake.say("Done.")],
+        ["Improve the kettle method.", "y"],
+    )
     assert "+2. Check each workshop." in chat.output
     read = json.loads(unfence([m for m in chat.client.calls[1]["messages"] if m["role"] == "tool"][0]["content"]))
     assert "named workshop" in read["text"]
@@ -379,8 +439,9 @@ def test_the_role_interview_may_give_every_skill(home):
 
     add_skill(home, "kettle-survey")
     talk = Session(home)
-    out = talk(RolePurpose(home, "default", load_limits(home)), [fake.call("propose", {**ROLE, "skills": ["all"]})],
-               ["a"])
+    out = talk(
+        RolePurpose(home, "default", load_limits(home)), [fake.call("propose", {**ROLE, "skills": ["all"]})], ["a"]
+    )
     assert out.status == "confirmed"
     assert mdfile.read(home.roles_dir("default") / "fact-checker" / "config.md")[0]["skills"] == "all"
 
@@ -402,8 +463,9 @@ def downloaded(tmp_path, body: str = "1. Search.\n2. Check each workshop.\n", na
     src = tmp_path / "Downloads" / name
     (src / "references").mkdir(parents=True)
     (src / "scripts").mkdir()
-    (src / "SKILL.md").write_text(f"---\nname: {name}\ndescription: Surveys invented kettle makers.\n"
-                                  f"allowed-tools: Bash\n---\n{body}")
+    (src / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: Surveys invented kettle makers.\nallowed-tools: Bash\n---\n{body}"
+    )
     (src / "references" / "towns.md").write_text("Lowtown and Highwater, both invented.")
     (src / "scripts" / "scrape.py").write_text("print('never run')\n")
     return src
@@ -472,8 +534,14 @@ def test_ombro_skills_add_asks_first_and_defaults_to_no(home, tmp_path):
 
 
 def test_a_proposal_says_why_and_what_it_adds_over_a_brief(job, home):
-    job(a_job(propose(reason="Three invented surveys repeated the same steps.",
-                      adds="Every survey follows it without its brief repeating the steps.")))
+    job(
+        a_job(
+            propose(
+                reason="Three invented surveys repeated the same steps.",
+                adds="Every survey follows it without its brief repeating the steps.",
+            )
+        )
+    )
     (a,) = outbox.waiting(home)
     view = outbox.skill_view(home, a)
     assert view["why"] == "Three invented surveys repeated the same steps."
@@ -504,7 +572,7 @@ def test_the_lead_is_told_what_waits_and_what_was_declined(job, home):
 def test_a_declined_new_skill_is_never_proposed_again(job, home):
     job(a_job(propose()))
     outbox.decline(home, outbox.waiting(home)[0])
-    entry, = skills.declined(home)
+    (entry,) = skills.declined(home)
     assert entry["name"] == "kettle-survey" and entry["change"] == "new"
     job(a_job(propose(), fake.no_skill("Declined before.")))
     refusal = [m for m in skill_calls(job)[-1]["messages"] if m["role"] == "tool"][0]
@@ -568,14 +636,22 @@ def test_a_proposal_names_the_earlier_jobs_of_its_kind(job, home, capsys):
 
 
 def test_the_lead_sees_the_earlier_completed_jobs_and_the_rule(job, home):
-    add_past_job(home, "teapot-survey-20261102-0900", "Survey invented teapot makers.", spec="teapot-survey",
-                 skills_read=("kettle-survey",))
+    add_past_job(
+        home,
+        "teapot-survey-20261102-0900",
+        "Survey invented teapot makers.",
+        spec="teapot-survey",
+        skills_read=("kettle-survey",),
+    )
     add_past_job(home, "failed-survey-20261103-0900", "A survey that failed.", status="failed")
     job(a_job(fake.no_skill("Nothing new.")))
     system, prompt = (m["content"] for m in skill_calls(job)[-1]["messages"][:2])
     earlier = prompt.split("Earlier completed jobs")[1].split("=== end")[0]
     assert f"- {EARLIER} (2026-11-01; a one-off brief): Survey invented kettle makers in another" in earlier
-    assert "- teapot-survey-20261102-0900 (2026-11-01; saved spec teapot-survey; read skills kettle-survey): Survey invented teapot makers." in earlier
+    assert (
+        "- teapot-survey-20261102-0900 (2026-11-01; saved spec teapot-survey; read skills kettle-survey): Survey invented teapot makers."
+        in earlier
+    )
     assert "failed-survey" not in earlier and job.meta["job_id"] not in earlier
     assert earlier.index("teapot-survey-2026") < earlier.index(EARLIER)  # newest first
     assert "A skill needs a task that repeats" in system and "never one job's\n  specifics" in system

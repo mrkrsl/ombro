@@ -67,8 +67,7 @@ def macos_dark() -> bool | None:
     if sys.platform != "darwin":
         return None
     try:
-        r = subprocess.run(["defaults", "read", "-g", "AppleInterfaceStyle"], capture_output=True, text=True,
-                           timeout=2)
+        r = subprocess.run(["defaults", "read", "-g", "AppleInterfaceStyle"], capture_output=True, text=True, timeout=2)
     except (OSError, subprocess.SubprocessError):
         return None
     return r.returncode == 0 and r.stdout.strip().lower() == "dark"

@@ -11,8 +11,9 @@ from test_ui import ScriptedUI
 
 
 def test_choosing_a_provider_that_needs_a_key_asks_for_it(home):
-    ui = ScriptedUI([lambda f: next(o.key for o in f.options if o.label.startswith("Firecrawl")),
-                     "fc-test-INVENTED-123", "15"])
+    ui = ScriptedUI(
+        [lambda f: next(o.key for o in f.options if o.label.startswith("Firecrawl")), "fc-test-INVENTED-123", "15"]
+    )
     assert tool_cmd.flow(home, ui, "web.search") == 0
     assert load_tool_settings(home).provider_for("web.search") == "firecrawl"
     assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-test-INVENTED-123"

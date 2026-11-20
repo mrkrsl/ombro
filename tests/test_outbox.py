@@ -44,8 +44,14 @@ def add(values=("Invented Ltd",), reason="Record the lead."):
 
 
 def script(*role_steps, summary="Did it."):
-    return [fake.brief("poster", "Post the news."), *role_steps, fake.result(summary), fake.finish(),
-            fake.keep_notes(), LEAD_REPORT]
+    return [
+        fake.brief("poster", "Post the news."),
+        *role_steps,
+        fake.result(summary),
+        fake.finish(),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
 
 
 def tool_replies(job):
@@ -121,8 +127,10 @@ def test_auto_from_the_brief_runs_sends(job, record):
 
 
 def test_the_brief_can_allow_one_tool(job, record):
-    job(script(post(), fake.call("mcp__fake__fire_hook", {"reason": "Tell the team."})),
-        spec_meta=spec_with({"allow": ["mcp.fake.post_message"]}))
+    job(
+        script(post(), fake.call("mcp__fake__fire_hook", {"reason": "Tell the team."})),
+        spec_meta=spec_with({"allow": ["mcp.fake.post_message"]}),
+    )
     assert [e["tool"] for e in fake_sent(record)] == ["post_message"]
     assert [a.tool for a in outbox.actions(job.job_dir)] == ["mcp.fake.fire_hook"]
 
@@ -142,11 +150,14 @@ def test_refuse_in_tools_md_beats_a_brief_that_allows(home, job, tmp_path):
     assert any(e["action"] == "warning" and "permission: refuse" in e["note"] for e in job.events)
 
 
-@pytest.mark.parametrize("tool, call", [
-    ("mcp.fake.find_rows", lambda: fake.call("mcp__fake__find_rows", {"sheet": "Leads"})),  # marked read-only
-    ("mcp.fake.add_row", lambda: add()),  # internal
-    ("mcp.fake.post_message", lambda: post()),  # external
-])
+@pytest.mark.parametrize(
+    "tool, call",
+    [
+        ("mcp.fake.find_rows", lambda: fake.call("mcp__fake__find_rows", {"sheet": "Leads"})),  # marked read-only
+        ("mcp.fake.add_row", lambda: add()),  # internal
+        ("mcp.fake.post_message", lambda: post()),  # external
+    ],
+)
 def test_refuse_holds_for_every_class(home, job, tmp_path, tool, call):
     record = tmp_path / "sent.jsonl"
     use_fake_mcp(home, record, tools={tool: {"permission": "refuse"}})
@@ -168,8 +179,14 @@ def test_a_refused_read_only_tool_is_refused_even_if_offered(home, tmp_path):
     tools_cfg = {"tools": {"mcp.inv.lookup": {"permission": "refuse"}}, "servers": {"inv": {"command": "x"}}}
     job_dir = jobs.create_job(home, ["default"], {}, "# Invented", load_limits(home), source="test", tools=tools_cfg)
     called = []
-    t = outward.make_tool("inv", "lookup", "invented", {"type": "object", "properties": {}}, "read-only",
-                          lambda r, a, timeout: called.append(r) or {"content": []})
+    t = outward.make_tool(
+        "inv",
+        "lookup",
+        "invented",
+        {"type": "object", "properties": {}},
+        "read-only",
+        lambda r, a, timeout: called.append(r) or {"content": []},
+    )
     eng = Engine(home, job_dir, registry=ToolRegistry([t]))
     tc = types.SimpleNamespace(id="1", name=t.wire_name, arguments={}, raw_arguments="{}")
     out = eng._role_tool(types.SimpleNamespace(name="poster"), tc, {t.wire_name: t})
@@ -217,8 +234,9 @@ def test_staging_counts_towards_the_tools_cap(home, job, tmp_path):
 
 
 def test_repeating_the_same_staging_ends_the_brief(job, record):
-    status = job([fake.brief("poster", "Post."), post(), post(), post(), post(), fake.finish(),
-                  fake.keep_notes(), LEAD_REPORT])
+    status = job(
+        [fake.brief("poster", "Post."), post(), post(), post(), post(), fake.finish(), fake.keep_notes(), LEAD_REPORT]
+    )
     assert status == "completed"
     returned = [e for e in job.events if e["action"] == "returned"][0]
     assert returned["limit"] == "loop_detection"
@@ -235,8 +253,13 @@ def test_a_call_without_a_reason_or_with_bad_arguments_is_refused(job, record):
 
 
 def test_a_server_that_cannot_start_leaves_its_tools_out(home, job, tmp_path):
-    mdfile.write(home.tools, {"servers": {"fake": {"command": "/nonexistent/invented-server"}},
-                              "tools": {"web.search": {"provider": "fake"}}})
+    mdfile.write(
+        home.tools,
+        {
+            "servers": {"fake": {"command": "/nonexistent/invented-server"}},
+            "tools": {"web.search": {"provider": "fake"}},
+        },
+    )
     write_role(home, "poster", kind="helper", tools=ALL)
     job(script())
     assert any("could not be used" in w for w in [e["note"] for e in job.events if e["action"] == "warning"])
@@ -367,10 +390,24 @@ def test_staging_waits_for_a_decision_in_progress(home, staged, monkeypatch):
     monkeypatch.setattr(outbox, "STAGE_WAIT", 0.3)
     with outbox.lock(staged.job_dir):  # a decision is being made
         with pytest.raises(outbox.OutboxBusy):
-            outbox.stage(staged.job_dir, tool=POST, effect="external", arguments={"channel": "news", "text": "x"},
-                         reason="r", role="poster", input_schema={})
-    a, dup = outbox.stage(staged.job_dir, tool=POST, effect="external", arguments={"channel": "news", "text": "x"},
-                          reason="r", role="poster", input_schema={})
+            outbox.stage(
+                staged.job_dir,
+                tool=POST,
+                effect="external",
+                arguments={"channel": "news", "text": "x"},
+                reason="r",
+                role="poster",
+                input_schema={},
+            )
+    a, dup = outbox.stage(
+        staged.job_dir,
+        tool=POST,
+        effect="external",
+        arguments={"channel": "news", "text": "x"},
+        reason="r",
+        role="poster",
+        input_schema={},
+    )
     assert not dup and a.status == "pending"
 
 
@@ -458,8 +495,14 @@ def cli_env(home):
 
 
 def ombro(home, *args, input=None, timeout=60):
-    return subprocess.run([sys.executable, "-m", "ombro", *args], capture_output=True, text=True,
-                          env=cli_env(home), input=input, timeout=timeout)
+    return subprocess.run(
+        [sys.executable, "-m", "ombro", *args],
+        capture_output=True,
+        text=True,
+        env=cli_env(home),
+        input=input,
+        timeout=timeout,
+    )
 
 
 def test_outbox_commands_end_to_end(home, staged, record):
@@ -494,8 +537,12 @@ def test_a_process_killed_mid_approval_leaves_it_uncertain_never_resent(home, jo
     write_role(home, "poster", kind="helper", tools=ALL)
     job(script(post()))
     [a] = outbox.actions(job.job_dir)
-    proc = subprocess.Popen([sys.executable, "-m", "ombro", "approvals", "approve", a.ref, "--yes"],
-                            env=cli_env(home), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "ombro", "approvals", "approve", a.ref, "--yes"],
+        env=cli_env(home),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     deadline = time.time() + 30
     while not fake_sent(record) and time.time() < deadline:  # the call has reached the server
         time.sleep(0.05)
@@ -516,12 +563,17 @@ def test_a_process_killed_mid_approval_leaves_it_uncertain_never_resent(home, jo
 def test_ombro_tools_lists_a_servers_tools_with_their_permission(home, record):
     r = ombro(home, "tools", "fake")
     assert r.returncode == 0, r.stderr
-    lines = {ln.split()[0]: ln.split()[1:4] for ln in r.stdout.splitlines()
-             if ln.strip().startswith("mcp.") and not ln.split()[0].endswith(":")}
-    assert lines == {"mcp.fake.find_rows": ["read-only", "marking", "allow"],
-                     "mcp.fake.add_row": ["internal", "marking", "allow"],
-                     "mcp.fake.post_message": ["external", "default", "stage"],
-                     "mcp.fake.fire_hook": ["external", "default", "stage"]}
+    lines = {
+        ln.split()[0]: ln.split()[1:4]
+        for ln in r.stdout.splitlines()
+        if ln.strip().startswith("mcp.") and not ln.split()[0].endswith(":")
+    }
+    assert lines == {
+        "mcp.fake.find_rows": ["read-only", "marking", "allow"],
+        "mcp.fake.add_row": ["internal", "marking", "allow"],
+        "mcp.fake.post_message": ["external", "default", "stage"],
+        "mcp.fake.fire_hook": ["external", "default", "stage"],
+    }
     assert "class: internal" in r.stdout  # it says how to class the defaulted ones
     assert "fake" in ombro(home, "tools").stdout
 
@@ -539,16 +591,25 @@ def test_the_brief_records_what_may_happen_without_you(home, record):
     asked = next(v for k, v in ctx.items() if k.startswith("External tools in the crew"))
     assert "mcp.fake.post_message" in asked and "mcp.fake.add_row" not in asked and "find_rows" not in asked
     assert "outward_preset" in json.dumps(purpose.tool())
-    answers = {"name": "news-tweet", "title": "Tweet the top story", "done_looks_like": "One tweet staged.",
-               "users": "Me, to approve.", "binding_constraint": "Accuracy.", "waste": "A wrong story.",
-               "non_goals": "Replies."}
+    answers = {
+        "name": "news-tweet",
+        "title": "Tweet the top story",
+        "done_looks_like": "One tweet staged.",
+        "users": "Me, to approve.",
+        "binding_constraint": "Accuracy.",
+        "waste": "A wrong story.",
+        "non_goals": "Replies.",
+    }
     with pytest.raises(ProposalError, match="outward_preset"):
         purpose.build(answers)
-    proposal = purpose.check(purpose.build({**answers, "outward_preset": "balanced",
-                                            "outward_stage": ["mcp.fake.post_message"]}))
+    proposal = purpose.check(
+        purpose.build({**answers, "outward_preset": "balanced", "outward_stage": ["mcp.fake.post_message"]})
+    )
     meta, _ = mdfile.parse(proposal.files[0].text)
     assert meta["outward"] == {"preset": "balanced", "stage": ["mcp.fake.post_message"]}
-    assert any("outward tools: balanced (from spec); wait for approval: mcp.fake.post_message" in w for w in proposal.warnings)
+    assert any(
+        "outward tools: balanced (from spec); wait for approval: mcp.fake.post_message" in w for w in proposal.warnings
+    )
 
 
 def test_a_crew_with_only_read_only_and_internal_tools_is_not_asked_about_permissions(home, tmp_path):
@@ -560,8 +621,15 @@ def test_a_crew_with_only_read_only_and_internal_tools_is_not_asked_about_permis
     purpose = BriefPurpose(home, "default", load_limits(home), "Fill in the sheet.")
     assert not any(k.startswith("External tools") for k, _ in purpose.context())
     assert "outward_preset" not in json.dumps(purpose.tool())
-    answers = {"name": "fill-sheet", "title": "Fill in the sheet", "done_looks_like": "Rows added.",
-               "users": "Me.", "binding_constraint": "Accuracy.", "waste": "Wrong rows.", "non_goals": "Charts."}
+    answers = {
+        "name": "fill-sheet",
+        "title": "Fill in the sheet",
+        "done_looks_like": "Rows added.",
+        "users": "Me.",
+        "binding_constraint": "Accuracy.",
+        "waste": "Wrong rows.",
+        "non_goals": "Charts.",
+    }
     meta, _ = mdfile.parse(purpose.check(purpose.build(answers)).files[0].text)
     assert "outward" not in meta
 
@@ -613,17 +681,23 @@ def test_a_job_and_an_approval_work_with_a_2026_07_28_server(home, job, tmp_path
     [a] = outbox.actions(job.job_dir)
     outbox.approve(home, a)
     assert [(e["tool"], e["protocol"]) for e in fake_sent(record)] == [
-        ("add_row", "2026-07-28"), ("post_message", "2026-07-28")]
+        ("add_row", "2026-07-28"),
+        ("post_message", "2026-07-28"),
+    ]
 
 
 def test_outside_tools_are_listed_by_name_and_sent_in_full_only_once_loaded(record, job):
-    job(script(fake.call("tools__load", {"names": [ADD, "mcp__fake__nothing"]}), add()),
-        spec_meta=spec_with("auto"))
-    role_calls = [c for c in job.client.calls if any(t["function"]["name"] == "tools__load" for t in (c.get("tools") or []))]
+    job(script(fake.call("tools__load", {"names": [ADD, "mcp__fake__nothing"]}), add()), spec_meta=spec_with("auto"))
+    role_calls = [
+        c for c in job.client.calls if any(t["function"]["name"] == "tools__load" for t in (c.get("tools") or []))
+    ]
     first, second = ({t["function"]["name"] for t in c["tools"]} for c in role_calls[:2])
     assert ADD not in first and POST not in first  # only their names, in tools__load
     assert ADD in second and POST not in second  # the one loaded, from the next call on
-    assert tool_replies(job)[0] == {"loaded": [ADD], "unknown": ["mcp__fake__nothing"],
-                                    "note": "These tools can be called from your next step."}
+    assert tool_replies(job)[0] == {
+        "loaded": [ADD],
+        "unknown": ["mcp__fake__nothing"],
+        "note": "These tools can be called from your next step.",
+    }
     assert [e["tool"] for e in fake_sent(record)] == ["add_row"]
     assert any(e["action"] == "tools_loaded" and e["note"] == "mcp.fake.add_row" for e in job.events)

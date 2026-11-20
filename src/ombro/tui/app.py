@@ -30,16 +30,50 @@ from ombro.home import Home
 from ombro.outward import folded
 from ombro.session import JobWatcher, Session, setup_needed  # noqa: F401 - setup_needed kept importable here
 from ombro.tui import look
-from ombro.ui import (UI, ChatCleared, Event, Failure, Field, JobEnded, JobProgress, JobStarted, LeadSaid,
-                      ModeChanged, Note, PastTurn, Progress, ProposalShown, SetAside, Usage, field_prompt,
-                      parse_answer, sets_aside)
+from ombro.ui import (
+    UI,
+    ChatCleared,
+    Event,
+    Failure,
+    Field,
+    JobEnded,
+    JobProgress,
+    JobStarted,
+    LeadSaid,
+    ModeChanged,
+    Note,
+    PastTurn,
+    Progress,
+    ProposalShown,
+    SetAside,
+    Usage,
+    field_prompt,
+    parse_answer,
+    sets_aside,
+)
 
 # The slash commands, as every interface lists them.
 SLASH = [(c.name, c.help) for c in core_commands.COMMANDS]
-TUI_COMMANDS = ("/start", "/jobs", "/report", "/stop", "/open", "/approvals", "/schedule", "/crew", "/role", "/model",
-                "/models",
-                "/keys", "/folder", "/folders", "/limits",
-                "/tools", "/skills", "/preferences")
+TUI_COMMANDS = (
+    "/start",
+    "/jobs",
+    "/report",
+    "/stop",
+    "/open",
+    "/approvals",
+    "/schedule",
+    "/crew",
+    "/role",
+    "/model",
+    "/models",
+    "/keys",
+    "/folder",
+    "/folders",
+    "/limits",
+    "/tools",
+    "/skills",
+    "/preferences",
+)
 QUIT_AGAIN_SECONDS = 2.5
 THINKING_FRAMES = ("·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢")
 THINKING_SECONDS = 0.12
@@ -169,8 +203,9 @@ class HeaderBlock(Widget):
             grid = Table.grid(expand=True, padding=(0, 2))
             grid.add_column(ratio=1, no_wrap=True)
             grid.add_column(ratio=1)
-            grid.add_row(Align.center(look.logo_text(app.dark), vertical="middle"),
-                         Align.center(text, vertical="middle"))
+            grid.add_row(
+                Align.center(look.logo_text(app.dark), vertical="middle"), Align.center(text, vertical="middle")
+            )
         else:
             grid = text
         return Group(rule, Text(""), grid, Text(""), Text("─" * width, style=p.dim))
@@ -256,9 +291,12 @@ class Fold(Line):
 
     def render_text(self) -> Text:
         if self.open:
-            return Text(f"  - {self.item}", style=self.p.text) + Text("\n    Show less", style=f"underline {self.p.muted}")
-        return (Text(f"  - {self.start} …", style=self.p.text)
-                + Text(f"\n    Show all ({len(self.item):,} characters)", style=f"underline {self.p.strong}"))
+            return Text(f"  - {self.item}", style=self.p.text) + Text(
+                "\n    Show less", style=f"underline {self.p.muted}"
+            )
+        return Text(f"  - {self.start} …", style=self.p.text) + Text(
+            f"\n    Show all ({len(self.item):,} characters)", style=f"underline {self.p.strong}"
+        )
 
     def on_click(self) -> None:
         self.action_toggle()
@@ -358,8 +396,9 @@ class OmbroApp(App):
 
     BINDINGS = [Binding("ctrl+c", "interrupt", "Stop or leave", priority=True, show=False)]
 
-    def __init__(self, home: Home, *, dark: bool, client_factory=None, poll: bool = True, pace: bool = False,
-                 titles: bool = True):
+    def __init__(
+        self, home: Home, *, dark: bool, client_factory=None, poll: bool = True, pace: bool = False, titles: bool = True
+    ):
         self.dark = dark
         self.pace = pace
         self.titles = titles  # chats are named after their first exchange
@@ -372,8 +411,9 @@ class OmbroApp(App):
         self.watcher = JobWatcher(home)
         self.client_factory = client_factory
         self.summary = views.summary(home)
-        self.first_opening = not any((home.chats_dir).glob("*.md")) and not self.summary["unseen"] \
-            and not views.job_list(home)
+        self.first_opening = (
+            not any((home.chats_dir).glob("*.md")) and not self.summary["unseen"] and not views.job_list(home)
+        )
         self.mode = "Chat"
         try:
             from ombro.settings import load_limits
@@ -382,9 +422,14 @@ class OmbroApp(App):
         except Exception:  # noqa: BLE001
             self.usage = (0, None)
         self.bridge = TuiUI(self)
-        self.session = Session(home, self.bridge, client_factory=client_factory, titles=titles,
-                               start_job=lambda spec, roles: self.commands.start_job(spec, roles),
-                               on_started=self._follow_started)
+        self.session = Session(
+            home,
+            self.bridge,
+            client_factory=client_factory,
+            titles=titles,
+            start_job=lambda spec, roles: self.commands.start_job(spec, roles),
+            on_started=self._follow_started,
+        )
         from ombro.tui.commands import Commands
 
         self.commands = Commands(self)
@@ -434,10 +479,21 @@ class OmbroApp(App):
 
     def get_css_variables(self) -> dict[str, str]:
         p = self.colours
-        headings = {f"markdown-h{n}-{k}": v for n in range(1, 7)
-                    for k, v in (("color", p.strong), ("background", "transparent"), ("text-style", "bold"))}
-        return {**super().get_css_variables(), **headings, "ombro-bg": p.background, "ombro-text": p.text,
-                "ombro-muted": p.muted, "ombro-dim": p.dim, "ombro-band": p.band, "ombro-band-text": p.band_text}
+        headings = {
+            f"markdown-h{n}-{k}": v
+            for n in range(1, 7)
+            for k, v in (("color", p.strong), ("background", "transparent"), ("text-style", "bold"))
+        }
+        return {
+            **super().get_css_variables(),
+            **headings,
+            "ombro-bg": p.background,
+            "ombro-text": p.text,
+            "ombro-muted": p.muted,
+            "ombro-dim": p.dim,
+            "ombro-band": p.band,
+            "ombro-band-text": p.band_text,
+        }
 
     def set_dark(self, dark: bool) -> None:
         old = self.colours
@@ -463,8 +519,14 @@ class OmbroApp(App):
         yield Static("", classes="rule", id="rule-above")
         with Horizontal(id="entry"):
             yield Static(">", id="chevron")
-            yield PromptArea(id="input", placeholder="Chat or /brief", soft_wrap=True, show_line_numbers=False,
-                             tab_behavior="focus", compact=True)
+            yield PromptArea(
+                id="input",
+                placeholder="Chat or /brief",
+                soft_wrap=True,
+                show_line_numbers=False,
+                tab_behavior="focus",
+                compact=True,
+            )
             yield Input(id="secret", password=True, placeholder="Hidden as you type")
         yield Static("", classes="rule", id="rule-below")
         with Horizontal(id="footer"):
@@ -659,7 +721,8 @@ class OmbroApp(App):
                 self.add_line(Note(event.text.strip("─ ").strip()), "note")
             return
         kind = {LeadSaid: "lead", Progress: "progress", Failure: "error", ProposalShown: "proposal"}.get(
-            type(event), "note")
+            type(event), "note"
+        )
         if isinstance(event, Note) and event.level == "lead":
             # Set-up's own lines, in the Lead's voice; what it lists beneath (what an action will send) kept.
             self.add_line(LeadSaid(event.text), "lead")
@@ -696,7 +759,7 @@ class OmbroApp(App):
             whole = field_prompt(f)
             if f.label and whole.startswith(f.label):
                 self.add_line(LeadSaid(f.label), "lead")
-                rest = whole[len(f.label):].lstrip(":").strip("\n")
+                rest = whole[len(f.label) :].lstrip(":").strip("\n")
                 if rest.strip():
                     self.add_line(Note(rest.strip() if not rest.startswith("  ") else rest), "note")
             else:
@@ -719,8 +782,14 @@ class OmbroApp(App):
 
         cmd = editor_command(self.home)
         if not cmd:
-            self.add_line(Note("No editor is set (`editor` in preferences, or $EDITOR). Edit these files "
-                               "yourself, then answer here:", items=[str(p) for p in paths]), "note")
+            self.add_line(
+                Note(
+                    "No editor is set (`editor` in preferences, or $EDITOR). Edit these files "
+                    "yourself, then answer here:",
+                    items=[str(p) for p in paths],
+                ),
+                "note",
+            )
             return
         with self.suspend():
             subprocess.run([*cmd, *map(str, paths)], check=False)
@@ -847,7 +916,7 @@ class OmbroApp(App):
             self.add_line(Note("Ombro is not set up yet. Type /setup to set it up."), "note")
             return
         if word in TUI_COMMANDS:
-            rest = text[len(word):].strip()
+            rest = text[len(word) :].strip()
             self.start_work(lambda: self.commands.run(word, rest))
             return
         self.start_work(lambda: self._chat_turn(text))
@@ -885,8 +954,9 @@ class OmbroApp(App):
         if not self.session.chat_turn(text):
             self.call_from_thread(self.leave)
 
-    def offer_start(self, spec: str, shown: str | None = None, *, roles: list[str] | None = None,
-                    ask: bool = True) -> None:
+    def offer_start(
+        self, spec: str, shown: str | None = None, *, roles: list[str] | None = None, ask: bool = True
+    ) -> None:
         self.session.offer_start(spec, shown, roles=roles, ask=ask)
 
     # -- jobs: progress, notices and the header's counts --------------------------
@@ -959,8 +1029,9 @@ def render_event(event: Event, p: look.Palette) -> Text | None:
     if isinstance(event, ProposalShown):
         out = Text()
         for f in event.files:
-            out.append(f"{f.label} ({'updates the current file' if f.replaces else 'new file'})\n",
-                       style=f"bold {p.strong}")
+            out.append(
+                f"{f.label} ({'updates the current file' if f.replaces else 'new file'})\n", style=f"bold {p.strong}"
+            )
             out.append(f.text.rstrip() + "\n\n", style=p.text)
             if f.diff:
                 out.append("Changes from the current file:\n", style=p.muted)

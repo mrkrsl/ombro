@@ -31,13 +31,17 @@ def test_the_common_signs_are_flagged():
 
 def test_material_is_fenced_flagged_and_reported(job, home):
     write_role(home, "researcher", max_steps=10, tools=["workspace.read", "workspace.write"])
-    status = job([
-        fake.brief("researcher", "Read the notes."),
-        fake.call("workspace__write", {"path": "workspace/notes.md", "content": INJECTED}),
-        fake.call("workspace__read", {"path": "workspace/notes.md"}),
-        fake.result("Read them."),
-        fake.finish(), fake.keep_notes(), LEAD_REPORT,
-    ])
+    status = job(
+        [
+            fake.brief("researcher", "Read the notes."),
+            fake.call("workspace__write", {"path": "workspace/notes.md", "content": INJECTED}),
+            fake.call("workspace__read", {"path": "workspace/notes.md"}),
+            fake.result("Read them."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ]
+    )
     assert status == "completed"
     shown = [m["content"] for c in job.client.calls for m in c["messages"] if m["role"] == "tool"]
     read = next(x for x in shown if "Ignore all previous" in x)
@@ -53,8 +57,10 @@ def test_material_is_fenced_flagged_and_reported(job, home):
 
 def test_after_material_an_external_call_is_staged_even_under_auto(job, record):  # noqa: F811
     find = fake.call("mcp__fake__find_rows", {"sheet": "Leads"})
-    job(script(find, fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
-        spec_meta=spec_with("auto"))
+    job(
+        script(find, fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
+        spec_meta=spec_with("auto"),
+    )
     [a] = outbox.actions(job.job_dir)
     assert a.tool == "mcp.fake.post_message" and a.status == "pending"
     assert any(e["action"] == "staged" and e.get("tainted") for e in job.events)
@@ -63,14 +69,18 @@ def test_after_material_an_external_call_is_staged_even_under_auto(job, record):
 
 def test_a_tool_the_spec_allows_by_name_still_runs_after_material(job, record):  # noqa: F811
     find = fake.call("mcp__fake__find_rows", {"sheet": "Leads"})
-    job(script(find, fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
-        spec_meta=spec_with({"preset": "auto", "allow": ["mcp.fake.post_message"]}))
+    job(
+        script(find, fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
+        spec_meta=spec_with({"preset": "auto", "allow": ["mcp.fake.post_message"]}),
+    )
     assert outbox.actions(job.job_dir) == []
 
 
 def test_without_material_auto_still_sends(job, record):  # noqa: F811
-    job(script(fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
-        spec_meta=spec_with("auto"))
+    job(
+        script(fake.call(POST, {"channel": "news", "text": "Invented.", "reason": "The spec asks."})),
+        spec_meta=spec_with("auto"),
+    )
     assert outbox.actions(job.job_dir) == []
 
 

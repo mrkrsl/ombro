@@ -72,18 +72,24 @@ def check_crew(home: Home, crew: str) -> Check:
     c = Check()
     running = running_jobs(home, crew)
     if running:
-        c.blocked = (f"A job of {crew_phrase(home, crew)} is still running ({', '.join(running)}). "
-                     "Stop it, or wait for it to finish, then delete the crew.")
+        c.blocked = (
+            f"A job of {crew_phrase(home, crew)} is still running ({', '.join(running)}). "
+            "Stop it, or wait for it to finish, then delete the crew."
+        )
     elif len(home.crews()) == 1:
         c.blocked = "It's your only crew. Ombro needs at least one; add another crew first."
     names = [s.name for s in schedules.all_schedules(home, crew)]
     if names:
-        c.warnings.append(f"{_plural(len(names), 'schedule')} run{'s' if len(names) == 1 else ''} work for this "
-                          f"crew ({', '.join(names)}). They will fail until you change or delete them.")
+        c.warnings.append(
+            f"{_plural(len(names), 'schedule')} run{'s' if len(names) == 1 else ''} work for this "
+            f"crew ({', '.join(names)}). They will fail until you change or delete them."
+        )
     specs = [name for name, _ in saved_specs(home, crew)]
     if specs:
-        c.warnings.append(f"{_plural(len(specs), 'saved brief')} name{'s' if len(specs) == 1 else ''} this crew "
-                          f"({', '.join(specs[:5])}{'…' if len(specs) > 5 else ''}).")
+        c.warnings.append(
+            f"{_plural(len(specs), 'saved brief')} name{'s' if len(specs) == 1 else ''} this crew "
+            f"({', '.join(specs[:5])}{'…' if len(specs) > 5 else ''})."
+        )
     if crew == load_preferences(home).default_crew and len(home.crews()) > 1:
         other = sorted(c for c in home.crews() if c != crew)[0]
         c.warnings.append(f"It's your default crew; {crew_phrase(home, other)} becomes the default.")
@@ -120,8 +126,10 @@ def check_role(home: Home, crew: str, role: str) -> Check:
     c = Check()
     running = running_jobs(home, crew)
     if running:
-        c.blocked = (f"A job of {crew_phrase(home, crew)} is still running ({', '.join(running)}). "
-                     "Stop it, or wait for it to finish, then delete the role.")
+        c.blocked = (
+            f"A job of {crew_phrase(home, crew)} is still running ({', '.join(running)}). "
+            "Stop it, or wait for it to finish, then delete the role."
+        )
     return c
 
 
@@ -147,8 +155,10 @@ def check_skill(home: Home, name: str) -> Check:
     c = Check()
     who = named.get(name, [])
     if who:
-        c.warnings.append(f"{_plural(len(who), 'role')} use{'s' if len(who) == 1 else ''} it "
-                          f"({', '.join(who)}). They carry on without it.")
+        c.warnings.append(
+            f"{_plural(len(who), 'role')} use{'s' if len(who) == 1 else ''} it "
+            f"({', '.join(who)}). They carry on without it."
+        )
     return c
 
 

@@ -18,22 +18,30 @@ from ombro.client import ModelError, ModelReply
 from ombro.home import Home
 from ombro.init_cmd import connected_model, run_init
 
-REPORT = fake.say("## What was done\nCLI-REPORT-MARKER.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone.")
+REPORT = fake.say(
+    "## What was done\nCLI-REPORT-MARKER.\n\n## What was not done and why\nNothing.\n\n## Decisions for you\nNone."
+)
 
 
 def use_fake_model(home: Home, script: list) -> None:
     (home.root / "script.json").write_text(json.dumps(script))
     mdfile.write(
         home.models,
-        {"models": {"default": {"api": "fake", "script": "script.json", "price_per_mtok": {"input": 1, "output": 1}},
-                    "cheap": "default"}},
+        {
+            "models": {
+                "default": {"api": "fake", "script": "script.json", "price_per_mtok": {"input": 1, "output": 1}},
+                "cheap": "default",
+            }
+        },
     )
 
 
 def ombro(home: Home, *args, timeout=60) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "ombro", *args],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
         env={**os.environ, "OMBRO_HOME": str(home.root)},
     )
 
@@ -131,8 +139,19 @@ def test_dead_job_is_reaped_by_the_next_command(home):
     job_dir = jobs.create_job(home, ["default"], {}, "Invented brief.", load_limits(home), source="test")
     jobs.update_job(job_dir, pid=proc.pid, started_at="2026-11-11T10:00:00Z")
     with (job_dir / "journal.jsonl").open("a") as f:
-        f.write(json.dumps({"ts": "2026-11-11T10:00:01Z", "role": "lead", "action": "briefed",
-                            "note": "researcher: invented", "target": "researcher", "task": "Invented task."}) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "ts": "2026-11-11T10:00:01Z",
+                    "role": "lead",
+                    "action": "briefed",
+                    "note": "researcher: invented",
+                    "target": "researcher",
+                    "task": "Invented task.",
+                }
+            )
+            + "\n"
+        )
     r = ombro(home, "jobs")
     assert "marked failed" in r.stderr
     meta = jobs.read_job(job_dir)[0]
@@ -298,14 +317,17 @@ def test_start_with_tools_from_the_command_line(home, spec_file):
 
     use_fake_tools(home)
     write_role(home, "researcher", max_steps=8, tools=["web.search", "workspace.write"])
-    use_fake_model(home, [
-        fake.brief("researcher", "Find two invented rivers and save them."),
-        fake.call("web__search", {"query": "invented rivers Lowtown"}),
-        fake.call("workspace__write", {"path": "workspace/rivers.md", "content": "- Wend\n- Pell\n"}),
-        fake.result("Saved two rivers.", deliverables=[{"name": "Rivers", "path": "workspace/rivers.md"}]),
-        fake.finish("Done."),
-        REPORT,
-    ])
+    use_fake_model(
+        home,
+        [
+            fake.brief("researcher", "Find two invented rivers and save them."),
+            fake.call("web__search", {"query": "invented rivers Lowtown"}),
+            fake.call("workspace__write", {"path": "workspace/rivers.md", "content": "- Wend\n- Pell\n"}),
+            fake.result("Saved two rivers.", deliverables=[{"name": "Rivers", "path": "workspace/rivers.md"}]),
+            fake.finish("Done."),
+            REPORT,
+        ],
+    )
     r = ombro(home, "start", "--spec", str(spec_file))
     assert r.returncode == 0, r.stderr
     job_dir = jobs.latest_job(home, "default")
@@ -318,8 +340,12 @@ def test_start_with_tools_from_the_command_line(home, spec_file):
 def test_chat_from_the_command_line(home):
     use_fake_model(home, [fake.say("CHAT-MARKER: nothing has run yet.")])
     r = subprocess.run(
-        [sys.executable, "-m", "ombro", "chat"], input="What has run?\n/remember Keep reports short.\ny\n/quit\n",
-        capture_output=True, text=True, timeout=60, env={**os.environ, "OMBRO_HOME": str(home.root)},
+        [sys.executable, "-m", "ombro", "chat"],
+        input="What has run?\n/remember Keep reports short.\ny\n/quit\n",
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "OMBRO_HOME": str(home.root)},
     )
     assert r.returncode == 0, r.stderr
     assert "[Chat] You:" in r.stdout and "CHAT-MARKER" in r.stdout

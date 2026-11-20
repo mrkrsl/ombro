@@ -44,8 +44,9 @@ def save_spec(home, name="teapots", body=SPEC, meta=None):
     return path
 
 
-def add_schedule(home, name="morning", cron="30 7 * * *", spec="teapots", *, enabled=True, limits=None,
-                 grace=None, mtime=LONG_AGO):
+def add_schedule(
+    home, name="morning", cron="30 7 * * *", spec="teapots", *, enabled=True, limits=None, grace=None, mtime=LONG_AGO
+):
     path = schedules.write_schedule(home, name, cron, spec, enabled, limits, grace)
     os.utime(path, (mtime, mtime))
     return path
@@ -89,8 +90,10 @@ def test_cron_fields_names_steps_and_aliases():
     assert cronmod.parse("@daily").minutes == {0} and cronmod.parse("@weekly").weekdays == {0}
 
 
-@pytest.mark.parametrize("text", ["", "* * * *", "61 * * * *", "5-1 * * * *", "* * * * fun", "*/0 * * * *",
-                                  "@reboot", "0 0 30 2 *", "1,,2 * * * *"])
+@pytest.mark.parametrize(
+    "text",
+    ["", "* * * *", "61 * * * *", "5-1 * * * *", "* * * * fun", "*/0 * * * *", "@reboot", "0 0 30 2 *", "1,,2 * * * *"],
+)
 def test_cron_errors(text):
     with pytest.raises(cronmod.CronError):
         cronmod.parse(text)
@@ -366,8 +369,7 @@ def test_a_broken_schedule_file_is_logged_once(home):
 
 def test_schedule_file_problems_are_found(home):
     path = home.schedules_dir / "odd.md"
-    mdfile.write(path, {"name": "other", "cron": "30 7 * * *", "spec": "../etc/x", "enabled": "yes",
-                        "colour": "blue"})
+    mdfile.write(path, {"name": "other", "cron": "30 7 * * *", "spec": "../etc/x", "enabled": "yes", "colour": "blue"})
     err = schedules.load_schedule(home, path).error
     assert "unknown setting(s): colour" in err and "does not match the file name" in err
     assert "must be a saved spec" in err and "enabled must be true or false" in err
@@ -375,8 +377,13 @@ def test_schedule_file_problems_are_found(home):
 
 def test_a_scheduled_job_end_to_end_with_the_fake_model(home):
     add_schedule(home)
-    script = [fake.brief("researcher", "List the teapot makers."), fake.result("Listed three."),
-              fake.finish("Done."), fake.keep_notes(), LEAD_REPORT]
+    script = [
+        fake.brief("researcher", "List the teapot makers."),
+        fake.result("Listed three."),
+        fake.finish("Done."),
+        fake.keep_notes(),
+        LEAD_REPORT,
+    ]
 
     def run_here(home_, job_dir):
         client = ScriptedClient(script)
@@ -426,9 +433,15 @@ def test_launch_agent_file_and_commands(home, no_system_scheduler):
 
 
 def test_the_desktop_app_runs_its_own_binary(home, no_system_scheduler):
-    inst = scheduler.Installer(home, agents_dir=no_system_scheduler.agents_dir, run=no_system_scheduler.run,
-                               python="/Applications/Ombro.app/Contents/MacOS/ombro-serve", uid=501, frozen=True,
-                               platform="darwin")
+    inst = scheduler.Installer(
+        home,
+        agents_dir=no_system_scheduler.agents_dir,
+        run=no_system_scheduler.run,
+        python="/Applications/Ombro.app/Contents/MacOS/ombro-serve",
+        uid=501,
+        frozen=True,
+        platform="darwin",
+    )
     data = plistlib.loads(inst.plist().encode())
     assert data["ProgramArguments"] == ["/Applications/Ombro.app/Contents/MacOS/ombro-serve", "tick"]
 
@@ -437,8 +450,11 @@ def test_check_says_what_is_wrong_and_ensure_puts_it_right(home, no_system_sched
     system = no_system_scheduler
     inst = scheduler.make_installer(home)
     state = scheduler.check(home, inst)
-    assert state == {"ok": False, "can_install": True,
-                     "message": "The scheduler service is not installed, so scheduled jobs don't run."}
+    assert state == {
+        "ok": False,
+        "can_install": True,
+        "message": "The scheduler service is not installed, so scheduled jobs don't run.",
+    }
     python = tmp_path / "bin" / "python3"
     python.parent.mkdir()
     python.write_text("")
@@ -473,11 +489,15 @@ def test_the_app_installs_it_itself_only_for_the_usual_home_from_applications(ho
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     assert scheduler.may_install_itself(home, exe, **mac)
     assert not scheduler.may_install_itself(home, "/Users/invented/ombro/gui/target/release/ombro-serve", **mac)
-    assert not scheduler.may_install_itself(home, "/private/var/folders/x/AppTranslocation/y/Ombro.app/ombro-serve", **mac)
+    assert not scheduler.may_install_itself(
+        home, "/private/var/folders/x/AppTranslocation/y/Ombro.app/ombro-serve", **mac
+    )
     # Linux: the .deb puts it in /usr/bin; an AppImage runs from a mount that goes when it quits.
     assert scheduler.may_install_itself(home, "/usr/bin/ombro-serve", platform="linux")
     assert not scheduler.may_install_itself(home, "/tmp/.mount_OmbroAbc/usr/bin/ombro-serve", platform="linux")
-    assert not scheduler.may_install_itself(home, "/home/invented/ombro/gui/target/release/ombro-serve", platform="linux")
+    assert not scheduler.may_install_itself(
+        home, "/home/invented/ombro/gui/target/release/ombro-serve", platform="linux"
+    )
     monkeypatch.setattr(home_mod, "default_root", lambda: home.root / "elsewhere")
     assert not scheduler.may_install_itself(home, exe, **mac)  # a demo or test home
 
@@ -515,14 +535,36 @@ class Answers:
 def test_schedule_add_saves_the_file_and_offers_the_install(home, monkeypatch, capsys, no_system_scheduler):
     answers = Answers("y", "y")
     monkeypatch.setattr("builtins.input", answers)
-    assert cli.main(["schedule", "add", "morning", "--spec", "teapots", "--cron", "30 7 * * 1-5",
-                     "--allowance", "conservative", "--grace", "5m"]) == 0
+    assert (
+        cli.main(
+            [
+                "schedule",
+                "add",
+                "morning",
+                "--spec",
+                "teapots",
+                "--cron",
+                "30 7 * * 1-5",
+                "--allowance",
+                "conservative",
+                "--grace",
+                "5m",
+            ]
+        )
+        == 0
+    )
     out = capsys.readouterr().out
     assert "allowance conservative: 300,000 tokens" in out and "not installed yet" in out
     assert "local.ombro.tick.plist" in out and "Installed." in out
     meta, _ = mdfile.read(home.schedules_dir / "morning.md")
-    assert meta == {"name": "morning", "cron": "30 7 * * 1-5", "spec": "specs/teapots.md", "enabled": True,
-                    "limits": {"allowance": "conservative"}, "grace": "5m"}
+    assert meta == {
+        "name": "morning",
+        "cron": "30 7 * * 1-5",
+        "spec": "specs/teapots.md",
+        "enabled": True,
+        "limits": {"allowance": "conservative"},
+        "grace": "5m",
+    }
     assert no_system_scheduler.loaded
     assert answers.prompts == ["Save this schedule? [y/N] ", "Install it? [y/N] "]
 
@@ -583,17 +625,28 @@ def test_schedule_install_and_uninstall_ask_first(home, monkeypatch, capsys, no_
 
 
 def test_ombro_tick_starts_a_detached_job_that_completes(home):
-    (home.root / "script.json").write_text(json.dumps([
-        fake.brief("researcher", "List the teapot makers."), fake.result("Listed three."),
-        fake.finish("Done."), fake.keep_notes(),
-        fake.say("## What was done\nTICK-REPORT-MARKER.\n\n## What was not done and why\nNothing."),
-    ]))
+    (home.root / "script.json").write_text(
+        json.dumps(
+            [
+                fake.brief("researcher", "List the teapot makers."),
+                fake.result("Listed three."),
+                fake.finish("Done."),
+                fake.keep_notes(),
+                fake.say("## What was done\nTICK-REPORT-MARKER.\n\n## What was not done and why\nNothing."),
+            ]
+        )
+    )
     mdfile.write(home.models, {"models": {"default": {"api": "fake", "script": "script.json"}, "cheap": "default"}})
     path = add_schedule(home, cron="* * * * *")
     minute = int(time.time()) // 60 * 60
     os.utime(path, (minute - 1, minute - 1))
-    r = subprocess.run([sys.executable, "-m", "ombro", "tick"], capture_output=True, text=True, timeout=60,
-                       env={**os.environ, "OMBRO_HOME": str(home.root)})
+    r = subprocess.run(
+        [sys.executable, "-m", "ombro", "tick"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "OMBRO_HOME": str(home.root)},
+    )
     assert r.returncode == 0, r.stderr
     assert "morning due" in r.stdout and "started job" in r.stdout
     [job_dir] = jobs.all_jobs(home)

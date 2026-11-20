@@ -53,8 +53,15 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
     brief_limits: list[dict[str, Any]] = []
     gaps: list[str] = []
     notes: list[dict[str, Any]] = []
-    outward: dict[str, list[dict[str, Any]]] = {"staged": [], "done": [], "errors": [], "refused": [],
-                                                 "duplicates": [], "uncertain": [], "grouped": []}
+    outward: dict[str, list[dict[str, Any]]] = {
+        "staged": [],
+        "done": [],
+        "errors": [],
+        "refused": [],
+        "duplicates": [],
+        "uncertain": [],
+        "grouped": [],
+    }
     code_runs: list[dict[str, Any]] = []
     folder_changes: dict[str, dict[str, Any]] = {}
     placed: list[dict[str, Any]] = []
@@ -71,8 +78,9 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
         if action == "spec_roles":
             spec_roles = [str(r) for r in ev.get("roles") or []]
         elif action == "material_flag":
-            material_flags.append({"source": ev.get("source", "?"), "signs": ev.get("signs") or [],
-                                   "role": ev.get("reader", "")})
+            material_flags.append(
+                {"source": ev.get("source", "?"), "signs": ev.get("signs") or [], "role": ev.get("reader", "")}
+            )
         elif action in ("set_aside", "archived"):
             set_aside.append(str(ev.get("note") or ""))
         elif action == "staged" and ev.get("tainted"):
@@ -145,8 +153,11 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
     workspace = area_path(job_dir, "workspace")
     scratch = area_path(job_dir, "scratch")
     # A deliverable may be a file in a folder shared with the job: shared/<name>/...
-    shared = {str(x.get("name")): Path(str(x.get("path"))) for x in meta.get("folders") or []
-              if isinstance(x, dict) and x.get("name") and x.get("path")}
+    shared = {
+        str(x.get("name")): Path(str(x.get("path")))
+        for x in meta.get("folders") or []
+        if isinstance(x, dict) and x.get("name") and x.get("path")
+    }
     # Only files in workspace/ are deliverables. Working files in scratch/ and
     # inline notes are listed apart, so the list says what the job produced.
     deliverables, working, inline, missing = [], [], [], []
@@ -158,8 +169,9 @@ def gather_facts(home: Home, job_dir: Path, status: str, failure: str | None = N
                 if entry["path"] in seen:
                     continue
                 seen.add(entry["path"])
-                (working if not entry.get("shared") and Path(entry["path"]).is_relative_to(scratch)
-                 else deliverables).append(entry)
+                (
+                    working if not entry.get("shared") and Path(entry["path"]).is_relative_to(scratch) else deliverables
+                ).append(entry)
             elif entry.get("missing"):
                 missing.append(entry)
             elif str(entry.get("inline") or "").strip():
@@ -306,26 +318,34 @@ def narrative_input(facts: dict[str, Any]) -> str:
     ow = facts.get("outward") or {}
     if ow.get("staged") or ow.get("done") or ow.get("uncertain"):
         waiting, decided = _still_waiting(facts, ow.get("staged") or [])
-        lines.append(f"Outward actions: {len(ow.get('done') or [])} done during the job "
-                     "(internal changes, or external actions the user allowed), "
-                     f"{len(waiting)} waiting for the user's approval"
-                     + (f", {len(decided)} already decided by the user" if decided else "")
-                     + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)"
-                        if ow.get("uncertain") else "") + ".")
+        lines.append(
+            f"Outward actions: {len(ow.get('done') or [])} done during the job "
+            "(internal changes, or external actions the user allowed), "
+            f"{len(waiting)} waiting for the user's approval"
+            + (f", {len(decided)} already decided by the user" if decided else "")
+            + (f", {len(ow['uncertain'])} uncertain (sent, but no answer came back)" if ow.get("uncertain") else "")
+            + "."
+        )
     for ev in facts.get("skills") or []:
         if ev.get("outcome") == "proposed":
-            lines.append(f"You proposed a skill, {ev.get('skill')}; it waits for the user's approval as {ev.get('ref')} "
-                         "for the user's approval.")
+            lines.append(
+                f"You proposed a skill, {ev.get('skill')}; it waits for the user's approval as {ev.get('ref')} "
+                "for the user's approval."
+            )
     if facts.get("code_runs"):
         stopped = sum(1 for c in facts["code_runs"] if c.get("limit"))
         failed = sum(1 for c in facts["code_runs"] if not c.get("limit") and c.get("exit_code"))
-        lines.append(f"Scripts run with code.run: {len(facts['code_runs'])}"
-                     + (f" ({failed} ended with an error, {stopped} stopped by a limit)" if failed or stopped else "")
-                     + ".")
+        lines.append(
+            f"Scripts run with code.run: {len(facts['code_runs'])}"
+            + (f" ({failed} ended with an error, {stopped} stopped by a limit)" if failed or stopped else "")
+            + "."
+        )
     for name, ev in (facts.get("folder_changes") or {}).items():
         c = ev.get("counts") or {}
-        lines.append(f"Shared folder {name}: {c.get('created', 0)} files created, {c.get('changed', 0)} changed, "
-                     f"{c.get('removed', 0)} removed (the harness's own comparison).")
+        lines.append(
+            f"Shared folder {name}: {c.get('created', 0)} files created, {c.get('changed', 0)} changed, "
+            f"{c.get('removed', 0)} removed (the harness's own comparison)."
+        )
     lines.append("")
     if not facts["briefs"]:
         lines.append("No roles were briefed.")
@@ -426,13 +446,16 @@ def stopped_for_approval(f: dict[str, Any]) -> str:
     waiting, _ = _still_waiting(f, (f.get("outward") or {}).get("staged") or [])
     if not waiting:
         return ""
-    what = ", ".join(f"`{ev.get('tool')}` ({ev.get('ref')})" for ev in waiting[:3]) + \
-        (f" and {len(waiting) - 3} more" if len(waiting) > 3 else "")
+    what = ", ".join(f"`{ev.get('tool')}` ({ev.get('ref')})" for ev in waiting[:3]) + (
+        f" and {len(waiting) - 3} more" if len(waiting) > 3 else ""
+    )
     n = len(waiting)
-    return (f"**Stopped for your approval:** {n} {'action' if n == 1 else 'actions'} ({what}) waited for your "
-            "approval when the job ended. Jobs do not wait for approvals, so nothing that needed "
-            f"{'it' if n == 1 else 'them'} was done. Approving now runs only the waiting "
-            f"{'action' if n == 1 else 'actions'}, not the steps after; to finish the work, ask the Lead in a chat.")
+    return (
+        f"**Stopped for your approval:** {n} {'action' if n == 1 else 'actions'} ({what}) waited for your "
+        "approval when the job ended. Jobs do not wait for approvals, so nothing that needed "
+        f"{'it' if n == 1 else 'them'} was done. Approving now runs only the waiting "
+        f"{'action' if n == 1 else 'actions'}, not the steps after; to finish the work, ask the Lead in a chat."
+    )
 
 
 def decision_lines(f: dict[str, Any], lead_text: str) -> str:
@@ -445,10 +468,15 @@ def decision_lines(f: dict[str, Any], lead_text: str) -> str:
     waiting, _ = _still_waiting(f, (f.get("outward") or {}).get("staged") or [])
     if waiting:
         n = len(waiting)
-        lines.append(f"- {n} {'action waits' if n == 1 else 'actions wait'} for your approval: see Approvals "
-                     "(`ombro approvals`).")
-    lines += [f"- A skill waits for your review: {_skill_words(ev)}. See it with "
-              f"`ombro approvals show {ev.get('ref')}`, then approve or decline it." for ev in _skills_waiting(f)]
+        lines.append(
+            f"- {n} {'action waits' if n == 1 else 'actions wait'} for your approval: see Approvals "
+            "(`ombro approvals`)."
+        )
+    lines += [
+        f"- A skill waits for your review: {_skill_words(ev)}. See it with "
+        f"`ombro approvals show {ev.get('ref')}`, then approve or decline it."
+        for ev in _skills_waiting(f)
+    ]
     return "\n\n".join(x for x in (text, "\n".join(lines)) if x)
 
 
@@ -458,12 +486,18 @@ def summary_of(report_text: str) -> str:
     if not m:
         return ""
     # Ombro's note that it wrote the report itself stays in the report, not in the chat's summary.
-    return "\n".join(ln for ln in m.group(1).strip().splitlines()
-                     if not ln.startswith("_This report was written by the harness")).strip()
+    return "\n".join(
+        ln for ln in m.group(1).strip().splitlines() if not ln.startswith("_This report was written by the harness")
+    ).strip()
 
 
-STATUS_WORDS = {"completed": "Completed", "stopped_by_limit": "Stopped early", "failed": "Failed",
-                "insufficient_brief": "Not started: the brief was insufficient", "running": "Still running"}
+STATUS_WORDS = {
+    "completed": "Completed",
+    "stopped_by_limit": "Stopped early",
+    "failed": "Failed",
+    "insufficient_brief": "Not started: the brief was insufficient",
+    "running": "Still running",
+}
 READER_SECTIONS = ("Summary", "What was done", "What was not done and why", "Decisions for you")
 
 
@@ -508,8 +542,11 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         parts["Summary"] = _short(" ".join(str(f["finish"]["summary"] or "").split()), 900)
     if not parts.get("Summary"):  # the Lead wrote none: Ombro's own sentence on how it ended
         parts["Summary"] = _sections(mechanical_narrative(f))[0].get("Summary", "")
-    out += ["## Summary", ""] + ([stopped, ""] if stopped else []) + \
-        [parts.get("Summary") or "No summary was written.", ""]
+    out += (
+        ["## Summary", ""]
+        + ([stopped, ""] if stopped else [])
+        + [parts.get("Summary") or "No summary was written.", ""]
+    )
     if not narrative:
         out += [f"_This report was written by the harness from the journal{': ' + note if note else ''}._", ""]
 
@@ -538,8 +575,14 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     if extra:
         out += ["## The Lead's other notes", "", extra, ""]
 
-    out += ["---", "", "# Ombro's record", "",
-            "What follows is Ombro's own record of the job, from its journal, for checking.", ""]
+    out += [
+        "---",
+        "",
+        "# Ombro's record",
+        "",
+        "What follows is Ombro's own record of the job, from its journal, for checking.",
+        "",
+    ]
     out += ["## The job", ""]
     out.append(f"- **Status:** {f['status']}")
     out.append(f"- **{'Crews' if ', ' in f['crew'] else 'Crew'}:** {f['crew']}")
@@ -578,8 +621,11 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         if unused:
             out.append(f"Not briefed, though the spec named them: {', '.join(unused)}.")
     if f.get("working_files"):
-        out += ["", "Working files (scratch/, not deliverables): "
-                + ", ".join(f"{d['path']} ({d['role']})" for d in f["working_files"])]
+        out += [
+            "",
+            "Working files (scratch/, not deliverables): "
+            + ", ".join(f"{d['path']} ({d['role']})" for d in f["working_files"]),
+        ]
     if f.get("inline_notes"):
         out += ["", "Notes roles gave in place of a file:"]
         out += [f"- {d['name']} ({d['role']}): {_line(d['inline'], 300)}" for d in f["inline_notes"]]
@@ -599,9 +645,14 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         out += ["## Material", "", *material_lines(f), ""]
     if f.get("skills") or f.get("skill_reads"):
         out += ["## Skills", "", *skill_lines(f), ""]
-    out += ["## Changes to notes.md", "",
-            "Lessons the Lead kept in the crew's notes for future jobs: housekeeping, not results.", "",
-            *all_notes_lines(f.get("notes")), ""]
+    out += [
+        "## Changes to notes.md",
+        "",
+        "Lessons the Lead kept in the crew's notes for future jobs: housekeeping, not results.",
+        "",
+        *all_notes_lines(f.get("notes")),
+        "",
+    ]
 
     out += ["## Usage", ""]
     cap_tokens = lim.get("max_tokens")
@@ -609,16 +660,20 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     out.append(
         f"- Tokens: {sp.get('counted_tokens', sp.get('total_tokens', 0)):,} of {format_tokens(cap_tokens)}"
         + (f" (allowance: {allowance})" if allowance and allowance != "custom" else "")
-        + (f"; {sp.get('total_tokens', 0):,} sent and received ({sp.get('input_tokens', 0):,} in, "
-           f"{sp.get('output_tokens', 0):,} out), with input the model had cached counted at a tenth"
-           if sp.get("cached_input_tokens") else
-           f" ({sp.get('input_tokens', 0):,} in, {sp.get('output_tokens', 0):,} out)")
+        + (
+            f"; {sp.get('total_tokens', 0):,} sent and received ({sp.get('input_tokens', 0):,} in, "
+            f"{sp.get('output_tokens', 0):,} out), with input the model had cached counted at a tenth"
+            if sp.get("cached_input_tokens")
+            else f" ({sp.get('input_tokens', 0):,} in, {sp.get('output_tokens', 0):,} out)"
+        )
     )
     if sp.get("estimated_calls"):
         out.append(f"  - {sp['estimated_calls']} model call(s) reported no token counts; estimates were used")
     if sp.get("reasoning_tokens"):
-        out.append(f"  - of the {sp.get('output_tokens', 0):,} out, {sp['reasoning_tokens']:,} were the models' "
-                   "thinking, where the provider reports it")
+        out.append(
+            f"  - of the {sp.get('output_tokens', 0):,} out, {sp['reasoning_tokens']:,} were the models' "
+            "thinking, where the provider reports it"
+        )
     out.append(f"- Model calls: {sp.get('model_calls', 0)}")
     isp = f.get("interview_usage") or {}
     if isp:
@@ -635,9 +690,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     out.append("- Tool calls: " + (", ".join(f"{k} {v} of {cap(k)}" for k, v in sorted(tools.items())) or "none"))
     refused = sp.get("tool_refused") or {}
     if refused:
-        out.append(
-            "  - refused at their cap: " + ", ".join(f"{k} {v}" for k, v in sorted(refused.items()))
-        )
+        out.append("  - refused at their cap: " + ", ".join(f"{k} {v}" for k, v in sorted(refused.items())))
     out.append(f"- Rounds: {sp.get('rounds', 0)} of {lim.get('max_rounds', 0)}")
     out.append(
         f"- Time: {format_duration(sp.get('elapsed_seconds', 0.0))} of {format_duration(lim.get('job_timeout', 0))}"
@@ -645,8 +698,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     out.append(f"- Limit that stopped the job: {('`' + f['limit']['limit'] + '`') if f['limit'] else 'none'}")
     if f.get("brief_limits"):
         out.append(
-            "- Limits that ended a brief: "
-            + ", ".join(f"`{x['limit']}` ({x['role']})" for x in f["brief_limits"])
+            "- Limits that ended a brief: " + ", ".join(f"`{x['limit']}` ({x['role']})" for x in f["brief_limits"])
         )
     if f["warnings"]:
         out += ["", "## Warnings", ""] + [f"- {w}" for w in f["warnings"]]
@@ -702,13 +754,21 @@ def outbox_lines(f: dict[str, Any]) -> list[str]:
             lines.append(f"- ({len(dups)} identical repeat(s) were not added again.)")
         held = [ev for ev in ow.get("grouped") or [] if ev.get("ref") in {s.get("ref") for s in staged}]
         if held:
-            lines.append(f"- ({len(held)} later call(s) on the same item were held with it, not added one by one, "
-                         "and have not happened: " + ", ".join(sorted({f"`{ev.get('tool')}`" for ev in held})) + ".)")
-        lines += ["", "See them with `ombro approvals`; approve or decline each by its reference, e.g. "
-                  f"`ombro approvals show {staged[0].get('ref')}`.", ""]
+            lines.append(
+                f"- ({len(held)} later call(s) on the same item were held with it, not added one by one, "
+                "and have not happened: " + ", ".join(sorted({f"`{ev.get('tool')}`" for ev in held})) + ".)"
+            )
+        lines += [
+            "",
+            "See them with `ombro approvals`; approve or decline each by its reference, e.g. "
+            f"`ombro approvals show {staged[0].get('ref')}`.",
+            "",
+        ]
     if uncertain:
-        lines.append(f"Uncertain: sent during the job, but no answer came back, so it may or may not have "
-                     f"happened ({len(uncertain)}). Check the service:")
+        lines.append(
+            f"Uncertain: sent during the job, but no answer came back, so it may or may not have "
+            f"happened ({len(uncertain)}). Check the service:"
+        )
         lines += [f"- `{ev.get('tool')}` ({ev.get('role')}): {_args_line(ev)}" for ev in uncertain]
         lines.append("")
     if errors:
@@ -739,8 +799,11 @@ def browser_lines(f: dict[str, Any], n: int = 40) -> list[str]:
         out.append("")
     if b.get("typed"):
         out.append(f"Typed into pages ({len(b['typed'])}):")
-        out += [f"- {ev.get('site') or '?'}, \"{_line(ev.get('field') or '', 60)}\": "
-                f"\"{_line(ev.get('typed') or '', 200)}\"{who(ev)}" for ev in b["typed"][:n]]
+        out += [
+            f'- {ev.get("site") or "?"}, "{_line(ev.get("field") or "", 60)}": '
+            f'"{_line(ev.get("typed") or "", 200)}"{who(ev)}'
+            for ev in b["typed"][:n]
+        ]
         if len(b["typed"]) > n:
             out.append(f"- and {len(b['typed']) - n} more in the journal")
         out.append("")
@@ -760,8 +823,10 @@ def material_lines(f: dict[str, Any]) -> list[str]:
     out = []
     flags = f.get("material_flags") or []
     if flags:
-        out.append(f"Text that looked written to steer a model was found {len(flags)} time"
-                   f"{'s' if len(flags) != 1 else ''}. Nothing was done because of it; check these sources:")
+        out.append(
+            f"Text that looked written to steer a model was found {len(flags)} time"
+            f"{'s' if len(flags) != 1 else ''}. Nothing was done because of it; check these sources:"
+        )
         out.append("")
         for x in flags[:30]:
             who = f" (read by {x['role']})" if x.get("role") and x["role"] != "lead" else ""
@@ -771,20 +836,26 @@ def material_lines(f: dict[str, Any]) -> list[str]:
     if f.get("tainted_staged"):
         if out:
             out.append("")
-        out.append("Held for your approval because the role had read material in that brief, though the job's permissions "
-                   "would have allowed them: " + ", ".join(f["tainted_staged"]) + ".")
+        out.append(
+            "Held for your approval because the role had read material in that brief, though the job's permissions "
+            "would have allowed them: " + ", ".join(f["tainted_staged"]) + "."
+        )
     return out
 
 
 def code_lines(f: dict[str, Any]) -> list[str]:
     """Each script the job executed, from the harness's own record."""
-    lines = [f"Scripts run with code.run, in the sandbox ({len(f['code_runs'])}). Each script and its output are "
-             "kept in the job's code/ folder:"]
+    lines = [
+        f"Scripts run with code.run, in the sandbox ({len(f['code_runs'])}). Each script and its output are "
+        "kept in the job's code/ folder:"
+    ]
     for ev in f["code_runs"]:
-        status = (f"stopped by `{ev['limit']}`" if ev.get("limit") else f"exit {ev.get('exit_code')}")
+        status = f"stopped by `{ev['limit']}`" if ev.get("limit") else f"exit {ev.get('exit_code')}"
         what = f": {_line(ev['purpose'], 160)}" if ev.get("purpose") else ""
-        lines.append(f"- `{ev.get('script')}` ({ev.get('role')}){what}. {status}, "
-                     f"{float(ev.get('seconds') or 0):.1f}s, {ev.get('changed', 0)} file(s) changed")
+        lines.append(
+            f"- `{ev.get('script')}` ({ev.get('role')}){what}. {status}, "
+            f"{float(ev.get('seconds') or 0):.1f}s, {ev.get('changed', 0)} file(s) changed"
+        )
     return lines
 
 
@@ -803,19 +874,23 @@ def folder_lines(f: dict[str, Any]) -> list[str]:
     changes = f.get("folder_changes") or {}
     for entry in f.get("folders") or []:
         name, access = entry.get("name"), entry.get("access")
-        lines.append(f"- **shared/{name}** ({'read and write' if access == 'write' else 'read only'}): "
-                     f"{entry.get('path')}")
+        lines.append(
+            f"- **shared/{name}** ({'read and write' if access == 'write' else 'read only'}): {entry.get('path')}"
+        )
         if access != "write":
             continue
         if entry.get("backup"):
-            lines.append(f"  - Backup: cloned before the job to {entry['backup']}. To restore a file, copy it "
-                         "back from there.")
+            lines.append(
+                f"  - Backup: cloned before the job to {entry['backup']}. To restore a file, copy it back from there."
+            )
         elif entry.get("backup_note"):
             lines.append(f"  - Backup: {entry['backup_note']}.")
         ev = changes.get(str(name))
         if ev is None:
-            lines.append("  - Changes: not recorded (the job ended before the folder could be compared); compare "
-                         "it with the backup.")
+            lines.append(
+                "  - Changes: not recorded (the job ended before the folder could be compared); compare "
+                "it with the backup."
+            )
         elif ev.get("too_large"):
             lines.append("  - Changes: the folder has too many files to compare before and after.")
         elif not ev.get("total"):
@@ -827,16 +902,22 @@ def folder_lines(f: dict[str, Any]) -> list[str]:
         outside = (ev or {}).get("outside") or {}
         if any(outside.values()):
             names = [x for k in ("created", "changed", "removed") for x in outside.get(k) or []]
-            lines.append("  - Changed while the job ran, but not by the job (by you or another program): "
-                         + ", ".join(names) + ".")
+            lines.append(
+                "  - Changed while the job ran, but not by the job (by you or another program): "
+                + ", ".join(names)
+                + "."
+            )
     if f.get("placed"):
         lines += ["", f"Copied into shared folders with workspace.place ({len(f['placed'])}):"]
         lines += [f"- {ev.get('note')} ({ev.get('role')})" for ev in f["placed"]]
     for note in f.get("folders_left_out") or []:
         lines.append(f"- Left out: {note}")
     if f.get("not_shared"):
-        lines += ["", "Refused because they are not in a folder shared with this job. Share the folder with "
-                  "`ombro folder add <path>` if a later job should reach it:"]
+        lines += [
+            "",
+            "Refused because they are not in a folder shared with this job. Share the folder with "
+            "`ombro folder add <path>` if a later job should reach it:",
+        ]
         lines += [f"- {_line(p, 200)}" for p in f["not_shared"][:20]]
     if not lines:
         lines.append("None.")
@@ -859,8 +940,11 @@ def _skill_words(ev: dict[str, Any]) -> str:
 
 def _skills_waiting(f: dict[str, Any]) -> list[dict[str, Any]]:
     now = f.get("outbox_now") or {}
-    return [ev for ev in f.get("skills") or [] if ev.get("outcome") == "proposed"
-            and now.get(str(ev.get("ref")), "pending") == "pending"]
+    return [
+        ev
+        for ev in f.get("skills") or []
+        if ev.get("outcome") == "proposed" and now.get(str(ev.get("ref")), "pending") == "pending"
+    ]
 
 
 def skill_lines(f: dict[str, Any]) -> list[str]:
@@ -882,8 +966,10 @@ def skill_lines(f: dict[str, Any]) -> list[str]:
         lines.append("")
         if ev.get("outcome") == "proposed":
             state = DECIDED.get(now.get(str(ev.get("ref")), ""), "waiting for you")
-            lines.append(f"Proposed by the Lead: {_skill_words(ev)} (**{ev.get('ref')}**, {state}). "
-                         f"Reason: {_line(ev.get('reason', ''), 200)}")
+            lines.append(
+                f"Proposed by the Lead: {_skill_words(ev)} (**{ev.get('ref')}**, {state}). "
+                f"Reason: {_line(ev.get('reason', ''), 200)}"
+            )
             if ev.get("flags"):
                 lines.append(f"  - Signs of injected text in it: {', '.join(ev['flags'])}. Read it closely.")
             if ev.get("unknown_roles"):
@@ -904,7 +990,7 @@ def all_notes_lines(events: list[dict[str, Any]] | None) -> list[str]:
         crew = str(ev["crew"])
         note = str(ev.get("note") or "")
         if note.startswith(f"{crew}: "):
-            ev = {**ev, "note": note[len(crew) + 2:]}
+            ev = {**ev, "note": note[len(crew) + 2 :]}
         out += [f"### Crew {crew}", "", *notes_lines(ev), ""]
     return out[:-1]
 
@@ -946,8 +1032,10 @@ def notes_lines(ev: dict[str, Any] | None) -> list[str]:
         added, removed = ev.get("added") or [], ev.get("removed") or []
         new, reworded, gone = _lesson_changes(added, removed)
         counts = [f"{n} {word}" for n, word in ((len(new), "new"), (reworded, "reworded"), (len(gone), "removed")) if n]
-        lines = [f"The Lead rewrote its part (\"From jobs\"): {', '.join(counts) or 'no lesson changed'}. "
-                 f"notes.md is now {ev.get('size', 0):,} of {ev.get('cap', 0):,} characters."]
+        lines = [
+            f'The Lead rewrote its part ("From jobs"): {", ".join(counts) or "no lesson changed"}. '
+            f"notes.md is now {ev.get('size', 0):,} of {ev.get('cap', 0):,} characters."
+        ]
         for label, items in (("Added", new), ("Removed", gone)):
             if items:
                 lines += ["", f"{label}:"] + [f"- {_line(x.lstrip('-* '), 200)}" for x in items[:NOTES_LISTED]]

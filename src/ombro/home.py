@@ -211,9 +211,17 @@ LIMITS_META = {
     "chat_history_chars": 200_000,
     "chat_calls_per_message": 20,
     "fetch_max_query": 200,
-    "chat_tool_max_calls": {"memory.search": 20, "memory.read": 30, "memory.list": 30, "web.search": 10,
-                            "web.fetch": 15, "folders.list": 30, "folders.read": 40, "folders.write": 10,
-                            "default": 10},
+    "chat_tool_max_calls": {
+        "memory.search": 20,
+        "memory.read": 30,
+        "memory.list": 30,
+        "web.search": 10,
+        "web.fetch": 15,
+        "folders.list": 30,
+        "folders.read": 40,
+        "folders.write": 10,
+        "default": 10,
+    },
     "schedule_grace": "15m",
     "schedule_max_running": 2,
     "schedule_max_starts": 3,
@@ -452,6 +460,7 @@ context. Comments like this one are not sent to the model.
 -->
 """
 
+
 def tidy_title(name: str) -> str:
     """A display title from a folder name: market-researcher becomes Market Researcher."""
     words = [w for w in name.replace("_", "-").split("-") if w]
@@ -461,7 +470,9 @@ def tidy_title(name: str) -> str:
 _OPENERS = re.compile(
     r"^(?:(?:hi|hello|hey|ok|okay|so|right|please|thanks)[,!. ]+)*"
     r"(?:(?:can|could|would|will) you(?: please)?|please|i'?d like (?:you )?to|i want (?:you )?to|"
-    r"i need (?:you )?to|let'?s|we need to|help me)?\s*", re.I)
+    r"i need (?:you )?to|let'?s|we need to|help me)?\s*",
+    re.I,
+)
 
 
 def words_title(text: str, words: int = 6) -> str:
@@ -488,8 +499,10 @@ def crew_title(home: "Home", crew: str) -> str:
 
 
 # A title that already says it is a group ("Marketing team", "Research Desk") is not followed by "crew".
-GROUP_WORDS = frozenset("""crew crews team teams squad group department dept unit desk office staff agency studio
-    collective club committee board council guild circle pod lab bureau taskforce force party band""".split())
+GROUP_WORDS = frozenset(
+    """crew crews team teams squad group department dept unit desk office staff agency studio
+    collective club committee board council guild circle pod lab bureau taskforce force party band""".split()
+)
 
 
 def crew_phrase(home: "Home", crew: str, start: bool = False) -> str:
@@ -537,7 +550,7 @@ LEAD_CONFIG = {
     "title": "Lead",
     "kind": "lead",
     "description": "The one Lead, above every crew. Briefs the crews' roles, keeps the job to the spec and writes "
-                   "the report.",
+    "the report.",
     "model": "default",
 }
 
@@ -592,6 +605,7 @@ def soul_with(current: str, name: str, section: str) -> str:
     heading = f"{WORKING_WITH} {name}" if name else f"{WORKING_WITH} you"
     return (f"{above}\n\n" if above else "") + f"{heading}\n\n{section.strip()}\n"
 
+
 ASSISTANT_NAME = "general-assistant"
 
 ASSISTANT_CONFIG = {
@@ -599,8 +613,8 @@ ASSISTANT_CONFIG = {
     "title": "General Assistant",
     "kind": "specialist",
     "description": "A capable generalist for everyday tasks that no other role fits. Researches, summarises, "
-                   "compares, drafts and organises, working from the web and the workspace, with short Python "
-                   "scripts for work on files. Writes its work to files in the workspace and returns their paths.",
+    "compares, drafts and organises, working from the web and the workspace, with short Python "
+    "scripts for work on files. Writes its work to files in the workspace and returns their paths.",
     "model": "default",
     "tools": "all",
     "skills": "all",
@@ -653,8 +667,13 @@ def ensure_crew(home: Home, crew: str, description: str = "", title: str = "") -
         (cdir / sub).mkdir(parents=True, exist_ok=True)
     _write_if_missing(
         cdir / "crew.md",
-        mdfile.dump({"name": crew, "title": title.strip() or f"{tidy_title(crew)} Crew",
-                     "description": description or f"The {crew} crew."}),
+        mdfile.dump(
+            {
+                "name": crew,
+                "title": title.strip() or f"{tidy_title(crew)} Crew",
+                "description": description or f"The {crew} crew.",
+            }
+        ),
         created,
     )
     _write_if_missing(cdir / "memory/index.md", "# Index\n", created)

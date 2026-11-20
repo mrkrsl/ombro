@@ -43,8 +43,12 @@ def test_a_skill_folder_sent_by_the_app_is_checked_then_added(serve, home):
     write_role(home, "surveyor", skills=["other"])
     write_role(home, "helper", kind="helper", skills="all")
     files = {"SKILL.md": SKILL, "references/models.md": "Invented kettle models."}
-    body = {"folder": "kettle-survey", "path": "/Users/ada/Skills/kettle-survey", "files": files,
-            "skipped": ["scripts/boil.sh"]}
+    body = {
+        "folder": "kettle-survey",
+        "path": "/Users/ada/Skills/kettle-survey",
+        "files": files,
+        "skipped": ["scripts/boil.sh"],
+    }
     seen = serve.post("/skills/import", body)
     assert seen["name"] == "kettle-survey" and not seen["replaces"]
     assert seen["references"] == ["references/models.md"] and seen["skipped"] == ["scripts/boil.sh"]
@@ -97,11 +101,34 @@ def test_the_default_crew_is_chosen_over_serve(serve, home):
 
 def test_an_api_is_added_from_the_command_line_and_its_key_typed_hidden(home, monkeypatch, capsys):
     monkeypatch.setattr("getpass.getpass", lambda prompt="": "pk-INVENTED-weather-0000")
-    assert cli.main(["tools", "add", "weather", "--url", "https://api.weather.invalid/v1", "--about",
-                     "Invented weather.", "--class", "read-only", "--send-key", "header:X-API-Key", "--yes"]) == 0
+    assert (
+        cli.main(
+            [
+                "tools",
+                "add",
+                "weather",
+                "--url",
+                "https://api.weather.invalid/v1",
+                "--about",
+                "Invented weather.",
+                "--class",
+                "read-only",
+                "--send-key",
+                "header:X-API-Key",
+                "--yes",
+            ]
+        )
+        == 0
+    )
     api = load_tool_settings(home).apis["weather"]
-    assert api == {"url": "https://api.weather.invalid/v1", "key": "WEATHER_API_KEY", "send_key": "header:X-API-Key",
-                   "about": "Invented weather.", "class": "read-only", "max_calls": 30}
+    assert api == {
+        "url": "https://api.weather.invalid/v1",
+        "key": "WEATHER_API_KEY",
+        "send_key": "header:X-API-Key",
+        "about": "Invented weather.",
+        "class": "read-only",
+        "max_calls": 30,
+    }
     assert keys.get_key(home, "WEATHER_API_KEY") == "pk-INVENTED-weather-0000"
     assert "pk-INVENTED" not in capsys.readouterr().out
     assert cli.main(["tools", "edit", "weather", "--class", "external", "--yes"]) == 0
@@ -115,12 +142,18 @@ def test_an_api_is_added_from_the_command_line_and_its_key_typed_hidden(home, mo
 def test_an_api_is_added_by_answering_questions(home):
     from ombro import tool_cmd
 
-    ui = ScriptedUI(["https://api.podcasts.invalid/v2", "Invented podcasts.",
-                     lambda f: next(o.key for o in f.options if o.label.startswith("internal")),
-                     True,  # its GETs only look things up
-                     "pk-INVENTED-podcasts-0000",
-                     lambda f: next(o.key for o in f.options if o.label.startswith("in the address")),
-                     "api_key", "y"])
+    ui = ScriptedUI(
+        [
+            "https://api.podcasts.invalid/v2",
+            "Invented podcasts.",
+            lambda f: next(o.key for o in f.options if o.label.startswith("internal")),
+            True,  # its GETs only look things up
+            "pk-INVENTED-podcasts-0000",
+            lambda f: next(o.key for o in f.options if o.label.startswith("in the address")),
+            "api_key",
+            "y",
+        ]
+    )
     assert tool_cmd.api_flow(home, ui, "add", "podcasts", {}) == 0
     api = load_tool_settings(home).apis["podcasts"]
     assert api["class"] == "internal" and api["send_key"] == "query:api_key" and api["key"] == "PODCASTS_API_KEY"
@@ -131,8 +164,11 @@ def test_an_api_is_added_by_answering_questions(home):
 
 
 def test_deleting_an_api_or_server_removes_its_key_unless_another_uses_it(serve, home):
-    serve.post("/tools/apis", {"name": "weather", "url": "https://api.weather.invalid", "key": "pk-INVENTED-1111",
-                               "about": "Invented."}, status=201)
+    serve.post(
+        "/tools/apis",
+        {"name": "weather", "url": "https://api.weather.invalid", "key": "pk-INVENTED-1111", "about": "Invented."},
+        status=201,
+    )
     # A second API sharing the key by name, by hand in tools.md.
     meta, body = mdfile.read(home.tools)
     meta["apis"]["forecast"] = {**meta["apis"]["weather"], "url": "https://api.forecast.invalid"}
@@ -146,8 +182,11 @@ def test_deleting_an_api_or_server_removes_its_key_unless_another_uses_it(serve,
     serve.http.delete("/tools/apis/forecast")
     assert keys.get_key(home, "WEATHER_API_KEY") is None
 
-    serve.post("/tools/servers", {"name": "notes", "url": "https://mcp.notes.invalid",
-                                  "secrets": {"Authorization": "sk-INVENTED-2222"}}, status=201)
+    serve.post(
+        "/tools/servers",
+        {"name": "notes", "url": "https://mcp.notes.invalid", "secrets": {"Authorization": "sk-INVENTED-2222"}},
+        status=201,
+    )
     check = serve.get("/tools/servers/notes/check")
     assert any("NOTES_AUTHORIZATION" in w and "removed" in w for w in check["warnings"])
     serve.http.delete("/tools/servers/notes")
@@ -155,15 +194,20 @@ def test_deleting_an_api_or_server_removes_its_key_unless_another_uses_it(serve,
 
 
 def test_an_add_that_fails_part_way_leaves_no_key_behind(serve, home):
-    serve.post("/tools/servers", {"name": "notes", "url": "https://mcp.notes.invalid",
-                                  "secrets": {"Authorization": "sk-INVENTED-first"}}, status=201)
+    serve.post(
+        "/tools/servers",
+        {"name": "notes", "url": "https://mcp.notes.invalid", "secrets": {"Authorization": "sk-INVENTED-first"}},
+        status=201,
+    )
     # The same name again: refused, and the key it wrote is put back as it was.
     keys.set_key(home, "OTHER_AUTHORIZATION", "sk-INVENTED-kept")
     meta, body = mdfile.read(home.tools)
     meta["apis"] = {"other": {"url": "https://api.other.invalid", "key": "OTHER_AUTHORIZATION"}}
     mdfile.write(home.tools, meta, body)
-    r = serve.http.post("/tools/servers", json={"name": "other", "url": "https://mcp.other.invalid",
-                                                "secrets": {"Authorization": "sk-INVENTED-second"}})
+    r = serve.http.post(
+        "/tools/servers",
+        json={"name": "other", "url": "https://mcp.other.invalid", "secrets": {"Authorization": "sk-INVENTED-second"}},
+    )
     assert r.status_code == 400
     assert keys.get_key(home, "OTHER_AUTHORIZATION") == "sk-INVENTED-kept"
     r = serve.http.post("/tools/apis", json={"name": "notes", "url": "https://api.n.invalid", "key": "pk-INVENTED"})
@@ -171,8 +215,11 @@ def test_an_add_that_fails_part_way_leaves_no_key_behind(serve, home):
 
 
 def test_an_edit_that_drops_a_secret_removes_its_key(serve, home):
-    serve.post("/tools/servers", {"name": "files", "command": "uvx invented-mcp==1.0",
-                                  "secrets": {"TOKEN": "sk-INVENTED-env-0000"}}, status=201)
+    serve.post(
+        "/tools/servers",
+        {"name": "files", "command": "uvx invented-mcp==1.0", "secrets": {"TOKEN": "sk-INVENTED-env-0000"}},
+        status=201,
+    )
     assert keys.get_key(home, "FILES_TOKEN")
     serve.http.put("/tools/servers/files", json={"command": "uvx invented-mcp==1.0"})
     assert keys.get_key(home, "FILES_TOKEN") is None
@@ -249,8 +296,10 @@ def test_a_provider_whose_key_is_refused_is_not_added(serve, home):
         raise ModelError("api.invented.invalid returned HTTP 401: invalid key", status=401)
 
     serve.client.list_models = refuse
-    r = serve.http.post("/models/providers", json={"endpoint": "https://api.invented.invalid",
-                                                  "key": "sk-INVENTED-refused-0000", "model": "invented-chat"})
+    r = serve.http.post(
+        "/models/providers",
+        json={"endpoint": "https://api.invented.invalid", "key": "sk-INVENTED-refused-0000", "model": "invented-chat"},
+    )
     assert r.status_code == 400 and "refused the key" in r.json()["error"]
     assert keys.get_key(home, "INVENTED_API_KEY") is None
     assert not any(c["endpoint"] == "https://api.invented.invalid" for c in serve.get("/models")["connections"])

@@ -41,8 +41,10 @@ def spec_view(home, spec: dict[str, Any]) -> str:
     if raw:
         parts.append("the work goes to: " + ", ".join(map(str, raw if isinstance(raw, list) else [raw])))
     if meta.get("folders"):
-        parts.append("folders: " + ", ".join(map(str, meta["folders"] if isinstance(meta["folders"], (list, dict))
-                                                else [meta["folders"]])))
+        parts.append(
+            "folders: "
+            + ", ".join(map(str, meta["folders"] if isinstance(meta["folders"], (list, dict)) else [meta["folders"]]))
+        )
     parts.append(f"saved {spec['modified']}")
     return "; ".join(parts) + "."
 
@@ -67,17 +69,29 @@ class Flows:
     # -- lists, as plain notes (the terminal draws its own) ------------------------
 
     def list_approvals(self, items: list) -> None:
-        self.say(f"{_n(len(items), 'action')} waiting for your decision:",
-                 items=[f"{a.ref}  {a.status}  {a.tool}  {a.summary(70)}" for a in items])
+        self.say(
+            f"{_n(len(items), 'action')} waiting for your decision:",
+            items=[f"{a.ref}  {a.status}  {a.tool}  {a.summary(70)}" for a in items],
+        )
         self.say("/approvals show <ref> for one in full; /approvals approve or decline <ref>...")
 
     def list_skills(self, view: dict[str, Any]) -> None:
-        self.say(f"Approved ({len(view['skills'])}):", items=[
-            f"{r['name']}: {r['description']} (used by {', '.join(r['used_by']) or 'no role by name'})"
-            for r in view["skills"]] or ["none yet"])
-        self.say(f"Waiting for your approval ({len(view['waiting'])}):", items=[
-            f"{w['ref']}  {'a new version of' if w['change'] == 'update' else 'new:'} {w['name']}"
-            for w in view["waiting"]] or ["none"])
+        self.say(
+            f"Approved ({len(view['skills'])}):",
+            items=[
+                f"{r['name']}: {r['description']} (used by {', '.join(r['used_by']) or 'no role by name'})"
+                for r in view["skills"]
+            ]
+            or ["none yet"],
+        )
+        self.say(
+            f"Waiting for your approval ({len(view['waiting'])}):",
+            items=[
+                f"{w['ref']}  {'a new version of' if w['change'] == 'update' else 'new:'} {w['name']}"
+                for w in view["waiting"]
+            ]
+            or ["none"],
+        )
 
     def list_crews(self, team: dict[str, Any]) -> None:
         lines = []
@@ -124,8 +138,10 @@ class Flows:
                 title = " ".join(w for w in words[1:] if w not in ("--crew", given)) or None
                 crew = find_crew(self.home, given)
                 if crew is None:
-                    self.say(f"There's no crew called {given}. The crews are "
-                             f"{', '.join(crew_title(self.home, c) for c in self.home.crews())}.")
+                    self.say(
+                        f"There's no crew called {given}. The crews are "
+                        f"{', '.join(crew_title(self.home, c) for c in self.home.crews())}."
+                    )
                     return
             if title and self.home.roles_dir(crew).joinpath(folder_name(title)).exists():
                 self.say(f"{crew_phrase(self.home, crew, start=True)} already has a role called {title}.")
@@ -194,16 +210,26 @@ class Flows:
             name = words[0].removesuffix(".md")
             match = [s for s in specs if s["name"] == name]
             if not match:
-                self.say(f"There's no saved spec called {name}. Saved specs: "
-                         + ", ".join(s["name"] for s in specs[:12]) + ("…" if len(specs) > 12 else "") + ".")
+                self.say(
+                    f"There's no saved spec called {name}. Saved specs: "
+                    + ", ".join(s["name"] for s in specs[:12])
+                    + ("…" if len(specs) > 12 else "")
+                    + "."
+                )
                 return
             spec = match[0]
         else:
             shown = specs[:20]
-            pick = self.ui.ask(Field("spec", "Which spec would you like to start? (newest first)", "choice",
-                                     default="1", invalid="Please choose one of the numbers shown.",
-                                     options=[Option(str(i), f"{s['name']}: {s['title']}")
-                                              for i, s in enumerate(shown, 1)]))
+            pick = self.ui.ask(
+                Field(
+                    "spec",
+                    "Which spec would you like to start? (newest first)",
+                    "choice",
+                    default="1",
+                    invalid="Please choose one of the numbers shown.",
+                    options=[Option(str(i), f"{s['name']}: {s['title']}") for i, s in enumerate(shown, 1)],
+                )
+            )
             spec = shown[int(pick) - 1]
         self.session.offer_start(spec["name"], spec_view(self.home, spec))
 
@@ -230,9 +256,12 @@ class Flows:
                 if a.tool == outbox.SKILL_TOOL:
                     self._show_skill_proposal(a, d)
                     return
-                lines = [f"{a.ref}: {a.tool} ({d.get('class', '')}), {a.status}",
-                         f"From job {a.job_id}, role {d.get('role', '')}. Reason: {d.get('reason', '')}",
-                         "Arguments:", json.dumps(a.arguments, ensure_ascii=False, indent=2)]
+                lines = [
+                    f"{a.ref}: {a.tool} ({d.get('class', '')}), {a.status}",
+                    f"From job {a.job_id}, role {d.get('role', '')}. Reason: {d.get('reason', '')}",
+                    "Arguments:",
+                    json.dumps(a.arguments, ensure_ascii=False, indent=2),
+                ]
                 self.say("\n".join(lines))
                 return
             if action in ("approve", "decline") and refs:
@@ -241,7 +270,9 @@ class Flows:
                 tail = "" if action == "approve" else " They will never run."
                 for a in items:
                     self.say(f"{a.ref}: {a.tool}  {a.summary(80)}")
-                if not self.ui.yes("confirm", f"{verb} {'this action' if len(items) == 1 else f'these {len(items)} actions'}?{tail}"):
+                if not self.ui.yes(
+                    "confirm", f"{verb} {'this action' if len(items) == 1 else f'these {len(items)} actions'}?{tail}"
+                ):
                     self.say("Nothing was done.")
                     return
                 for a in items:
@@ -258,19 +289,25 @@ class Flows:
         except outbox.OutboxError as e:
             self.fail(str(e))
             return
-        self.usage("/approvals, /approvals show <ref>, /approvals approve <ref>..., /approvals decline <ref>..., "
-                   "/approvals resolve <ref> sent|not-sent. To edit one, use `ombro approvals edit <ref>`.")
+        self.usage(
+            "/approvals, /approvals show <ref>, /approvals approve <ref>..., /approvals decline <ref>..., "
+            "/approvals resolve <ref> sent|not-sent. To edit one, use `ombro approvals edit <ref>`."
+        )
 
     def _show_skill_proposal(self, a: outbox.Action, d: dict) -> None:
         v = outbox.skill_view(self.home, a)
-        lines = [f"{a.ref}: {'a new version of' if v['live'] else 'a new skill,'} {v['name']}, {a.status}",
-                 f"From job {a.job_id}. Reason: {d.get('reason', '')}",
-                 f"For: {', '.join(v['for']) or 'no role named'}"]
+        lines = [
+            f"{a.ref}: {'a new version of' if v['live'] else 'a new skill,'} {v['name']}, {a.status}",
+            f"From job {a.job_id}. Reason: {d.get('reason', '')}",
+            f"For: {', '.join(v['for']) or 'no role named'}",
+        ]
         if v["flags"]:
             lines.append(f"Signs of injected text in it: {', '.join(v['flags'])}. Read it closely.")
         if v["changed_since"] and a.status == "pending":
-            lines.append(f"The live skill has changed since this was proposed: save it again with "
-                         f"`ombro approvals edit {a.ref}` before approving.")
+            lines.append(
+                f"The live skill has changed since this was proposed: save it again with "
+                f"`ombro approvals edit {a.ref}` before approving."
+            )
         lines += ["", v.get("diff") or "(no difference)"] if v["live"] else ["", v["text"].rstrip()]
         self.say("\n".join(lines))
 
@@ -284,8 +321,10 @@ class Flows:
             if action == "list":
                 view = library_view(self.home)
                 if not view["skills"] and not view["waiting"]:
-                    self.say("No skills yet. Ask me to remember how to do something, and I can write one; "
-                             "after a job I may propose one for you to approve.")
+                    self.say(
+                        "No skills yet. Ask me to remember how to do something, and I can write one; "
+                        "after a job I may propose one for you to approve."
+                    )
                     return
                 self.list_skills(view)
                 return
@@ -303,13 +342,20 @@ class Flows:
 
                 imp = skills.inspect_import(self.home, rest.strip()[3:].strip())
                 self.say("\n".join(describe_import(imp)))
-                if not self.ui.yes("confirm", "Add it to your library? Roles that use it will follow it as your "
-                                   "own instructions.", default=False):
+                if not self.ui.yes(
+                    "confirm",
+                    "Add it to your library? Roles that use it will follow it as your own instructions.",
+                    default=False,
+                ):
                     self.say("Nothing was added.")
                     return
                 kept = skills.add(self.home, imp, date.today().isoformat())
-                self.say(f"Added {imp.name}." + (f" The old version is kept in {kept}." if kept else "")
-                         + f" Give it to a role with /skills give {imp.name} <crew/role>.", level="done")
+                self.say(
+                    f"Added {imp.name}."
+                    + (f" The old version is kept in {kept}." if kept else "")
+                    + f" Give it to a role with /skills give {imp.name} <crew/role>.",
+                    level="done",
+                )
                 return
             if action == "give" and len(words) >= 3:
                 for who in words[2:]:
@@ -329,14 +375,16 @@ class Flows:
         if action == "list":
             rows = views.schedule_list(self.home)
             if not rows:
-                self.say("No schedules yet. Add one with `ombro schedule add <name> --spec <spec> --cron \"…\"`.")
+                self.say('No schedules yet. Add one with `ombro schedule add <name> --spec <spec> --cron "…"`.')
                 return
             lines = []
             for s in rows:
                 last = f", last {s['last_job']['status']}" if s["last_job"] else ""
                 nxt = f", next {s['next'].replace('T', ' ')}" if s["next"] else ""
-                lines.append(f"{s['name']}  {'on' if s['enabled'] else 'off'}  {s['cron']}{nxt}{last}"
-                             + (f"  (problem: {s['problem']})" if s["problem"] else ""))
+                lines.append(
+                    f"{s['name']}  {'on' if s['enabled'] else 'off'}  {s['cron']}{nxt}{last}"
+                    + (f"  (problem: {s['problem']})" if s["problem"] else "")
+                )
             self.say("Schedules:", items=lines)
             return
         if action in ("enable", "disable") and len(words) > 1:
@@ -348,8 +396,9 @@ class Flows:
             schedules.set_enabled(s.path, action == "enable")
             self.say(f"{s.name} is {'on' if action == 'enable' else 'off'}.", level="done")
             return
-        self.usage("/schedule, /schedule enable <name>, /schedule disable <name>. Adding one is "
-                   "`ombro schedule add` for now.")
+        self.usage(
+            "/schedule, /schedule enable <name>, /schedule disable <name>. Adding one is `ombro schedule add` for now."
+        )
 
     def cmd_keys(self, words: list[str], rest: str) -> None:
         action = words[0].lower() if words else "list"
@@ -358,9 +407,12 @@ class Flows:
             if not data["keys"]:
                 self.say("No keys are set or needed yet.")
                 return
-            items = [f"{k['name']}: {'set' if k['set'] else 'not set'}"
-                     + (f" ({k['source']})" if k["source"] == "environment" else "")
-                     + (f", used by {', '.join(k['used_by'])}" if k["used_by"] else "") for k in data["keys"]]
+            items = [
+                f"{k['name']}: {'set' if k['set'] else 'not set'}"
+                + (f" ({k['source']})" if k["source"] == "environment" else "")
+                + (f", used by {', '.join(k['used_by'])}" if k["used_by"] else "")
+                for k in data["keys"]
+            ]
             items += [f"sign-in {s['server']}: {s['status']}" for s in data["sign_ins"]]
             self.say("Keys (values are never shown):", items=items)
             return
@@ -378,8 +430,16 @@ class Flows:
     def cmd_limits(self, words: list[str], rest: str) -> None:
         """One allowance level for the whole of Ombro: show it, or change it."""
         from ombro import mdfile
-        from ombro.settings import (ALLOWANCES, LEVEL_KEYS, SetupError, allowance_table, format_duration,
-                                    format_tokens, load_limits, set_allowance)
+        from ombro.settings import (
+            ALLOWANCES,
+            LEVEL_KEYS,
+            SetupError,
+            allowance_table,
+            format_duration,
+            format_tokens,
+            load_limits,
+            set_allowance,
+        )
         from ombro.ui import Field, Option
 
         if words and words[0].lower() == "set":
@@ -387,20 +447,28 @@ class Flows:
             if level is None:
                 names = list(ALLOWANCES)
                 current = load_limits(self.home).allowance
-                pick = self.ui.ask(Field(
-                    "allowance", "Which level should Ombro use?", "choice",
-                    default=str(names.index(current) + 1) if current in names else "2",
-                    options=[Option(str(i), line) for i, line in enumerate(allowance_table(), 1)],
-                    invalid="Please choose one of the numbers shown."))
+                pick = self.ui.ask(
+                    Field(
+                        "allowance",
+                        "Which level should Ombro use?",
+                        "choice",
+                        default=str(names.index(current) + 1) if current in names else "2",
+                        options=[Option(str(i), line) for i, line in enumerate(allowance_table(), 1)],
+                        invalid="Please choose one of the numbers shown.",
+                    )
+                )
                 level = names[int(pick) - 1]
             try:
                 dropped = set_allowance(self.home, level)
             except SetupError as e:
                 self.say(str(e))
                 return
-            self.say(f"Ombro now uses the {level} level, from this chat on. Jobs already going keep their "
-                     "limits." + (f" Values set by hand were removed so the level "
-                     f"applies: {', '.join(dropped)}." if dropped else ""), level="done")
+            self.say(
+                f"Ombro now uses the {level} level, from this chat on. Jobs already going keep their "
+                "limits."
+                + (f" Values set by hand were removed so the level applies: {', '.join(dropped)}." if dropped else ""),
+                level="done",
+            )
             if self.session.chat is not None:
                 self.session.chat.reload_limits()  # this chat's cap follows at once
             return
@@ -410,13 +478,18 @@ class Flows:
         lim = load_limits(self.home)
         meta, _ = mdfile.read(self.home.limits)
         by_hand = [k for k in LEVEL_KEYS if k in meta]
-        self.say(f"Ombro uses the {lim.allowance} level" + (f" (set by hand: {', '.join(by_hand)})" if by_hand
-                                                             else "") + ":",
-                 items=[f"each job: {format_tokens(lim.max_tokens)} tokens, {lim.max_rounds} rounds, "
-                        f"{format_duration(lim.job_timeout)}",
-                        f"each chat: {format_tokens(lim.chat_max_tokens)} tokens",
-                        f"each interview: {format_tokens(lim.interview_max_tokens)} tokens",
-                        f"each model call: {lim.max_output_tokens:,} output tokens"])
+        self.say(
+            f"Ombro uses the {lim.allowance} level"
+            + (f" (set by hand: {', '.join(by_hand)})" if by_hand else "")
+            + ":",
+            items=[
+                f"each job: {format_tokens(lim.max_tokens)} tokens, {lim.max_rounds} rounds, "
+                f"{format_duration(lim.job_timeout)}",
+                f"each chat: {format_tokens(lim.chat_max_tokens)} tokens",
+                f"each interview: {format_tokens(lim.interview_max_tokens)} tokens",
+                f"each model call: {lim.max_output_tokens:,} output tokens",
+            ],
+        )
         self.say("Change it with /limits set. The levels:", items=allowance_table())
 
     def cmd_models(self, words: list[str], rest: str) -> None:
@@ -426,8 +499,10 @@ class Flows:
         factory = self.session.init_client_factory
         if action == "list":
             self.say("Models, by connection:", items=models.listing_lines(self.home))
-            self.say("/model changes who uses which. /models default chooses the default, /models refresh asks "
-                     "each connection for its models, and /models add connects another provider.")
+            self.say(
+                "/model changes who uses which. /models default chooses the default, /models refresh asks "
+                "each connection for its models, and /models add connects another provider."
+            )
         elif action == "default":
             models.default_flow(self.home, self.ui, words[1] if len(words) > 1 else None)
         elif action == "refresh":
@@ -455,12 +530,18 @@ class Flows:
             if action == "list":
                 data = views.folder_list(self.home)
                 if not data["folders"]:
-                    self.say("No folders are shared. Jobs reach only their own workspace. Share one with "
-                             "/folder add <path>.")
+                    self.say(
+                        "No folders are shared. Jobs reach only their own workspace. Share one with /folder add <path>."
+                    )
                     return
-                self.say("Shared folders:", items=[f"{f['name']}  {f['access']}  {f['path']}"
-                                                   + (f"  (problem: {f['problem']})" if f["problem"] else "")
-                                                   for f in data["folders"]])
+                self.say(
+                    "Shared folders:",
+                    items=[
+                        f"{f['name']}  {f['access']}  {f['path']}"
+                        + (f"  (problem: {f['problem']})" if f["problem"] else "")
+                        for f in data["folders"]
+                    ],
+                )
                 return
             if action == "add" and len(words) > 1:
                 from ombro.folders_cmd import add_flow
@@ -492,8 +573,10 @@ class Flows:
                 self.say("Crew names use lower-case letters, digits, - and _, and must be new.")
                 return
             ensure_crew(self.home, name, "", " ".join(words[2:]))
-            self.say(f"Created {crew_phrase(self.home, name)}. Add its roles with "
-                     f"/role add <title> --crew {name}.", level="done")
+            self.say(
+                f"Created {crew_phrase(self.home, name)}. Add its roles with /role add <title> --crew {name}.",
+                level="done",
+            )
             return
         if action == "use" and len(words) > 1:
             crew = find_crew(self.home, " ".join(words[1:]))
@@ -529,8 +612,17 @@ class Flows:
             flags = {w.lower() for w in words[1:] if w.startswith("--")}
             names = [w for w in words[1:] if not w.startswith("--")]
             name = names[0] if names else None
-            args = argparse.Namespace(name=name, command=None, url=None, env=None, header=None, secret=None,
-                                      server_class=None, no_prompt=False, yes=False)
+            args = argparse.Namespace(
+                name=name,
+                command=None,
+                url=None,
+                env=None,
+                header=None,
+                secret=None,
+                server_class=None,
+                no_prompt=False,
+                yes=False,
+            )
             try:
                 if action == "remove":
                     if name and name in load_tool_settings(self.home).apis:
@@ -552,8 +644,10 @@ class Flows:
         cmd = [*jobs.ombro_argv(), "tools"] + ([words[0]] if words else [])
         r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=180, stdin=subprocess.DEVNULL)
         self.say((r.stdout or r.stderr).rstrip() or "No output.")
-        self.say("Change a built-in tool with /tools <tool>, such as /tools web.search. Add a web API or an MCP "
-                 "server with /tools add [name]; remove one with /tools remove <name>.")
+        self.say(
+            "Change a built-in tool with /tools <tool>, such as /tools web.search. Add a web API or an MCP "
+            "server with /tools add [name]; remove one with /tools remove <name>."
+        )
 
     def cmd_preferences(self, words: list[str], rest: str) -> None:
         if words and words[0].lower() == "edit":
@@ -561,9 +655,15 @@ class Flows:
             self.say("Saved. They are used from the next chat, interview or job.")
             return
         p = views.preferences(self.home)
-        self.say("Preferences:", items=[f"name: {p['name'] or '(not set)'}", f"theme: {p['theme']}",
-                                        f"default crew: {p['default_crew_title']}",
-                                        f"editor: {p['editor'] or '(from $VISUAL or $EDITOR)'}",
-                                        f"outward: {p['outward']}",
-                                        f"about you: {'set' if p['instructions_set'] else 'not set'}"])
+        self.say(
+            "Preferences:",
+            items=[
+                f"name: {p['name'] or '(not set)'}",
+                f"theme: {p['theme']}",
+                f"default crew: {p['default_crew_title']}",
+                f"editor: {p['editor'] or '(from $VISUAL or $EDITOR)'}",
+                f"outward: {p['outward']}",
+                f"about you: {'set' if p['instructions_set'] else 'not set'}",
+            ],
+        )
         self.say("Change them with /preferences edit, or /theme for the theme.")

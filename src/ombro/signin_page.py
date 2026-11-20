@@ -33,17 +33,25 @@ p { margin: 0; color: var(--muted); }
 
 def success_page(back_to: str = "the Ombro app") -> str:
     """The page, saying where to go back to ("the Ombro app", or "the terminal")."""
-    return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            "<title>Signed in · Ombro</title>\n<style>" + STYLE + "</style>\n</head>\n<body>\n<main>\n"
-            + LOGO_LIGHT + "\n" + LOGO_DARK + "\n"
-            "<h1>Sign-in successful.</h1>\n"
-            f"<p>You can close this tab and return to {html.escape(back_to)}.</p>\n"
-            "</main>\n</body>\n</html>\n")
+    return (
+        '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        "<title>Signed in · Ombro</title>\n<style>"
+        + STYLE
+        + "</style>\n</head>\n<body>\n<main>\n"
+        + LOGO_LIGHT
+        + "\n"
+        + LOGO_DARK
+        + "\n"
+        "<h1>Sign-in successful.</h1>\n"
+        f"<p>You can close this tab and return to {html.escape(back_to)}.</p>\n"
+        "</main>\n</body>\n</html>\n"
+    )
 
 
 if __name__ == "__main__":  # rewrites the app's copy: python -m ombro.signin_page
     from pathlib import Path
 
     Path(__file__).resolve().parents[2].joinpath("gui/src-tauri/src/signin_page.html").write_text(
-        success_page(), encoding="utf-8")
+        success_page(), encoding="utf-8"
+    )

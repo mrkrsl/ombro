@@ -29,12 +29,30 @@ from urllib.parse import urlparse
 LEVELS = ("off", "low", "medium", "high", "xhigh")
 LABELS = {"off": "No thinking", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high"}
 DEFAULT = "medium"  # as Opus 5.5 does by itself
-_ALIASES = {"none": "off", "no": "off", "disabled": "off", "false": "off", "minimal": "low",
-            "extra high": "xhigh", "extra-high": "xhigh", "extra_high": "xhigh", "x-high": "xhigh", "max": "xhigh"}
+_ALIASES = {
+    "none": "off",
+    "no": "off",
+    "disabled": "off",
+    "false": "off",
+    "minimal": "low",
+    "extra high": "xhigh",
+    "extra-high": "xhigh",
+    "extra_high": "xhigh",
+    "x-high": "xhigh",
+    "max": "xhigh",
+}
 
 # Claude models that take a thinking budget rather than effort (and think only when given one).
-_BUDGET_CLAUDE = ("claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-1", "claude-opus-4-0", "claude-sonnet-4-0",
-                  "claude-opus-4-2", "claude-sonnet-4-2", "claude-3-7")
+_BUDGET_CLAUDE = (
+    "claude-haiku-4-5",
+    "claude-sonnet-4-5",
+    "claude-opus-4-1",
+    "claude-opus-4-0",
+    "claude-sonnet-4-0",
+    "claude-opus-4-2",
+    "claude-sonnet-4-2",
+    "claude-3-7",
+)
 _BUDGETS = {"low": 2_048, "medium": 8_000, "high": 16_000, "xhigh": 32_000}
 # Claude models whose thinking can't be turned off: "off" is the least they think, effort low.
 _ALWAYS_THINK = ("claude-opus-5-5", "claude-fable", "claude-mythos")
@@ -132,6 +150,5 @@ def describe(home) -> list[dict[str, str]]:
     for name, spec in models.items():
         own = getattr(spec, "thinking", None) or getattr(spec, "reasoning_effort", None)
         lv, raw = for_spec(spec, home)
-        out.append({"model": name, "level": lv or raw or pref,
-                    "from": "models.md" if own else "your preference"})
+        out.append({"model": name, "level": lv or raw or pref, "from": "models.md" if own else "your preference"})
     return out

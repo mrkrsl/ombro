@@ -14,8 +14,17 @@ from pathlib import Path
 from typing import Any
 
 from ombro import mdfile, prompts
-from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, LEAD_SOUL_FILE, Home, crew_phrase, crew_phrases, soul_with, tidy_title, \
-    without_character
+from ombro.home import (
+    INSTRUCTIONS_BODY,
+    LEAD_SOUL,
+    LEAD_SOUL_FILE,
+    Home,
+    crew_phrase,
+    crew_phrases,
+    soul_with,
+    tidy_title,
+    without_character,
+)
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
 from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role, tools_text
 from ombro.settings import Limits, SetupError, format_duration, format_tokens, load_models, load_tool_settings
@@ -72,9 +81,7 @@ def roster(home: Home, crew: str, limits: Limits) -> str:
         return f"(the crew's roles could not be loaded: {e})"
     if not roles:
         return "(none: this crew has no roles yet)"
-    return "\n".join(
-        f"- {r.name} ({r.kind}; tools: {tools_text(r)}): {r.description}" for r in roles.values()
-    )
+    return "\n".join(f"- {r.name} ({r.kind}; tools: {tools_text(r)}): {r.description}" for r in roles.values())
 
 
 def crews_roster(home: Home, limits: Limits) -> str:
@@ -87,8 +94,10 @@ def crews_roster(home: Home, limits: Limits) -> str:
                 meta = mdfile.read(home.crew_dir(crew) / "crew.md")[0]
         except mdfile.FrontMatterError:
             meta = {}
-        out.append(f"Crew {crew} (called {crew_phrase(home, crew)}; use that title when talking to the user): "
-                   f"{str(meta.get('description') or '').strip() or '(no description)'}")
+        out.append(
+            f"Crew {crew} (called {crew_phrase(home, crew)}; use that title when talking to the user): "
+            f"{str(meta.get('description') or '').strip() or '(no description)'}"
+        )
         try:
             roles = crew_roles(home, crew, limits)
         except (RoleError, SetupError) as e:
@@ -108,17 +117,25 @@ def crews_roster(home: Home, limits: Limits) -> str:
 class SetupPurpose(Purpose):
     kind = "setup"
     title = "Set-up interview"
-    intro = ("Set-up interview: I'll ask you to tell me more about who you are, how you like to work, and how "
-             "you'd like me to work with you on different tasks. (You'll brief actual tasks later.) The interview "
-             "is usually four to six questions. Type /quit to stop; nothing is saved unless you accept it at the "
-             "end.")
-    proposal_intro = ("Great, I think I've got everything I need. Here's how I've written up your instructions, "
-                      "and my own character as your Lead. Have a read through. You can then choose one of the "
-                      "options at the end to save them, ask me to change them, or edit them yourself.")
+    intro = (
+        "Set-up interview: I'll ask you to tell me more about who you are, how you like to work, and how "
+        "you'd like me to work with you on different tasks. (You'll brief actual tasks later.) The interview "
+        "is usually four to six questions. Type /quit to stop; nothing is saved unless you accept it at the "
+        "end."
+    )
+    proposal_intro = (
+        "Great, I think I've got everything I need. Here's how I've written up your instructions, "
+        "and my own character as your Lead. Have a read through. You can then choose one of the "
+        "options at the end to save them, ask me to change them, or edit them yourself."
+    )
     rules = prompts.SETUP_INTERVIEW
     typical = "usually 4 to 6 questions"
-    topics = [("work", "what you do"), ("working_style", "how you work"), ("reports", "reports"),
-              ("standing_rules", "standing rules")]
+    topics = [
+        ("work", "what you do"),
+        ("working_style", "how you work"),
+        ("reports", "reports"),
+        ("standing_rules", "standing rules"),
+    ]
 
     def __init__(self, home: Home, crew: str = "default"):
         self.home = home
@@ -154,9 +171,11 @@ class SetupPurpose(Purpose):
                 "working_style": field("How they like to work with the crew, in the first person."),
                 "reports": field("How they want reports, in the first person."),
                 "standing_rules": field("Rules that hold for every task, as a Markdown list. May be empty."),
-                "soul": field("How you'll work with this user in particular, second person (\"With Mark, "
-                              "you…\"), under about 100 words. Your core character is kept as it is. "
-                              "Nothing about any task."),
+                "soul": field(
+                    "How you'll work with this user in particular, second person (\"With Mark, "
+                    'you…"), under about 100 words. Your core character is kept as it is. '
+                    "Nothing about any task."
+                ),
             },
             ["work", "working_style", "reports", "soul"],
         )
@@ -178,11 +197,20 @@ class SetupPurpose(Purpose):
         body = "\n\n".join(f"# {title}\n\n{text}" for title, text in sections if text)
         return Proposal(
             [
-                FileDraft("preferences/instructions.md", self.home.instructions,
-                          mdfile.dump({}, INSTRUCTIONS_BODY + "\n" + body + "\n")),
-                FileDraft("lead/soul.md", self.soul_path, soul_with(
-                    self.soul_path.read_text(encoding="utf-8") if self.soul_path.is_file() else LEAD_SOUL_FILE,
-                    name, _text(args, "soul"))),
+                FileDraft(
+                    "preferences/instructions.md",
+                    self.home.instructions,
+                    mdfile.dump({}, INSTRUCTIONS_BODY + "\n" + body + "\n"),
+                ),
+                FileDraft(
+                    "lead/soul.md",
+                    self.soul_path,
+                    soul_with(
+                        self.soul_path.read_text(encoding="utf-8") if self.soul_path.is_file() else LEAD_SOUL_FILE,
+                        name,
+                        _text(args, "soul"),
+                    ),
+                ),
             ]
         )
 
@@ -206,17 +234,25 @@ class SetupPurpose(Purpose):
 class RolePurpose(Purpose):
     kind = "role"
     title = "Role interview"
-    intro = ("A team member is reused across many tasks, so describe the kind of work you want "
-             "them to do, not one particular task. It's usually 3 to 5 questions. Type /quit to stop; nothing is "
-             "written unless you accept it.")
-    proposal_intro = ("Okay, here's my definition of the role you've described. Have a read through. You can "
-                      "then choose one of the options at the end to save it, ask me to change it, or edit it "
-                      "yourself.")
+    intro = (
+        "A team member is reused across many tasks, so describe the kind of work you want "
+        "them to do, not one particular task. It's usually 3 to 5 questions. Type /quit to stop; nothing is "
+        "written unless you accept it."
+    )
+    proposal_intro = (
+        "Okay, here's my definition of the role you've described. Have a read through. You can "
+        "then choose one of the options at the end to save it, ask me to change it, or edit it "
+        "yourself."
+    )
     rules = prompts.ROLE_INTERVIEW
     accept_label = "create the role"
     typical = "usually 3 to 5 questions"
-    topics = [("purpose", "what the role is"), ("must_not", "what it must not do"), ("access", "what it needs"),
-              ("kind", "specialist or helper")]
+    topics = [
+        ("purpose", "what the role is"),
+        ("must_not", "what it must not do"),
+        ("access", "what it needs"),
+        ("kind", "specialist or helper"),
+    ]
 
     def __init__(self, home: Home, crew: str, limits: Limits, name: str | None = None, task: str = ""):
         self.home = home
@@ -229,22 +265,35 @@ class RolePurpose(Purpose):
         self.models = list(load_models(home))
 
     def opening(self) -> str:
-        start = (f"The user wants to add a role titled {self.name!r} to {crew_phrase(self.home, self.crew)}."
-                 if self.name else f"The user wants to add a role to {crew_phrase(self.home, self.crew)}.")
+        start = (
+            f"The user wants to add a role titled {self.name!r} to {crew_phrase(self.home, self.crew)}."
+            if self.name
+            else f"The user wants to add a role to {crew_phrase(self.home, self.crew)}."
+        )
         if self.task:
-            return (f"{start}\n\n{self.task}\n\nBegin the interview. Count as covered what is already "
-                    "answered above, and ask only about the rest.")
+            return (
+                f"{start}\n\n{self.task}\n\nBegin the interview. Count as covered what is already "
+                "answered above, and ask only about the rest."
+            )
         return f"{start} Begin the interview."
 
     def context(self) -> list[tuple[str, str]]:
         return [
-            ("Tools that exist (propose [\"all\"], every tool now and later, unless the user wants the role "
-             "limited; then only these)", "\n".join(f"- {k}: {v}" for k, v in self.tools.items())),
-            ("Skills that exist (propose [\"all\"], the whole library now and later, unless the user wants the "
-             "role limited; then only these)",
-             "\n".join(f"- {k}: {v}" for k, v in self.skills.items()) or "(none yet)"),
-            ("Models in models.md", ", ".join(self.models) + "\n(specialists use `default`, helpers `cheap`, "
-             "unless there is a reason to choose otherwise)"),
+            (
+                'Tools that exist (propose ["all"], every tool now and later, unless the user wants the role '
+                "limited; then only these)",
+                "\n".join(f"- {k}: {v}" for k, v in self.tools.items()),
+            ),
+            (
+                'Skills that exist (propose ["all"], the whole library now and later, unless the user wants the '
+                "role limited; then only these)",
+                "\n".join(f"- {k}: {v}" for k, v in self.skills.items()) or "(none yet)",
+            ),
+            (
+                "Models in models.md",
+                ", ".join(self.models) + "\n(specialists use `default`, helpers `cheap`, "
+                "unless there is a reason to choose otherwise)",
+            ),
             ("Roles already in the crew", roster(self.home, self.crew, self.limits)),
         ]
 
@@ -253,18 +302,32 @@ class RolePurpose(Purpose):
             "Propose the new role's config.md and soul.md. The harness checks them, shows them, and creates the "
             "role only if the user accepts.",
             {
-                "title": {"type": "string", "description": "The role's title as the user wants it shown, e.g. "
-                          "Marketing Assistant. Its folder name is made from it."},
+                "title": {
+                    "type": "string",
+                    "description": "The role's title as the user wants it shown, e.g. "
+                    "Marketing Assistant. Its folder name is made from it.",
+                },
                 "kind": {"type": "string", "enum": ["specialist", "helper"]},
-                "description": {"type": "string", "description": "What kind of work it does and what it returns. "
-                                "No details of any one task."},
-                "tools": {"type": "array", "items": {"type": "string"},
-                          "description": "[\"all\"] (the usual choice), or only tools that exist."},
-                "skills": {"type": "array", "items": {"type": "string"},
-                           "description": "[\"all\"] (the usual choice), or only skills that exist."},
+                "description": {
+                    "type": "string",
+                    "description": "What kind of work it does and what it returns. No details of any one task.",
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": '["all"] (the usual choice), or only tools that exist.',
+                },
+                "skills": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": '["all"] (the usual choice), or only skills that exist.',
+                },
                 "model": {"type": "string", "description": "A name from models.md; leave out for the default."},
                 "max_steps": {"type": "integer", "description": "Model calls per brief; leave out for the default."},
-                "soul": {"type": "string", "description": "The role's prompt, second person. General: no task details."},
+                "soul": {
+                    "type": "string",
+                    "description": "The role's prompt, second person. General: no task details.",
+                },
             },
             ["title", "kind", "description", "tools", "soul"],
         )
@@ -283,8 +346,7 @@ class RolePurpose(Purpose):
         if not title:
             title = tidy_title(name)
         kind = _text(args, "kind") or "specialist"
-        meta: dict[str, Any] = {"name": name, "title": title, "kind": kind,
-                                "description": _text(args, "description")}
+        meta: dict[str, Any] = {"name": name, "title": title, "kind": kind, "description": _text(args, "description")}
         model = _text(args, "model")
         if model:
             meta["model"] = model
@@ -328,8 +390,10 @@ class RolePurpose(Purpose):
         if meta.get("kind") not in KINDS[1:]:
             raise ProposalError("kind must be specialist or helper")
         if self.folder(name).exists():
-            raise ProposalError(f"a role named {name!r} already exists; choose another name "
-                                f"(the user can change it with `ombro role edit {name}`)")
+            raise ProposalError(
+                f"a role named {name!r} already exists; choose another name "
+                f"(the user can change it with `ombro role edit {name}`)"
+            )
         listed_tools = meta.get("tools") or []
         unknown_tools = [] if listed_tools == "all" else [t for t in listed_tools if t not in self.tools]
         if unknown_tools:
@@ -393,25 +457,44 @@ SPEC_FIELDS = [
 class BriefPurpose(Purpose):
     kind = "brief"
     title = "Task brief: the Lead will ask about one task and write a spec for it."
-    intro = ("I'll ask you about this one piece of work, then write a spec the crew can work from "
-             "without needing to ask you anything. It's usually a few questions, fewer when a skill already says "
-             "how. Type /quit to stop; nothing is written unless you accept it.")
+    intro = (
+        "I'll ask you about this one piece of work, then write a spec the crew can work from "
+        "without needing to ask you anything. It's usually a few questions, fewer when a skill already says "
+        "how. Type /quit to stop; nothing is written unless you accept it."
+    )
     stopped = "Okay, I've stopped there. Nothing was written."
-    proposal_intro = ("Here's the spec I've written for this task. Have a read through. You can then choose one "
-                      "of the options at the end to save it, ask me to change it, or edit it yourself.")
+    proposal_intro = (
+        "Here's the spec I've written for this task. Have a read through. You can then choose one "
+        "of the options at the end to save it, ask me to change it, or edit it yourself."
+    )
     rules = prompts.BRIEF_INTERVIEW
     can_report_gaps = True
     typical = "usually a few questions"
-    topics = [("task", "the task"), ("done", "what done looks like"), ("users", "who uses it"),
-              ("constraint", "binding constraint"),
-              ("waste", "what would be a waste"), ("non_goals", "non-goals")]
+    topics = [
+        ("task", "the task"),
+        ("done", "what done looks like"),
+        ("users", "who uses it"),
+        ("constraint", "binding constraint"),
+        ("waste", "what would be a waste"),
+        ("non_goals", "non-goals"),
+    ]
 
     def accept_label_for(self, proposal: Proposal) -> str:
         name = proposal.data.get("name", "")
         return f"save it as {name!r} and start the job" if self.then_start else f"save it as {name!r}"
 
-    def __init__(self, home: Home, crew: str, limits: Limits, task: str = "", *, then_start: bool = False,
-                 start_dir: Path | None = None, crews: list[str] | None = None, revise: str | None = None):
+    def __init__(
+        self,
+        home: Home,
+        crew: str,
+        limits: Limits,
+        task: str = "",
+        *,
+        then_start: bool = False,
+        start_dir: Path | None = None,
+        crews: list[str] | None = None,
+        revise: str | None = None,
+    ):
         self.home = home
         self.crew = crew  # the default crew, for a spec that names none
         self.suggested = [c for c in (crews or []) if c in home.crews()]
@@ -423,26 +506,35 @@ class BriefPurpose(Purpose):
         self.revise = revise  # a saved spec to change, rather than a new one
         if revise:
             self.title = f"Changing a saved spec: {revise}"
-            self.intro = (f"Let's change your saved spec {revise!r}. I'll ask only about what's changing, then "
-                          "show you the changes. Its old text is kept as a .previous.md file. Type /quit to stop; "
-                          "nothing is written unless you accept it.")
+            self.intro = (
+                f"Let's change your saved spec {revise!r}. I'll ask only about what's changing, then "
+                "show you the changes. Its old text is kept as a .previous.md file. Type /quit to stop; "
+                "nothing is written unless you accept it."
+            )
             self.typical = "usually 1 to 3 questions"
 
     def opening(self) -> str:
         if self.revise:
             text = (self.home.specs_dir / f"{self.revise}.md").read_text(encoding="utf-8")
-            return (f"The user wants to change their saved spec {self.revise!r}, which they confirmed earlier. "
-                    "Here it is in full, front matter included:\n\n" + text + "\n\n"
-                    "Every topic is already answered by this spec, so count them all as covered. Ask only about "
-                    "what the user wants to change, and only what you need to make the change exactly. Then "
-                    f"propose the whole spec again with the change made, under the same name ({self.revise}), "
-                    "keeping everything else as it was, word for word, unless the user changes it.\n\n"
-                    + (f"What the user said about the change:\n\n{self.task}" if self.task else
-                       "Begin by asking what they want to change."))
+            return (
+                f"The user wants to change their saved spec {self.revise!r}, which they confirmed earlier. "
+                "Here it is in full, front matter included:\n\n" + text + "\n\n"
+                "Every topic is already answered by this spec, so count them all as covered. Ask only about "
+                "what the user wants to change, and only what you need to make the change exactly. Then "
+                f"propose the whole spec again with the change made, under the same name ({self.revise}), "
+                "keeping everything else as it was, word for word, unless the user changes it.\n\n"
+                + (
+                    f"What the user said about the change:\n\n{self.task}"
+                    if self.task
+                    else "Begin by asking what they want to change."
+                )
+            )
         if self.task:
             return f"The user's task, in their own words:\n\n{self.task}\n\nBegin the interview."
-        return ("The user has a task for the crews. Begin by asking them to describe it in their own words: "
-                "what it is and why.")
+        return (
+            "The user has a task for the crews. Begin by asking them to describe it in their own words: "
+            "what it is and why."
+        )
 
     def outward_tools(self, crews: list[str] | None = None) -> list[str]:
         """External tools (reaching people outside the organisation, or the public) in the given crews, or in
@@ -455,7 +547,7 @@ class BriefPurpose(Purpose):
             from ombro.settings import load_tool_settings
 
             roles = []
-            for c in (crews if crews is not None else self.home.crews()):
+            for c in crews if crews is not None else self.home.crews():
                 try:
                     roles += list(crew_roles(self.home, c, self.limits).values())
                 except (RoleError, SetupError):
@@ -469,25 +561,35 @@ class BriefPurpose(Purpose):
                 cache[key] = names  # cannot tell: ask
             else:
                 # Web APIs too: every crew member is offered each one, so they count in any crew.
-                cache[key] = (outward.external_tools(self.home, settings, names) if names else []) \
-                    + outward.external_apis(settings)
+                cache[key] = (
+                    outward.external_tools(self.home, settings, names) if names else []
+                ) + outward.external_apis(settings)
         return cache[key]
 
     def context(self) -> list[tuple[str, str]]:
         L = self.limits
         out = [
-            ("Crews and their roles (a job may brief roles only in the crews its spec names)",
-             crews_roster(self.home, L)
-             + (f"\nThe user started this brief for: {', '.join(self.suggested)}." if self.suggested else "")
-             + f"\nThe default crew is {self.crew} ({crew_phrase(self.home, self.crew)})."),
-            ("Limits a job will have",
-             f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.job_timeout)}\n"
-             f"- tokens: {format_tokens(L.max_tokens)}"),
+            (
+                "Crews and their roles (a job may brief roles only in the crews its spec names)",
+                crews_roster(self.home, L)
+                + (f"\nThe user started this brief for: {', '.join(self.suggested)}." if self.suggested else "")
+                + f"\nThe default crew is {self.crew} ({crew_phrase(self.home, self.crew)}).",
+            ),
+            (
+                "Limits a job will have",
+                f"- delegation rounds: {L.max_rounds}\n- time: {format_duration(L.job_timeout)}\n"
+                f"- tokens: {format_tokens(L.max_tokens)}",
+            ),
         ]
-        out.append(("Shared folders (outside a job, only folders the user has shared can be reached)",
-                    self.folders_context()))
-        out.append(("Skills in the library (the user's methods; a role follows one its skills line names)",
-                    self.skills_context()))
+        out.append(
+            ("Shared folders (outside a job, only folders the user has shared can be reached)", self.folders_context())
+        )
+        out.append(
+            (
+                "Skills in the library (the user's methods; a role follows one its skills line names)",
+                self.skills_context(),
+            )
+        )
         tools = self.outward_tools()
         if tools:
             from ombro import outward
@@ -496,13 +598,23 @@ class BriefPurpose(Purpose):
                 default = outward.resolve(self.home, {})["preset"]
             except SetupError:
                 default = outward.DEFAULT_PRESET
-            out.append(("External tools in the crews (they reach people outside the organisation, or the "
-                        "public, or spend money): MCP tools (mcp.*) and web APIs (api.*)",
-                        "\n".join(f"- {t}" + (f" (the {t.split('.')[1]} API: its calls that change things; "
-                                              "lookups always run)" if t.startswith("api.") else "")
-                                  for t in tools)
-                        + f"\nThe user's default permission is {default}. If the task's crews have any of them, "
-                        "ask what may happen without them."))
+            out.append(
+                (
+                    "External tools in the crews (they reach people outside the organisation, or the "
+                    "public, or spend money): MCP tools (mcp.*) and web APIs (api.*)",
+                    "\n".join(
+                        f"- {t}"
+                        + (
+                            f" (the {t.split('.')[1]} API: its calls that change things; lookups always run)"
+                            if t.startswith("api.")
+                            else ""
+                        )
+                        for t in tools
+                    )
+                    + f"\nThe user's default permission is {default}. If the task's crews have any of them, "
+                    "ask what may happen without them.",
+                )
+            )
         return out
 
     def skills_context(self) -> str:
@@ -517,9 +629,11 @@ class BriefPurpose(Purpose):
         for name in lib:
             who = sorted(set(named.get(name, [])) | set(every))
             lines.append(f"{name} is used by: {', '.join(who) or 'no role yet'}")
-        lines.append("When one of these says how to do the task, the spec names it (\"Follow the skill <name>.\") "
-                     "and holds only what this task needs beyond it. Read it with skills__read if you need to know "
-                     "what it covers; never copy or restate it in the spec.")
+        lines.append(
+            'When one of these says how to do the task, the spec names it ("Follow the skill <name>.") '
+            "and holds only what this task needs beyond it. Read it with skills__read if you need to know "
+            "what it covers; never copy or restate it in the spec."
+        )
         return "\n".join(lines)
 
     def folders_context(self) -> str:
@@ -532,24 +646,34 @@ class BriefPurpose(Purpose):
         lines = [f"- {g.name}: {g.path} ({g.access})" for g in grants.values()] or ["- none yet"]
         if self.start_dir is not None:
             here = Path(self.start_dir).resolve()
-            inside = [g for g in grants.values() if here == folders.expand(g.path).resolve()
-                      or here.is_relative_to(folders.expand(g.path).resolve())]
+            inside = [
+                g
+                for g in grants.values()
+                if here == folders.expand(g.path).resolve() or here.is_relative_to(folders.expand(g.path).resolve())
+            ]
             if inside:
-                lines.append(f"The user started this brief in {folders.display_path(here)}, inside shared folder "
-                             f"{inside[0].name!r}.")
-        lines.append("A job whose spec lists no folders may read all the shared folders above and change none. "
-                     "A spec that lists folders in `folders` gets only those, so list every folder the task needs: "
-                     "access write where it saves or changes files, read where it only reads. If the task needs a "
-                     "folder that is not shared yet (documents to read, or a folder to save results in), ask which "
-                     "folder and why, and list it by its full path. The harness asks the user before sharing a new "
-                     "folder; you never share one.")
+                lines.append(
+                    f"The user started this brief in {folders.display_path(here)}, inside shared folder "
+                    f"{inside[0].name!r}."
+                )
+        lines.append(
+            "A job whose spec lists no folders may read all the shared folders above and change none. "
+            "A spec that lists folders in `folders` gets only those, so list every folder the task needs: "
+            "access write where it saves or changes files, read where it only reads. If the task needs a "
+            "folder that is not shared yet (documents to read, or a folder to save results in), ask which "
+            "folder and why, and list it by its full path. The harness asks the user before sharing a new "
+            "folder; you never share one."
+        )
         return "\n".join(lines)
 
     def tool(self) -> dict:
         props: dict[str, Any] = {
             "name": {"type": "string", "description": "Short lower-case file name for the spec."},
-            "crews": {"type": "array", "items": {"type": "string"},
-                      "description": "The crews whose roles the job may brief: the fewest that cover the task."},
+            "crews": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "The crews whose roles the job may brief: the fewest that cover the task.",
+            },
             "folders": {
                 "type": "array",
                 "description": "Folders outside the job the task needs. Optional.",
@@ -557,32 +681,52 @@ class BriefPurpose(Purpose):
                     "type": "object",
                     "required": ["folder", "access"],
                     "properties": {
-                        "folder": {"type": "string", "description": "A shared folder's name, or the full path of "
-                                   "a folder that is not shared yet (the user is asked)."},
-                        "access": {"type": "string", "enum": ["read", "write"],
-                                   "description": "read to read files; write to change or add files there."},
+                        "folder": {
+                            "type": "string",
+                            "description": "A shared folder's name, or the full path of "
+                            "a folder that is not shared yet (the user is asked).",
+                        },
+                        "access": {
+                            "type": "string",
+                            "enum": ["read", "write"],
+                            "description": "read to read files; write to change or add files there.",
+                        },
                         "why": {"type": "string", "description": "One line on why the task needs it."},
                     },
                 },
             },
-            "roles": {"type": "array", "items": {"type": "string"},
-                      "description": "Optional: the roles the user wants to do the work, as crew/role or the "
-                      "role's name. The job's Lead briefs them for the work."},
+            "roles": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional: the roles the user wants to do the work, as crew/role or the "
+                "role's name. The job's Lead briefs them for the work.",
+            },
             "title": {"type": "string", "description": "One line saying what the task is."},
-            "details": {"type": "string", "description": "What the crew needs beyond the title, in as few "
-                        "lines as the task allows: the skill to follow, if one fits, then scope, sources and where "
-                        "the result goes. Optional."},
+            "details": {
+                "type": "string",
+                "description": "What the crew needs beyond the title, in as few "
+                "lines as the task allows: the skill to follow, if one fits, then scope, sources and where "
+                "the result goes. Optional.",
+            },
         }
         for key, label in SPEC_FIELDS:
-            props[key] = {"type": "string", "description": f"{label}. Optional: only when it says something the "
-                          "title, details or a skill named there do not."}
+            props[key] = {
+                "type": "string",
+                "description": f"{label}. Optional: only when it says something the "
+                "title, details or a skill named there do not.",
+            }
         if self.outward_tools():
-            props["outward_preset"] = {"type": "string", "enum": ["manual", "balanced", "auto"],
-                                       "description": "What may happen without the user, from their answer."}
+            props["outward_preset"] = {
+                "type": "string",
+                "enum": ["manual", "balanced", "auto"],
+                "description": "What may happen without the user, from their answer.",
+            }
             for key, what in (("outward_allow", "run without asking"), ("outward_stage", "always wait for the user")):
-                props[key] = {"type": "array", "items": {"type": "string"},
-                              "description": f"Optional: mcp.* tools or api.<name>.request (a web API) the "
-                                             f"user said may {what}."}
+                props[key] = {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": f"Optional: mcp.* tools or api.<name>.request (a web API) the user said may {what}.",
+                }
         return prompts.propose_tool(
             "Propose the spec. The harness shows it, and saves it only if the user accepts.",
             props,
@@ -615,8 +759,11 @@ class BriefPurpose(Purpose):
         if args.get("outward_preset") or args.get("outward_allow") or args.get("outward_stage"):
             from ombro import outward
 
-            setting = {"preset": args.get("outward_preset") or None,
-                       "allow": list(args.get("outward_allow") or []), "stage": list(args.get("outward_stage") or [])}
+            setting = {
+                "preset": args.get("outward_preset") or None,
+                "allow": list(args.get("outward_allow") or []),
+                "stage": list(args.get("outward_stage") or []),
+            }
             setting = {k: v for k, v in setting.items() if v}
             try:
                 outward.parse_setting(setting, "the proposed spec")
@@ -624,11 +771,11 @@ class BriefPurpose(Purpose):
                 raise ProposalError(str(e)) from None
             meta["outward"] = setting
         elif self.outward_tools(crews):
-            raise ProposalError("the crews have external tools: ask the user what may happen without them, "
-                                "and give outward_preset")
+            raise ProposalError(
+                "the crews have external tools: ask the user what may happen without them, and give outward_preset"
+            )
         text = mdfile.dump(meta, "\n".join(lines))
-        return Proposal([FileDraft(f"specs/{name}.md", self.path(name), text)],
-                        data={"name": name, "new_folders": new})
+        return Proposal([FileDraft(f"specs/{name}.md", self.path(name), text)], data={"name": name, "new_folders": new})
 
     def _crews(self, value: Any) -> list[str]:
         """The proposed crews. Left out, they are the crews the brief started from, or the default
@@ -707,8 +854,14 @@ class BriefPurpose(Purpose):
                 wanted[existing.name] = "read" if existing.access == "read" else access
                 continue
             name = folders.suggest_name(real, set(grants) | set(wanted) | {n["name"] for n in new})
-            new.append({"name": name, "path": folders.display_path(real), "access": access,
-                        "why": " ".join(str(item.get("why") or "").split())[:200]})
+            new.append(
+                {
+                    "name": name,
+                    "path": folders.display_path(real),
+                    "access": access,
+                    "why": " ".join(str(item.get("why") or "").split())[:200],
+                }
+            )
             wanted[name] = access
         return wanted, new
 
@@ -726,8 +879,12 @@ class BriefPurpose(Purpose):
         for f in new:
             if f["name"] not in wanted:
                 continue  # removed in a hand edit
-            ui.say(f"The spec needs {f['path']} ({'read and write' if f['access'] == 'write' else 'read only'})"
-                   + (f": {f['why']}" if f["why"] else "") + ".", spaced=True)
+            ui.say(
+                f"The spec needs {f['path']} ({'read and write' if f['access'] == 'write' else 'read only'})"
+                + (f": {f['why']}" if f["why"] else "")
+                + ".",
+                spaced=True,
+            )
             access = share_question(ui, f["name"], may_write=f["access"] == "write")
             if access is None:
                 wanted.pop(f["name"], None)
@@ -766,15 +923,21 @@ class BriefPurpose(Purpose):
             crews = jobs.spec_crews(self.home, meta)
         except SetupError as e:
             raise ProposalError(str(e)) from None
-        warnings.append("the job may brief roles in " + crew_phrases(self.home, crews)
-                        + ("" if meta.get("crews") else " (the default crew: the spec names none)") + ".")
+        warnings.append(
+            "the job may brief roles in "
+            + crew_phrases(self.home, crews)
+            + ("" if meta.get("crews") else " (the default crew: the spec names none)")
+            + "."
+        )
         if meta.get("roles"):
             try:
                 given = self._roles(meta["roles"], crews)
             except ProposalError:
                 raise
-            warnings.append("the work goes to " + ", ".join(given) + "; the Lead may brief others only for side "
-                            "tasks, and the report says who and why.")
+            warnings.append(
+                "the work goes to " + ", ".join(given) + "; the Lead may brief others only for side "
+                "tasks, and the report says who and why."
+            )
         if meta.get("folders"):
             from ombro import folders
 
@@ -786,12 +949,16 @@ class BriefPurpose(Purpose):
             new = {f["name"]: f for f in proposal.data.get("new_folders") or []}
             for name, access in wanted.items():
                 if name in new:
-                    warnings.append(f"folder {new[name]['path']} is not shared yet: you will be asked whether to "
-                                    f"share it ({new[name]['access']}) when you accept.")
+                    warnings.append(
+                        f"folder {new[name]['path']} is not shared yet: you will be asked whether to "
+                        f"share it ({new[name]['access']}) when you accept."
+                    )
                 elif name in grants:
                     final = "read" if "read" in (access, grants[name].access) else "write"
-                    warnings.append(f"the job may {'change files in' if final == 'write' else 'read'} shared "
-                                    f"folder {name} ({grants[name].path}).")
+                    warnings.append(
+                        f"the job may {'change files in' if final == 'write' else 'read'} shared "
+                        f"folder {name} ({grants[name].path})."
+                    )
                 else:
                     warnings.append(f"folder {name!r} is not shared, so a job would leave it out.")
         if meta.get("outward") is not None:
@@ -803,8 +970,10 @@ class BriefPurpose(Purpose):
                 raise ProposalError(str(e)) from None
             warnings.append(f"outward tools: {outward.describe(setting)}.")
         if spec.path.is_file():
-            warnings.append(f"a spec named {proposal.data['name']!r} already exists and will be replaced "
-                            "(its old text is kept as .previous.md).")
+            warnings.append(
+                f"a spec named {proposal.data['name']!r} already exists and will be replaced "
+                "(its old text is kept as .previous.md)."
+            )
         if self.then_start:
             warnings.append(
                 f"accepting starts the job at once: up to {self.limits.max_rounds} rounds, "
@@ -822,11 +991,18 @@ def share_question(ui, name: str, may_write: bool) -> str | None:
     from ombro.ui import Field, Option
 
     options = ([Option("w", "write")] if may_write else []) + [
-        Option("r", "read only" if may_write else "read", ("read", "y", "yes")), Option("n", "no")]
-    choice = ui.ask(Field(
-        "share", f"Share it with Ombro's jobs as {name!r}?", "choice", options=options,
-        invalid="Type " + ("write, read only, or no." if may_write else "read, or no."),
-    ))
+        Option("r", "read only" if may_write else "read", ("read", "y", "yes")),
+        Option("n", "no"),
+    ]
+    choice = ui.ask(
+        Field(
+            "share",
+            f"Share it with Ombro's jobs as {name!r}?",
+            "choice",
+            options=options,
+            invalid="Type " + ("write, read only, or no." if may_write else "read, or no."),
+        )
+    )
     return {"w": "write", "r": "read"}.get(choice)
 
 
@@ -848,8 +1024,9 @@ def start(home: Home, purpose: Purpose, crew: str, limits: Limits, **kwargs):
     ).run()
 
 
-def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outcome, task: str,
-                              tools: dict | None = None) -> Path:
+def record_insufficient_brief(
+    home: Home, crews: list[str], limits: Limits, outcome, task: str, tools: dict | None = None
+) -> Path:
     """A job that ends as insufficient_brief: no roles briefed, a report naming the gaps."""
     from ombro import report, jobs
     from ombro.journal import Journal, utc_now
@@ -861,8 +1038,9 @@ def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outc
         gaps.append("No spec was confirmed.")
     body = task.strip() or "(The task was not stated.)"
     spec_text = f"No spec was confirmed. The task as first given:\n\n{body}"
-    job_dir = jobs.create_job(home, crews, {}, spec_text, limits, source="interview (no spec was confirmed)",
-                              tools=tools)
+    job_dir = jobs.create_job(
+        home, crews, {}, spec_text, limits, source="interview (no spec was confirmed)", tools=tools
+    )
     if outcome.transcript and Path(outcome.transcript).is_file():
         shutil.copy2(outcome.transcript, job_dir / "interview.md")
     j = Journal(job_dir / "journal.jsonl")
@@ -872,8 +1050,13 @@ def record_insufficient_brief(home: Home, crews: list[str], limits: Limits, outc
     j.write("lead", "insufficient_brief", "; ".join(gaps), gaps=gaps)
     facts = report.gather_facts(home, job_dir, "insufficient_brief")
     report.write(job_dir, report.render(facts, None, "no roles were briefed"))
-    jobs.update_job(job_dir, status="insufficient_brief", finished_at=utc_now(), usage={},
-                    brief=jobs.first_line(task) or "(the task was not stated)")
+    jobs.update_job(
+        job_dir,
+        status="insufficient_brief",
+        finished_at=utc_now(),
+        usage={},
+        brief=jobs.first_line(task) or "(the task was not stated)",
+    )
     j.write("harness", "job_ended", "insufficient_brief")
     from ombro import memory
 
@@ -899,5 +1082,8 @@ def role_added(home: Home, ui, crew: str, outcome) -> None:
     name = outcome.proposal.data["name"]
     title = _role_title(home, crew, name)
     offer_role_model(home, ui, f"{crew}/{name}", title)
-    ui.say(f"Thanks, all saved. Your new {title} is ready to take on jobs in {crew_phrase(home, crew)}.",
-           spaced=True, level="lead")
+    ui.say(
+        f"Thanks, all saved. Your new {title} is ready to take on jobs in {crew_phrase(home, crew)}.",
+        spaced=True,
+        level="lead",
+    )

@@ -115,8 +115,10 @@ class ServerConfig:
         refs = self.argv_key_refs()
         if not refs:
             return None
-        return (f"server {self.name} puts {', '.join(refs)} on its command line (`command` or `args` in tools.md), "
-                "where other users of this machine can see it in the process list. Pass it in `env` instead.")
+        return (
+            f"server {self.name} puts {', '.join(refs)} on its command line (`command` or `args` in tools.md), "
+            "where other users of this machine can see it in the process list. Pass it in `env` instead."
+        )
 
     def key_refs(self) -> list[str]:
         texts = [self.command or "", *self.args, *self.env.values(), self.url or "", *self.headers.values()]
@@ -157,7 +159,7 @@ def header_value(value: Any) -> str:
         text = "true" if value else "false"
     else:
         text = str(value)
-    plain = (text.isascii() and text == text.strip() and text.isprintable() and not text.startswith("=?base64?"))
+    plain = text.isascii() and text == text.strip() and text.isprintable() and not text.startswith("=?base64?")
     return text if plain else "=?base64?" + base64.b64encode(text.encode()).decode() + "?="
 
 
@@ -197,7 +199,11 @@ class _Stdio:
         self._log_start = self._log.tell()
         try:
             self.proc = subprocess.Popen(
-                cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self._log, env=env,
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=self._log,
+                env=env,
                 start_new_session=True,
             )
         except OSError as e:
@@ -364,15 +370,23 @@ class _Http:
         headers = self._headers(msg)
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        with self.client.stream("POST", self.url, content=json.dumps(msg), headers=headers,
-                                timeout=httpx.Timeout(max(timeout, 0.5), connect=min(max(timeout, 0.5), 15.0))) as r:
+        with self.client.stream(
+            "POST",
+            self.url,
+            content=json.dumps(msg),
+            headers=headers,
+            timeout=httpx.Timeout(max(timeout, 0.5), connect=min(max(timeout, 0.5), 15.0)),
+        ) as r:
             body = bytearray()
             for chunk in r.iter_bytes():
                 body += chunk
                 if len(body) > ANSWER_MAX_BYTES:
                     raise _AnswerLost(f"the answer was larger than {ANSWER_MAX_BYTES:,} bytes, so it was not read")
-            kept = {k: v for k, v in r.headers.items() if k.lower() not in ("content-encoding", "content-length",
-                                                                               "transfer-encoding")}
+            kept = {
+                k: v
+                for k, v in r.headers.items()
+                if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")
+            }
             return httpx.Response(r.status_code, headers=kept, content=bytes(body), request=r.request)
 
     def _token(self, stale: str | None = None) -> str | None:
@@ -401,7 +415,9 @@ class _Http:
         except httpx.HTTPError as e:
             # The request may have reached the server (a dropped connection, a broken
             # answer): it may or may not have happened.
-            raise _AnswerLost(f"the connection failed after the request was sent ({str(e) or type(e).__name__})") from None
+            raise _AnswerLost(
+                f"the connection failed after the request was sent ({str(e) or type(e).__name__})"
+            ) from None
         self.last_status = r.status_code
         if r.headers.get("mcp-session-id") and not self.modern:
             self.session = r.headers["mcp-session-id"]
@@ -411,11 +427,13 @@ class _Http:
             # The server failed while handling it; it may have acted first.
             raise _AnswerLost(f"the server answered HTTP {r.status_code}")
         if r.status_code == 401:
-            raise ConnectionError(f"it needs sign-in: run `ombro connect {self.name}`" if not token else
-                                  f"it refused the sign-in: run `ombro connect {self.name}` again")
+            raise ConnectionError(
+                f"it needs sign-in: run `ombro connect {self.name}`"
+                if not token
+                else f"it refused the sign-in: run `ombro connect {self.name}` again"
+            )
         if r.status_code == 403 and "insufficient_scope" in r.headers.get("www-authenticate", ""):
-            raise ConnectionError(f"it needs more access than the sign-in gave: run `ombro connect {self.name}` "
-                                  "again")
+            raise ConnectionError(f"it needs more access than the sign-in gave: run `ombro connect {self.name}` again")
         if r.status_code >= 400:
             # A server that answers with a JSON-RPC error has answered: the error is
             # the reply (the 2026-07-28 transport sends errors with HTTP 4xx).
@@ -464,8 +482,9 @@ class _Http:
 class McpClient:
     """One connection to one server. Not thread-safe; one caller at a time."""
 
-    def __init__(self, home: Home, cfg: ServerConfig, *, log: Path | None = None,
-                 transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self, home: Home, cfg: ServerConfig, *, log: Path | None = None, transport: httpx.BaseTransport | None = None
+    ):
         self.home = home
         self.cfg = cfg
         self._log = log
@@ -481,9 +500,11 @@ class McpClient:
         return self.version == MODERN_VERSION
 
     def _meta(self) -> dict[str, Any]:
-        return {"io.modelcontextprotocol/protocolVersion": MODERN_VERSION,
-                "io.modelcontextprotocol/clientCapabilities": {},
-                "io.modelcontextprotocol/clientInfo": {"name": "ombro", "version": __version__}}
+        return {
+            "io.modelcontextprotocol/protocolVersion": MODERN_VERSION,
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/clientInfo": {"name": "ombro", "version": __version__},
+        }
 
     def _params(self, params: dict) -> dict:
         """Request params as the agreed era wants them."""
@@ -553,11 +574,15 @@ class McpClient:
         try:
             if not self._probe():
                 try:
-                    result = self._call("initialize", {
-                        "protocolVersion": PROTOCOL_VERSION,
-                        "capabilities": {},
-                        "clientInfo": {"name": "ombro", "version": __version__},
-                    }, self.cfg.start_timeout)
+                    result = self._call(
+                        "initialize",
+                        {
+                            "protocolVersion": PROTOCOL_VERSION,
+                            "capabilities": {},
+                            "clientInfo": {"name": "ombro", "version": __version__},
+                        },
+                        self.cfg.start_timeout,
+                    )
                 except McpError as e:
                     if not self._modern_offered(e):  # a slow modern server, found out late
                         raise
@@ -574,8 +599,9 @@ class McpClient:
                 time.sleep(0.2)  # let a dying server finish printing
                 tail = self._t.output_tail()
             self.close()
-            raise McpNotReached(f"server {self.cfg.name} did not start properly: {e}"
-                                + (f". Its last output: {tail}" if tail else "")) from None
+            raise McpNotReached(
+                f"server {self.cfg.name} did not start properly: {e}" + (f". Its last output: {tail}" if tail else "")
+            ) from None
 
     def close(self) -> None:
         if self._t is not None:
@@ -624,8 +650,9 @@ class McpClient:
         rid = self._next
         deadline = time.monotonic() + timeout
         try:
-            replies = self._t.request({"jsonrpc": "2.0", "id": rid, "method": method,
-                                       "params": self._params(params)}, timeout)
+            replies = self._t.request(
+                {"jsonrpc": "2.0", "id": rid, "method": method, "params": self._params(params)}, timeout
+            )
         except TimeoutError as e:
             if sent is not None:
                 sent.append(True)
@@ -647,8 +674,10 @@ class McpClient:
             if msg is None:
                 raise McpCallLost(f"server {self.cfg.name} stopped before answering {method}")
             if msg.get(TOO_LARGE):
-                raise McpCallLost(f"server {self.cfg.name} sent an answer to {method} larger than "
-                                  f"{ANSWER_MAX_BYTES:,} bytes, so it was not read")
+                raise McpCallLost(
+                    f"server {self.cfg.name} sent an answer to {method} larger than "
+                    f"{ANSWER_MAX_BYTES:,} bytes, so it was not read"
+                )
             if "method" in msg and "id" in msg:
                 self._answer_server(msg)
                 continue
@@ -656,8 +685,11 @@ class McpClient:
                 continue  # a notification, or an answer to something abandoned
             if "error" in msg:
                 err = msg.get("error") or {}
-                raise McpError(f"server {self.cfg.name}: {err.get('message') or 'error'}",
-                               code=err.get("code"), data=err.get("data"))
+                raise McpError(
+                    f"server {self.cfg.name}: {err.get('message') or 'error'}",
+                    code=err.get("code"),
+                    data=err.get("data"),
+                )
             result = msg.get("result")
             result = result if isinstance(result, dict) else {}
             kind = result.get("resultType", "complete")
@@ -690,21 +722,24 @@ class McpClient:
                 headers = _param_headers(schema)
                 if headers is None:
                     continue  # an invalid x-mcp-header: the standard says to leave the tool out
-                out.append(McpTool(
-                    name=str(t["name"]),
-                    description=str(t.get("description") or ""),
-                    input_schema=schema or {"type": "object", "properties": {}},
-                    annotations=t.get("annotations") if isinstance(t.get("annotations"), dict) else {},
-                    param_headers=headers,
-                ))
+                out.append(
+                    McpTool(
+                        name=str(t["name"]),
+                        description=str(t.get("description") or ""),
+                        input_schema=schema or {"type": "object", "properties": {}},
+                        annotations=t.get("annotations") if isinstance(t.get("annotations"), dict) else {},
+                        param_headers=headers,
+                    )
+                )
                 self._param_headers[str(t["name"])] = headers
             cursor = result.get("nextCursor")
             if not cursor:
                 break
         return out
 
-    def call_tool(self, name: str, arguments: dict, timeout: float | None = None,
-                  sent: list | None = None) -> dict[str, Any]:
+    def call_tool(
+        self, name: str, arguments: dict, timeout: float | None = None, sent: list | None = None
+    ) -> dict[str, Any]:
         """The raw tools/call result. Raises McpNotReached if nothing was sent,
         McpCallLost if it was sent and no answer came, McpError if refused."""
         self.start()
@@ -712,10 +747,15 @@ class McpClient:
             self._t.extra_headers = {
                 f"Mcp-Param-{h}": header_value(arguments[arg])
                 for arg, h in self._param_headers.get(name, {}).items()
-                if isinstance(arguments.get(arg), (str, int, float, bool)) and arguments.get(arg) is not None}
+                if isinstance(arguments.get(arg), (str, int, float, bool)) and arguments.get(arg) is not None
+            }
         try:
-            return self._call("tools/call", {"name": name, "arguments": arguments},
-                              min(timeout or self.cfg.timeout, self.cfg.timeout), sent=sent)
+            return self._call(
+                "tools/call",
+                {"name": name, "arguments": arguments},
+                min(timeout or self.cfg.timeout, self.cfg.timeout),
+                sent=sent,
+            )
         finally:
             if isinstance(self._t, _Http):
                 self._t.extra_headers = {}
