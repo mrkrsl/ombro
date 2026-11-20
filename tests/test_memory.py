@@ -350,7 +350,7 @@ def test_jobs_recorded_before_memory_limits_still_load(home):
 
 
 def test_a_block_of_several_lines_is_one_answer():
-    from ombro.interview import read_answer
+    from ombro.ui import read_answer
 
     lines = iter(['"""', "First line of a pasted paragraph.", "", "Second part.", '"""', "next"])
     assert read_answer(lambda p: next(lines), "You: ") == "First line of a pasted paragraph.\n\nSecond part."

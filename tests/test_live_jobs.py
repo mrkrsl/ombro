@@ -203,11 +203,12 @@ def test_one_fake_script_serves_a_chat_and_the_job_it_starts():
     )
     chat_tools = [{"type": "function", "function": {"name": "offer_work"}}]
     job_tools = [{"type": "function", "function": {"name": "brief"}}]
-    say = lambda tools, system="": (
-        client.complete(  # noqa: E731
+
+    def say(tools, system=""):
+        return client.complete(
             [{"role": "system", "content": system}], tools=tools, max_output_tokens=100, timeout=1
         ).content
-    )
+
     assert say(chat_tools) == "For anyone."
     assert say(None, "Write the final report.") == "For the report."
     assert say(job_tools) == "For the job."

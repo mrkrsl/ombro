@@ -1,0 +1,4 @@
+# Formatting-only commits, for `git blame --ignore-revs-file .git-blame-ignore-revs`
+# (GitHub reads this file by itself).
+# ruff format, once (line length 120)
+209ea428ae27abc2e93875a56e476a5cb24edd02

@@ -33,20 +33,17 @@ from ombro.home import Home
 from ombro.journal import utc_now
 from ombro.settings import Limits, ModelSpec, format_tokens, load_models, load_preferences
 from ombro.ui import (
-    BLOCK,
     UI,
     ConsoleUI,
     Failure,
     Field,
     FileView,
     LeadSaid,
-    Note,
     Option,
     Progress,
     ProposalShown,
     Usage,
-    read_answer,
-)  # noqa: F401  (read_answer and BLOCK are used by chat)
+)
 
 # The Lead may make this many model calls in a row without the user answering.
 MAX_CALLS_WITHOUT_ANSWER = 5
