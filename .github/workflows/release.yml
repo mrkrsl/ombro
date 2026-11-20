@@ -232,6 +232,14 @@ jobs:
         with:
           path: out
           merge-multiple: true
+      - name: Every file in one folder (the macOS job's come in dmg/ and updater/)
+        run: |
+          find out -mindepth 2 -type f -exec mv -n -t out {} +
+          find out -mindepth 1 -type d -empty -delete
+          if [[ -n "$(find out -mindepth 1 -type d)" ]]; then
+            echo "::error::two files with the same name"; find out -mindepth 2; exit 1
+          fi
+          ls -la out
       - name: latest.json, the updater's manifest (a dry run without the updater key has none)
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -243,7 +251,9 @@ jobs:
             echo "No signed updates: no latest.json"
           fi
       - name: Checksums
-        run: cd out && sha256sum -- * | tee SHA256SUMS
+        run: |
+          set -o pipefail
+          cd out && sha256sum -- * | tee SHA256SUMS
       - name: A draft release, to be published by hand
         if: env.PUBLISH == 'true'
         env:
