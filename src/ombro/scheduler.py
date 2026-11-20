@@ -8,8 +8,8 @@ Linux and other systems with cron: one line in your crontab, marked
 `# ombro-tick`, so it can be found and removed again.
 
 The entry calls the Python that installed it, as `python -m ombro tick`, or
-the desktop app's own binary, as `<binary> tick`, with OMBRO_HOME set to this
-home. The app installs it itself (`ensure`), for the usual home, when it runs
+the desktop app's own binary, as `<binary> tick` (an AppImage's file, as
+`<file> --ombro tick`), with OMBRO_HOME set to this home. The app installs it itself (`ensure`), for the usual home, when it runs
 from an Applications folder; the Scheduled page offers it otherwise. Tick writes its own
 log to scheduler/tick.log; anything the scheduler catches on stderr (a crash)
 goes to scheduler/scheduler.log.
@@ -67,6 +67,7 @@ class Installer:
         python: str = sys.executable,
         uid: int | None = None,
         frozen: bool | None = None,
+        appimage: str | None = "",
     ):
         self.home = home
         self.kind = "launchd" if platform == "darwin" else "cron"
@@ -76,6 +77,11 @@ class Installer:
         self.uid = os.getuid() if uid is None else uid
         # The desktop app's binary is the whole command line; it has no -m.
         self.frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+        # Run from an AppImage, the entry runs the .AppImage file: the binary is in its mount,
+        # which goes when the app quits. "" means look ($APPIMAGE); None means not one.
+        from ombro import appimage as appimage_mod
+
+        self.appimage = appimage_mod.path() if appimage == "" else appimage
 
     # -- what would be written ---------------------------------------------
 
@@ -88,6 +94,10 @@ class Installer:
         return self.home.scheduler_dir / "scheduler.log"
 
     def program(self) -> list[str]:
+        from ombro.appimage import FLAG
+
+        if self.appimage:
+            return [self.appimage, FLAG, "tick"]
         return [self.python, "tick"] if self.frozen else [self.python, "-m", "ombro", "tick"]
 
     def plist(self) -> str:
@@ -236,18 +246,24 @@ def broken(cur: Installed) -> bool:
     return cur.loaded is False or (cur.python is not None and not Path(cur.python).exists())
 
 
-def may_install_itself(home: Home, executable: str = sys.executable, platform: str = sys.platform) -> bool:
+def may_install_itself(
+    home: Home, executable: str = sys.executable, platform: str = sys.platform, appimage: str | None = ""
+) -> bool:
     """The app installs the service without asking only for the usual home (not a demo or test home,
     which would take it from the real one) and only from where the app is installed, so it never points
     at a build folder, a copy macOS has moved aside to run, or an AppImage's mount (gone when it quits):
-    an Applications folder on macOS, /usr/bin (the .deb) on Linux."""
+    an Applications folder on macOS; on Linux /usr/bin (the .deb or .rpm), or an .AppImage file, which
+    the entry runs itself. If the file moves, the entry is broken, and the app's next start puts it
+    right (serve runs `ensure`). `appimage`: "" looks at $APPIMAGE."""
+    from ombro import appimage as appimage_mod
     from ombro.home import default_root
 
     if not getattr(sys, "frozen", False) or home.root != default_root() or not home.exists():
         return False
     exe = str(Path(executable).absolute())
     if platform.startswith("linux"):
-        return exe.startswith("/usr/bin/")
+        found = appimage_mod.path() if appimage == "" else appimage
+        return exe.startswith("/usr/bin/") or bool(found)
     return "/AppTranslocation/" not in exe and (
         exe.startswith("/Applications/") or exe.startswith(str(Path.home() / "Applications") + "/")
     )

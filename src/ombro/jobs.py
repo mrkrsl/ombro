@@ -56,11 +56,16 @@ def job_name(job_id: str) -> str:
 
 
 def ombro_argv() -> list[str]:
-    """How to run Ombro's command line again from inside Ombro: the frozen app's own
-    binary, or this Python with -m ombro."""
+    """How to run Ombro's command line again from inside Ombro: the .AppImage file (its mount
+    goes when the app quits, so a job started from it would lose its program), the frozen app's
+    own binary, or this Python with -m ombro."""
     import sys
 
-    return [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "ombro"]
+    from ombro import appimage
+
+    if getattr(sys, "frozen", False):
+        return appimage.command() or [sys.executable]
+    return [sys.executable, "-m", "ombro"]
 
 
 _WHEN = WHEN

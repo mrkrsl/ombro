@@ -717,7 +717,11 @@ scheduler entry (a launch agent on macOS, a crontab line elsewhere) that jobs
 `ombro tick` every minute; nothing is installed without your confirmation,
 and `ombro schedule add` offers it when it is missing. Editing a schedule
 needs no reinstalling: the next tick reads it, and the change takes effect
-from the schedule's next slot.
+from the schedule's next slot. The desktop app installs the entry itself, for
+your usual home, when it runs from where apps are installed: Applications on
+macOS; on Linux the `.deb` or `.rpm`, or an AppImage, whose entry (and its
+jobs) run the `.AppImage` file itself, so they go on after the app quits. If
+you move the AppImage, the app puts the entry right the next time it starts.
 
 - **Starting.** Tick starts each due slot once, detached, exactly as
   `ombro start --detach` does, under limits fixed at the start and recorded in
