@@ -1,0 +1,140 @@
+# Tests, lint, audits and a secret scan, on every push and pull request.
+#
+# Actions are pinned to a commit (the version is in the comment); Dependabot keeps them current.
+# While the repository is private, macOS minutes count ten times against the plan, so the macOS
+# tests run only on a tag, by hand, or once the repository is public.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays: the audits find what was published since
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LOCKED: "1"
+  FORCE_COLOR: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv run ruff check --output-format github
+      - run: uv run ruff format --check
+
+  python:
+    name: python (Linux, ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"] # the lowest supported, and the app's
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ matrix.python }}
+      - name: bubblewrap (code.run's sandbox on Linux)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
+      - run: uv run pytest -q
+
+  python-macos:
+    name: python (macOS, 3.14)
+    runs-on: macos-15
+    if: >-
+      github.event.repository.visibility == 'public' || startsWith(github.ref, 'refs/tags/')
+      || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.14"
+      - run: uv run pytest -q
+
+  gui:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: gui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build # tsc, then vite
+
+  rust:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: gui/src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: gui/src-tauri
+      - name: Tauri's libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev
+      - name: Stand-ins for the sidecar and its Python (built only for a release)
+        run: |
+          mkdir -p binaries python ../dist
+          touch "binaries/ombro-serve-$(rustc --print host-tuple)" && chmod +x binaries/ombro-serve-*
+      - run: cargo test --locked
+
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+        with:
+          tool: cargo-audit
+      - name: pip-audit (the core's dependencies, as locked)
+        run: |
+          uv export --no-dev --no-emit-project -o "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit --strict --disable-pip -r "$RUNNER_TEMP/requirements.txt"
+      - name: npm audit (the app's runtime dependencies)
+        working-directory: gui
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: cargo audit
+        working-directory: gui/src-tauri
+        run: cargo audit
+
+  gitleaks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the whole history, not just this commit
+      - name: Gitleaks
+        env:
+          VERSION: 8.30.1
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v$VERSION"
+          tarball="gitleaks_${VERSION}_linux_x64.tar.gz"
+          curl -fsSLO "$base/$tarball" && curl -fsSLO "$base/gitleaks_${VERSION}_checksums.txt"
+          grep " $tarball\$" "gitleaks_${VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+          cd "$GITHUB_WORKSPACE" && "$RUNNER_TEMP/gitleaks" git --redact --verbose .
