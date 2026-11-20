@@ -672,7 +672,7 @@ export function Version() {
         {remote && server && server !== shown && <span className="muted"> · the server runs Ombro {server}</span>}
       </p>
       {app && (
-        <Setting hint="Ombro asks GitHub, where its releases are, once a day. It never installs an update until you say.">
+        <Setting>
           <span className="form-row tight">
             <label className="switch">
               <span>Check for updates automatically</span>

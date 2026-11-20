@@ -440,7 +440,7 @@ a:visited {
 }
 
 .markdown pre {
-  background: var(--hover);
+  background: var(--panel-bg);
   padding: 10px 12px;
   border-radius: 8px;
   overflow-x: auto;
@@ -1135,7 +1135,7 @@ a:visited {
 }
 
 .row-open pre {
-  background: var(--hover);
+  background: var(--panel-bg);
   border-radius: 8px;
   padding: 10px 12px;
   white-space: pre-wrap;
@@ -1299,7 +1299,7 @@ input[type="checkbox"]:not([role="switch"]) {
 
 .approval-open pre,
 .import-diff {
-  background: var(--hover);
+  background: var(--panel-bg);
   border-radius: 8px;
   padding: 10px 12px;
   white-space: pre-wrap;
@@ -1337,7 +1337,7 @@ input[type="checkbox"]:not([role="switch"]) {
 }
 
 .what-it-does {
-  background: var(--hover);
+  background: var(--panel-bg);
   border-radius: 8px;
   padding: 10px 14px;
   margin: 4px 0 12px;
@@ -1368,7 +1368,7 @@ input[type="checkbox"]:not([role="switch"]) {
   margin-top: 10px;
 }
 
-.form-row input,
+.form-row input:not([type="checkbox"]),
 .form-row select {
   font: inherit;
   font-size: 14px;
@@ -1409,7 +1409,7 @@ input[type="checkbox"]:not([role="switch"]) {
   padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--you-bg);
+  background: var(--panel-bg);
   color: var(--text);
   font-size: 14px;
 }
@@ -1734,7 +1734,7 @@ input[type="checkbox"]:not([role="switch"]) {
   margin: 0 0 16px;
   padding: 14px 18px;
   border-radius: 10px;
-  background: var(--hover);
+  background: var(--panel-bg);
   font-size: 14px;
 }
 
@@ -1799,7 +1799,7 @@ input[type="checkbox"]:not([role="switch"]) {
   margin: 16px 0 0;
   padding: 12px 16px;
   border-radius: 10px;
-  background: var(--hover);
+  background: var(--panel-bg);
   font-size: 14px;
   line-height: 1.5;
 }

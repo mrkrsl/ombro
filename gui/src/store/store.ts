@@ -160,6 +160,12 @@ let socket: WebSocket | null = null;
 let started = false;
 let feedKey = 0;
 let jobsFetched = 0;
+// When a job's ending last said approvals wait: the approvals notification then has nothing to add.
+let approvalsTold = 0;
+/** How long the approvals notification waits for a job's ending to say it instead, and how long that
+ * ending covers new approvals for. */
+export const APPROVALS_NOTIFY_MS = 3000;
+const APPROVALS_COVERED_MS = 10_000;
 const FEED_KEEP = 300;
 
 function systemTheme(): Theme {
@@ -400,6 +406,18 @@ export const useStore = create<State & Actions>((set, get) => {
         if (before && (before.waiting !== m.waiting || before.active !== m.active || before.scheduled !== m.scheduled)) {
           void get().load();
         }
+        if (before && m.waiting > before.waiting && get().prefs?.notifications !== false) {
+          // More waits for approval. A job that ends with approvals says so in its own notification,
+          // which may come just before or after the counts: only one of the two is shown.
+          const more = m.waiting - before.waiting;
+          setTimeout(() => {
+            if (Date.now() - approvalsTold < APPROVALS_COVERED_MS) return;
+            const all = get().counts?.waiting ?? m.waiting;
+            if (all === 0) return; // dealt with already
+            const head = more === 1 ? "An approval is requested" : `${more} approvals are requested`;
+            void notify("Ombro", all > more ? `${head}: ${all} wait for you in Approvals.` : `${head} in Approvals.`);
+          }, APPROVALS_NOTIFY_MS);
+        }
         return;
       }
       if (m.type === "job") {
@@ -429,6 +447,7 @@ export const useStore = create<State & Actions>((set, get) => {
           }, FEED_CLEAR_MS);
           if (get().prefs?.notifications !== false) {
             const waiting = e.waiting ? ` ${e.waiting} waiting for your approval.` : "";
+            if (e.waiting) approvalsTold = Date.now();
             void notify(e.name, `${e.text}${waiting}`);
           }
           void get().load();

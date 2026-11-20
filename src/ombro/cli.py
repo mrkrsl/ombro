@@ -1711,7 +1711,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="an MCP server named in tools.md, or a built-in tool such as "
         "web.search to see or change it; or add (a web API or an MCP server), edit (a web API) or remove",
     )
-    s.add_argument("name", nargs="?", help="for add, edit and remove: the tool's name, e.g. podcasts or sheets")
+    s.add_argument(
+        "name",
+        nargs="?",
+        help="for add, edit and remove: the tool's name, e.g. podcasts or sheets; "
+        "after composio: connect, refresh or disconnect",
+    )
     s.add_argument("--api", action="store_true", help="for add: a web API (otherwise asked)")
     s.add_argument("--mcp", action="store_true", help="for add: an MCP server (otherwise asked)")
     s.add_argument("--command", help='for an MCP server: a local server\'s command line, e.g. "uvx some-server==1.2.3"')

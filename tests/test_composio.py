@@ -549,3 +549,42 @@ def test_the_terminal_shows_each_composio_tools_class_and_where_it_came_from(hom
     assert rows["composio.googledocs.SUMMARISE"]["class_from"] == "marking"
     assert rows["composio.googledocs.CREATE_DOCUMENT"]["class"] == "internal"
     assert cli.main(["tools", "composio"]) == 0
+
+
+def test_the_terminal_lists_composio_and_connects_refreshes_and_disconnects_it(home, fake_composio, capsys):
+    """`ombro tools` and /tools show what the app's Tools page shows, and do what it does."""
+    from ombro import cli, tool_cmd
+    from test_ui import ScriptedUI
+
+    assert cli.main(["tools"]) == 0
+    out = capsys.readouterr().out
+    assert "Composio" in out and "not connected" in out
+
+    ui = ScriptedUI(["ak_WRONG0123456789"])
+    with pytest.raises(SetupError):
+        tool_cmd.composio_flow(home, ui, "connect")
+    assert load_tool_settings(home).composio is None
+
+    ui = ScriptedUI([KEY])
+    assert tool_cmd.composio_flow(home, ui, "connect") == 0
+    assert ui.fields[0].kind == "secret"
+    assert all(KEY not in e.text for e in ui.events)
+
+    assert cli.main(["tools"]) == 0
+    out = capsys.readouterr().out
+    assert "2 services connected" in out
+    assert "Gmail (via Composio)" in out and "Google Docs (via Composio)" in out
+    assert "4 tools, can change things or reach outside" in out
+
+    ui = ScriptedUI([])
+    assert tool_cmd.composio_flow(home, ui, "refresh") == 0
+    assert any("Google Docs (via Composio)" in i for e in ui.events for i in e.items)
+
+    ui = ScriptedUI([False])
+    assert tool_cmd.composio_flow(home, ui, "disconnect") == 1
+    assert load_tool_settings(home).composio is not None
+    assert cli.main(["tools", "composio", "disconnect", "--yes"]) == 0
+    assert load_tool_settings(home).composio is None
+    assert keys.get_key(home, "COMPOSIO_API_KEY") is None
+    with pytest.raises(SetupError):
+        tool_cmd.composio_flow(home, ScriptedUI([]), "refresh")

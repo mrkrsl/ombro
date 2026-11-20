@@ -6,6 +6,7 @@
 mod connection;
 #[cfg(target_os = "macos")]
 mod menu;
+mod notify;
 mod opening;
 mod saved;
 mod signin;
@@ -292,6 +293,8 @@ pub fn run() {
             app.manage(Remote::default());
             app.manage(signin::Catches::default());
             app.manage(updates::Pending::default());
+            // Notifications are on unless the person says no: macOS asks on the first start.
+            notify::ask_at_start();
             // A fresh install waits for the web view to ask where Ombro runs.
             if let Some(conn) = connection::at_start(app.handle()) {
                 let _ = begin(app.handle(), conn);
@@ -320,6 +323,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             handshake,
             tray::set_tray,
+            notify::notify,
             opening::open_file,
             saved::save_download,
             saved::read_saved,

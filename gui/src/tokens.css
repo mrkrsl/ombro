@@ -18,8 +18,9 @@
   --accent: var(--ombro-500);
   --link: var(--ombro-500); /* every link, read or not */
   --greeting: var(--ombro-500);
-  --you-bg: #e0eff3;
-  --you-text: var(--ombro-500);
+  --you-bg: #f2f2f2; /* your chat bubbles, the same grey as --panel-bg */
+  --you-text: #434343;
+  --panel-bg: #f2f2f2; /* panels in a page: code and previews, notes, asks to confirm */
   --border: var(--ombro-500);
   --rule: #e6eef0;
   --list-rule: #d2e0e4; /* between the rows of a list: a notch darker than --rule */
@@ -35,7 +36,7 @@
   --sidebar-glass: rgb(250 250 250 / 0.6); /* the panels let the arc show through */
   --panel-glass: rgb(255 255 255 / 0.45);
   --error: #8a1c1c;
-  --font: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Ubuntu, Cantarell, sans-serif;
+  --font: "Geist Variable", Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Ubuntu, Cantarell, sans-serif;
   color-scheme: light;
 }
 
@@ -51,6 +52,7 @@
   --greeting: var(--ombro-100);
   --you-bg: #1c4652;
   --you-text: var(--ombro-100);
+  --panel-bg: #163842; /* as --hover: dark mode is unchanged */
   --border: #2f6b7a;
   --rule: #1b3c45;
   --list-rule: #285561; /* a notch lighter than --rule */

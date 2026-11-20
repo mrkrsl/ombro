@@ -606,6 +606,20 @@ def settings_routes(s: Serve) -> list[Route]:
             raise HttpError(400, "Say what it does, and when to use it.")
         if not body.strip():
             raise HttpError(400, "Write the instructions after the front matter.")
+        if old is not None and not old.warning:
+            # Saved as it was: leave the file, its archive and its "accepted" date alone, so an
+            # unchanged save never looks like a new version arriving.
+            from ombro import mdfile
+
+            try:
+                _, old_body = mdfile.read(old.file)
+            except (OSError, mdfile.FrontMatterError):
+                old_body = None
+            if old_body is not None and (" ".join(description.split()), body.strip()) == (
+                old.description,
+                old_body.strip(),
+            ):
+                return library_view(home)
         md = (
             dict(old.meta.get("metadata") or {})
             if old is not None and isinstance(old.meta.get("metadata"), dict)

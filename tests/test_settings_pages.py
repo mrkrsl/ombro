@@ -251,6 +251,12 @@ def test_skills_over_http(serve, home):
     assert one["description"] == "Checks invented facts." and one["body"] == "Read it twice."
     serve.http.put("/skills/invented-fact-check", json={"description": "Checks facts.", "body": "Read it thrice."})
     assert skills.load(home, "invented-fact-check").body == "Read it thrice."
+    # Saved again unchanged: no new version, no archive, the same accepted date.
+    before = skills.load(home, "invented-fact-check").text
+    kept = sorted((home.skills_dir / "Archive").rglob("SKILL.md"))
+    serve.http.put("/skills/invented-fact-check", json={"description": "Checks facts.", "body": "Read it thrice.\n"})
+    assert skills.load(home, "invented-fact-check").text == before
+    assert sorted((home.skills_dir / "Archive").rglob("SKILL.md")) == kept
     assert serve.get("/skills/invented-fact-check/check") == {"blocked": None, "warnings": []}
     gone = serve.http.delete("/skills/invented-fact-check").json()
     assert gone["skills"] == [] and "/removed/skills/" in gone["moved_to"]

@@ -397,6 +397,14 @@ def cmd_tools(args) -> int:
     except SetupError as e:
         raise cli.CliError(str(e)) from None
     if args.server == "composio" and "composio" not in settings.servers:
+        if args.name:
+            from ombro import tool_cmd
+            from ombro.ui import ConsoleUI
+
+            try:
+                return tool_cmd.composio_flow(home, ConsoleUI(), args.name.lower(), yes=args.yes)
+            except SetupError as e:
+                raise cli.CliError(str(e)) from None
         return _composio_tools(home, settings, pref, args)
     if args.server:
         return _server_tools(home, settings, pref, args)
@@ -444,6 +452,11 @@ def cmd_tools(args) -> int:
         print(f"  {r['name']:<18}{r['url']}  ({what.get(r['access'], r['access'])}, max {r['calls']} calls{key})")
     if rows["apis"]:
         print("  Change one with `ombro tools edit <name>`.")
+    from ombro import tool_cmd
+
+    print("\nComposio (tools.md `composio:`), offered to every crew member:")
+    for line in tool_cmd.composio_lines(rows["composio"]):
+        print(line)
     print(f"\nOutward permissions by default: {outward.describe(pref)}.")
     print(
         "  "

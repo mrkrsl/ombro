@@ -65,10 +65,16 @@ export async function catchSignIn(port: number, url: string, state?: string | nu
   return invoke<string | null>("sign_in_answer", { port, seconds: 600, state: want }).catch(() => null);
 }
 
-/** A system notification. In the app it asks once for permission; in a browser it uses the
- * browser's own, where allowed. */
+/** A system notification. On macOS the app posts it itself (notify.rs: macOS asks once for
+ * permission); on Linux through the notification plugin; in a browser, the browser's own, where
+ * allowed. */
 export async function notify(title: string, body: string): Promise<void> {
   try {
+    if (inTauri && isMac) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("notify", { title, body });
+      return;
+    }
     if (inTauri) {
       const n = await import("@tauri-apps/plugin-notification");
       let ok = await n.isPermissionGranted();

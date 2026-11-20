@@ -1,5 +1,5 @@
 """The page the browser shows once a sign-in's answer has come back to Ombro: a centred card
-with the wordmark and one line, in Inter and the brand blues (tokens.css), light or dark as the
+with the wordmark and one line, in Geist and the brand blues (tokens.css), light or dark as the
 system is. Two places catch an answer: Ombro's own listener (oauth.Receiver, for the terminal
 and for the app on this computer) and the app's, for a server elsewhere (gui/src-tauri/src/
 signin.rs, which includes signin_page.html, written from this; a test keeps them the same)."""
@@ -19,7 +19,7 @@ STYLE = """
 }
 html, body { height: 100%; margin: 0; }
 body { display: grid; place-items: center; background: var(--bg); color: var(--text);
-  font: 17px/1.5 Inter, -apple-system, system-ui, "Segoe UI", sans-serif; }
+  font: 17px/1.5 Geist, -apple-system, system-ui, "Segoe UI", sans-serif; }
 main { box-sizing: border-box; width: min(420px, calc(100vw - 32px)); padding: 40px 36px 32px;
   background: var(--card); border: 1px solid var(--rule); border-radius: 16px; text-align: center;
   box-shadow: 0 8px 30px rgba(3, 18, 22, 0.08); }

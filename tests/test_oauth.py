@@ -398,7 +398,7 @@ def test_the_signed_in_page_says_where_to_go_back_to():
 
     app = signin_page.success_page()
     assert "Sign-in successful." in app and "You can close this tab and return to the Ombro app." in app
-    assert "Inter" in app and 'aria-label="Ombro"' in app
+    assert "Geist" in app and 'aria-label="Ombro"' in app
     assert "return to the terminal." in signin_page.success_page("the terminal")
 
 

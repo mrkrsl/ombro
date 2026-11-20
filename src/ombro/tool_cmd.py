@@ -333,3 +333,85 @@ def which_kind(ui: UI, api: bool = False, mcp: bool = False) -> str:
         )
         or "api"
     )
+
+
+# -- Composio: what the app's Tools page shows and does, for the command line and the TUI ----------
+
+COMPOSIO_ACTIONS = ("connect", "refresh", "disconnect")
+COMPOSIO_ACCESS = {
+    "read-only": "only looks things up",
+    "internal": "changes things in your own tools",
+    "external": "can change things or reach outside",
+}
+
+
+def composio_lines(view: dict | None) -> list[str]:
+    """The Composio part of the tools listing: the account, then each service connected in it."""
+    if view is None:
+        return ["  not connected. Connect your account with `ombro tools composio connect`."]
+    if view["problem"]:
+        head = f"  Composio account: {view['problem']}"
+    elif view["toolkits"]:
+        n = len(view["toolkits"])
+        head = f"  Composio account: {n} service{'' if n == 1 else 's'} connected"
+    else:
+        head = "  Composio account: no services connected in Composio yet"
+    out = [head]
+    access = COMPOSIO_ACCESS.get(view["access"], view["access"])
+    for k in view["toolkits"]:
+        name = f"{k['title']} (via Composio)"
+        if k["active"]:
+            what = (f"{k['tools']} tools" if k["tools"] else "connected") + f", {access}"
+        else:
+            what = f"connection {k['status']}: reconnect it in Composio"
+        out.append(f"    {name:<30}{what}")
+    out.append(f"  Connect more services in Composio: {view['dashboard']}")
+    out.append(
+        "  See each Composio tool and its permission with `ombro tools composio`; "
+        "or `ombro tools composio refresh`, `connect` (change the key) or `disconnect`."
+    )
+    return out
+
+
+def composio_flow(home: Home, ui: UI, action: str, yes: bool = False) -> int:
+    """connect (or change the key), refresh, or disconnect the Composio account, as the app's Tools page does."""
+    from ombro import composio
+
+    cfg = load_tool_settings(home).composio
+    if action == "connect":
+        ui.say(
+            "Composio connects services such as Google Docs, Gmail and Sheets for you. Paste your project's "
+            f"API key (ak_…), from Settings › API Keys in the Composio dashboard: {composio.KEYS_PAGE}. "
+            "The ck_ key under For You won't work here. It's checked with Composio before it's kept, and only "
+            "ever sent to Composio."
+        )
+        key = str(ui.ask(Field("key", "Composio API key", "secret")) or "").strip()
+        if not key:
+            ui.say("Nothing changed.")
+            return 1
+        composio.connect(home, key)  # SetupError, with Composio's words, when the key doesn't work
+        ui.say("Your Composio account is connected." if cfg is None else "Changed your Composio key.", level="done")
+    elif cfg is None:
+        raise SetupError("Composio isn't connected. Connect your account with `ombro tools composio connect`.")
+    elif action == "disconnect":
+        ui.say(
+            "Every crew member stops being offered the tools from your Composio account. Nothing changes in "
+            "Composio itself."
+        )
+        going, kept = keys.still_used(home, [cfg["key"]], "Composio")
+        if going:
+            ui.say(f"Its key ({', '.join(going)}) is removed from this computer too.")
+        if kept:
+            ui.say(f"{', '.join(kept)} stays: something else uses it too.")
+        if not yes and not ui.yes("confirm", "Disconnect your Composio account?"):
+            ui.say("Nothing changed.")
+            return 1
+        composio.disconnect(home)
+        ui.say("Disconnected your Composio account.", level="done")
+        return 0
+    elif action != "refresh":
+        raise SetupError(f"Say one of {', '.join(COMPOSIO_ACTIONS)}.")
+    composio.forget()
+    view = composio.view(home, load_tool_settings(home).composio, fresh=True)  # a problem is in the view
+    ui.say("Composio:", items=[line.strip() for line in composio_lines(view)[:-1]])
+    return 0

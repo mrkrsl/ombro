@@ -602,6 +602,15 @@ class Flows:
             tool_cmd.flow(self.home, self.ui, tool, provider, int(raw) if raw else None)
             return
         action = words[0].lower() if words else "list"
+        if action == "composio" and len(words) > 1:
+            # /tools composio connect|refresh|disconnect: what the app's Tools page does with the account
+            from ombro.settings import SetupError
+
+            try:
+                tool_cmd.composio_flow(self.home, self.ui, words[1].lower())
+            except SetupError as e:
+                self.fail(str(e))
+            return
         if action in ("add", "remove"):
             # The same as `ombro tools add` and `ombro tools remove`: a web API or an MCP server.
             from ombro import apitool
@@ -646,7 +655,8 @@ class Flows:
         self.say((r.stdout or r.stderr).rstrip() or "No output.")
         self.say(
             "Change a built-in tool with /tools <tool>, such as /tools web.search. Add a web API or an MCP "
-            "server with /tools add [name]; remove one with /tools remove <name>."
+            "server with /tools add [name]; remove one with /tools remove <name>. Composio: /tools composio "
+            "lists its tools; /tools composio connect, refresh or disconnect."
         )
 
     def cmd_preferences(self, words: list[str], rest: str) -> None:

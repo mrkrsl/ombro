@@ -33,6 +33,11 @@ tokio = { version = "1", features = ["sync", "net", "io-util", "process", "time"
 keyring = { version = "=3.6.3", features = ["apple-native"] }
 # setxattr, to quarantine copies saved from a server.
 libc = "0.2"
+# System notifications through the User Notifications framework (notify.rs); already in the tree via Tauri.
+objc2 = "=0.6.5"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSError"] }
+objc2-user-notifications = { version = "=0.3.2", default-features = false, features = ["std", "block2", "bitflags", "UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationTrigger", "UNUserNotificationCenter"] }
+block2 = "=0.6.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "=3.6.3", features = ["sync-secret-service", "crypto-rust"] }
