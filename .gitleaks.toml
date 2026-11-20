@@ -1,0 +1,10 @@
+# Gitleaks: the default rules, less the invented keys the tests use.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Invented keys in the tests"
+condition = "AND"
+paths = ['''^tests/''']
+regexTarget = "match"
+regexes = ['''(?i)invented''', '''ak_WRONG''']
