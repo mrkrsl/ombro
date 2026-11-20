@@ -12,6 +12,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    branches: [claude/release-2-2] # TEMPORARY: a dry run from this branch
   workflow_dispatch:
 
 permissions:
