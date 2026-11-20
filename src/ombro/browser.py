@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import atexit
 import base64
-import fcntl
 import itertools
 import json
 import os
@@ -254,24 +253,23 @@ class _Pipe:
     def __init__(self, path: str, args: list[str]):
         to_r, to_w = os.pipe()
         from_r, from_w = os.pipe()
-        # Above 10, so neither can land on 3 or 4 before the shell moves them there.
-        a, b = fcntl.fcntl(to_r, fcntl.F_DUPFD, 10), fcntl.fcntl(from_w, fcntl.F_DUPFD, 10)
-        os.close(to_r), os.close(from_w)
-        script = f'exec "$@" 3<&{a} 4>&{b} {a}<&- {b}>&-'
+        # The pipes go in as the shell's stdin and stdout (which subprocess places safely), and the
+        # shell moves them to 3 and 4. Single-digit fds only: dash, /bin/sh on Debian and Ubuntu,
+        # refuses any other in a redirection.
+        script = 'exec "$@" 3<&0 4>&1 0</dev/null 1>/dev/null'
         try:
             self.proc = subprocess.Popen(
                 ["/bin/sh", "-c", script, "sh", path, *args],
-                pass_fds=(a, b),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
+                stdin=to_r,
+                stdout=from_w,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
         except OSError as e:
-            for fd in (a, b, to_w, from_r):
+            for fd in (to_r, to_w, from_r, from_w):
                 os.close(fd)
             raise BrowserUnavailable(f"the browser could not be started: {e.strerror}") from None
-        os.close(a), os.close(b)
+        os.close(to_r), os.close(from_w)
         self._w = os.fdopen(to_w, "wb", buffering=0)
         self._r = os.fdopen(from_r, "rb", buffering=0)
         self._buf = b""
