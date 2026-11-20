@@ -272,11 +272,11 @@ system keychain.
 
 ### Install on the server
 
-Python 3.11 or later, then (until Ombro is on PyPI) a wheel built from this
-repository with `uv build`:
+Python 3.11 or later, then Ombro from PyPI (or a wheel built from this
+repository with `uv build`: `pipx install ./dist/ombro-*.whl`):
 
 ```bash
-pipx install ./ombro-0.1.0-py3-none-any.whl      # or: uv tool install ./ombro-0.1.0-py3-none-any.whl
+pipx install ombro                               # or: uv tool install ombro
 ombro serve install                              # keeps the server running, now and after a restart
 ```
 
@@ -1388,6 +1388,10 @@ outside (web pages, tool answers) is marked as material in `material.py`.
 `scheduler.py` (the one system entry that calls it) and `service.py`
 (`ombro serve install`). What an interface shows: `views.py` and
 `viewtypes.py`, from which the app's TypeScript types are generated.
+
+**Version.** One version for the core and the app, set with
+`python3 scripts/bump_version.py 0.2.0`; `tests/test_version.py` fails if any
+copy disagrees.
 
 **Tests.** `uv run pytest` runs the core's tests in `tests/`, with no network
 and no paid calls (see Testing without a model); the fakes are `fake.py`,
