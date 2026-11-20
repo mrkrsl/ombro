@@ -48,6 +48,10 @@
     },
     "category": "Productivity",
     "shortDescription": "Brief a crew of AI roles and get bounded, reported work back.",
+    "publisher": "Heliotrope Atelier Ltd",
+    "copyright": "Copyright © 2026 Heliotrope Atelier Ltd",
+    "license": "AGPL-3.0-only",
+    "licenseFile": "../../LICENSE",
     "macOS": {
       "files": {
         "Resources/Assets.car": "icons/macos/Assets.car"
