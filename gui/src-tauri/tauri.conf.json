@@ -62,7 +62,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "REPLACE-WITH-THE-UPDATER-PUBLIC-KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJBQTVGQzk1QzFGOUE5OTEKUldTUnFmbkJsZnlsS2x0VFpmemYveXFEZlMxWlRFdFFCMzlidUpOeVBNRmU3OXdwU3B0VFQ5L1kK",
       "endpoints": [
         "https://github.com/mrkrsl/ombro/releases/latest/download/latest.json"
       ]

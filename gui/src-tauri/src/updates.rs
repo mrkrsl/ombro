@@ -1,5 +1,6 @@
 //! Updates to the app. A release puts a manifest, latest.json, on GitHub Releases: each platform's
-//! file and its signature, made with Ombro's updater key, whose public half is in tauri.conf.json.
+//! file and its signature, made with Ombro's updater key (minisign 2AA5FC95C1F9A991), whose
+//! public half is in tauri.conf.json.
 //! A download whose signature doesn't match is refused.
 //!
 //! The web view decides when to look (at start and daily, unless that's turned off, and from
