@@ -270,14 +270,21 @@ def test_a_growing_input_keeps_the_latest_line_in_view(home):
     async def go():
         async with app.run_test(size=(100, 24)) as pilot:
             await pilot.pause()
+            conv = app.query_one("#conversation")
+
+            async def until(condition):  # a slow machine takes longer to lay out and scroll
+                for _ in range(30):
+                    if condition():
+                        return
+                    await pilot.pause(0.1)
+
             for i in range(40):
                 app.add_markdown(f"An invented line {i}.", "lead", "•")
-            await pilot.pause(0.2)
-            conv = app.query_one("#conversation")
+            await until(lambda: conv.max_scroll_y > 0 and conv.scroll_y >= conv.max_scroll_y - 1)
             assert conv.max_scroll_y > 0 and conv.scroll_y >= conv.max_scroll_y - 1
             before = conv.max_scroll_y
             app.query_one("#input").text = "\n".join(f"An invented long message, line {i}" for i in range(6))
-            await pilot.pause(0.2)
+            await until(lambda: conv.max_scroll_y > before and conv.scroll_y >= conv.max_scroll_y - 1)
             assert conv.max_scroll_y > before  # the input grew, so the conversation's box shrank
             assert conv.scroll_y >= conv.max_scroll_y - 1
 
