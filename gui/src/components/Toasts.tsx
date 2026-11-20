@@ -11,7 +11,14 @@ export function Toasts() {
     <div className="toasts" aria-live="polite">
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.tone}`} role={t.tone === "error" ? "alert" : "status"}>
-          <span className="toast-text">{t.text}</span>
+          <span className="toast-text">
+            {t.text}
+            {t.action && (
+              <button className="toast-action" onClick={t.action.run}>
+                {t.action.label}
+              </button>
+            )}
+          </span>
           {t.dismissable && (
             <button className="toast-close" aria-label="Dismiss" onClick={() => dismiss(t.id)}>
               <X size={15} />

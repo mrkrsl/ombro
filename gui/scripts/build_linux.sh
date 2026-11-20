@@ -40,11 +40,22 @@ if [ "$(uname -s)" = Linux ] && [ -z "${OMBRO_DOCKER:-}" ]; then
   export APPIMAGE_EXTRACT_AND_RUN=1
   BUNDLES="${OMBRO_BUNDLES:-deb,rpm,appimage}"
   npx tauri build --bundles "$BUNDLES"
-  rm -f "$WORK/out"/*.deb "$WORK/out"/*.rpm "$WORK/out"/*.AppImage
+  rm -f "$WORK/out"/*.deb "$WORK/out"/*.rpm "$WORK/out"/*.AppImage "$WORK/out"/*.sig
   B=src-tauri/target/release/bundle
   [[ $BUNDLES == *deb* ]] && cp "$B"/deb/*.deb "$WORK/out/"
   [[ $BUNDLES == *rpm* ]] && cp "$B"/rpm/*.rpm "$WORK/out/"
   [[ $BUNDLES == *appimage* ]] && cp "$B"/appimage/*.AppImage "$WORK/out/"
+  # Each package's signature for the updater (an AppImage replaces itself; a .deb or .rpm is
+  # installed in place), with the updater key, whose public half is in tauri.conf.json.
+  if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+    for f in "$WORK/out"/*.deb "$WORK/out"/*.rpm "$WORK/out"/*.AppImage; do
+      [[ -e "$f" ]] || continue
+      npx tauri signer sign "$f" >/dev/null
+      [[ -s "$f.sig" ]] || { echo "No signature for $f" >&2; exit 1; }
+    done
+  else
+    echo "== No TAURI_SIGNING_PRIVATE_KEY: the packages aren't signed for the updater"
+  fi
   ls -la "$WORK/out"
   exit 0
 fi

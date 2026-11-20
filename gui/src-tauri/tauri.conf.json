@@ -59,5 +59,13 @@
       },
       "hardenedRuntime": true
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE-WITH-THE-UPDATER-PUBLIC-KEY",
+      "endpoints": [
+        "https://github.com/mrkrsl/ombro/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

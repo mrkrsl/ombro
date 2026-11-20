@@ -61,8 +61,10 @@ Building the app is in The desktop app, below.
 
 Ombro keeps everything on your computer (or your server): settings, keys,
 chats, jobs, reports and memory. It has no telemetry, no account and no
-Ombro service; it never phones home. What it sends goes only where you point
-it:
+Ombro service. The one thing it asks by itself is whether there's a new
+version: the desktop app asks GitHub, where its releases are, once a day
+(turn that off in Settings › General). Everything else goes only where you
+point it:
 
 - **The model providers you add.** Your chats, briefs and the job's work go to
   the model each role uses. A local model (Ollama, LM Studio) keeps even that
@@ -240,6 +242,16 @@ message (see Chat, "Attached files"); they are sent to `ombro serve`, so this
 works with Ombro on a server too. A job's brief page has **Discuss this
 brief**, which opens a chat where the Lead has that brief and asks whether to
 change it, start it again or schedule it.
+
+**Updates.** The app looks for a new version a little after it starts and
+once a day (Settings › General turns that off; Check for Updates… in the Ombro
+menu, or Check now in Settings, looks at once). When there is one, a notice
+offers **Install and restart**; nothing installs until you click it, and not
+while jobs run on this computer. Each update is signed, and one whose signature
+doesn't match is refused. On macOS the app replaces itself. On Linux an
+AppImage replaces itself, and a `.deb` or `.rpm` installs the new package,
+asking for your password. A server's Ombro updates with its package
+(`pipx upgrade ombro`, or a new Docker image).
 
 It uses the same home as the terminal (see Files), so the two can be used
 side by side: settings in `~/.config/ombro`, jobs and chats in `~/Ombro`. On first run, with no home yet, it

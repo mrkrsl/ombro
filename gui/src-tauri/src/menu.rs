@@ -1,9 +1,10 @@
 //! The window's menu bar: the platform's standard menus, with Ombro's pages added to View
 //! (Chat, Jobs, Approvals, Scheduled, Settings). A pick opens the page the way the menu bar
-//! item does. The shortcuts match the web view's own.
+//! item does. The shortcuts match the web view's own. The app menu has "Check for Updates…",
+//! which the web view answers (updates.rs).
 
 use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 
 /// The pages View lists: (screen, label, shortcut).
 pub const PAGES: &[(&str, &str, Option<&str>)] = &[
@@ -15,6 +16,7 @@ pub const PAGES: &[(&str, &str, Option<&str>)] = &[
 ];
 
 const PREFIX: &str = "view:";
+const CHECK_UPDATES: &str = "app:check-updates";
 
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(app)?;
@@ -43,13 +45,22 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     if had > 0 {
         view.insert(&PredefinedMenuItem::separator(app)?, pages.len())?;
     }
+    // The app menu (the first, named after the app): About Ombro, then Check for Updates….
+    if let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() {
+        let check = MenuItem::with_id(app, CHECK_UPDATES, "Check for Updates…", true, None::<&str>)?;
+        let at = app_menu.items()?.len().min(1);
+        app_menu.insert(&check, at)?;
+    }
     Ok(menu)
 }
 
-/// A pick from View: bring the window back (it may be hidden) on that page. Other menu events
-/// are left alone.
+/// A pick from View: bring the window back (it may be hidden) on that page. Check for Updates…:
+/// the window, and the web view looks. Other menu events are left alone.
 pub fn handle(app: &AppHandle, id: &str) {
     if let Some(screen) = id.strip_prefix(PREFIX) {
         crate::tray::open(app, screen);
+    } else if id == CHECK_UPDATES {
+        crate::tray::open(app, "current");
+        let _ = app.emit("check-for-updates", ());
     }
 }

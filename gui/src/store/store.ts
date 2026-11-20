@@ -31,7 +31,15 @@ const MAX_ATTACH_BYTES = 25 * 1024 * 1024; // the most serve takes for one file
 /** A toast, in the window's corner. Timed (`ms`), dismissable, both, or neither: a persistent one
  *  (such as "Reconnecting…") stays until whatever showed it takes it away. One per id: showing an
  *  id again replaces it. */
-export type Toast = { id: string; text: string; tone: "info" | "error"; dismissable: boolean; ms?: number };
+export type Toast = {
+  id: string;
+  text: string;
+  tone: "info" | "error";
+  dismissable: boolean;
+  ms?: number;
+  /** A button on it, such as "Install and restart". */
+  action?: { label: string; run: () => void };
+};
 /** How long a notice stays. A problem stays until it's dismissed, or the next thing you do. */
 export const NOTICE_MS = 6000;
 /** How long "Restarting…" shows before the app restarts, so the switch doesn't look like a crash. */

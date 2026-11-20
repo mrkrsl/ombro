@@ -11,6 +11,7 @@ mod saved;
 mod signin;
 mod skillfolder;
 mod tray;
+mod updates;
 
 use std::sync::Mutex;
 
@@ -246,6 +247,17 @@ fn first_window_size(app: &tauri::AppHandle) {
     let _ = window.center();
 }
 
+/// Stop what this app started: the sidecar, or the tunnel to a server. On the way out, and before
+/// an update restarts the app.
+pub(crate) fn stop_ombro(app: &tauri::AppHandle) {
+    if let Some(serve) = app.try_state::<Serve>() {
+        if let Some(child) = serve.child.lock().unwrap().take() {
+            let _ = child.kill();
+        }
+    }
+    connection::stop(app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -265,6 +277,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Size, place and maximised, kept when the window closes and when Ombro quits. Not whether
         // it was showing: Ombro always opens with its window.
         .plugin(
@@ -278,6 +291,7 @@ pub fn run() {
             app.manage(Serve { tx, ready: rx, child: Mutex::new(None), started: Mutex::new(None) });
             app.manage(Remote::default());
             app.manage(signin::Catches::default());
+            app.manage(updates::Pending::default());
             // A fresh install waits for the web view to ask where Ombro runs.
             if let Some(conn) = connection::at_start(app.handle()) {
                 let _ = begin(app.handle(), conn);
@@ -322,19 +336,14 @@ pub fn run() {
             skillfolder::read_skill_folder,
             signin::sign_in_listener,
             signin::sign_in_answer,
+            updates::check_for_update,
+            updates::install_update,
             quit
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Ombro app")
         .run(|app, event| match event {
-            RunEvent::Exit => {
-                if let Some(serve) = app.try_state::<Serve>() {
-                    if let Some(child) = serve.child.lock().unwrap().take() {
-                        let _ = child.kill();
-                    }
-                }
-                connection::stop(app);
-            }
+            RunEvent::Exit => stop_ombro(app),
             // macOS: a click on the Dock icon brings the hidden window back.
             #[cfg(target_os = "macos")]
             RunEvent::Reopen { .. } => tray::open(app, "current"),

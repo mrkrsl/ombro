@@ -21,6 +21,7 @@ import { Settings } from "./screens/settings/Settings";
 import { isMac, onTrayOpen, quitApp, setTray, startZoom } from "./platform";
 import { shortcutFor } from "./shortcuts";
 import { useStore } from "./store/store";
+import { startUpdates } from "./updates";
 
 export default function App() {
   const s = useStore();
@@ -44,6 +45,7 @@ export default function App() {
   }, [counts]);
 
   useEffect(() => startZoom(), []);
+  useEffect(() => startUpdates(), []);
 
   // Keyboard shortcuts (shortcuts.ts): Cmd on macOS, Ctrl elsewhere.
   useEffect(() => {

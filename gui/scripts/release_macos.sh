@@ -86,6 +86,21 @@ if [[ $LOCAL == 1 ]]; then
   exit 0
 fi
 
+if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  # The update the app downloads: the notarised, stapled app as it is now, and its signature
+  # (with the updater key, whose public half is in tauri.conf.json). Tauri's own would be made
+  # before the sidecar is signed again above, so this makes it.
+  echo "== Update archive, signed"
+  mkdir -p "$BUNDLE/updater"
+  UPDATE="$BUNDLE/updater/Ombro_${VERSION}_$(uname -m).app.tar.gz"
+  rm -f "$UPDATE" "$UPDATE.sig"
+  COPYFILE_DISABLE=1 tar -czf "$UPDATE" -C "$BUNDLE/macos" Ombro.app
+  npx tauri signer sign "$UPDATE" >/dev/null
+  [[ -s "$UPDATE.sig" ]] || { echo "No signature for $UPDATE" >&2; exit 1; }
+else
+  echo "== No TAURI_SIGNING_PRIVATE_KEY: no update archive"
+fi
+
 echo "== Notarise and staple $DMG"
 notarise "$DMG"
 xcrun stapler staple "$DMG"

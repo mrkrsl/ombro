@@ -735,6 +735,22 @@ a:visited {
   overflow-wrap: anywhere;
 }
 
+.toast-action {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  text-decoration: underline;
+}
+
 .toast-close {
   flex: none;
   display: grid;

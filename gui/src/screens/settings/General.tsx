@@ -9,6 +9,7 @@ import { ServerForm } from "../Connect";
 import { describe, useThisComputer } from "../../where";
 import { appVersion, catchSignIn, openLink } from "../../platform";
 import { inTauri } from "../../api/serve";
+import { autoCheck, checkForUpdate, setAutoCheck } from "../../updates";
 import { ModelOptions } from "../../components/ModelOptions";
 import { modelChoices } from "../../store/models";
 
@@ -660,6 +661,7 @@ export function Version() {
       gone = true;
     };
   }, [api]);
+  const [auto, setAuto] = useState(autoCheck);
   const shown = app || server;
   if (!shown) return null;
   return (
@@ -669,6 +671,27 @@ export function Version() {
         Ombro {shown}
         {remote && server && server !== shown && <span className="muted"> · the server runs Ombro {server}</span>}
       </p>
+      {app && (
+        <Setting hint="Ombro asks GitHub, where its releases are, once a day. It never installs an update until you say.">
+          <span className="form-row tight">
+            <label className="switch">
+              <span>Check for updates automatically</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={auto}
+                onChange={(e) => {
+                  setAutoCheck(e.target.checked);
+                  setAuto(e.target.checked);
+                }}
+              />
+            </label>
+            <button className="secondary small" onClick={() => void checkForUpdate()}>
+              Check now
+            </button>
+          </span>
+        </Setting>
+      )}
     </section>
   );
 }
