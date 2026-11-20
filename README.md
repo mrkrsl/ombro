@@ -9,32 +9,65 @@ you start a job from it, walk away, and read a report later. The Lead plans
 the job and briefs the crew's roles. Every job ends in a report, whether it
 finished, hit a limit or failed.
 
-**Status: 0.2.0, the first public release.** Expect rough edges. Ombro is a
-Python core with two ways in: the terminal (`ombro`) and a desktop app (see
-The desktop app). The
-core has the home directory, roles and crews, model connections, the set-up,
-role and task interviews, the Lead loop, the guardrail gate, the result
-contract, the journal, reports, web search and fetch, workspace files,
-secrets, the job index, standing notes, memory search, chat, schedules,
-outside services through MCP and web APIs with permissions and approvals,
-skills, and Python scripts in the operating system's sandbox, with folders
-you share. The app runs on macOS (Apple silicon) and Linux (amd64 and arm64);
-Windows is further off.
+**Status: 0.2.0, the first public release.** Expect rough edges. Ombro has
+two ways in, the desktop app and the terminal (`ombro`), over one Python core.
+Both can also connect to Ombro running on a server.
 
-## Install
+What it does: chats and briefs with the Lead; jobs that run unattended within
+limits you set; roles and crews; schedules; web search and fetch, and a
+browser; outside services through MCP servers and web APIs, with approvals for
+what reaches other people or spends money; skills; Python scripts in the operating
+system's sandbox; and folders you choose to share.
 
-Python 3.11 or later.
+## Get Ombro
+
+**The desktop app.** Download it from the [Releases page](../../releases/latest):
+
+- macOS (Apple silicon): the `.dmg`, signed and notarised.
+- Linux (amd64 and arm64): `.deb`, `.rpm` or AppImage. On Ubuntu 22.04 and
+  later the AppImage needs `libfuse2` (`sudo apt install libfuse2`).
+
+Windows and Intel Macs aren't supported yet.
+
+**The terminal.** Python 3.11 or later:
 
 ```bash
-uv tool install .
+uv tool install ombro
 ```
 
-or, for development:
+(or `pipx install ombro`). Then `ombro init`; see Quick start.
+
+**A server.** See Running Ombro on a server, below. There's a Docker image too.
+
+**From source:**
 
 ```bash
-uv sync
-uv run pytest
+uv tool install .          # the terminal command, from this checkout
+uv sync && uv run pytest   # for development
 ```
+
+Building the app is in The desktop app, below.
+
+## What leaves your computer
+
+Ombro keeps everything on your computer (or your server): settings, keys,
+chats, jobs, reports and memory. It has no telemetry, no account and no
+Ombro service; it never phones home. What it sends goes only where you point
+it:
+
+- **The model providers you add.** Your chats, briefs and the job's work go to
+  the model each role uses. A local model (Ollama, LM Studio) keeps even that
+  on your computer.
+- **The web, when a job needs it.** Searches go to the search provider
+  (DuckDuckGo unless you choose Firecrawl), and pages a job reads or browses are
+  fetched from their sites.
+- **The tools you add.** MCP servers, web APIs and Composio get what a job
+  sends them. By default, anything that sends, shares or spends waits for your
+  approval first (see Permissions).
+- **Sign-ins you start**, with the service you're signing in to.
+
+Keys are stored in owner-only files and are never sent to a model or written to
+a journal or report.
 
 ## Quick start
 
@@ -1360,6 +1393,25 @@ outside (web pages, tool answers) is marked as material in `material.py`.
 and no paid calls (see Testing without a model); the fakes are `fake.py`,
 `fake_mcp.py` and `providers/fake.py`. `npm test` in `gui/` runs the app's
 tests, and `cargo test` in `gui/src-tauri` the Rust side's.
+
+## Security
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a
+public issue for it.
+
+## Contributing
+
+Bug reports and ideas are welcome as issues. Ombro doesn't accept outside code
+yet, so please don't open pull requests: the copyright is kept with one owner
+while the contributor terms are settled. This will change.
+
+## Trademark
+
+"Ombro" and the Ombro logo are trademarks of Heliotrope Atelier Ltd. The
+licence lets you change and share the code, but not the name: if you
+distribute a modified version, give it a different name and logo, and don't
+suggest it is Ombro or endorsed by us. Saying that your fork is based on
+Ombro is fine.
 
 ## Licence
 
