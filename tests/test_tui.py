@@ -150,7 +150,7 @@ def _app(home, script=None, *, dark=False):
 def _texts(app):
     """Every line in the conversation, in order: plain lines as drawn, Markdown lines
     (the Lead's words, reports) as their mark and source."""
-    from ombro.tui.app import Line, MdLine
+    from ombro.tui.app import MdLine
 
     return [w.mark + w.source if isinstance(w, MdLine) else str(w.render()) for w in app.query("Line, MdLine")]
 
@@ -758,7 +758,7 @@ def test_slash_start_offers_a_saved_spec_again(home, monkeypatch):
 
 
 def test_the_leads_words_and_reports_render_as_markdown(home, job):
-    from conftest import LEAD_REPORT, write_role
+    from conftest import write_role
     from ombro.tui.app import MdLine
 
     write_role(home, "researcher")
@@ -849,7 +849,7 @@ def test_skills_add_imports_after_yes(home, tmp_path):
 
 
 def test_clicking_read_the_report_opens_it_at_its_top(home, job):
-    from conftest import LEAD_REPORT, write_role
+    from conftest import write_role
     from ombro.tui.app import MdLine
     from ombro.tui.commands import notice_text
 

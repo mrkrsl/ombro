@@ -161,7 +161,7 @@ class Commands(Flows):
                 out.append(f"  {d['name']}: ", style=p.muted)
                 self.link(out, d["path"])
                 out.append("\n")
-        out.append(f"\nWorkspace: ", style=p.muted)
+        out.append("\nWorkspace: ", style=p.muted)
         self.link(out, r["workspace"])
         return out
 

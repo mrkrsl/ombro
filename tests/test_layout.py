@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from ombro import cli, coderun, folders, report, jobs
+from ombro import cli, folders, report, jobs
 from ombro.native import native_registry
 from ombro.settings import load_limits
 from ombro.tools import LayoutChanged, SharedFolder, ToolContext, ToolInputError

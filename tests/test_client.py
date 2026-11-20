@@ -7,7 +7,6 @@ import json
 import httpx
 import pytest
 
-from conftest import LEAD_REPORT, write_role
 from ombro import keys, jobs
 from ombro.client import ModelError, OpenAICompatibleClient
 from ombro.engine import Engine

@@ -159,7 +159,7 @@ class ToolRegistry:
         for fn in self._closers:
             try:
                 fn()
-            except Exception:  # noqa: BLE001: closing one thing must not stop the rest
+            except Exception:  # noqa: BLE001 - closing one thing must not stop the rest
                 pass
 
     def register(self, tool: Tool) -> None:

@@ -6,7 +6,6 @@ import re
 
 import fcntl
 import os
-import secrets as _random
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone

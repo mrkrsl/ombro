@@ -76,7 +76,7 @@ def test_report_keeps_closing_note_and_brief_lines_short(job):
 def test_a_report_without_the_lead_keeps_the_closing_note_short(job):
     long_note = "Final text follows.\n\n" + ("An invented paragraph of guide text. " * 60)
     job([fake.brief("researcher", "The task."), fake.result("Summary over\ntwo lines."), fake.finish(long_note)])
-    note_line = next(l for l in job.report.splitlines() if l.startswith("- **Lead's closing note"))
+    note_line = next(line for line in job.report.splitlines() if line.startswith("- **Lead's closing note"))
     assert len(note_line) < 520 and "full note is in the journal" in note_line
     assert "   - Summary over two lines." in job.report
 

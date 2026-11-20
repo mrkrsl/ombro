@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import getpass
 import os
 import shutil
 import signal
@@ -434,7 +433,7 @@ def cmd_summary(args) -> int:
     print(", ".join([f"{n(c['crews_ready'], 'crew')} ready to work", n(c["active_jobs"], "active job"),
                      n(c["scheduled_jobs"], "scheduled job"), n(c["waiting"], "item") + " to approve"]))
     if s["unseen"]:
-        print(f"\nFinished, and not yet looked at: " + ", ".join(r["job_id"] for r in s["unseen"])
+        print("\nFinished, and not yet looked at: " + ", ".join(r["job_id"] for r in s["unseen"])
               + ". See one with `ombro report <job_id>`.")
     return 0
 
@@ -1066,7 +1065,7 @@ def _set_default_crew(home: Home, crew: str) -> None:
 
 
 def cmd_crew(args) -> int:
-    from ombro.home import crew_phrase, crew_title, ensure_crew
+    from ombro.home import crew_title, ensure_crew
     from ombro.roles import NAME
 
     home = _home()

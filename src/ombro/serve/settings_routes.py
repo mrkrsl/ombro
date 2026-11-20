@@ -17,7 +17,6 @@ from starlette.routing import Route
 
 from ombro import keys, views
 from ombro.serve.app import HttpError, Serve, _handler, _need
-from ombro.settings import SetupError
 
 
 def _removing(fn):

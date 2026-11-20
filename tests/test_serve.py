@@ -6,7 +6,6 @@ import json
 import socket
 import subprocess
 import sys
-import time
 
 import pytest
 from starlette.testclient import TestClient

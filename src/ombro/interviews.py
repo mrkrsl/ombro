@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ombro import mdfile, prompts
-from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, LEAD_SOUL_FILE, Home, crew_phrase, crew_phrases, crew_title, soul_with, tidy_title, \
+from ombro.home import INSTRUCTIONS_BODY, LEAD_SOUL, LEAD_SOUL_FILE, Home, crew_phrase, crew_phrases, soul_with, tidy_title, \
     without_character
 from ombro.interview import FileDraft, Proposal, ProposalError, Purpose
 from ombro.roles import KINDS, NAME, RoleError, crew_roles, folder_name, load_lead, load_role, tools_text

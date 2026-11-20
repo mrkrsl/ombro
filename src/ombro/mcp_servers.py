@@ -346,7 +346,7 @@ def add_flow(home: Home, args, ui: UI) -> int:
     except SetupError as e:
         raise cli.CliError(str(e)) from None
 
-    ui.say(f"\nTo add to tools.md under `servers:`:\n")
+    ui.say("\nTo add to tools.md under `servers:`:\n")
     ui.say("\n".join("  " + ln for ln in mdfile.dump({name: entry}).strip().strip("-").strip().splitlines()))
     if to_set:
         ui.say(f"\nKeys to store in secrets/keys.env (hidden): {', '.join(to_set)}")

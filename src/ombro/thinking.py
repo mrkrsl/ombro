@@ -59,7 +59,7 @@ def preference(home) -> str:
 
     try:
         return level_of(load_preferences(home).thinking) or DEFAULT
-    except Exception:  # noqa: BLE001: a broken preferences file must not stop a model call
+    except Exception:  # noqa: BLE001 - a broken preferences file must not stop a model call
         return DEFAULT
 
 

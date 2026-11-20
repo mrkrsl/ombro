@@ -85,7 +85,9 @@ def test_only_a_draft_out_for_editing_can_be_written_back(setup):
     draft = setup.home.root / "crews" / "default" / "roles" / "writer" / "soul.md"
     draft.parent.mkdir(parents=True, exist_ok=True)
     draft.write_text("before")
-    put = lambda p, body: setup.c.put(f"/files?path={urllib.parse.quote(str(p))}", content=body, headers=AUTH)
+    def put(p, body):
+        return setup.c.put(f"/files?path={urllib.parse.quote(str(p))}", content=body, headers=AUTH)
+
     assert put(draft, b"after").status_code == 403
     assert get(setup, draft).status_code == 403
     q = Question("q1", "edit_files", {"paths": [str(draft)]})

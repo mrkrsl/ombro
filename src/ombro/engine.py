@@ -1021,7 +1021,7 @@ class Engine:
             except ToolError as e:
                 self.journal.write(role.name, "tool_refused", f"{name}: {_short(str(e), 200)}", tool=name)
                 return {"error": str(e)}
-            except Exception as e:  # noqa: BLE001: shown to the role, never a crash
+            except Exception as e:  # noqa: BLE001 - shown to the role, never a crash
                 self.journal.write(role.name, "tool_error", f"{name}: {type(e).__name__}: {_short(str(e))}", tool=name)
                 return {"error": f"{type(e).__name__}: {e}"}
         # A tool may say what this one call is (browser.submit: a form of filters is internal, one with the

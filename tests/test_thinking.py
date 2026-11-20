@@ -10,7 +10,7 @@ import pytest
 from ombro import mdfile, thinking
 from ombro.anthropic_client import AnthropicClient
 from ombro.client import OpenAICompatibleClient, make_client
-from ombro.settings import ModelSpec, SetupError, load_models, load_preferences, set_thinking
+from ombro.settings import SetupError, load_models, load_preferences, set_thinking
 
 KEY = "sk-INVENTED-eeeeeeee"
 

@@ -291,7 +291,7 @@ class _Socket:
             url = re.sub(r"^ws://[^/]+", "ws://" + netloc, url)
         try:
             self.ws = connect(url, max_size=64 << 20, open_timeout=timeout, compression=None)
-        except Exception as e:  # noqa: BLE001: any failure to connect means the same thing here
+        except Exception as e:  # noqa: BLE001 - any failure to connect means the same thing here
             raise BrowserUnavailable(f"no browser answered at {endpoint}: {type(e).__name__}") from None
 
     def send(self, text: str) -> None:
@@ -305,7 +305,7 @@ class _Socket:
     def recv(self) -> str | None:
         try:
             msg = self.ws.recv()
-        except Exception:  # noqa: BLE001: closed
+        except Exception:  # noqa: BLE001 - closed
             return None
         return msg if isinstance(msg, str) else msg.decode("utf-8", errors="replace")
 
@@ -351,7 +351,7 @@ class Cdp:
                 if h is not None:
                     try:
                         h(msg["method"], msg.get("params") or {})
-                    except Exception:  # noqa: BLE001: a handler's failure must not stop the reader
+                    except Exception:  # noqa: BLE001 - a handler's failure must not stop the reader
                         pass
         self.closed = True
         for q in list(self._waiting.values()):

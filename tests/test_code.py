@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from conftest import LEAD_REPORT, write_role
-from ombro import coderun, fake, keys, mdfile, sandbox
+from ombro import coderun, fake, keys, sandbox
 from ombro.settings import Limits, load_limits, parse_size
 from ombro.tools import SharedFolder, ToolContext
 from test_guardrails import assert_reported

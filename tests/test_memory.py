@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
 from conftest import LEAD_REPORT, SPEC, write_role
 from ombro.material import unfence
 from ombro import fake, memory, mdfile, jobs
 from ombro.home import ensure_crew
-from ombro.interviews import BriefPurpose, record_insufficient_brief
+from ombro.interviews import record_insufficient_brief
 from ombro.settings import load_limits
 
 

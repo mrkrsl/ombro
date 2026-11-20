@@ -32,6 +32,7 @@ build = [
 dev = [
     "pydantic>=2.14.3",  # gui/scripts/schema.py only: the app's generated types
     "pytest>=8",
+    "ruff>=0.17.6",
 ]
 
 [build-system]
@@ -47,6 +48,19 @@ packages = ["src/ombro"]
 # The source package is the Python core only: the desktop app (gui/) is built and released apart.
 [tool.hatch.build.targets.sdist]
 include = ["/src/ombro", "/tests", "/examples", "/README.md", "/uv.lock"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-include = ["gui/scripts/*.py"]
+
+[tool.ruff.lint]
+# The core rules only (syntax, undefined and unused names), named so a new ruff doesn't widen them.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Shared fixtures are imported from conftest and taken as parameters, which ruff reads as redefinitions.
+"tests/*" = ["F811"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

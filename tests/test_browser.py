@@ -15,7 +15,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from ombro import browser as browser_mod
-from ombro import fake, jobs, journal, mdfile, outbox
+from ombro import fake, mdfile, outbox
 from ombro.tools import ToolContext, ToolInputError
 
 pytestmark = pytest.mark.skipif(not browser_mod.installed(), reason="no browser installed")

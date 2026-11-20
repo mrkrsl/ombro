@@ -25,7 +25,7 @@ import os
 import re
 import secrets
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1603,7 +1603,7 @@ class Chat:
             self.start_offers.append({"job": job_dir.name, "more": answer == "more"})
             self.transcript.note(f"You said yes: job {job_dir.name} is {AGAIN_DONE[kind]}"
                                  + (" with more room." if answer == "more" else "."))
-            return {"status": f"the user said yes; Ombro starts it again now in the background, building on what "
+            return {"status": "the user said yes; Ombro starts it again now in the background, building on what "
                               "was done. Say in one short sentence that it is starting; do not describe the work "
                               "again."}, None
         self.transcript.note(f"You said no: job {job_dir.name} was not started again.")

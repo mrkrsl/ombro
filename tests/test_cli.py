@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import getpass
 import json
 import os
 import stat
@@ -257,7 +258,7 @@ def test_keys_set_and_remove(home, capsys, monkeypatch):
     from ombro import cli
 
     prompts = []
-    monkeypatch.setattr(cli.getpass, "getpass", lambda p: prompts.append(p) or "fc-invented-value-987654321")
+    monkeypatch.setattr(getpass, "getpass", lambda p: prompts.append(p) or "fc-invented-value-987654321")
     assert cli.main(["keys", "set", "FIRECRAWL_API_KEY"]) == 0
     out = capsys.readouterr().out
     assert "fc-invented-value-987654321" not in out and "hidden" in prompts[0]
@@ -273,7 +274,7 @@ def test_keys_set_with_nothing_typed_changes_nothing(home, monkeypatch):
     from ombro import cli
 
     keys.set_key(home, "FIRECRAWL_API_KEY", "fc-invented-kept")
-    monkeypatch.setattr(cli.getpass, "getpass", lambda p: "")
+    monkeypatch.setattr(getpass, "getpass", lambda p: "")
     assert cli.main(["keys", "set", "FIRECRAWL_API_KEY"]) == 1
     assert keys.get_key(home, "FIRECRAWL_API_KEY") == "fc-invented-kept"
 
