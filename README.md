@@ -9,9 +9,18 @@ you start a job from it, walk away, and read a report later. The Lead plans
 the job and briefs the crew's roles. Every job ends in a report, whether it
 finished, hit a limit or failed.
 
-**Status: 0.2.0, the first public release.** Expect rough edges. Ombro has
-two ways in, the desktop app and the terminal (`ombro`), over one Python core.
-Both can also connect to Ombro running on a server.
+**Status: 0.2.0, the first public release.** Ombro is new and still
+settling: things may change between releases, and some may not yet work as
+you'd expect. If something doesn't, please open an issue.
+
+There are three ways in, all over one Python core:
+
+- **The desktop app**, for macOS and Linux. It can also connect to Ombro
+  running on a server.
+- **The terminal interface**: `ombro` on its own opens a full-screen chat with
+  the Lead.
+- **The command line**: `ombro <command>` (`ombro jobs`, `ombro report`, and
+  so on), for quick checks and scripts.
 
 What it does: chats and briefs with the Lead; jobs that run unattended within
 limits you set; roles and crews; schedules; web search and fetch, and a
