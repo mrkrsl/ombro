@@ -222,6 +222,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "starlette" },
     { name = "textual" },
+    { name = "typing-extensions" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]
@@ -245,6 +246,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "starlette", specifier = ">=1.10.0" },
     { name = "textual", specifier = ">=8.2.8" },
+    { name = "typing-extensions", specifier = ">=4.16.0" },
     { name = "uvicorn", specifier = ">=0.54.0" },
     { name = "websockets", specifier = ">=17.4" },
 ]

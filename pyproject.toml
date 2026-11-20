@@ -19,6 +19,7 @@ dependencies = [
     "websockets>=17.4",
     "uvicorn>=0.54.0",
     "pypdf>=7.1.1",  # 6.x before 6.4 had denial-of-service fixes for crafted PDFs
+    "typing-extensions>=4.16.0",  # TypedDicts that pydantic accepts on 3.11
 ]
 
 [project.scripts]

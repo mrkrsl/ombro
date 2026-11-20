@@ -31,7 +31,7 @@ def events() -> list[type]:
 
 
 def build() -> dict:
-    from typing import TypedDict
+    from typing_extensions import TypedDict  # pydantic refuses typing's before 3.12
 
     from pydantic import TypeAdapter
 

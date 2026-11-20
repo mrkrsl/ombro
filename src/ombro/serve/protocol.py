@@ -15,7 +15,9 @@ Client to server: subscribe.
 
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from typing import Literal
+
+from typing_extensions import TypedDict  # as in viewtypes.py: pydantic refuses typing's before 3.12
 
 from ombro import ui
 from ombro import viewtypes as vt

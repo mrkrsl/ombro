@@ -7,7 +7,11 @@ desktop app's TypeScript types can be generated from them (gui/scripts/schema.py
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict
+from typing import Any, NotRequired
+
+# Not typing's: pydantic (which reads these for the app's schema) refuses typing.TypedDict
+# before Python 3.12, and Ombro supports 3.11.
+from typing_extensions import TypedDict
 
 # -- the crew ----------------------------------------------------------------------
 
