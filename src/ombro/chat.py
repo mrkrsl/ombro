@@ -258,6 +258,10 @@ def _tool_msg(call_id: str, payload: Any, src: str | None = None) -> dict:
 ENTRY = re.compile(r"^\*\*(You \((Chat|Brief|Role)\)|Lead(?: \((Brief|Role)\))?|Ombro):\*\* ?")
 
 
+# Ombro's note that a job started from a chat has ended names its report: jobs/<id>/report.md.
+PAST_JOB_REPORT = re.compile(r"jobs/([^/\s]+)/report\.md")
+
+
 def _is_note(chunk: str) -> bool:
     """One of Ombro's notes in a saved chat (`_Reopened …_`): kept in the file, never shown. The
     file's last chunk ends with a newline, so that is set aside first."""
@@ -592,10 +596,25 @@ class Chat:
         self.ui.show(ChatCleared())
         for who, text in all_turns(entries):
             if who == "ombro":
-                self.ui.show(Note(text, level="done"))
+                self.ui.show(self._past_ombro_note(text))
             else:
                 self.ui.show(PastTurn("you" if who == "user" else "lead", text))
         self._save()
+
+    def _past_ombro_note(self, text: str):
+        """One of Ombro's notes in a reopened chat. A job's ending comes back as it was shown at the
+        time, with its report, so long as the job is still there; the offer to restart or resume it
+        isn't made again. Anything else is a plain note."""
+        m = PAST_JOB_REPORT.search(text)
+        if m and m.group(1) in self.jobs:
+            from dataclasses import replace
+
+            from ombro.session import job_ended
+
+            ended = job_ended(self.home, m.group(1))
+            if ended.status != "unknown":
+                return replace(ended, again="", again_text="", offers=[])
+        return Note(text, level="done")
 
     def attach(self, path: Path) -> None:
         """A file you attached (kept under Files/ already): its text goes to the Lead with your next
