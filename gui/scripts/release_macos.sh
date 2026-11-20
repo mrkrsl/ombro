@@ -4,8 +4,9 @@
 # Run from gui/: scripts/release_macos.sh          a release candidate: signed and notarised
 #                scripts/release_macos.sh --local  a local test build: signed, not notarised
 #
-# Needs ~/.private_keys/ombro-notary.env (never in the repo), which exports
-# APPLE_SIGNING_IDENTITY, APPLE_API_KEY, APPLE_API_ISSUER and APPLE_API_KEY_PATH.
+# Needs APPLE_SIGNING_IDENTITY, APPLE_API_KEY, APPLE_API_ISSUER and APPLE_API_KEY_PATH: from the
+# environment when they are all set there (the release workflow sets them), or else from
+# ~/.private_keys/ombro-notary.env (never in the repo), which exports them.
 #
 # Only the sidecar (ombro-serve) has hardened-runtime exceptions (entitlements.plist: library
 # validation off, which PyInstaller's one-file build needs). The app has none.
@@ -18,10 +19,13 @@ LOCAL=0
 [[ "${1:-}" == "--local" ]] && LOCAL=1
 
 ENV_FILE="${OMBRO_NOTARY_ENV:-$HOME/.private_keys/ombro-notary.env}"
-[[ -f "$ENV_FILE" ]] || { echo "Missing $ENV_FILE" >&2; exit 1; }
-# shellcheck source=/dev/null
-source "$ENV_FILE"
-: "${APPLE_SIGNING_IDENTITY:?not set in $ENV_FILE}"
+if [[ -z "${APPLE_SIGNING_IDENTITY:-}" || -z "${APPLE_API_KEY:-}" || -z "${APPLE_API_ISSUER:-}" \
+      || -z "${APPLE_API_KEY_PATH:-}" ]]; then
+  [[ -f "$ENV_FILE" ]] || { echo "Missing $ENV_FILE" >&2; exit 1; }
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+fi
+: "${APPLE_SIGNING_IDENTITY:?not set}"
 export APPLE_SIGNING_IDENTITY
 
 cd "$(dirname "$0")/.."

@@ -1,0 +1,222 @@
+# A release, from a tag: `git tag v0.2.0 && git push origin v0.2.0`.
+#
+# Builds the macOS app (signed and notarised), the Linux app on native amd64 and arm64 runners
+# (.deb, .rpm, AppImage), the Python packages and the server's Docker images; then makes a DRAFT
+# GitHub Release with every file and pushes the images to ghcr.io under the version. Publishing the
+# draft by hand runs publish.yml, which uploads the Python packages and moves the images' `latest`.
+#
+# Run by hand (Actions › Release › Run workflow) it builds everything and publishes nothing: a
+# dry run. The macOS job needs the Apple secrets (see the macos job); the rest need none.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_LOCKED: "1"
+  # A tag publishes; anything else is a dry run.
+  PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: v
+        name: The tag must match the version in the code
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/ombro/__init__.py)
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$version" ]]; then
+            echo "::error::tag ${GITHUB_REF#refs/tags/} but the code says $version (scripts/bump_version.py)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          [[ "$version" == *[a-z]* ]] && pre=true || pre=false
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    runs-on: macos-15 # Apple silicon
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: gui/src-tauri
+      - name: The Developer ID certificate, in a keychain of this run's own
+        env:
+          CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          [[ -n "$CERTIFICATE_P12" ]] || { echo "::error::the APPLE_* secrets are not set"; exit 1; }
+          keychain="$RUNNER_TEMP/ombro-release.keychain-db"
+          password=$(openssl rand -hex 24)
+          echo "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          # This keychain first, then the ones already searched.
+          existing=$(security list-keychains -d user | tr -d '"')
+          # shellcheck disable=SC2086 # one keychain path a word
+          security list-keychains -d user -s "$keychain" $existing
+          rm "$RUNNER_TEMP/certificate.p12"
+      - name: The notary key
+        env:
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          echo "$API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+      - name: Build, sign and notarise
+        working-directory: gui
+        env:
+          UV_PYTHON_PREFERENCE: only-managed
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          uv python install 3.14
+          npm ci --no-audit --no-fund
+          scripts/release_macos.sh
+      - name: Tidy the keychain and key away
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/ombro-release.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary.p8"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos
+          path: gui/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  linux:
+    needs: version
+    name: linux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04 # the oldest Ubuntu the packages are for: they run on later ones
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: gui/src-tauri
+      - name: Tauri's libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config file \
+            libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev
+      - name: Build .deb, .rpm and AppImage
+        working-directory: gui
+        run: scripts/build_linux.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-${{ matrix.arch }}
+          path: gui/build/linux/out/*
+          if-no-files-found: error
+
+  python:
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv build --out-dir dist
+      - name: The wheel installs and runs
+        run: uv run --isolated --no-project --with dist/*.whl ombro --version
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python
+          path: dist/*
+          if-no-files-found: error
+
+  docker:
+    needs: version
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: env.PUBLISH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: names
+        name: Image names
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          for image in ombro ombro-browser-guard; do
+            echo "${image//-/_}=$base/$image:$VERSION" >> "$GITHUB_OUTPUT"
+          done
+      - name: ombro (the server)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: ${{ steps.names.outputs.ombro }}
+      - name: ombro-browser-guard
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: docker
+          file: docker/browser-guard.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: ${{ steps.names.outputs.ombro_browser_guard }}
+
+  release:
+    needs: [version, macos, linux, python, docker]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        run: cd out && sha256sum -- * | tee SHA256SUMS
+      - name: A draft release, to be published by hand
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          flags=(--draft --title "Ombro ${TAG#v}" --generate-notes --verify-tag)
+          [[ "$PRERELEASE" == true ]] && flags+=(--prerelease)
+          gh release create "$TAG" "${flags[@]}" --repo "$GITHUB_REPOSITORY" out/*

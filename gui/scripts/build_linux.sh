@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Ombro's Linux app (.deb).
+# Build Ombro's Linux app: .deb, .rpm and AppImage natively (OMBRO_BUNDLES to choose), .deb in Docker.
 #
 # On Linux (the route that works), run from gui/:  scripts/build_linux.sh
 #   It builds natively for this machine's architecture. Needs Node 22, Rust (rustup), uv, and
@@ -36,9 +36,15 @@ if [ "$(uname -s)" = Linux ] && [ -z "${OMBRO_DOCKER:-}" ]; then
   uv python install 3.14
   npm ci --no-audit --no-fund
   npm run sidecar
-  npx tauri build --bundles deb
-  rm -f "$WORK/out"/*.deb
-  cp src-tauri/target/release/bundle/deb/*.deb "$WORK/out/"
+  # linuxdeploy (the AppImage tool) is itself an AppImage: unpacked, it needs no FUSE.
+  export APPIMAGE_EXTRACT_AND_RUN=1
+  BUNDLES="${OMBRO_BUNDLES:-deb,rpm,appimage}"
+  npx tauri build --bundles "$BUNDLES"
+  rm -f "$WORK/out"/*.deb "$WORK/out"/*.rpm "$WORK/out"/*.AppImage
+  B=src-tauri/target/release/bundle
+  [[ $BUNDLES == *deb* ]] && cp "$B"/deb/*.deb "$WORK/out/"
+  [[ $BUNDLES == *rpm* ]] && cp "$B"/rpm/*.rpm "$WORK/out/"
+  [[ $BUNDLES == *appimage* ]] && cp "$B"/appimage/*.AppImage "$WORK/out/"
   ls -la "$WORK/out"
   exit 0
 fi

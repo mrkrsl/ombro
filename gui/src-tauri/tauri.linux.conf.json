@@ -5,6 +5,10 @@
       "deb": {
         "depends": ["bubblewrap", "openssh-client"],
         "recommends": ["gnome-keyring"]
+      },
+      "rpm": {
+        "depends": ["bubblewrap", "openssh-clients"],
+        "recommends": ["gnome-keyring"]
       }
     }
   }
