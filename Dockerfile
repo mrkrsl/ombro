@@ -4,7 +4,7 @@
 
 # Base images are pinned by digest (the tag is kept for reading), so a moved tag can't change the build.
 # To update one, take the new digest of the tag's multi-arch index and change it here.
-FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS build
+FROM python:3.14-slim-bookworm@sha256:3fe1a0b6c2d6b2ebb572906cdabeca75aeb558c0c17db5ffefbcf8094871c32b AS build
 COPY --from=ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 /uv /bin/uv
 WORKDIR /src
 COPY pyproject.toml uv.lock README.md ./
@@ -14,7 +14,7 @@ COPY src ./src
 RUN uv build --wheel --out-dir /dist \
  && uv export --frozen --no-dev --no-emit-project -o /dist/requirements.txt
 
-FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
+FROM python:3.14-slim-bookworm@sha256:3fe1a0b6c2d6b2ebb572906cdabeca75aeb558c0c17db5ffefbcf8094871c32b
 # bubblewrap is the sandbox for code a job runs (code.run).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends bubblewrap \
