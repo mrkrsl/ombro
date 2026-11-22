@@ -219,3 +219,15 @@ def test_local_and_private_addresses_are_refused(url, addresses):
 
 def test_a_public_address_is_allowed():
     check_url("https://ada-pots.invalid/", public)
+
+
+def test_duckduckgo_only_trusts_its_own_host():
+    from ombro.providers.duckduckgo import _unwrap
+
+    real = "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2F"
+    assert _unwrap(real) == "https://example.org/"
+    fake = "https://evilduckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2F"
+    assert _unwrap(fake) == fake
+    from ombro.providers.duckduckgo import _is_ddg
+
+    assert _is_ddg("https://html.duckduckgo.com/x") and not _is_ddg("https://notduckduckgo.com/x")
