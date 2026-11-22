@@ -253,6 +253,17 @@ jobs:
           else
             echo "No signed updates: no latest.json"
           fi
+      # The website's download buttons link to /releases/latest/download/<name>, which needs a
+      # name that doesn't change between releases. After latest.json, which mustn't see them.
+      - name: Copies under names without the version, for the website
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          for pair in "arm64.dmg" "amd64.AppImage" "aarch64.AppImage"; do
+            src="out/Ombro_${VERSION}_${pair}"
+            [[ -f "$src" ]] && cp "$src" "out/Ombro_${pair}"
+          done
+          ls out/Ombro_*
       - name: Checksums
         run: |
           set -o pipefail
