@@ -21,7 +21,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern '*.whl' --pattern '*.tar.gz'
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern 'ombro-*.whl' --pattern 'ombro-*.tar.gz'
       - name: TestPyPI (a pre-release)
         if: github.event.release.prerelease
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
