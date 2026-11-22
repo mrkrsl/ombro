@@ -39,9 +39,22 @@ if [ "$(uname -s)" = Linux ] && [ -z "${OMBRO_DOCKER:-}" ]; then
   # linuxdeploy (the AppImage tool) is itself an AppImage: unpacked, it needs no FUSE.
   export APPIMAGE_EXTRACT_AND_RUN=1
   BUNDLES="${OMBRO_BUNDLES:-deb,rpm,appimage}"
-  npx tauri build --bundles "$BUNDLES"
-  rm -f "$WORK/out"/*.deb "$WORK/out"/*.rpm "$WORK/out"/*.AppImage "$WORK/out"/*.sig
+  VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
   B=src-tauri/target/release/bundle
+  rm -rf "$B"/rpm
+  if [[ $VERSION == *-* && $BUNDLES == *rpm* ]]; then
+    # An RPM version can't contain "-" (0.2.0-rc1). Build the .rpm on its own as 0.2.0~rc1,
+    # which RPM also sorts before 0.2.0, then name the file with "-" again (GitHub may
+    # rewrite "~" in asset names). An rc installed from it reports 0.2.0~rc1, which the
+    # updater can't parse, so rc updates are tested with the .deb and AppImage.
+    OTHERS=$(tr , '\n' <<<"$BUNDLES" | grep -vx rpm | paste -sd, - || true)
+    [[ -n $OTHERS ]] && npx tauri build --bundles "$OTHERS"
+    npx tauri build --bundles rpm --config "{\"version\":\"$(sed 's/-/~/g' <<<"$VERSION")\"}"
+    for f in "$B"/rpm/*.rpm; do mv "$f" "$(dirname "$f")/$(basename "$f" | sed 's/~/-/g')" 2>/dev/null || true; done
+  else
+    npx tauri build --bundles "$BUNDLES"
+  fi
+  rm -f "$WORK/out"/*.deb "$WORK/out"/*.rpm "$WORK/out"/*.AppImage "$WORK/out"/*.sig
   [[ $BUNDLES == *deb* ]] && cp "$B"/deb/*.deb "$WORK/out/"
   [[ $BUNDLES == *rpm* ]] && cp "$B"/rpm/*.rpm "$WORK/out/"
   [[ $BUNDLES == *appimage* ]] && cp "$B"/appimage/*.AppImage "$WORK/out/"
