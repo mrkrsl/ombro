@@ -102,7 +102,7 @@ def openai_fields(level: str | None, endpoint: str | None, model: str) -> dict[s
     host, m = _host(endpoint), (model or "").lower()
     if host == "openrouter.ai" or host.endswith(".openrouter.ai"):
         return {"reasoning": {"effort": "none" if level == "off" else level}}
-    if host.endswith("deepseek.com"):
+    if host == "deepseek.com" or host.endswith(".deepseek.com"):
         if level == "off":
             return {"thinking": {"type": "disabled"}}
         return {"reasoning_effort": {"low": "low", "medium": "high", "high": "high", "xhigh": "max"}[level]}

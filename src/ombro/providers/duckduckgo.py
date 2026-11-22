@@ -56,12 +56,18 @@ class _ResultParser(HTMLParser):
             self.results[-1][self._field] += data
 
 
+def _is_ddg(url: str) -> bool:
+    """DuckDuckGo itself or a subdomain, not just any host ending in its name."""
+    host = (urlparse(url).hostname or "").lower()
+    return host == "duckduckgo.com" or host.endswith(".duckduckgo.com")
+
+
 def _unwrap(href: str) -> str:
     """Result links go through a DuckDuckGo redirect (/l/?uddg=<target>)."""
     if href.startswith("//"):
         href = "https:" + href
     parsed = urlparse(href)
-    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
+    if _is_ddg(href) and parsed.path.startswith("/l/"):
         target = parse_qs(parsed.query).get("uddg")
         if target:
             return target[0]
@@ -78,8 +84,7 @@ def parse_results(html: str) -> tuple[list[dict[str, str]], bool]:
     out = []
     for r in p.results:
         url = r["url"]
-        host = urlparse(url).netloc
-        if not url.startswith(("http://", "https://")) or host.endswith("duckduckgo.com"):
+        if not url.startswith(("http://", "https://")) or _is_ddg(url):
             continue  # adverts and internal links
         out.append({"title": " ".join(r["title"].split()), "url": url, "snippet": " ".join(r["snippet"].split())})
     return out, p.blocked
