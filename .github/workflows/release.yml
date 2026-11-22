@@ -180,6 +180,8 @@ jobs:
   docker:
     needs: version
     runs-on: ubuntu-24.04
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: false # its build record would land in the release's files
     permissions:
       contents: read
       packages: write
@@ -235,6 +237,7 @@ jobs:
       - name: Every file in one folder (the macOS job's come in dmg/ and updater/)
         run: |
           find out -mindepth 2 -type f -exec mv -n -t out {} +
+          rm -f out/*.dockerbuild
           find out -mindepth 1 -type d -empty -delete
           if [[ -n "$(find out -mindepth 1 -type d)" ]]; then
             echo "::error::two files with the same name"; find out -mindepth 2; exit 1
