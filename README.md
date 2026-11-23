@@ -32,7 +32,8 @@ system's sandbox; and folders you choose to share.
 
 **The desktop app.** Download it from the [Releases page](../../releases/latest):
 
-- macOS (Apple silicon): the `.dmg`, signed and notarised.
+- macOS (Apple silicon): the `.dmg`, signed and notarised. Or with Homebrew:
+  `brew install mrkrsl/ombro/ombro`.
 - Linux (amd64 and arm64): `.deb`, `.rpm` or AppImage. On Ubuntu 22.04 and
   later the AppImage needs `libfuse2` (`sudo apt install libfuse2`).
 
