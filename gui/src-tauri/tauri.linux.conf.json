@@ -4,11 +4,15 @@
     "linux": {
       "deb": {
         "depends": ["bubblewrap", "openssh-client"],
-        "recommends": ["gnome-keyring"]
+        "recommends": ["gnome-keyring"],
+        "postInstallScript": "linux/postinst.sh",
+        "preRemoveScript": "linux/prerm.sh"
       },
       "rpm": {
         "depends": ["bubblewrap", "openssh-clients"],
-        "recommends": ["gnome-keyring"]
+        "recommends": ["gnome-keyring"],
+        "postInstallScript": "linux/postinst.sh",
+        "preRemoveScript": "linux/prerm.sh"
       }
     }
   }
