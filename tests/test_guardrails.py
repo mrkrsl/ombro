@@ -171,7 +171,7 @@ def test_over_token_limit_stops_and_reserve_pays_for_report(job, short_character
     status = job(
         [
             fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 11000, "output": 200}),
+            fake.result("Read it all.", usage={"input": 10500, "output": 200}),
             LEAD_REPORT,  # no notes call: it would have left too little for the report
         ],
         limits=limits,
@@ -192,7 +192,7 @@ def test_without_a_reserve_the_report_falls_back_to_the_journal(job, short_chara
     status = job(
         [
             fake.brief("researcher", "Read a great deal."),
-            fake.result("Read it all.", usage={"input": 16000, "output": 200}),
+            fake.result("Read it all.", usage={"input": 15500, "output": 200}),
             LEAD_REPORT,
         ],
         limits=limits,
@@ -673,7 +673,7 @@ def test_the_lead_corrects_a_name_itself_with_one_exact_edit(job, home):
             fake.brief("researcher", "Write it up."),
             fake.call("workspace__write", {"path": "workspace/notes.md", "content": "For Heliotrope Atelier.\n"}),
             fake.result("Wrote workspace/notes.md."),
-            fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "Atelier", "new": "x" * 2001}),
+            fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "Atelier", "new": "x" * 4001}),
             fake.call("workspace__edit", {"path": "workspace/notes.md", "old": "e", "new": "E"}),
             fake.call(
                 "workspace__edit",
@@ -688,7 +688,7 @@ def test_the_lead_corrects_a_name_itself_with_one_exact_edit(job, home):
     replies = [m["content"] for c in job.client.calls for m in c["messages"] if m.get("role") == "tool"]
     assert (job.job_dir / "workspace" / "notes.md").read_text() == "For Helotrope Atelier Limited.\n"
     replies = [m["content"] for c in job.client.calls for m in c["messages"] if m.get("role") == "tool"]
-    assert any("a small correction" in r for r in replies) and any(
+    assert any("replaces at most 4,000 characters" in r for r in replies) and any(
         "give text that occurs exactly once" in r for r in replies
     )
     assert any(e.get("tool") == "workspace.edit" and e["role"] == "lead" for e in job.events)

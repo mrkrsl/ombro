@@ -128,7 +128,7 @@ CODE_CALLS = {"generous": 100, "unlimited": 200}  # code.run (30 and 50 until 17
 # The job's own files cost nothing but tokens, which the token limit bounds: a call cap only stopped real work
 # (17 Nov 2026: a job's 20 reads ran out halfway through writing one document). Values set by hand still win.
 WORKSPACE_CALLS = {"conservative": 60, "moderate": 100, "generous": 200, "unlimited": 400}
-WORKSPACE_TOOLS = ("workspace.read", "workspace.list", "workspace.write", "workspace.set_aside")
+WORKSPACE_TOOLS = ("workspace.read", "workspace.list", "workspace.write", "workspace.edit", "workspace.set_aside")
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
 RETIRED_LIMITS = ("budget_usd", "tool_cost_per_call")

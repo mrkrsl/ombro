@@ -66,6 +66,7 @@ def test_a_role_searches_fetches_and_writes_a_deliverable(job, home):
         "web__fetch",
         "workspace__read",
         "workspace__write",
+        "workspace__edit",
         "workspace__list",
         "workspace__set_aside",
         "submit_result",

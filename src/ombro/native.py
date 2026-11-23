@@ -42,6 +42,8 @@ FILE_MAX_BYTES = 5_000_000
 FETCH_MAX_QUERY = 200  # characters after ? in a fetched address; fetch_max_query in limits.md
 READ_DEFAULT_CHARS = 50_000  # a 100KB document in two reads (15,000 until 17 Nov 2026, when it took six)
 READ_MAX_CHARS = 60_000  # stays inside the engine's cap on a tool result
+# Files whose words a write or edit reports, so nobody counts them with a script (23 Nov 2026: a job ran 19).
+TEXT_COUNTED = {".md", ".markdown", ".txt", ".html", ".htm", ".rst", ".text", ""}
 LIST_MAX_ENTRIES = 300
 FETCH_DEFAULT_CHARS = 12_000
 FETCH_MAX_CHARS = 18_000
@@ -209,9 +211,109 @@ def _write(args: dict, ctx: ToolContext) -> dict[str, Any]:
     if created and ctx.archived is not None:
         ctx.archived.add(str(real))  # made in this job: replacing it later keeps nothing older than the job
     out = {"path": _display(ctx, real), "bytes": real.stat().st_size, "mode": mode}
+    if real.suffix.lower() in TEXT_COUNTED:
+        try:
+            out.update(word_counts(real.read_text(encoding="utf-8", errors="replace")))
+        except OSError:
+            pass
     if kept:
         out["archived"] = f"The version before this one is kept in {kept}."
     return out
+
+
+_WORD = re.compile(r"[\w'’-]+")
+_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
+SECTIONS_MAX = 40  # headings listed with their word counts; a longer file gives the total alone
+
+
+def words_of(text: str) -> int:
+    """Words as a person counts them: runs of letters and digits, with apostrophes and hyphens inside."""
+    return len(_WORD.findall(text))
+
+
+def word_counts(text: str) -> dict[str, Any]:
+    """A file's words, and each Markdown section's (heading to the next heading at any level), so a length
+    can be checked from a write's result rather than with a counting script."""
+    out: dict[str, Any] = {"words": words_of(text)}
+    sections: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    body: list[str] = []
+    fenced = False
+
+    def close() -> None:
+        if current is not None:
+            current["words"] = words_of("\n".join(body))
+            sections.append(current)
+
+    for line in text.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+        m = None if fenced else _HEADING.match(line)
+        if m:
+            close()
+            current, body = {"heading": m.group(2)[:120]}, []
+        else:
+            body.append(line)
+    close()
+    if 1 < len(sections) <= SECTIONS_MAX or (len(sections) == 1 and sections[0]["words"] != out["words"]):
+        out["sections"] = sections
+    return out
+
+
+def _text_of(ctx: ToolContext, target: Path, shown: str) -> str:
+    if not target.is_file():
+        raise ToolInputError(f"{shown} does not exist" if not target.exists() else f"{shown} is a folder")
+    if target.is_symlink():
+        raise ToolInputError(f"{shown} is a symlink; Ombro never writes through one")
+    data = target.resolve().read_bytes()
+    if len(data) > FILE_MAX_BYTES or b"\x00" in data[:4096]:
+        raise ToolInputError(f"{shown} can't be edited as text")
+    return data.decode("utf-8", errors="replace")
+
+
+EDIT_MAX_CHANGES = 30
+
+
+def edit(args: dict, ctx: ToolContext, *, max_chars: int | None = None) -> dict[str, Any]:
+    """Replace exact passages in a text file: `old`/`new`, or `edits` (a list of them), applied in order,
+    all or none. Each `old` must occur exactly once at the moment it is applied. max_chars caps each
+    passage (the Lead's corrections); None leaves only the write limit."""
+    shown = str(args.get("path") or "")
+    target = resolve_path(ctx, args.get("path"), write=True)
+    changes = args.get("edits")
+    if changes is None and "old" in args:
+        changes = [{"old": args.get("old"), "new": args.get("new")}]
+    if not isinstance(changes, list) or not changes:
+        raise ToolInputError("give path and either old and new, or edits: a list of {old, new}")
+    if len(changes) > EDIT_MAX_CHANGES:
+        raise ToolInputError(f"at most {EDIT_MAX_CHANGES} changes in one edit")
+    text = _text_of(ctx, target, shown)
+    for i, ch in enumerate(changes, 1):
+        old, new = (ch.get("old"), ch.get("new")) if isinstance(ch, dict) else (None, None)
+        where = f"change {i}" if len(changes) > 1 else "the change"
+        if not isinstance(old, str) or not old or not isinstance(new, str):
+            raise ToolInputError(f"{where}: give old (the exact text to replace) and new")
+        if max_chars is not None and (len(old) > max_chars or len(new) > max_chars):
+            raise ToolInputError(
+                f"{where}: an edit here replaces at most {max_chars:,} characters at a time; "
+                "brief a role to rewrite anything longer"
+            )
+        n = text.count(old)
+        if n != 1:
+            raise ToolInputError(
+                f"{where}: `old` occurs {n} times in {shown}"
+                + ("" if n else " (check spacing, quotes and dashes against the file)")
+                + "; give text that occurs exactly once. Nothing was changed."
+            )
+        text = text.replace(old, new, 1)
+    out = _write({"path": args.get("path"), "content": text}, ctx)
+    out.pop("mode", None)
+    out["replaced"] = len(changes)
+    return out
+
+
+def _edit(args: dict, ctx: ToolContext) -> dict[str, Any]:
+    return edit(args, ctx)
 
 
 def _list(args: dict, ctx: ToolContext) -> dict[str, Any]:
@@ -503,7 +605,8 @@ def workspace_tools() -> list[Tool]:
         Tool(
             name="workspace.write",
             description="Write a text file in this job's workspace/ or scratch/ folder. Creates folders as needed. "
-            "Deliverables go in workspace/; working notes in scratch/.",
+            "Deliverables go in workspace/; working notes in scratch/. To change part of a file, use "
+            "workspace.edit. The result gives the file's words, and each section's.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
@@ -519,6 +622,35 @@ def workspace_tools() -> list[Tool]:
                 },
             },
             handler=_write,
+        ),
+        Tool(
+            name="workspace.edit",
+            description="Change part of a text file without writing it all again: replace exact passages "
+            "(old, as it is in the file, with new). Several changes go in one call as edits, applied in order, "
+            "all or none. Use it for every change to a file that exists; write a whole file only when it is "
+            "new or nearly all of it changes. The result gives the file's words, and each section's.",
+            parameters={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["path"],
+                "properties": {
+                    "path": {"type": "string", "description": PATH_DOC},
+                    "old": {"type": "string", "description": "The exact text to replace; it must occur once."},
+                    "new": {"type": "string", "description": "The text to put in its place."},
+                    "edits": {
+                        "type": "array",
+                        "maxItems": EDIT_MAX_CHANGES,
+                        "description": "Several changes in one call, instead of old and new.",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["old", "new"],
+                            "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
+                        },
+                    },
+                },
+            },
+            handler=_edit,
         ),
         Tool(
             name="workspace.list",

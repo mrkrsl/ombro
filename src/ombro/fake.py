@@ -4,7 +4,7 @@ A script is a list of entries, consumed in order. Each entry is a dict:
 
     {"content": "text" or {...}}          a reply; a dict is sent as JSON text
     {"tool_calls": [{"name": "brief", "arguments": {...}}]}
-    {"usage": {"input": 100, "output": 20}}   token counts to report
+    {"usage": {"input": 100, "output": 20}}   token counts to report (and "reasoning": thinking tokens)
     {"finish_reason": "length"}               a reply cut off at the output limit
     {"times": 5}                          repeat this entry 5 times
     {"error": "message"}                  fail the call with a ModelError
@@ -55,6 +55,7 @@ class ScriptedClient:
         self.clock = clock
         self.calls: list[dict[str, Any]] = []
         self.models: list[str] | None = None  # what list_models answers; None: the endpoint does not say
+        self.thinking: str | None = None  # a level, as real clients keep it (the engine turns it off for a call)
 
     def list_models(self, timeout: float = 20.0) -> list[str]:
         if not self.models:
@@ -101,6 +102,7 @@ class ScriptedClient:
                 "tools": copy.deepcopy(tools),
                 "max_output_tokens": max_output_tokens,
                 "timeout": timeout,
+                "thinking": getattr(self, "thinking", None),
             }
         )
         if _skill_call(tools) and not _answers_skill_call(self._queue[0] if self._queue else None):
@@ -151,6 +153,7 @@ class ScriptedClient:
         usage = Usage(
             int(u.get("input", estimate_tokens(messages, tools))),
             min(int(u.get("output", out_default)), int(max_output_tokens)),
+            reasoning=int(u.get("reasoning", 0)),
         )
         return ModelReply(
             content=content, tool_calls=calls, usage=usage, finish_reason=entry.get("finish_reason", "stop")

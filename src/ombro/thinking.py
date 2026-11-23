@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 LEVELS = ("off", "low", "medium", "high", "xhigh")
 LABELS = {"off": "No thinking", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high"}
-DEFAULT = "medium"  # as Opus 5.5 does by itself
+DEFAULT = "low"  # 23 Nov 2026: medium (high on DeepSeek) until jobs took 30 minutes on business copy
 _ALIASES = {
     "none": "off",
     "no": "off",
