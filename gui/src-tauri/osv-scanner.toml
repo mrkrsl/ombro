@@ -1,0 +1,28 @@
+# Advisories OSV reports for this lockfile that don't affect Ombro, each with the reason.
+# Read by osv-scanner, and so by OpenSSF Scorecard's Vulnerabilities check. None is a
+# vulnerability: cargo audit (in CI) reports them as warnings. Look again whenever Tauri moves
+# off these crates, and drop an entry once its crate has gone from Cargo.lock.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+reason = "Unsoundness in glib's VariantStrIter, not a vulnerability. glib 0.18 comes in through Tauri's Linux tray (tray-icon, libappindicator, gtk); Ombro never calls it. Gone when Tauri moves to gtk 0.19+."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+reason = "proc-macro-error is unmaintained, not vulnerable. A build-time macro crate of glib-macros 0.18 (Tauri's Linux tray); it never runs in the app."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+reason = "zvariant is unmaintained, not vulnerable. It comes in through zbus, which Tauri's notification, opener and single-instance plugins use for D-Bus on Linux."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+reason = "zbus_names is unmaintained, not vulnerable. Part of zbus (Tauri's Linux D-Bus plugins), as for zvariant."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+reason = "zvariant_derive is unmaintained, not vulnerable. A build-time macro crate of zvariant (Tauri's Linux D-Bus plugins)."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+reason = "chrono is unmaintained, not vulnerable. It is only in Cargo.lock as an optional feature of serde_with that Ombro doesn't turn on, so it isn't compiled into the app."

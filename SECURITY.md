@@ -4,7 +4,10 @@
 
 Please report security problems privately, through GitHub's private
 vulnerability reporting: the **Report a vulnerability** button on this
-repository's **Security** tab. Don't open a public issue or pull request.
+repository's **Security** tab
+(<https://github.com/mrkrsl/ombro/security/advisories/new>), or by email to
+[hello@ombro.app](mailto:hello@ombro.app). Don't open a public issue or pull
+request.
 
 Say what you found, how to reproduce it, which version (`ombro --version`, or
 the app's About box) and platform, and what an attacker could do with it.
