@@ -5,9 +5,10 @@ scripts/build_sidecar.py`). It writes src-tauri/binaries/ombro-serve-<target>,
 the name Tauri looks for, where <target> is the Rust host triple, e.g.
 aarch64-apple-darwin or x86_64-unknown-linux-gnu.
 
-The binary is the whole `ombro` command line without the terminal interface
-(ombro.tui and Textual stay out). The app runs it as `ombro-serve serve
---handshake`, and serve runs it again for each job it starts.
+The binary is the whole `ombro` command line, the terminal interface too: the app
+runs it as `ombro-serve serve --handshake`, serve runs it again for each job it
+starts, and the `ombro` command the app installs (command.rs, the Homebrew cask,
+the .deb and .rpm) is this binary, so `ombro` alone opens the terminal interface.
 
 PyInstaller can't cross-compile: build on each platform for its own binary.
 
@@ -48,7 +49,7 @@ def core_modules() -> list[str]:
     import ombro
 
     names = ["ombro", *(m.name for m in pkgutil.walk_packages(ombro.__path__, "ombro."))]
-    return [n for n in names if n != "ombro.tui" and not n.startswith("ombro.tui.")]
+    return names
 
 
 def main() -> int:
@@ -81,9 +82,10 @@ def main() -> int:
         # uvicorn picks its loop, HTTP and WebSocket implementations by name at run time.
         "--collect-submodules",
         "uvicorn",
-        "--exclude-module",
-        "ombro.tui",
-        "--exclude-module",
+        # Textual loads its widgets and drivers by name, and reads its own stylesheets.
+        "--collect-submodules",
+        "textual",
+        "--collect-data",
         "textual",
     ]
     identity = os.environ.get("APPLE_SIGNING_IDENTITY")

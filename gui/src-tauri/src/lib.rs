@@ -3,6 +3,7 @@
 //! from the keychain). Either way the web view gets a port on 127.0.0.1 and a token. The sidecar
 //! exits when its stdin closes, so it never outlives the app; we also stop it on the way out.
 
+mod command;
 mod connection;
 #[cfg(target_os = "macos")]
 mod menu;
@@ -295,6 +296,7 @@ pub fn run() {
             app.manage(updates::Pending::default());
             // Notifications are on unless the person says no: macOS asks on the first start.
             notify::ask_at_start();
+            command::refresh_at_start();
             // A fresh install waits for the web view to ask where Ombro runs.
             if let Some(conn) = connection::at_start(app.handle()) {
                 let _ = begin(app.handle(), conn);

@@ -68,6 +68,13 @@ fn menu(app: &AppHandle, c: &Counts) -> tauri::Result<Menu<Wry>> {
             &MenuItem::with_id(app, "quit", "Quit Ombro", true, None::<&str>)?,
         ],
     )?;
+    // An AppImage installs the ombro command from here (Linux has no menu bar); macOS has it in the
+    // app menu, and the .deb and .rpm put it in themselves (command.rs).
+    if cfg!(target_os = "linux") && crate::command::available() {
+        let at = menu.items()?.len() - 1;
+        menu.insert(&MenuItem::with_id(app, crate::command::ID, crate::command::label(), true, None::<&str>)?, at)?;
+        menu.insert(&PredefinedMenuItem::separator(app)?, at + 1)?;
+    }
     // Finished jobs come first under Ombro, above the approvals, while there are any.
     if c.unseen > 0 {
         let done = MenuItem::with_id(app, "open:jobs", plural(c.unseen, "job completed", "jobs completed"), true, None::<&str>)?;
@@ -99,6 +106,11 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             let id = event.id().as_ref();
             if id == "quit" {
                 app.exit(0);
+            } else if cfg!(target_os = "linux") && id == crate::command::ID {
+                // A tray's menu handler hears every menu's events, the app menu's too: on macOS
+                // the app menu answers this item itself (menu.rs), so only Linux's tray does here.
+                let again = app.clone();
+                crate::command::pick(app, move |_| refresh(&again));
             } else if let Some(screen) = id.strip_prefix("open:") {
                 open(app, screen);
             }
@@ -106,6 +118,15 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .build(app)?;
     app.manage(Tray { icon, last: Mutex::new(None) });
     Ok(())
+}
+
+/// Build the menu again with the last counts (the ombro command's item has changed its words).
+fn refresh(app: &AppHandle) {
+    let Some(tray) = app.try_state::<Tray>() else { return };
+    let counts = tray.last.lock().unwrap().clone().unwrap_or_default();
+    if let Ok(menu) = menu(app, &counts) {
+        let _ = tray.icon.set_menu(Some(menu));
+    }
 }
 
 /// The web view's counts, whenever they change: the menu's lines, and the icon when something

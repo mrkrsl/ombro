@@ -37,9 +37,15 @@ system's sandbox; and folders you choose to share.
 - Linux (amd64 and arm64): `.deb`, `.rpm` or AppImage. On Ubuntu 22.04 and
   later the AppImage needs `libfuse2` (`sudo apt install libfuse2`).
 
+The app carries the `ombro` command too, the same Ombro at the same version
+(see The desktop app, "The ombro command"). Homebrew, the `.deb` and the `.rpm`
+put it on your PATH; from the `.dmg` or an AppImage, choose
+**Install ‘ombro’ Command…** (in the Ombro menu on macOS, the tray menu on
+Linux).
+
 Windows and Intel Macs aren't supported yet.
 
-**The terminal.** Python 3.11 or later:
+**The terminal on its own.** Python 3.11 or later:
 
 ```bash
 uv tool install ombro
@@ -258,11 +264,31 @@ It uses the same home as the terminal (see Files), so the two can be used
 side by side: settings in `~/.config/ombro`, jobs and chats in `~/Ombro`. On first run, with no home yet, it
 holds the set-up as a conversation.
 
+**The ombro command.** The app's own command line is the whole of `ombro`:
+`ombro` alone opens the terminal interface, and every other command works.
+It's the app's version, and the app's updates update it too.
+
+- Homebrew links it as `ombro` when it installs the app.
+- The `.deb` and `.rpm` put in `/usr/bin/ombro`.
+- From the `.dmg`, choose **Install ‘ombro’ Command…** in the Ombro menu, under
+  Check for Updates…. It links `/usr/local/bin/ombro` to the app, asking for
+  your password if that folder needs it. **Remove ‘ombro’ Command…** takes it
+  away again.
+- From an AppImage, the same item is in the tray menu. It writes a two-line
+  script to `~/.local/bin/ombro` that runs the AppImage (what's inside it
+  moves each time it starts, so a link won't do).
+
+If you already have an `ombro` from uv or pipx, the item leaves it in place
+and says which one your terminal runs first. Both use the same settings and
+home, so either works; `ombro --version` tells you which you have. The app's
+command starts a little more slowly (about 0.4 s, as it unpacks itself each
+time).
+
 Building it needs Node, Rust and uv. From `gui/`:
 
 ```bash
 npm ci
-npm run sidecar                     # freezes ombro serve into src-tauri/binaries
+npm run sidecar                     # freezes the ombro command into src-tauri/binaries
 npx tauri build --bundles app       # the app, unsigned: fine on the Mac that built it
 ```
 
