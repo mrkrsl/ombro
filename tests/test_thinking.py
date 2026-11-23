@@ -158,7 +158,7 @@ def test_the_preference_reaches_every_client_and_models_md_wins(home):
     }
     mdfile.write(home.models, meta, body)
     specs = load_models(home)
-    assert make_client(specs["or-opus"], home).thinking == thinking.DEFAULT == "medium"
+    assert make_client(specs["or-opus"], home).thinking == thinking.DEFAULT == "low"
     assert set_thinking(home, "Extra high") == "xhigh"
     assert load_preferences(home).thinking == "xhigh"
     assert make_client(specs["or-opus"], home).thinking == "xhigh"
@@ -204,7 +204,7 @@ def test_the_app_sets_it_through_serve(home):
 
     c = client()
     h = {"Authorization": f"Bearer {TOKEN}", "Origin": APP}
-    assert c.get("/preferences", headers=h).json()["thinking"] == "medium"
+    assert c.get("/preferences", headers=h).json()["thinking"] == "low"
     r = c.put("/preferences", json={"thinking": "high"}, headers=h)
     assert r.status_code == 200 and r.json()["thinking"] == "high" and r.json()["thinking_set"] is True
     assert c.put("/preferences", json={"thinking": "lots"}, headers=h).status_code == 400

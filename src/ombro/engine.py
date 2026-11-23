@@ -26,7 +26,7 @@ from ombro.tools import LOAD_NAME, NotGranted, SharedFolder, Tool, ToolContext, 
 from ombro.tools import is_deferred, load_tool_schema, load_tools
 
 # What a brief's last model call may still do beside submit_result: save what it has drafted.
-LAST_CALL_TOOLS = ("workspace.write", "workspace.place")
+LAST_CALL_TOOLS = ("workspace.write", "workspace.edit", "workspace.place")
 TOOL_RESULT_CAP = 64_000  # room for one workspace.read of READ_MAX_CHARS, with its fencing
 
 
@@ -68,6 +68,35 @@ def cut_off(reply: ModelReply, max_out: int) -> bool:
             not reply.tool_calls and contract.validate_text(reply.content)[0] is None
         )
     return False
+
+
+def thought_out(reply: ModelReply) -> bool:
+    """A cut-off reply that was nearly all thinking: it ran out before writing anything (23 Nov 2026: a
+    "low" DeepSeek reply thought for 32,000 tokens, five and a half minutes, and was lost)."""
+    out = reply.usage.output_tokens or 0
+    return bool(out) and (getattr(reply.usage, "reasoning", 0) or 0) >= 0.8 * out
+
+
+class _ThinkingOff:
+    """For one call, a client sends its least thinking (thinking off, or the least a provider takes), then
+    goes back to its own level. Clients keep the level in `thinking`, and a word of their own in
+    `reasoning_effort` or `effort`."""
+
+    def __init__(self, client: Any) -> None:
+        self.client = client
+        self.saved = {a: getattr(client, a) for a in ("thinking", "reasoning_effort", "effort") if hasattr(client, a)}
+
+    def __enter__(self) -> None:
+        has_level = "thinking" in self.saved
+        for a in self.saved:
+            if a == "thinking":
+                setattr(self.client, a, "off")
+            else:  # the ChatGPT plan keeps only an effort word: "none" is its off
+                setattr(self.client, a, None if has_level else "none")
+
+    def __exit__(self, *exc: Any) -> None:
+        for a, v in self.saved.items():
+            setattr(self.client, a, v)
 
 
 # Tools whose results carry nothing from outside: the harness's own confirmations.
@@ -395,7 +424,7 @@ class Engine:
     def _shared_for_prompts(self) -> list[tuple[str, str, str]]:
         return [(f.name, f.access, folders.display_path(Path(f.path))) for f in self.shared.values()]
 
-    WRITING_TOOLS = ("workspace.write", "workspace.set_aside", "workspace.place", "code.run")
+    WRITING_TOOLS = ("workspace.write", "workspace.edit", "workspace.set_aside", "workspace.place", "code.run")
 
     def _folder_manifests(self) -> dict[str, Any]:
         return {f.name: folders.manifest(f.path) for f in self.shared.values() if f.name in self._folders_before}
@@ -569,6 +598,7 @@ class Engine:
         messages: list[dict],
         tools: list[dict] | None,
         max_output: int | None = None,
+        thinking_off: bool = False,
     ) -> ModelReply:
         spec = self.models[role.model]
         est = estimate_tokens(messages, tools)
@@ -577,7 +607,12 @@ class Engine:
         max_out, timeout = self.gate.check_model_call(spec.name, est, max_output)
         began = self.gate.clock()
         try:
-            reply = self._client(spec).complete(messages, tools=tools, max_output_tokens=max_out, timeout=timeout)
+            client = self._client(spec)
+            if thinking_off:
+                with _ThinkingOff(client):
+                    reply = client.complete(messages, tools=tools, max_output_tokens=max_out, timeout=timeout)
+            else:
+                reply = client.complete(messages, tools=tools, max_output_tokens=max_out, timeout=timeout)
         except ModelError as e:
             self._count_lost(role, spec.name, e.lost_attempts, est, max_out)
             self.journal.write(role.name, "model_error", str(e))
@@ -804,7 +839,8 @@ class Engine:
             "error": f"unknown tool {tc.name!r}; use brief, memory__search, workspace__read, skills__read or finish"
         }
 
-    LEAD_EDIT_MAX_CHARS = 2_000  # a correction, not new writing: that is a role's work
+    # 23 Nov 2026: 2,000 until a job sent five small fixes back to a role as a whole brief (five minutes).
+    LEAD_EDIT_MAX_CHARS = 4_000  # a correction or a reworded paragraph; new writing is a role's work
 
     def _lead_workspace(self, name: str, args: dict) -> dict[str, Any]:
         """workspace.read, .list or .edit for the Lead: this job's files and the folders shared with it."""
@@ -828,50 +864,34 @@ class Engine:
         return out
 
     def _lead_edit(self, path: str, args: dict) -> dict[str, Any]:
-        """One exact replacement in a file, for a small correction the Lead can make without briefing a role."""
-        old, new = args.get("old"), args.get("new")
-        if not path or not isinstance(old, str) or not old or not isinstance(new, str):
-            return {"error": "give path, old (the exact text to replace) and new"}
-        if len(new) > self.LEAD_EDIT_MAX_CHARS or len(old) > self.LEAD_EDIT_MAX_CHARS:
-            return {
-                "error": f"an edit is a small correction, at most {self.LEAD_EDIT_MAX_CHARS:,} characters; "
-                "brief a role for anything longer"
-            }
-        read, write = self.registry.get("workspace.read"), self.registry.get("workspace.write")
-        if not (read and read.handler and write and write.handler):
+        """Exact replacements in a file, for corrections the Lead makes itself instead of briefing a role."""
+        from ombro.native import edit
+
+        if not path:
+            return {"error": "give path, and old and new (or edits: a list of them)"}
+        if self.registry.get("workspace.write") is None:
             return {"error": "workspace.edit is not available"}
         ctx = self._context(self.lead, "workspace.write")
+        watch = self._folder_manifests() if self._folders_before else None
         try:
-            from ombro.native import READ_MAX_CHARS
-
-            parts, offset = [], 0
-            while True:  # the whole file, in reads of the largest size
-                got = read.handler({"path": path, "offset": offset, "max_chars": READ_MAX_CHARS}, ctx)
-                parts.append(got["content"])
-                if "next_offset" not in got:
-                    break
-                offset = got["next_offset"]
-            text = "".join(parts)
-            n = text.count(old)
-            if n != 1:
-                return {"error": f"`old` occurs {n} times in {path}; give text that occurs exactly once"}
-            watch = self._folder_manifests() if self._folders_before else None
-            try:
-                write.handler({"path": path, "content": text.replace(old, new, 1)}, ctx)
-            finally:
-                if watch is not None:
-                    self._note_touched(watch)
+            out = edit({**args, "path": path}, ctx, max_chars=self.LEAD_EDIT_MAX_CHARS)
         except ToolError as e:
             self.journal.write("lead", "tool_error", f"workspace.edit: {_short(str(e))}", tool="workspace.edit")
             return {"error": str(e)}
+        finally:
+            if watch is not None:
+                self._note_touched(watch)
+        changes = args.get("edits") if isinstance(args.get("edits"), list) else [args]
+        first = changes[0] if changes and isinstance(changes[0], dict) else {}
         self.journal.write(
             "lead",
             "tool_call",
-            f"workspace.edit {path}: {_short(old, 80)} -> {_short(new, 80)}",
+            f"workspace.edit {path}: {_short(str(first.get('old') or ''), 80)} -> "
+            f"{_short(str(first.get('new') or ''), 80)}" + (f" (+{len(changes) - 1} more)" if len(changes) > 1 else ""),
             tool="workspace.edit",
             path=path,
         )
-        return {"ok": True, "path": path, "replaced": 1}
+        return out
 
     def _lead_read_skill(self, args: dict) -> dict[str, Any]:
         try:
@@ -935,8 +955,10 @@ class Engine:
 
     def _role_tools(self, role: Role) -> tuple[list[dict], dict[str, Tool]]:
         names = list(role.tools)
-        if "workspace.write" in names and "workspace.set_aside" not in names:
-            names.append("workspace.set_aside")  # a role that can write can set a file aside, never delete it
+        if "workspace.write" in names:
+            # A role that can write can change part of a file (never rewrite it all for a sentence: 23 Nov 2026)
+            # and set a file aside, never delete it.
+            names += [n for n in ("workspace.edit", "workspace.set_aside") if n not in names]
         tools = [t for name in names if (t := self.registry.get(name)) is not None]
         have = skills_mod.names_for(self.home, role)[0] if role.skills or role.all_skills else []
         if have:
@@ -953,6 +975,7 @@ class Engine:
 
     def _run_role(self, role: Role, task: str) -> dict[str, Any]:
         self.tainted = False  # set once the brief reads material; external calls are then staged
+        self._overwritten: set[str] = set()  # files this brief has written whole: a second time is refused
         schemas, by_wire = self._role_tools(role)
         skills, _ = self._skill_listing(skills_mod.names_for(self.home, role)[0])
         messages: list[dict] = [
@@ -1000,6 +1023,7 @@ class Engine:
     def _role_loop(self, role: Role, messages: list[dict], schemas: list[dict], by_wire: dict[str, Tool]) -> dict:
         invalid = 0
         cut = 0
+        think_less = False  # the reply before was cut off while still thinking: the next goes without
         # Outside services' tools are listed by name in tools__load and sent in full only once loaded.
         deferred = {w: t for w, t in by_wire.items() if is_deferred(t)}
         base = [s for s in (schemas or []) if s["function"]["name"] not in deferred]
@@ -1013,7 +1037,8 @@ class Engine:
                 # The last call the brief has: ask for the result, so work done is reported, not lost. The tools
                 # stay as they were, so the provider's cache still holds; only writing and the result are run.
                 messages.append({"role": "user", "content": contract.LAST_CALL_INSTRUCTION})
-            reply = self._model_call(role, messages, tools)
+            reply = self._model_call(role, messages, tools, thinking_off=think_less)
+            think_less = False
             messages.append(reply.as_message())
             if getattr(reply, "cut_off", False):
                 # Cut off at the output limit: nothing in the reply can be used. Say so plainly, so the role
@@ -1039,6 +1064,12 @@ class Engine:
                         "reason": reason + ". Brief it with a smaller "
                         "piece of work, or one that writes long text to a file in parts.",
                     }
+                if thought_out(reply):
+                    # Thinking more would only run out again: the next try goes without it, once.
+                    think_less = True
+                    self.journal.write(
+                        role.name, "thinking_off", "the reply ran out while thinking, so the next goes without"
+                    )
                 messages.append({"role": "user", "content": contract.CUT_OFF_INSTRUCTION})
                 continue
             submitted = [tc for tc in reply.tool_calls if tc.name == contract.SUBMIT_NAME]
@@ -1138,6 +1169,18 @@ class Engine:
             )
         return out
 
+    @staticmethod
+    def _whole_write(ctx: ToolContext, name: str, args: Any) -> str | None:
+        """The file a workspace.write would replace whole (not an append), as a real path; else None."""
+        if name != "workspace.write" or not isinstance(args, dict) or (args.get("mode") or "overwrite") != "overwrite":
+            return None
+        from ombro.native import resolve_path
+
+        try:
+            return str(resolve_path(ctx, args.get("path"), write=True).resolve())
+        except Exception:  # noqa: BLE001 - the write itself says what is wrong with the path
+            return None
+
     def _role_tool(self, role: Role, tc, by_wire: dict[str, Tool]) -> Any:
         tool = by_wire.get(tc.name)
         name = tool.name if tool else tc.name
@@ -1166,6 +1209,14 @@ class Engine:
             return self._outward_call(role, tool, tc.arguments)
         ctx = self._context(role, name)
         args_note = _short(_canonical(tc.arguments, ""), 120)
+        whole = self._whole_write(ctx, name, tc.arguments)
+        if whole and whole in getattr(self, "_overwritten", set()):
+            # 23 Nov 2026: a writer wrote a 2,800-word file whole two and three times in one brief, despite the rule.
+            self.journal.write(role.name, "tool_refused", f"{name}: a second whole write of {whole}", tool=name)
+            return {
+                "error": f"you have already written {tc.arguments.get('path')} whole in this brief. Change it with "
+                "workspace.edit, every change in one call, or add to it with mode append. Nothing was written."
+            }
         watch = self._folder_manifests() if name in self.WRITING_TOOLS and self._folders_before else None
         try:
             out = tool.handler(tc.arguments, ctx) if tool.handler else None
@@ -1188,6 +1239,8 @@ class Engine:
             if watch is not None:
                 self._note_touched(watch)
         self.journal.write(role.name, "tool_call", f"{name} {args_note}", tool=name)
+        if whole and hasattr(self, "_overwritten"):
+            self._overwritten.add(whole)
         if name in self.WRITING_TOOLS:
             self.gate.forget_reads(role.name)  # reading a changed file again is not a loop
         return out if out is not None else {"ok": True}
@@ -1425,7 +1478,10 @@ class Engine:
                 note = "not enough of the token limit was left to rewrite the notes and still write the report"
                 return record("refused" if refused else "skipped", note)
             try:
-                reply = self._model_call(self.lead, messages, prompts.NOTES_TOOLS, max_output=max_out)
+                # Keeping lessons needs no deliberation: thinking spent a whole notes call (23 Nov 2026).
+                reply = self._model_call(
+                    self.lead, messages, prompts.NOTES_TOOLS, max_output=max_out, thinking_off=True
+                )
             except (LimitReached, ModelError) as e:
                 return record("refused" if refused else "skipped", f"the notes call could not be made: {e}")
             except KeyboardInterrupt:
@@ -1439,21 +1495,32 @@ class Engine:
                 if tc:
                     messages.append(_tool_message(tc.id, {"ok": True}))
                 return record("kept", _short(why or "nothing new to keep", 300))
-            if tc.name != "memory__write_notes" or tc.arguments is None:
-                messages.append(_tool_message(tc.id, {"error": "use memory__write_notes or keep_notes"}))
+            if tc.name not in ("memory__write_notes", "memory__edit_notes") or tc.arguments is None:
+                messages.append(
+                    _tool_message(tc.id, {"error": "use memory__edit_notes, memory__write_notes or keep_notes"})
+                )
                 refused += 1
                 if refused >= self.NOTES_ATTEMPTS:
                     break
                 continue
             try:
-                old, new = memory.replace_from_jobs(self.home, crew, tc.arguments.get("from_jobs", ""), cap)
+                a = tc.arguments
+                if tc.name == "memory__edit_notes":
+                    lists = {k: a.get(k) for k in ("add", "drop", "replace")}
+                    if not any(isinstance(v, list) and v for v in lists.values()):
+                        raise memory.NotesError("give add, replace or drop, or call keep_notes")
+                    old, new = memory.edit_from_jobs(
+                        self.home, crew, cap, **{k: v if isinstance(v, list) else None for k, v in lists.items()}
+                    )
+                else:
+                    old, new = memory.replace_from_jobs(self.home, crew, a.get("from_jobs", ""), cap)
             except memory.NotesError as e:
                 refused += 1
                 self.journal.write("lead", "notes_refused", _short(str(e), 300), attempt=refused, crew=crew)
                 messages.append(_tool_message(tc.id, {"error": str(e)}))
                 last_error = str(e)
                 if refused >= self.NOTES_ATTEMPTS:
-                    return record("refused", f"the Lead's rewrite was refused twice: {_short(last_error, 300)}")
+                    return record("refused", f"the Lead's change was refused twice: {_short(last_error, 300)}")
                 continue
             added, removed = memory.notes_diff(old, new)
             messages.append(_tool_message(tc.id, {"ok": True}))

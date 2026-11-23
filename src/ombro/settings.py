@@ -82,7 +82,7 @@ LEVEL_KEYS = ("max_tokens", "max_rounds", "job_timeout", "interview_max_tokens",
 # Memory and chat settings, in characters where they bound text. Defaults for
 # jobs recorded before they existed, and for limits.md files that leave them out.
 MEMORY_CHAT_DEFAULTS: dict[str, Any] = {
-    "memory_notes_max_chars": 10_000,
+    "memory_notes_max_chars": 20_000,
     "memory_index_entries": 20,
     "memory_index_entry_chars": 200,
     "memory_search_max_chars": 4_000,
@@ -128,13 +128,18 @@ CODE_CALLS = {"generous": 100, "unlimited": 200}  # code.run (30 and 50 until 17
 # The job's own files cost nothing but tokens, which the token limit bounds: a call cap only stopped real work
 # (17 Nov 2026: a job's 20 reads ran out halfway through writing one document). Values set by hand still win.
 WORKSPACE_CALLS = {"conservative": 60, "moderate": 100, "generous": 200, "unlimited": 400}
-WORKSPACE_TOOLS = ("workspace.read", "workspace.list", "workspace.write", "workspace.set_aside")
+WORKSPACE_TOOLS = ("workspace.read", "workspace.list", "workspace.write", "workspace.edit", "workspace.set_aside")
 CHAT_MAX_MESSAGES = 10_000  # chat is bounded by tokens and tool calls, not by how many messages are sent
 # Settings from earlier versions that are accepted and ignored.
 RETIRED_LIMITS = ("budget_usd", "tool_cost_per_call")
 # Defaults that changed, which every home's limits.md was given when it was made: the old value,
-# left as it was, means the new default. (chat_history_chars: 30,000 until 16 Nov 2026.)
-CHANGED_DEFAULTS = {"chat_history_chars": (30_000, 200_000), "code_output_chars": (8_000, 30_000)}
+# left as it was, means the new default. (chat_history_chars: 30,000 until 16 Nov 2026; memory_notes_max_chars:
+# 10,000 until 23 Nov 2026, when a crew's notes filled it and the Lead's rewrite was refused twice.)
+CHANGED_DEFAULTS = {
+    "chat_history_chars": (30_000, 200_000),
+    "code_output_chars": (8_000, 30_000),
+    "memory_notes_max_chars": (10_000, 20_000),
+}
 # The same for model calls per brief, by kind (17 Nov 2026: 15 calls left a specialist four to write a document
 # with after reading its sources, and the job split into six briefs; tokens and time bound a brief anyway).
 # 19 Nov 2026: the Lead 6 to 40 and a helper 20 to 30, so a job isn't cut short by its step count.
@@ -206,7 +211,7 @@ class Limits:
     report_timeout: float = 120.0
     interview_max_tokens: int | None = 100_000
     interview_max_turns: int = 40
-    memory_notes_max_chars: int = 10_000
+    memory_notes_max_chars: int = 20_000
     memory_index_entries: int = 20
     memory_index_entry_chars: int = 200
     memory_search_max_chars: int = 4_000
@@ -289,7 +294,9 @@ class Limits:
             report_timeout=pos_num("report_timeout", parse_duration(d["report_timeout"])),
             interview_max_tokens=token_cap("interview_max_tokens", d["interview_max_tokens"]),
             interview_max_turns=pos_num("interview_max_turns", d["interview_max_turns"], integer=True),
-            memory_notes_max_chars=pos_num("memory_notes_max_chars", d["memory_notes_max_chars"], integer=True),
+            memory_notes_max_chars=pos_num(
+                "memory_notes_max_chars", _changed("memory_notes_max_chars", d["memory_notes_max_chars"]), integer=True
+            ),
             memory_index_entries=pos_num("memory_index_entries", d["memory_index_entries"], integer=True),
             memory_index_entry_chars=pos_num("memory_index_entry_chars", d["memory_index_entry_chars"], integer=True),
             memory_search_max_chars=pos_num("memory_search_max_chars", d["memory_search_max_chars"], integer=True),

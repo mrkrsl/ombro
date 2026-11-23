@@ -194,7 +194,7 @@ def test_two_writes_over_the_cap_leave_the_notes_as_they_were(job, home):
     long = "- An invented lesson. " * 100
     job(a_job(notes=[fake.write_notes(long), fake.write_notes(long)]), limits={"memory_notes_max_chars": 1000})
     assert memory.notes_path(home, "default").read_text() == before
-    assert "Not changed: the Lead's rewrite was refused twice" in job.report
+    assert "Not changed: the Lead's change was refused twice" in job.report
     assert "The previous notes are kept." in job.report
 
 
@@ -329,7 +329,7 @@ def test_only_workspace_files_are_listed_as_deliverables(job, home):
 
 def test_memory_and_chat_limits_have_defaults_and_follow_the_allowance(home):
     lim = load_limits(home)
-    assert (lim.memory_notes_max_chars, lim.memory_index_entries, lim.memory_index_entry_chars) == (10_000, 20, 200)
+    assert (lim.memory_notes_max_chars, lim.memory_index_entries, lim.memory_index_entry_chars) == (20_000, 20, 200)
     assert lim.chat_max_tokens == 1_000_000 and lim.max_calls_for("memory.search") == 8
     mdfile.write(home.limits, {"allowance": "conservative"})
     assert load_limits(home).chat_max_tokens == 100_000
@@ -343,7 +343,7 @@ def test_jobs_recorded_before_memory_limits_still_load(home):
     old = load_limits(home).to_dict()
     for k in ("memory_notes_max_chars", "chat_max_tokens", "chat_tool_max_calls", "chat_history_chars"):
         old.pop(k)
-    assert Limits.from_dict(old).memory_notes_max_chars == 10_000
+    assert Limits.from_dict(old).memory_notes_max_chars == 20_000
 
 
 # -- input -------------------------------------------------------------------------
@@ -376,3 +376,42 @@ def test_a_frozen_app_starts_jobs_with_their_own_unpacked_copy(home, monkeypatch
     assert "PYINSTALLER_RESET_ENVIRONMENT" not in jobs.detached_env(home)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     assert jobs.detached_env(home)["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+
+
+def test_the_lead_edits_lessons_one_by_one_and_the_notes_call_thinks_not_at_all(job, home):
+    write_notes(home, "- The fake directory is out of date.\n- Ask the researcher for sources.\n- Keep briefs short.\n")
+    job(
+        a_job(
+            notes=[
+                fake.edit_notes(drop=["A lesson that is not there."]),
+                fake.edit_notes(
+                    add=["Invented makers cluster in Lowtown."],
+                    drop=["The fake directory is out of date."],
+                    replace=[
+                        {"old": "- Ask the researcher  for sources.", "new": "Ask the researcher for two sources."}
+                    ],
+                ),
+            ]
+        )
+    )
+    assert memory.read_notes(home, "default").job_lines() == [
+        "- Ask the researcher for two sources.",
+        "- Keep briefs short.",
+        "- Invented makers cluster in Lowtown.",
+    ]
+    first = json.loads(unfence(notes_calls(job)[-1]["messages"][-1]["content"]))
+    assert "no lesson to drop reads" in first["error"] and "Nothing was changed" in first["error"]
+    assert all(c["thinking"] == "off" for c in notes_calls(job))
+    assert "Added:\n- Invented makers cluster in Lowtown." in job.report
+
+
+def test_the_notes_cap_is_20000_and_an_old_written_10000_means_it(home):
+    from ombro.settings import load_limits
+
+    assert load_limits(home).memory_notes_max_chars == 20_000
+    path = home.limits
+    path.write_text(path.read_text().replace("memory_notes_max_chars: 20000", "memory_notes_max_chars: 10000"))
+    assert "memory_notes_max_chars: 10000" in path.read_text()
+    assert load_limits(home).memory_notes_max_chars == 20_000
+    path.write_text(path.read_text().replace("memory_notes_max_chars: 10000", "memory_notes_max_chars: 12000"))
+    assert load_limits(home).memory_notes_max_chars == 12_000

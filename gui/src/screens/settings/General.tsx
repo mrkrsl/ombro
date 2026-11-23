@@ -493,7 +493,7 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
         <span className="form-row tight">
           <select
             aria-label="Thinking"
-            value={prefs.data?.thinking ?? "medium"}
+            value={prefs.data?.thinking ?? "low"}
             onChange={async (e) => {
               const p = await run((api) => api.put<Preferences>("/preferences", { thinking: e.target.value }));
               if (p) { prefs.set(p); mark("thinking"); }

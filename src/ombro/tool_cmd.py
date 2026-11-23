@@ -14,6 +14,7 @@ NATIVE = (
     "web.fetch",
     "workspace.read",
     "workspace.write",
+    "workspace.edit",
     "workspace.list",
     "workspace.place",
     "workspace.set_aside",

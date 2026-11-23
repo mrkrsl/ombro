@@ -126,6 +126,64 @@ def with_from_jobs(notes: Notes, text: str) -> Notes:
     return Notes(notes.preamble, notes.from_you, clean_from_jobs(text))
 
 
+def lessons(from_jobs: str) -> list[str]:
+    """The Lead's part as its lessons: one per list item (a line starting "- " or "* ", with any lines
+    under it), or one per line where it is not a list."""
+    items: list[str] = []
+    for line in from_jobs.splitlines():
+        if not line.strip():
+            continue
+        if re.match(r"^\s{0,3}[-*]\s", line) or not items:
+            items.append(re.sub(r"^\s{0,3}[-*]\s+", "", line).rstrip())
+        else:
+            items[-1] += "\n" + line.rstrip()
+    return items
+
+
+def _key(text: str) -> str:
+    return " ".join(re.sub(r"^\s{0,3}[-*]\s+", "", str(text or "")).split())
+
+
+def edit_from_jobs(
+    home: Home,
+    crew: str,
+    cap: int,
+    add: list | None = None,
+    drop: list | None = None,
+    replace: list | None = None,
+) -> tuple[Notes, Notes]:
+    """Change the Lead's part lesson by lesson rather than writing it all again (23 Nov 2026: a rewrite of
+    full notes after every job cost minutes, and ran out of room). Lessons to drop or replace are named by
+    their text as it is. Returns (old, new); raises NotesError, changing nothing, if one isn't found or the
+    file would pass its cap."""
+    old = read_notes(home, crew)
+    items = lessons(old.from_jobs)
+    keys = [_key(i) for i in items]
+
+    def find(text: Any, what: str) -> int:
+        k = _key(text)
+        if not k or k not in keys:
+            raise NotesError(
+                f"no lesson to {what} reads {str(text)[:120]!r}; give it exactly as it is in your part of the "
+                "notes. Nothing was changed"
+            )
+        return keys.index(k)
+
+    for ch in replace or []:
+        if not isinstance(ch, dict) or not isinstance(ch.get("new"), str) or not ch["new"].strip():
+            raise NotesError("each replace needs old (a lesson as it is) and new. Nothing was changed")
+        i = find(ch.get("old"), "replace")
+        items[i], keys[i] = ch["new"].strip(), _key(ch["new"])
+    for text in drop or []:
+        i = find(text, "drop")
+        del items[i], keys[i]
+    for text in add or []:
+        if isinstance(text, str) and text.strip() and _key(text) not in keys:
+            items.append(re.sub(r"^\s{0,3}[-*]\s+", "", text.strip()))
+            keys.append(_key(text))
+    return replace_from_jobs(home, crew, "\n".join(f"- {i}" for i in items), cap)
+
+
 def replace_from_jobs(home: Home, crew: str, text: str, cap: int) -> tuple[Notes, Notes]:
     """Replace the Lead's part. Returns (old, new). Raises NotesError over the cap."""
     old = read_notes(home, crew)

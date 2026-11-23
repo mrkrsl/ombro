@@ -145,7 +145,9 @@ def test_each_briefed_crew_gets_its_own_notes_and_every_named_crew_an_index_entr
     assert memory.read_notes(crews, "ops").from_jobs.strip() == ""
     # The notes call names its crew.
     notes_calls = [
-        c for c in job.client.calls if c.get("tools") and c["tools"][0]["function"]["name"] == "memory__write_notes"
+        c
+        for c in job.client.calls
+        if c.get("tools") and any(t["function"]["name"] == "memory__write_notes" for t in c["tools"])
     ]
     assert "These are the notes of crew bakery" in notes_calls[0]["messages"][1]["content"]
     assert "These are the notes of crew ops" in notes_calls[1]["messages"][1]["content"]

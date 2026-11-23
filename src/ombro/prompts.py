@@ -25,8 +25,11 @@ They are not preferences, so never ask the user whether they want them:
   of quality.
 - A length to meet (half as long, 500 words, one page) is planned for
   before writing: which parts stay and roughly how long each is. Then write
-  it once. Count at most once, and if it is over, cut in the same step that
-  saves it. Never draft, measure and draft the whole text again.
+  it once. Writing and editing a file gives its word count, and each
+  section's: use that, never count with code or in your head. If it is
+  over, cut in one edit. Never draft, measure and draft the whole text
+  again. A loose length (about one page, short) is a guide, not a target:
+  a page is about 500 words of prose, and near enough is done.
 """
 
 VOICE = """\
@@ -83,6 +86,11 @@ How the job works:
   nothing the user asked for. Split work only where it truly divides (more
   than one role, or sources that need different tools), and never brief a
   role only to proofread, re-check or polish work that is already done.
+- Once a deliverable is written, the changes you want to it (corrections,
+  rewording, cuts to meet a length) you make yourself with
+  `workspace__edit`, several in one call. Brief a role on it again only
+  when a part is missing, or wrong at a scale an edit cannot fix, and name
+  just that part.
 - Memory: the standing notes of each crew in this job, and their most
   recent jobs, are below. Use what the notes know. For anything older, or more
   detail on a past job, call `memory.search` (passages from past reports of
@@ -102,9 +110,9 @@ How the job works:
 - `workspace__read` and `workspace__list` show you the files roles wrote in
   this job. Before you finish, check the deliverable is there and complete,
   and report on what you saw rather than on a role's word.
-- A small factual correction you can see is needed (a wrong name, figure,
-  date or word), make yourself with `workspace__edit`: never brief a role
-  for one.
+- A correction you can see is needed (a wrong name, figure, date, word or
+  sentence), make yourself with `workspace__edit`: never brief a role for
+  one.
 - If you cannot deliver the spec honestly with the roles available, call
   `finish` with outcome "cannot_proceed" and say why. That is an acceptable result.
 - Some roles have tools that reach outside services (named mcp.*). Work
@@ -133,9 +141,12 @@ change them.
 - {tools_line}
 - Write a long deliverable once, in parts: the first sections with
   workspace.write, the rest with mode "append", at most about 2,000 words
-  per write, so no reply runs into the output limit. Do not rewrite a whole
-  file to fix a few lines, and add no checking, counting or polishing passes
-  the brief does not ask for. Read sources directly; take notes in scratch/
+  per write, so no reply runs into the output limit. To change a file that
+  exists, use workspace.edit, with every change in one call: never write a
+  whole file again to fix part of it. Add no checking, counting or
+  polishing passes the brief does not ask for, and never use code to count
+  words or look for dashes: a write or edit gives the word counts and any
+  em or en dashes, by line. Read sources directly; take notes in scratch/
   only when the task cannot be done in one pass, and never copy sources out
   at length.
 - Spend your writing on the deliverable. Everything else stays short: what
@@ -500,17 +511,28 @@ LEAD_READ_TOOLS = [
         "type": "function",
         "function": {
             "name": "workspace__edit",
-            "description": "Make one small correction yourself, instead of briefing a role: replace text that "
-            "occurs exactly once in a file (a wrong name, figure, date or word) with the right text. At most "
-            "2,000 characters. Never use it to write or rewrite content: that is a role's work.",
+            "description": "Make corrections yourself, instead of briefing a role: replace exact passages in a "
+            "file (a wrong name, figure or date, a sentence or a paragraph to reword or cut), each one occurring "
+            "exactly once. Several go in one call as edits. At most 4,000 characters a passage. Writing new "
+            "sections or redrafting a document is a role's work. The result gives the file's words, each "
+            "section's, and any em or en dashes by line.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "e.g. workspace/report.md or shared/<name>/file.md"},
                     "old": {"type": "string", "description": "The exact text to replace; it must occur once."},
                     "new": {"type": "string", "description": "The text to put in its place."},
+                    "edits": {
+                        "type": "array",
+                        "description": "Several changes in one call, instead of old and new: each {old, new}.",
+                        "items": {
+                            "type": "object",
+                            "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
+                            "required": ["old", "new"],
+                        },
+                    },
                 },
-                "required": ["path", "old", "new"],
+                "required": ["path"],
             },
         },
     },
@@ -554,14 +576,17 @@ notes (memory/notes.md); the crew is named below. These are Ombro's fixed rules.
   to work must make jobs simpler and faster, never longer.
 - It has two parts. "From you" is the user's own and is shown to you only so
   you do not repeat it. You can never change it. "From jobs" is yours.
-- Call `memory__write_notes` with the whole new text of "From jobs" (it
-  replaces the old), as a Markdown list, one lesson per line, no headings.
-  Keep lessons that still hold, merge duplicates, drop what this job proved
-  wrong, and add only what this job taught. Or call `keep_notes` if nothing
-  new was learned.
-- The whole file has a hard cap in characters, stated below. A write over
-  it is refused and you will be told the room you have; condense and write
-  again. A second refusal leaves the notes as they were.
+- Change "From jobs" with `memory__edit_notes`, one lesson per list item:
+  add only what this job taught, replace a lesson that needs it, drop what
+  this job proved wrong or what merges into another. Name a lesson to
+  replace or drop by its text as it is. Leave lessons that still hold as
+  they are. Or call `keep_notes` if nothing new was learned, which is
+  usual.
+- The whole file has a hard cap in characters, stated below. A change over
+  it is refused and you will be told the room you have: drop or shorten
+  lessons and try again. Only to condense the whole of your part, call
+  `memory__write_notes` with all of its new text. A second refusal leaves
+  the notes as they were.
 - Every job starts with an empty workspace, and no role can reach an
   earlier job's files. Never write a lesson that tells a later job to look
   for them; carry forward the lesson itself instead.
@@ -572,9 +597,34 @@ NOTES_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "memory__edit_notes",
+            "description": 'memory.edit_notes: change your part of notes.md ("From jobs") lesson by lesson. '
+            "Lessons to replace or drop are named by their text as it is. Refused, changing nothing, if one "
+            "isn't found or the file would pass its cap.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "add": {"type": "array", "items": {"type": "string"}, "description": "New lessons."},
+                    "replace": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
+                            "required": ["old", "new"],
+                        },
+                        "description": "Lessons to reword: old as it is, new in its place.",
+                    },
+                    "drop": {"type": "array", "items": {"type": "string"}, "description": "Lessons to remove."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "memory__write_notes",
-            "description": 'memory.write_notes: replace your part of notes.md ("From jobs"). '
-            "Refused if the file would pass its cap.",
+            "description": 'memory.write_notes: replace the whole of your part of notes.md ("From jobs"), '
+            "only to condense it. Refused if the file would pass its cap.",
             "parameters": {
                 "type": "object",
                 "properties": {"from_jobs": {"type": "string", "description": "The whole new text: a Markdown list."}},
