@@ -1430,9 +1430,10 @@ public issue for it.
 
 ## Contributing
 
-Bug reports and ideas are welcome as issues. Ombro doesn't accept outside code
-yet, so please don't open pull requests: the copyright is kept with one owner
-while the contributor terms are settled. This will change.
+Bug reports, ideas and pull requests are welcome: see
+[CONTRIBUTING.md](CONTRIBUTING.md). The first time you open a pull request,
+you'll be asked to accept the [Ombro Contributor Agreement](CLA.md) by
+commenting one sentence on it. You keep your copyright.
 
 ## Trademark
 
