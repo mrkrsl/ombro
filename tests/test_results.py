@@ -67,7 +67,11 @@ def test_reading_a_file_again_after_writing_it_is_not_a_loop(job, home):
     read = fake.call("workspace__read", {"path": "workspace/draft.md"})
     steps = [fake.call("workspace__write", {"path": "workspace/draft.md", "content": "v0"})]
     for v in range(1, 5):
-        steps += [read, fake.call("workspace__write", {"path": "workspace/draft.md", "content": f"v{v}"})]
+        # A file is written whole once a brief; later changes are edits (23 Nov 2026).
+        steps += [
+            read,
+            fake.call("workspace__edit", {"path": "workspace/draft.md", "old": f"v{v - 1}", "new": f"v{v}"}),
+        ]
     job(
         [
             fake.brief("editor", "Edit the draft four times."),
@@ -79,6 +83,7 @@ def test_reading_a_file_again_after_writing_it_is_not_a_loop(job, home):
         ]
     )
     assert [e["status"] for e in job.events if e["action"] == "returned"] == ["ok"]
+    assert (job.job_dir / "workspace" / "draft.md").read_text() == "v4"
 
 
 def test_the_report_puts_the_reader_first_and_ombros_record_after(job, home):

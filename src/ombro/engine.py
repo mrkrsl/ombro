@@ -975,6 +975,7 @@ class Engine:
 
     def _run_role(self, role: Role, task: str) -> dict[str, Any]:
         self.tainted = False  # set once the brief reads material; external calls are then staged
+        self._overwritten: set[str] = set()  # files this brief has written whole: a second time is refused
         schemas, by_wire = self._role_tools(role)
         skills, _ = self._skill_listing(skills_mod.names_for(self.home, role)[0])
         messages: list[dict] = [
@@ -1168,6 +1169,18 @@ class Engine:
             )
         return out
 
+    @staticmethod
+    def _whole_write(ctx: ToolContext, name: str, args: Any) -> str | None:
+        """The file a workspace.write would replace whole (not an append), as a real path; else None."""
+        if name != "workspace.write" or not isinstance(args, dict) or (args.get("mode") or "overwrite") != "overwrite":
+            return None
+        from ombro.native import resolve_path
+
+        try:
+            return str(resolve_path(ctx, args.get("path"), write=True).resolve())
+        except Exception:  # noqa: BLE001 - the write itself says what is wrong with the path
+            return None
+
     def _role_tool(self, role: Role, tc, by_wire: dict[str, Tool]) -> Any:
         tool = by_wire.get(tc.name)
         name = tool.name if tool else tc.name
@@ -1196,6 +1209,14 @@ class Engine:
             return self._outward_call(role, tool, tc.arguments)
         ctx = self._context(role, name)
         args_note = _short(_canonical(tc.arguments, ""), 120)
+        whole = self._whole_write(ctx, name, tc.arguments)
+        if whole and whole in getattr(self, "_overwritten", set()):
+            # 23 Nov 2026: a writer wrote a 2,800-word file whole two and three times in one brief, despite the rule.
+            self.journal.write(role.name, "tool_refused", f"{name}: a second whole write of {whole}", tool=name)
+            return {
+                "error": f"you have already written {tc.arguments.get('path')} whole in this brief. Change it with "
+                "workspace.edit, every change in one call, or add to it with mode append. Nothing was written."
+            }
         watch = self._folder_manifests() if name in self.WRITING_TOOLS and self._folders_before else None
         try:
             out = tool.handler(tc.arguments, ctx) if tool.handler else None
@@ -1218,6 +1239,8 @@ class Engine:
             if watch is not None:
                 self._note_touched(watch)
         self.journal.write(role.name, "tool_call", f"{name} {args_note}", tool=name)
+        if whole and hasattr(self, "_overwritten"):
+            self._overwritten.add(whole)
         if name in self.WRITING_TOOLS:
             self.gate.forget_reads(role.name)  # reading a changed file again is not a loop
         return out if out is not None else {"ok": True}

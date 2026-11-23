@@ -171,3 +171,28 @@ def test_a_write_reports_dashes_by_line(home):
         .handler({"path": "workspace/a.md", "content": "Fine.\nNot — fine.\n"}, ctx)
     )
     assert out["dashes"] == 1 and out["dash_lines"] == [{"line": 2, "text": "Not — fine."}]
+
+
+def test_a_brief_writes_a_file_whole_once_then_edits_or_appends(job, home):
+    write_role(home, "writer", tools=["workspace.write"])
+    job(
+        [
+            fake.brief("writer", "Write it."),
+            fake.call("workspace__write", {"path": "workspace/hook.md", "content": DOC}),
+            fake.call("workspace__write", {"path": "workspace/hook.md", "content": "All of it again.\n"}),
+            fake.call("workspace__write", {"path": "workspace/hook.md", "content": "More.\n", "mode": "append"}),
+            fake.call("workspace__write", {"path": "workspace/other.md", "content": "A second file.\n"}),
+            submit("Wrote workspace/hook.md."),
+            fake.brief("writer", "Redo it from scratch."),
+            fake.call("workspace__write", {"path": "workspace/hook.md", "content": "A new brief may.\n"}),
+            submit("Rewrote it."),
+            fake.finish(),
+            fake.keep_notes(),
+            LEAD_REPORT,
+        ],
+        registry=echo_and_files(home),
+    )
+    results = [m["content"] for c in job.client.calls for m in c["messages"] if m.get("role") == "tool"]
+    assert any("already written workspace/hook.md whole in this brief" in r for r in results)
+    assert (job.job_dir / "workspace" / "hook.md").read_text() == "A new brief may.\n"
+    assert (job.job_dir / "workspace" / "other.md").is_file()
