@@ -213,7 +213,9 @@ def _write(args: dict, ctx: ToolContext) -> dict[str, Any]:
     out = {"path": _display(ctx, real), "bytes": real.stat().st_size, "mode": mode}
     if real.suffix.lower() in TEXT_COUNTED:
         try:
-            out.update(word_counts(real.read_text(encoding="utf-8", errors="replace")))
+            written = real.read_text(encoding="utf-8", errors="replace")
+            out.update(word_counts(written))
+            out.update(dash_report(written))
         except OSError:
             pass
     if kept:
@@ -258,6 +260,23 @@ def word_counts(text: str) -> dict[str, Any]:
     if 1 < len(sections) <= SECTIONS_MAX or (len(sections) == 1 and sections[0]["words"] != out["words"]):
         out["sections"] = sections
     return out
+
+
+DASHES = ("\u2014", "\u2013")  # em and en dash
+DASH_LINES_MAX = 10
+
+
+def dash_report(text: str) -> dict[str, Any]:
+    """Em and en dashes in a text, by line, so a style rule against them is checked from a write's result
+    rather than with a script (23 Nov 2026: two of a job's last three scripts only looked for dashes)."""
+    found = [(n, line) for n, line in enumerate(text.splitlines(), 1) if any(d in line for d in DASHES)]
+    if not found:
+        return {"dashes": 0}
+    count = sum(line.count(d) for _, line in found for d in DASHES)
+    return {
+        "dashes": count,
+        "dash_lines": [{"line": n, "text": line.strip()[:160]} for n, line in found[:DASH_LINES_MAX]],
+    }
 
 
 def _text_of(ctx: ToolContext, target: Path, shown: str) -> str:
@@ -606,7 +625,7 @@ def workspace_tools() -> list[Tool]:
             name="workspace.write",
             description="Write a text file in this job's workspace/ or scratch/ folder. Creates folders as needed. "
             "Deliverables go in workspace/; working notes in scratch/. To change part of a file, use "
-            "workspace.edit. The result gives the file's words, and each section's.",
+            "workspace.edit. The result gives the file's words, each section's, and any em or en dashes by line.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,
@@ -628,7 +647,8 @@ def workspace_tools() -> list[Tool]:
             description="Change part of a text file without writing it all again: replace exact passages "
             "(old, as it is in the file, with new). Several changes go in one call as edits, applied in order, "
             "all or none. Use it for every change to a file that exists; write a whole file only when it is "
-            "new or nearly all of it changes. The result gives the file's words, and each section's.",
+            "new or nearly all of it changes. The result gives the file's words, each section's, and any em or "
+            "en dashes by line.",
             parameters={
                 "type": "object",
                 "additionalProperties": False,

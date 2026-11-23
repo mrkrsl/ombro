@@ -204,7 +204,7 @@ LIMITS_META = {
     "report_max_output_tokens": 2000,
     "report_timeout": "2m",
     "interview_max_turns": 40,
-    "memory_notes_max_chars": 10_000,
+    "memory_notes_max_chars": 20_000,
     "memory_index_entries": 20,
     "memory_index_entry_chars": 200,
     "memory_search_max_chars": 4_000,

@@ -221,6 +221,11 @@ def keep_notes(reason: str = "Nothing new to keep.", **extra) -> dict:
     return {"tool_calls": [{"name": "keep_notes", "arguments": {"reason": reason}}], **extra}
 
 
+def edit_notes(add=None, drop=None, replace=None, **extra) -> dict:
+    args = {k: v for k, v in (("add", add), ("drop", drop), ("replace", replace)) if v is not None}
+    return {"tool_calls": [{"name": "memory__edit_notes", "arguments": args}], **extra}
+
+
 def write_notes(text: str, **extra) -> dict:
     return {"tool_calls": [{"name": "memory__write_notes", "arguments": {"from_jobs": text}}], **extra}
 

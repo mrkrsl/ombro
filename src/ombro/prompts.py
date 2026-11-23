@@ -145,7 +145,8 @@ change them.
   exists, use workspace.edit, with every change in one call: never write a
   whole file again to fix part of it. Add no checking, counting or
   polishing passes the brief does not ask for, and never use code to count
-  words or check text: a write or edit gives the word counts. Read sources directly; take notes in scratch/
+  words or look for dashes: a write or edit gives the word counts and any
+  em or en dashes, by line. Read sources directly; take notes in scratch/
   only when the task cannot be done in one pass, and never copy sources out
   at length.
 - Spend your writing on the deliverable. Everything else stays short: what
@@ -513,8 +514,8 @@ LEAD_READ_TOOLS = [
             "description": "Make corrections yourself, instead of briefing a role: replace exact passages in a "
             "file (a wrong name, figure or date, a sentence or a paragraph to reword or cut), each one occurring "
             "exactly once. Several go in one call as edits. At most 4,000 characters a passage. Writing new "
-            "sections or redrafting a document is a role's work. The result gives the file's words, and each "
-            "section's.",
+            "sections or redrafting a document is a role's work. The result gives the file's words, each "
+            "section's, and any em or en dashes by line.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -575,14 +576,17 @@ notes (memory/notes.md); the crew is named below. These are Ombro's fixed rules.
   to work must make jobs simpler and faster, never longer.
 - It has two parts. "From you" is the user's own and is shown to you only so
   you do not repeat it. You can never change it. "From jobs" is yours.
-- Call `memory__write_notes` with the whole new text of "From jobs" (it
-  replaces the old), as a Markdown list, one lesson per line, no headings.
-  Keep lessons that still hold, merge duplicates, drop what this job proved
-  wrong, and add only what this job taught. Or call `keep_notes` if nothing
-  new was learned.
-- The whole file has a hard cap in characters, stated below. A write over
-  it is refused and you will be told the room you have; condense and write
-  again. A second refusal leaves the notes as they were.
+- Change "From jobs" with `memory__edit_notes`, one lesson per list item:
+  add only what this job taught, replace a lesson that needs it, drop what
+  this job proved wrong or what merges into another. Name a lesson to
+  replace or drop by its text as it is. Leave lessons that still hold as
+  they are. Or call `keep_notes` if nothing new was learned, which is
+  usual.
+- The whole file has a hard cap in characters, stated below. A change over
+  it is refused and you will be told the room you have: drop or shorten
+  lessons and try again. Only to condense the whole of your part, call
+  `memory__write_notes` with all of its new text. A second refusal leaves
+  the notes as they were.
 - Every job starts with an empty workspace, and no role can reach an
   earlier job's files. Never write a lesson that tells a later job to look
   for them; carry forward the lesson itself instead.
@@ -593,9 +597,34 @@ NOTES_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "memory__edit_notes",
+            "description": 'memory.edit_notes: change your part of notes.md ("From jobs") lesson by lesson. '
+            "Lessons to replace or drop are named by their text as it is. Refused, changing nothing, if one "
+            "isn't found or the file would pass its cap.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "add": {"type": "array", "items": {"type": "string"}, "description": "New lessons."},
+                    "replace": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
+                            "required": ["old", "new"],
+                        },
+                        "description": "Lessons to reword: old as it is, new in its place.",
+                    },
+                    "drop": {"type": "array", "items": {"type": "string"}, "description": "Lessons to remove."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "memory__write_notes",
-            "description": 'memory.write_notes: replace your part of notes.md ("From jobs"). '
-            "Refused if the file would pass its cap.",
+            "description": 'memory.write_notes: replace the whole of your part of notes.md ("From jobs"), '
+            "only to condense it. Refused if the file would pass its cap.",
             "parameters": {
                 "type": "object",
                 "properties": {"from_jobs": {"type": "string", "description": "The whole new text: a Markdown list."}},

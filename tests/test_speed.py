@@ -156,3 +156,18 @@ def test_turning_thinking_off_for_a_call_puts_each_client_back():
     with _ThinkingOff(a), _ThinkingOff(b):
         assert (a.thinking, a.reasoning_effort, b.effort) == ("off", None, "none")
     assert (a.thinking, a.reasoning_effort, b.effort) == ("medium", "low", "high")
+
+
+def test_a_write_reports_dashes_by_line(home):
+    from ombro.native import dash_report
+
+    assert dash_report("No dashes here, just commas.") == {"dashes": 0}
+    got = dash_report("One line.\nA pause — then more.\nPages 3–4 and — again.\n")
+    assert got["dashes"] == 3 and [d["line"] for d in got["dash_lines"]] == [2, 3]
+    ctx, _ = _ctx(home)
+    out = (
+        native_registry(home)
+        .get("workspace.write")
+        .handler({"path": "workspace/a.md", "content": "Fine.\nNot — fine.\n"}, ctx)
+    )
+    assert out["dashes"] == 1 and out["dash_lines"] == [{"line": 2, "text": "Not — fine."}]

@@ -1455,7 +1455,10 @@ class Engine:
                 note = "not enough of the token limit was left to rewrite the notes and still write the report"
                 return record("refused" if refused else "skipped", note)
             try:
-                reply = self._model_call(self.lead, messages, prompts.NOTES_TOOLS, max_output=max_out)
+                # Keeping lessons needs no deliberation: thinking spent a whole notes call (23 Nov 2026).
+                reply = self._model_call(
+                    self.lead, messages, prompts.NOTES_TOOLS, max_output=max_out, thinking_off=True
+                )
             except (LimitReached, ModelError) as e:
                 return record("refused" if refused else "skipped", f"the notes call could not be made: {e}")
             except KeyboardInterrupt:
@@ -1469,21 +1472,32 @@ class Engine:
                 if tc:
                     messages.append(_tool_message(tc.id, {"ok": True}))
                 return record("kept", _short(why or "nothing new to keep", 300))
-            if tc.name != "memory__write_notes" or tc.arguments is None:
-                messages.append(_tool_message(tc.id, {"error": "use memory__write_notes or keep_notes"}))
+            if tc.name not in ("memory__write_notes", "memory__edit_notes") or tc.arguments is None:
+                messages.append(
+                    _tool_message(tc.id, {"error": "use memory__edit_notes, memory__write_notes or keep_notes"})
+                )
                 refused += 1
                 if refused >= self.NOTES_ATTEMPTS:
                     break
                 continue
             try:
-                old, new = memory.replace_from_jobs(self.home, crew, tc.arguments.get("from_jobs", ""), cap)
+                a = tc.arguments
+                if tc.name == "memory__edit_notes":
+                    lists = {k: a.get(k) for k in ("add", "drop", "replace")}
+                    if not any(isinstance(v, list) and v for v in lists.values()):
+                        raise memory.NotesError("give add, replace or drop, or call keep_notes")
+                    old, new = memory.edit_from_jobs(
+                        self.home, crew, cap, **{k: v if isinstance(v, list) else None for k, v in lists.items()}
+                    )
+                else:
+                    old, new = memory.replace_from_jobs(self.home, crew, a.get("from_jobs", ""), cap)
             except memory.NotesError as e:
                 refused += 1
                 self.journal.write("lead", "notes_refused", _short(str(e), 300), attempt=refused, crew=crew)
                 messages.append(_tool_message(tc.id, {"error": str(e)}))
                 last_error = str(e)
                 if refused >= self.NOTES_ATTEMPTS:
-                    return record("refused", f"the Lead's rewrite was refused twice: {_short(last_error, 300)}")
+                    return record("refused", f"the Lead's change was refused twice: {_short(last_error, 300)}")
                 continue
             added, removed = memory.notes_diff(old, new)
             messages.append(_tool_message(tc.id, {"ok": True}))
