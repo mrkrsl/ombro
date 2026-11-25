@@ -1,7 +1,7 @@
-// Home (designs 01, 02, 17): the wordmark, who you're working with, the counts, the Lead and
+// Home (designs 01, 02, 17): the Lead's avatar in the wordmark's place, who you're working with, the counts, the Lead and
 // each crew with its roles, and the greeting above the input. Typing starts a chat.
 
-import { Logo } from "../components/Logo";
+import { HomeAvatar } from "../components/Avatar";
 import { Markdown } from "../components/Markdown";
 import { opening } from "../store/conversation";
 import { useStore } from "../store/store";
@@ -24,7 +24,7 @@ export function Home() {
       <div className="home">
         <div className="home-grid">
           <div className="logo-wrap">
-            <Logo size={62} />
+            <HomeAvatar />
           </div>
           <h2 className="who">{summary.name ? `Working with ${summary.name}` : "Working with you"}</h2>
           <div className="facts">

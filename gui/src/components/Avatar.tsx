@@ -5,13 +5,14 @@
 // a little thing and settles back, and never while another is.
 
 import { useEffect, useRef } from "react";
-import { OmbroAvatar, type OmbroAvatarHandle, type Palette } from "./ombro-avatar";
+import { OmbroAvatar, facesByMood, type OmbroAvatarHandle, type Palette } from "./ombro-avatar";
 import { useStore, type Theme } from "../store/store";
 
 /** Sizes in px: the panel, not counting its shadow. */
 export const REPLY_SIZE = 28;
 export const THINKING_SIZE = 24;
 export const JOB_SIZE = 15;
+export const HOME_SIZE = 168;
 
 /** In the Ombro blues (tokens.css), as the logo: in light mode a dark panel with light pixels (the
  * mid ones brighter than the library's, which read dark at these sizes); in dark mode the other
@@ -195,6 +196,27 @@ export function JobAvatar({ title }: { title: string }) {
       palette={palette}
       think={{ texts: wordsFor(title, true) }}
       label="A job from this chat is running"
+    />
+  );
+}
+
+/** What the home screen's avatar says now and then, in turn. */
+const HOME_WORDS = ["OMBRO", "READY WHEN YOU ARE", "GO!", "PUT A TEAM ON IT", "I'M THE NUMBER TWO YOU"];
+
+/** The home screen's, in the wordmark's place: large, walking through faces of every kind, the
+ * effects and its words, from a random point. */
+export function HomeAvatar() {
+  const palette = usePalette(PALETTES);
+  return (
+    <OmbroAvatar
+      className="home-avatar"
+      size={HOME_SIZE}
+      mode="thinking"
+      intro={null}
+      face="happy"
+      palette={palette}
+      think={{ faces: facesByMood("positive", "neutral", "thinking"), texts: HOME_WORDS }}
+      label="Ombro"
     />
   );
 }

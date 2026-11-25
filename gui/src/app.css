@@ -883,11 +883,11 @@ a:visited {
   padding: 40px 32px 92px;
 }
 
-/* The wordmark sits level with "Working with …": its middle on that line's middle. */
+/* The avatar sits level with "Working with …": its middle on that line's middle. */
 .home-grid {
   display: grid;
   grid-template-columns: auto auto;
-  column-gap: clamp(40px, 8vw, 120px);
+  column-gap: clamp(40px, 6vw, 96px);
   align-items: center;
 }
 
@@ -895,6 +895,11 @@ a:visited {
   grid-column: 1;
   grid-row: 1;
   margin: -40px 0; /* taller than the line: let it overhang rather than push the facts down */
+}
+
+/* Its panel's middle (not its shadow's) on the line's: the shadow hangs 15% below, so down 7.5%. */
+.home-avatar {
+  transform: translateY(13px);
 }
 
 .home .who {
