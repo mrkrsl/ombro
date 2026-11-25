@@ -246,6 +246,29 @@
   overflow-wrap: anywhere;
 }
 
+/* The Lead's turns: its avatar in a gutter on the left, its words beside it. Its further lines in
+   the same turn line up with the words. */
+.lines {
+  --gutter: 45px; /* the 28px avatar and its shadow (33px), and 12px */
+}
+
+.turn {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.turn > :last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.lines > .line.lead,
+.lines > .line-with-items,
+.lines > .again {
+  margin-left: var(--gutter);
+}
+
 .line.lead > :first-child {
   margin-top: 0;
 }
@@ -459,8 +482,8 @@ a:visited {
   gap: 10px;
   color: var(--muted);
   font-size: 14px;
-  height: 28px;
-  padding-left: 0; /* the spinner lines up with the input box's left edge */
+  height: 44px; /* a 24px avatar with its shadow, and air above and below */
+  padding-left: 0; /* the avatar lines up with the input box's left edge */
   margin-bottom: 4px; /* a little air between it and the input */
 }
 
@@ -479,10 +502,6 @@ a:visited {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.thinking svg {
-  animation: spin 2.4s linear infinite;
 }
 
 @keyframes spin {

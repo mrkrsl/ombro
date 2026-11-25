@@ -3,13 +3,14 @@
 // here, as in the terminal; a secret switches the input to hidden.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, CircleDashed, FileText, FolderOpen, Paperclip, X } from "lucide-react";
+import { ArrowUp, FileText, FolderOpen, Paperclip, X } from "lucide-react";
 import type { CommandView } from "../api/types";
 import type { Attachment } from "../api/serve";
 import { listAnswers, quickAnswers, type Conversation } from "../store/conversation";
 import { useStore } from "../store/store";
 import { modelLabel } from "../store/models";
 import { fileManager } from "../platform";
+import { ThinkingAvatar } from "./Avatar";
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -86,6 +87,7 @@ function hasFiles(e: DragEvent): boolean {
 export function Composer({ conversation }: { conversation: Conversation | null }) {
   const { send, answer, interrupt, setMode, commands, summary, models, doneEditing, say } = useStore();
   const { attached, attaching, attachFiles, unattach } = useStore();
+  const title = useStore((s) => (conversation ? (s.titles[conversation.id] ?? "") : ""));
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement | null>(null);
   const editing = conversation?.editing ?? null;
@@ -244,7 +246,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
         <div className="thinking" aria-live="polite">
           {working && (
             <>
-              <CircleDashed size={18} aria-hidden="true" /> Thinking
+              <ThinkingAvatar title={title} /> Thinking
               {canStop && <span className="esc">Esc stops this reply; jobs in the background carry on</span>}
             </>
           )}
