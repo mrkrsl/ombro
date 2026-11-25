@@ -761,3 +761,43 @@ def test_the_counts_name_the_running_jobs_so_the_sidebar_ring_shows_at_once(home
         {"status": "completed", "crews": ["default"], "brief": "Invented", "created_at": "2026-11-14T09:00:00"},
     )
     assert Serve(home).counts()["running"] == []
+
+
+def _saved_chat(home, name: str, title: str, updated: str, chat_id: str | None) -> None:
+    from ombro import mdfile
+
+    home.chats_dir.mkdir(parents=True, exist_ok=True)
+    meta = {"kind": "chat", "title": title, "updated_at": updated, **({"id": chat_id} if chat_id else {})}
+    mdfile.write(home.chats_dir / f"{name}.md", meta, f"# {title}\n")
+
+
+def test_a_pinned_chat_stays_at_the_top_whatever_its_file_does(serve, home, capsys):
+    from ombro import cli
+
+    _saved_chat(home, "old-plan", "Invented old plan", "2026-11-01T09:00:00Z", "c-old")
+    _saved_chat(home, "new-plan", "Invented new plan", "2026-11-20T09:00:00Z", "c-new")
+    _saved_chat(home, "no-id", "Invented chat from before ids", "2026-11-10T09:00:00Z", None)
+    assert [c["name"] for c in serve.get("/chats")] == ["new-plan", "no-id", "old-plan"]
+
+    r = serve.http.put("/chats/old-plan/pin", json={"pinned": True})
+    assert [(c["name"], c["pinned"]) for c in r.json()["chats"]] == [
+        ("old-plan", True),
+        ("new-plan", False),
+        ("no-id", False),
+    ]
+    serve.http.put("/chats/no-id/pin", json={"pinned": True})
+    assert [c["name"] for c in serve.get("/chats")] == ["no-id", "old-plan", "new-plan"]  # pinned, newest first
+
+    # The chat's own file is rewritten when it saves, and renamed when it gets its title: still pinned.
+    (home.chats_dir / "old-plan.md").unlink()
+    _saved_chat(home, "old-plan-renamed", "Invented old plan, titled", "2026-11-02T09:00:00Z", "c-old")
+    assert [c["name"] for c in serve.get("/chats") if c["pinned"]] == ["no-id", "old-plan-renamed"]
+
+    capsys.readouterr()
+    assert cli.main(["chats"]) == 0  # the terminal marks them too
+    assert "📌 Invented chat from before ids" in capsys.readouterr().out
+    serve.post("/chats/old-plan-renamed/archive")  # out of the list, so unpinned
+    assert "c-old" not in (home.root / "preferences" / "pinned.md").read_text(encoding="utf-8")
+    unpinned = serve.http.put("/chats/no-id/pin", json={"pinned": False}).json()["chats"]
+    assert not any(c["pinned"] for c in unpinned)
+    assert serve.http.put("/chats/no-such-chat/pin", json={"pinned": True}).status_code == 404

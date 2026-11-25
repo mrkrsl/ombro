@@ -6,7 +6,13 @@
 name: CI
 
 on:
+  # Pushes to main and tags only: a pull request's branch is tested by pull_request, once per
+  # commit. Both would start two macOS jobs per commit, and GitHub often has too few macOS
+  # runners: a job that waits 15 minutes for one is cancelled, which blocks the merge.
+  # Run a branch with no pull request by hand (workflow_dispatch).
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
   schedule:

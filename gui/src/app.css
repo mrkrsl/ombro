@@ -112,7 +112,8 @@
   position: relative;
 }
 
-.chat-row .chat-delete {
+.chat-row .chat-delete,
+.chat-row .chat-pin {
   position: absolute;
   top: 50%;
   right: 14px;
@@ -130,17 +131,37 @@
   cursor: pointer;
 }
 
+.chat-row .chat-pin {
+  right: 40px;
+}
+
 .chat-row:hover .chat-delete,
-.chat-row .chat-delete:focus-visible {
+.chat-row .chat-delete:focus-visible,
+.chat-row:hover .chat-pin,
+.chat-row .chat-pin:focus-visible {
   display: flex;
 }
 
 .chat-row:hover .chat-link {
   background: var(--hover);
-  padding-right: 36px;
+  padding-right: 64px;
 }
 
-.chat-row .chat-delete:hover {
+/* A pinned chat: a small pin before its title; the last pinned one has a rule under it. */
+.chat-link .pin-mark {
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--muted);
+}
+
+.chat-row.pinned:has(+ .chat-row:not(.pinned)) {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+
+.chat-row .chat-delete:hover,
+.chat-row .chat-pin:hover {
   color: var(--text);
   background: var(--sidebar, var(--bg));
 }
@@ -1485,10 +1506,40 @@ input[type="checkbox"]:not([role="switch"]) {
   margin: 18px 0 6px;
 }
 
-.report-body .shown-file {
-  margin: 8px 0 12px;
-  padding: 4px 0 4px 16px;
-  border-left: 3px solid var(--dim);
+.report-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* What the job made: outside the report, so it reads as the outcome, with where each is kept. */
+.made-files {
+  padding: 0 6px;
+  font-size: 15px;
+}
+
+.made-files h4 {
+  margin: 0 0 4px;
+}
+
+.made-files ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* A Markdown file the job made, in full, in a panel of its own under the report. */
+.deliverable-card {
+  background: var(--report-bg);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.05);
+}
+
+.deliverable-card .report-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .report-body .record {

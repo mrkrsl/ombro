@@ -1,9 +1,10 @@
 // Settings › Skills: each skill and the crews whose members use it. Edit and New write
-// the skill's description and instructions; Delete moves it aside, never erasing it. Add from a folder reads a
-// skill's folder on this computer and sends its files to serve, which checks and copies them as
-// `ombro skills add` does. Proposals the crews make wait under Approvals.
+// the skill's description and instructions; Delete moves it aside, never erasing it. Paste, Add
+// from a file (a SKILL.md, or a .zip or .skill) and Add from a folder send the skill to serve,
+// which checks it and, once you say yes, copies it as `ombro skills add` does. Proposals the crews
+// make wait under Approvals.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Crews } from "../../api/types";
 import { MarkdownFile } from "../../components/Markdown";
 import { readSkillFolder, type SkillFolder } from "../../platform";
@@ -18,6 +19,28 @@ export type ImportView = {
   diff: string | null;
 };
 type Imported = ImportView & Library & { added: string; kept: string | null; not_given: string[] };
+/** What is sent to /skills/import, less `add`, and where it came from, in words. */
+type Source = { body: Record<string, unknown>; from: string };
+
+const fromFolder = (f: SkillFolder): Source => ({
+  body: { folder: f.folder, path: f.path, files: f.files, skipped: f.skipped },
+  from: f.path,
+});
+
+/** A skill chosen as a file: a SKILL.md (or any Markdown) as its text, a .zip or .skill as itself. */
+async function fromFile(file: File): Promise<Source> {
+  if (/\.(zip|skill)$/i.test(file.name)) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { body: { archive: btoa(bin), path: file.name }, from: file.name };
+  }
+  const stem = file.name.replace(/\.[^.]*$/, "");
+  return {
+    body: { folder: /^skill$/i.test(stem) ? "skill" : stem, path: file.name, files: { "SKILL.md": await file.text() } },
+    from: file.name,
+  };
+}
 
 /** A pasted whole SKILL.md: its front matter gives the name and description. */
 const pastedWhole = (body: string) => body.trimStart().startsWith("---");
@@ -95,8 +118,8 @@ function memberNames(who: string[], crews: Crews | null): string {
     .join(", ");
 }
 
-function ImportPanel({ folder, view, crews, onDone, onCancel }: {
-  folder: SkillFolder;
+function ImportPanel({ source, view, crews, onDone, onCancel }: {
+  source: Source;
   view: ImportView;
   crews: Crews | null;
   onDone: (l: Library) => void;
@@ -152,7 +175,7 @@ function ImportPanel({ folder, view, crews, onDone, onCancel }: {
       <h3>
         {tidy(view.name)}: {view.replaces ? "a new version of the skill you have" : "new to your library"}
       </h3>
-      <p className="muted small">From {folder.path}</p>
+      <p className="muted small">From {source.from}</p>
       {view.flags.length > 0 && (
         <p className="problem-inline">
           It has signs of injected text ({view.flags.join(", ")}). Read it closely before you add it.
@@ -173,7 +196,7 @@ function ImportPanel({ folder, view, crews, onDone, onCancel }: {
           disabled={busy}
           onClick={async () => {
             const x = await run((api) =>
-              api.post<Imported>("/skills/import", { folder: folder.folder, path: folder.path, files: folder.files, skipped: folder.skipped, add: true }),
+              api.post<Imported>("/skills/import", { ...source.body, add: true }),
             );
             if (x) {
               setAdded(x);
@@ -200,15 +223,25 @@ export function Skills() {
   const show = useStore((s) => s.show);
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [importing, setImporting] = useState<{ folder: SkillFolder; view: ImportView } | null>(null);
+  const [importing, setImporting] = useState<{ source: Source; view: ImportView } | null>(null);
+  const [pasting, setPasting] = useState<string | null>(null); // the text of a skill being pasted
   const picking = useAction();
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const check = async (source: Source | null) => {
+    if (!source) return;
+    const got = await picking.run(async (api) => ({
+      source,
+      view: await api.post<ImportView>("/skills/import", { ...source.body, add: false }),
+    }));
+    if (got) { setImporting(got); setPasting(null); }
+  };
   const l = lib.data;
   return (
     <>
       <h1 className="page-title">Skills</h1>
       <p className="lede">
         Skills are written instructions for a task you want your crews to do the same way each time. Write one
-        yourself here, add one from a folder, or ask the Lead to make one from a job you've run.
+        yourself here, paste one, add one from a file or a folder, or ask the Lead to make one from a job you've run.
       </p>
       <Problem text={lib.problem} />
       {l && l.waiting.length > 0 && (
@@ -264,36 +297,74 @@ export function Skills() {
         <SkillForm current={null} onCancel={() => setAdding(false)} onDone={(x) => { lib.set(x); setAdding(false); }} />
       ) : importing ? (
         <ImportPanel
-          folder={importing.folder}
+          source={importing.source}
           view={importing.view}
           crews={crews.data}
           onDone={(x) => lib.set({ skills: x.skills, all_skills: x.all_skills, waiting: x.waiting })}
           onCancel={() => setImporting(null)}
         />
+      ) : pasting !== null ? (
+        <div className="inline-form">
+          <h3>Paste a skill</h3>
+          <Field label="The skill's SKILL.md" hint="Front matter and all: its name and description come from there. Ombro checks it before anything is added.">
+            <textarea
+              className="text-input"
+              aria-label="The skill's SKILL.md"
+              rows={14}
+              value={pasting}
+              placeholder={"---\nname: kettle-survey\ndescription: How we survey kettle prices\n---\n\n1. …"}
+              onChange={(e) => setPasting(e.target.value)}
+            />
+          </Field>
+          <div className="form-actions">
+            <button
+              className="primary"
+              disabled={!pasting.trim() || picking.busy}
+              onClick={() => void check({ body: { folder: "pasted", path: "pasted text", files: { "SKILL.md": pasting } }, from: "pasted text" })}
+            >
+              Check it
+            </button>
+            <button className="secondary" onClick={() => setPasting(null)}>
+              Cancel
+            </button>
+          </div>
+          <Problem text={picking.problem} />
+        </div>
       ) : (
         <>
           <div className="form-actions">
             <button className="primary" onClick={() => { setAdding(true); setEditing(null); }}>
               New skill
             </button>
-            <button
-              className="secondary"
-              disabled={picking.busy}
-              onClick={async () => {
-                setEditing(null);
-                const got = await picking.run(async (api) => {
-                  const folder = await readSkillFolder();
-                  if (!folder) return null;
-                  const view = await api.post<ImportView>("/skills/import", {
-                    folder: folder.folder, path: folder.path, files: folder.files, skipped: folder.skipped, add: false,
-                  });
-                  return { folder, view };
-                });
-                if (got) setImporting(got);
-              }}
-            >
-              Add from a folder
+            <button className="secondary" onClick={() => { setEditing(null); setPasting(""); }}>
+              Paste a skill
             </button>
+            <button className="secondary" disabled={picking.busy} onClick={() => { setEditing(null); fileInput.current?.click(); }}>
+              Add from a file
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".md,.markdown,.zip,.skill"
+              hidden
+              aria-label="A skill's file"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) await check(await fromFile(file));
+              }}
+            />
+            <button
+                className="secondary"
+                disabled={picking.busy}
+                onClick={async () => {
+                  setEditing(null);
+                  const folder = await picking.run(() => readSkillFolder());
+                  if (folder) await check(fromFolder(folder));
+                }}
+              >
+                Add from a folder
+              </button>
           </div>
           <Problem text={picking.problem} />
         </>

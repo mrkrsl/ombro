@@ -167,6 +167,26 @@ def test_a_page_cannot_reach_this_machine(tools, site):
         t["browser.open"].handler({"url": site.url + "?d=" + "x" * 300}, ctx)
 
 
+def test_pages_see_an_ordinary_browser_not_a_headless_one(site):
+    b = browser_mod.Browser(site.settings, resolver=resolver)
+    try:
+        p = b.page("researcher", 20)
+        p.open(site.url, 20)
+        seen = p.eval(
+            "(async () => ({ua: navigator.userAgent, webdriver: navigator.webdriver,"
+            " screen: [screen.width, screen.height], window: [outerWidth, outerHeight],"
+            " worker: await new Promise(r => { const w = new Worker(URL.createObjectURL("
+            "new Blob(['postMessage(navigator.userAgent)']))); w.onmessage = e => r(e.data) })}))()"
+        )
+    finally:
+        b.close()
+    assert "Headless" not in seen["ua"] and "Chrome/" in seen["ua"] and seen["worker"] == seen["ua"]
+    assert seen["webdriver"] is False
+    assert seen["screen"][0] > seen["window"][0] and seen["screen"][1] > seen["window"][1]
+    # the client hints are the browser's own, read before anything was overridden
+    assert b.identity["userAgentMetadata"]["brands"] and b.identity["userAgentMetadata"]["fullVersionList"]
+
+
 def test_a_name_that_rebinds_to_this_machine_is_never_reached(site):
     # DNS rebinding: the page's check sees a public address; a moment later the same name is this machine.
     asked: list[str] = []
@@ -478,6 +498,32 @@ def test_the_browser_setting_is_auto_one_browser_or_off(home):
     assert "browser" not in load_tool_settings(home).providers
     with pytest.raises(SetupError):
         tool_cmd.set_browser(home, "/usr/bin/invented-browser")
+
+
+def test_other_takes_any_chromium_browser_after_starting_it_once(home, monkeypatch):
+    from ombro import tool_cmd, views
+    from ombro.settings import SetupError, load_tool_settings
+
+    real = browser_mod.installed()[0]
+    monkeypatch.setattr(browser_mod, "installed", lambda: [])  # so it's one not in the list
+    tool_cmd.set_browser(home, real["path"])  # Ombro starts it once to check
+    assert load_tool_settings(home).providers["browser"] == {"path": real["path"]}
+    v = views.browser_view(home)
+    assert v["choice"] == real["path"] and v["using"] == real["name"] and not v["problem"]
+    with pytest.raises(SetupError, match="isn't a full path"):
+        tool_cmd.set_browser(home, "vivaldi-ish")
+    with pytest.raises(SetupError, match="didn't start as a headless Chromium"):
+        tool_cmd.set_browser(home, "/bin/echo")
+
+
+def test_a_mac_app_is_taken_to_the_program_inside_it(tmp_path):
+    import plistlib
+
+    app = tmp_path / "Helium.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps({"CFBundleExecutable": "HeliumBin"}))
+    assert browser_mod.program(str(app)) == str(app / "Contents" / "MacOS" / "HeliumBin")
+    assert browser_mod.program("/usr/bin/vivaldi") == "/usr/bin/vivaldi"
 
 
 # -- once a job has read private material ---------------------------------------------

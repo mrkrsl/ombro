@@ -6,7 +6,7 @@ import { stamp } from "../components/Inspector";
 import { FEED_CLEAR_MS, useStore } from "./store";
 
 const row = (name: string, jobs: string[]): ChatRow =>
-  ({ name, title: name, path: `/x/${name}.md`, updated_at: "", when: "", id: null, jobs });
+  ({ name, title: name, path: `/x/${name}.md`, updated_at: "", when: "", id: null, jobs, pinned: false });
 
 const counts = (running: string[]) =>
   ({ type: "counts", active: running.length, running, scheduled: 0, waiting: 0, unseen: 0, crews_ready: 1 }) as ServerMessage;

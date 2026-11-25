@@ -7,7 +7,7 @@ import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 import { ServerForm } from "../Connect";
 import { describe, useThisComputer } from "../../where";
-import { appVersion, catchSignIn, openLink } from "../../platform";
+import { appVersion, catchSignIn, chooseBrowser, openLink } from "../../platform";
 import { inTauri } from "../../api/serve";
 import { autoCheck, checkForUpdate, setAutoCheck } from "../../updates";
 import { ModelOptions } from "../../components/ModelOptions";
@@ -444,7 +444,9 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
   const prefs = useView<Preferences>("/preferences");
   const limits = useView<{ allowance: string }>("/limits");
   const browser = useView<BrowserView>("/browser");
-  const { themeChoice, setThemeChoice } = useStore();
+  const { themeChoice, setThemeChoice, remote } = useStore();
+  const [other, setOther] = useState<string | null>(null); // "Other…": the path being typed
+  const [checking, setChecking] = useState(false);
   const [saved, setSaved] = useState<Record<string, number>>({});
   const mark = (k: string) => setSaved((s) => ({ ...s, [k]: Date.now() }));
   const current = modelChoices(models).find((m) => m.default)?.name ?? "";
@@ -509,39 +511,88 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
         </span>
       </Field>
     </section>
-    {browser.data && (
+    {browser.data && (() => {
+      const b = browser.data;
+      const listed = ["auto", "off", ...b.installed.map((x) => x.path)];
+      const chosenOther = !listed.includes(b.choice); // a path given with Other…
+      const choose = async (choice: string) => {
+        const v = await run((api) => api.put<BrowserView>("/browser", { choice }));
+        if (v) { browser.set(v); mark("browser"); setOther(null); }
+        return v;
+      };
+      return (
       <section className="settings-section">
         <h2>Browser</h2>
         <Setting
           hint={
-            browser.data.problem ??
-            `Crews and chat read web pages in ${browser.data.using} without a window, with a new, empty profile each time. Forms with your details wait for your approval.`
+            b.problem ??
+            `Crews and chat read web pages in ${b.using} without a window, with a new, empty profile each time. Forms with your details wait for your approval.`
           }
         >
           <span className="form-row tight">
             <select
               aria-label="Browser"
-              value={browser.data.choice}
+              value={other !== null ? "other" : b.choice}
               onChange={async (e) => {
-                const b = await run((api) => api.put<BrowserView>("/browser", { choice: e.target.value }));
-                if (b) { browser.set(b); mark("browser"); }
+                if (e.target.value === "other") { setOther(chosenOther ? b.choice : ""); return; }
+                await choose(e.target.value);
               }}
             >
               <option value="auto">
-                Automatic{browser.data.choice === "auto" && browser.data.using ? ` (${browser.data.using})` : ""}
+                Automatic{b.choice === "auto" && b.using ? ` (${b.using})` : ""}
               </option>
-              {browser.data.installed.map((b) => (
-                <option key={b.path} value={b.path}>
-                  {b.name}
+              {b.installed.map((x) => (
+                <option key={x.path} value={x.path}>
+                  {x.name}
                 </option>
               ))}
+              {chosenOther && <option value={b.choice}>{b.using ?? b.choice}</option>}
+              <option value="other">Other…</option>
               <option value="off">Don't use a browser</option>
             </select>
             <Saved when={saved.browser ?? 0} />
           </span>
         </Setting>
+        {other !== null && (
+          <Field
+            label={remote ? "Path of the browser on the server" : "Path of the browser"}
+            hint={
+              (remote
+                ? "Jobs run on the server, so the browser must be installed there. "
+                : "") +
+              "Any browser built on Chromium works (Opera, Arc, Thorium…); Firefox and Safari don't. Ombro starts it once to check."
+            }
+          >
+            <span className="form-row">
+              <input
+                aria-label="Browser path"
+                value={other}
+                placeholder={remote ? "/usr/bin/vivaldi" : "/Applications/Helium.app"}
+                onChange={(e) => setOther(e.target.value)}
+              />
+              {!remote && inTauri && (
+                <button
+                  className="secondary"
+                  onClick={async () => { const p = await chooseBrowser(); if (p) setOther(p); }}
+                >
+                  Choose…
+                </button>
+              )}
+              <button
+                className="primary"
+                disabled={!other.trim() || checking}
+                onClick={async () => { setChecking(true); try { await choose(other.trim()); } finally { setChecking(false); } }}
+              >
+                {checking ? "Checking…" : "Use this browser"}
+              </button>
+              <button className="secondary" onClick={() => setOther(null)}>Cancel</button>
+            </span>
+          </Field>
+        )}
+        {other !== null && <Problem text={problem} />}
       </section>
-    )}
+      );
+    })()}
     <section className="settings-section">
       <h2>Approval mode</h2>
       <Setting hint={MODES.find(([v]) => v === mode)?.[2]}>
@@ -577,7 +628,7 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
           </select>
         </span>
       </Setting>
-      <Problem text={problem} />
+      {other === null && <Problem text={problem} />}
     </section>
     </>
   );

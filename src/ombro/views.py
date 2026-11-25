@@ -220,7 +220,7 @@ def deliverables(home: Home, job_dir: Path) -> list[vt.Deliverable]:
 
 
 def chat_list(home: Home) -> list[vt.ChatRow]:
-    """Saved chats, most recently used first: title (never the file name), when, and where.
+    """Saved chats, pinned first, then most recently used first: title (never the file name), when, and where.
     A chat from before titles is shown by its date."""
     folder = home.chats_dir
     out: list[vt.ChatRow] = []
@@ -250,6 +250,12 @@ def chat_list(home: Home) -> list[vt.ChatRow]:
             }
         )
     out.sort(key=lambda c: (c["updated_at"], c["name"]), reverse=True)
+    from ombro import pins
+
+    held = set(pins.pinned(home))
+    for c in out:
+        c["pinned"] = pins.key(c) in held
+    out.sort(key=lambda c: not c["pinned"])  # pinned first, each part still most recent first
     return out
 
 
@@ -494,7 +500,7 @@ def browser_view(home: Home) -> vt.BrowserView:
     elif found:
         using = browser._name(found["path"])
     else:
-        problem = "No browser found. Install Chrome, Chromium, Edge or Brave, and crews and chat can read web pages."
+        problem = "No browser found. Install Chrome, Chromium, Edge, Brave, Vivaldi or Helium, and crews and chat can read web pages."
     return {
         "choice": choice,
         "using": using,
@@ -617,8 +623,24 @@ def archive_chat(home: Home, name: str) -> Path:
     while target.exists():
         target = folder / f"{name}-{n}.md"
         n += 1
+    from ombro import pins
+
+    row = next((c for c in chat_list(home) if c["name"] == name), None)
     path.rename(target)
+    if row and row["pinned"]:  # out of the list, so no longer pinned in it
+        pins.set_pinned(home, pins.key(row), False)
     return target
+
+
+def pin_chat(home: Home, name: str, on: bool) -> list[vt.ChatRow]:
+    """Pin a saved chat to the top of the list, or unpin it. Returns the list."""
+    from ombro import pins
+
+    row = next((c for c in chat_list(home) if c["name"] == name), None)
+    if row is None:
+        raise LookupError(f"no chat called {name!r}")
+    pins.set_pinned(home, pins.key(row), on)
+    return chat_list(home)
 
 
 def chat(home: Home, name: str) -> vt.ChatDetail:

@@ -6,7 +6,7 @@ import { useStore } from "../store/store";
 import { Sidebar } from "./Sidebar";
 
 const row = (name: string, jobs: string[]): ChatRow =>
-  ({ name, title: name, path: `/x/${name}.md`, updated_at: "", when: "", id: null, jobs });
+  ({ name, title: name, path: `/x/${name}.md`, updated_at: "", when: "", id: null, jobs, pinned: false });
 
 describe("the sidebar", () => {
   it("marks the chats whose jobs are running", () => {
@@ -26,5 +26,16 @@ describe("the sidebar", () => {
     expect(crosses).toHaveLength(2);
     fireEvent.click(crosses[1]);
     expect(deleteChat).toHaveBeenCalledWith("Invented plan");
+  });
+
+  it("marks a pinned chat, and pins or unpins one from its own button", () => {
+    const pinChat = vi.fn(async () => undefined);
+    useStore.setState({ chats: [{ ...row("Invented research", []), pinned: true }, row("Invented plan", [])], running: [], pinChat });
+    render(<Sidebar />);
+    expect(screen.getByRole("button", { name: /Invented research/ })).toContainElement(screen.getByLabelText("Pinned"));
+    fireEvent.click(screen.getByRole("button", { name: "Unpin this chat" }));
+    expect(pinChat).toHaveBeenCalledWith("Invented research", false);
+    fireEvent.click(screen.getByRole("button", { name: "Pin this chat" }));
+    expect(pinChat).toHaveBeenCalledWith("Invented plan", true);
   });
 });

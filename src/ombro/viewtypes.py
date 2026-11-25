@@ -133,6 +133,7 @@ class ChatRow(TypedDict):
     when: str
     id: str | None
     jobs: list[str]
+    pinned: bool  # kept at the top of the list
 
 
 class ChatTurn(TypedDict):

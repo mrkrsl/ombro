@@ -25,7 +25,7 @@ describe("the inspector", () => {
 
   it("shows the job a chat started", () => {
     useStore.setState({ chatOn: "teapots-20261117-1200", chats: [{ name: "teapots-20261117-1200", title: "Teapots",
-      path: "", updated_at: "", when: "", id: "c1", jobs: [job.job_id] }] });
+      path: "", updated_at: "", when: "", id: "c1", jobs: [job.job_id], pinned: false }] });
     render(<Inspector />);
     expect(screen.getByText(/Invented teapots · running/)).toBeTruthy();
   });

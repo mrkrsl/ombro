@@ -660,16 +660,31 @@ def settings_routes(s: Serve) -> list[Route]:
     def import_skill(r: Request, data: dict[str, Any]) -> Any:
         """A skill from a folder the app read on its own computer: {folder: its name, files: {path in
         the folder: text}, skipped: [paths not sent], path: where it is, for the record, add: false to
-        see it first, true to import it}. The same checks and copying as `ombro skills add`."""
-        from ombro import skills
-        from ombro.skills_cmd import import_files
+        see it first, true to import it}. A pasted skill is files: {"SKILL.md": text}. A .zip or
+        .skill comes as {archive: base64, path: its file name} instead of folder and files. The
+        same checks and copying as `ombro skills add`."""
+        import base64
+        import binascii
 
-        files = data.get("files")
-        if not isinstance(files, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in files.items()):
-            raise HttpError(400, "`files` must be paths and their text")
-        skipped = [str(x) for x in data.get("skipped") or [] if isinstance(x, str)]
+        from ombro import skills
+        from ombro.skills_cmd import from_archive, import_files
+
         path = str(data.get("path") or "").strip() or None
         try:
+            if isinstance(data.get("archive"), str):  # a .zip or .skill, as base64
+                try:
+                    raw = base64.b64decode(data["archive"], validate=True)
+                except (binascii.Error, ValueError):
+                    raise HttpError(400, "`archive` must be base64") from None
+                folder, files, skipped = from_archive(raw, path or "")
+                data = {**data, "folder": folder}
+            else:
+                files = data.get("files")
+                if not isinstance(files, dict) or not all(
+                    isinstance(k, str) and isinstance(v, str) for k, v in files.items()
+                ):
+                    raise HttpError(400, "`files` must be paths and their text")
+                skipped = [str(x) for x in data.get("skipped") or [] if isinstance(x, str)]
             return import_files(
                 home, str(data.get("folder") or ""), files, skipped=skipped, label=path, add=data.get("add") is True
             )

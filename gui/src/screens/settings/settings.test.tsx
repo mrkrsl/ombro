@@ -180,12 +180,31 @@ describe("Settings › General: the browser", () => {
     render(<Settings />);
     const picker = await screen.findByLabelText("Browser");
     expect([...(picker as HTMLSelectElement).options].map((o) => o.text))
-      .toEqual(["Automatic (Google Chrome)", "Google Chrome", "Don't use a browser"]);
+      .toEqual(["Automatic (Google Chrome)", "Google Chrome", "Other…", "Don't use a browser"]);
     replies["PUT /browser"] = { ...browser, choice: "off", using: null,
       problem: "Turned off: crews and chat can't read web pages (search still works)." };
     await userEvent.selectOptions(picker, "off");
     expect(sent("PUT", "/browser")).toEqual({ choice: "off" });
     expect(await screen.findByText(/Turned off/)).toBeTruthy();
+  });
+
+  it("takes another browser by its path with Other…, on the server when Ombro runs on one", async () => {
+    useStore.setState({ remote: true });
+    try {
+      render(<Settings />);
+      const picker = await screen.findByLabelText("Browser");
+      await userEvent.selectOptions(picker, "other");
+      expect(screen.getByText("Path of the browser on the server")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Choose…" })).toBeNull();
+      await userEvent.type(screen.getByLabelText("Browser path"), "/usr/bin/vivaldi");
+      replies["PUT /browser"] = { ...browser, choice: "/usr/bin/vivaldi", using: "vivaldi" };
+      await userEvent.click(screen.getByRole("button", { name: "Use this browser" }));
+      expect(sent("PUT", "/browser")).toEqual({ choice: "/usr/bin/vivaldi" });
+      await waitFor(() => expect(screen.queryByLabelText("Browser path")).toBeNull());
+      expect([...(picker as HTMLSelectElement).options].map((o) => o.text)).toContain("vivaldi");
+    } finally {
+      useStore.setState({ remote: false });
+    }
   });
 });
 
@@ -512,6 +531,34 @@ describe("Settings › Folders, Tools and Skills", () => {
     await userEvent.click(screen.getByRole("button", { name: "Give it to them" }));
     await waitFor(() => expect(sent("POST", "/skills/kettle-survey/give")).toEqual({ role: "legal/counsel" }));
     expect(await screen.findByText("Every crew member uses it now.")).toBeInTheDocument();
+  });
+
+  it("checks a pasted skill before adding it", async () => {
+    useStore.setState({ settingsPage: "skills" });
+    const text = "---\nname: tone-check\ndescription: Checks the tone.\n---\nRead it aloud.";
+    replies["POST /skills/import"] = { name: "tone-check", replaces: false, flags: [], references: [], skipped: [], text, diff: null };
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Paste a skill" }));
+    await userEvent.click(screen.getByLabelText("The skill's SKILL.md"));
+    await userEvent.paste(text);
+    await userEvent.click(screen.getByRole("button", { name: "Check it" }));
+    expect(await screen.findByText("Tone check: new to your library")).toBeInTheDocument();
+    expect(sent("POST", "/skills/import")).toEqual({ folder: "pasted", path: "pasted text", files: { "SKILL.md": text }, add: false });
+    replies["POST /skills/import"] = { ...(replies["POST /skills/import"] as object), ...library, added: "tone-check", kept: null, not_given: [] };
+    await userEvent.click(screen.getByRole("button", { name: "Add skill" }));
+    expect(await screen.findByText("Added Tone check")).toBeInTheDocument();
+    expect(calls.filter(([m, p]) => m === "POST" && p === "/skills/import").at(-1)?.[2]).toMatchObject({ files: { "SKILL.md": text }, add: true });
+  });
+
+  it("sends a .skill file as it is, and a SKILL.md as its text", async () => {
+    useStore.setState({ settingsPage: "skills" });
+    replies["POST /skills/import"] = { name: "kettle-survey", replaces: false, flags: [], references: [], skipped: [], text: "x", diff: null };
+    render(<Settings />);
+    await screen.findByRole("button", { name: "Add from a file" });
+    const input = screen.getByLabelText("A skill's file") as HTMLInputElement;
+    await userEvent.upload(input, new File([new Uint8Array([80, 75, 3, 4])], "kettle-survey.skill"));
+    await waitFor(() => expect(sent("POST", "/skills/import")).toEqual({ archive: "UEsDBA==", path: "kettle-survey.skill", add: false }));
+    expect(await screen.findByText("From kettle-survey.skill")).toBeInTheDocument();
   });
 
   it("says when a folder can't be read", async () => {

@@ -58,17 +58,22 @@ def describe(home: Home, tool: str) -> list[str]:
 
 
 def set_browser(home: Home, choice: str) -> None:
-    """Settings › General › Browser: "auto" (the first found), "off", or the path of one installed
-    browser. Written to tools.md as providers: browser:, keeping the rest of it."""
+    """Settings › General › Browser: "auto" (the first found), "off", the path of one installed
+    browser, or ("Other…") the path of another Chromium-family browser on the machine Ombro runs
+    on, which is started once to check Ombro can drive it. Written to tools.md as providers:
+    browser:, keeping the rest of it."""
     from ombro import browser
 
     choice = str(choice or "").strip()
     paths = {b["path"] for b in browser.installed()}
+    if not choice:
+        raise SetupError("choose auto, off, or the path of a browser")
     if choice not in ("auto", "off") and choice not in paths:
-        raise SetupError(
-            f"{choice!r} is not a browser on this machine; choose auto, off or one of: "
-            + (", ".join(sorted(paths)) or "none found")
-        )
+        try:
+            browser.check_other(choice)
+        except browser.BrowserError as e:
+            raise SetupError(str(e)) from None
+        choice = browser.program(choice)
     meta, body = mdfile.read(home.tools) if home.tools.is_file() else ({}, "")
     providers = meta.get("providers") if isinstance(meta.get("providers"), dict) else {}
     entry = {k: v for k, v in (providers.get("browser") or {}).items() if k not in ("path", "off")}
