@@ -88,6 +88,11 @@ export function Composer({ conversation }: { conversation: Conversation | null }
   const { send, answer, interrupt, setMode, commands, summary, models, doneEditing, say } = useStore();
   const { attached, attaching, attachFiles, unattach } = useStore();
   const title = useStore((s) => (conversation ? (s.titles[conversation.id] ?? "") : ""));
+  // A job from the chat on screen is running: the thinking line stays, working in the background.
+  const jobOn = useStore((s) => {
+    const chat = s.current === conversation?.id ? s.chats.find((c) => c.name === s.chatOn) : undefined;
+    return !!chat?.jobs.some((id) => s.running.includes(id));
+  });
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement | null>(null);
   const editing = conversation?.editing ?? null;
@@ -244,11 +249,17 @@ export function Composer({ conversation }: { conversation: Conversation | null }
     <div className="foot">
       <div className="column">
         <div className="thinking" aria-live="polite">
-          {working && (
-            <>
+          {working ? (
+            <span className="working-pill">
               <ThinkingAvatar title={title} /> Thinking
               {canStop && <span className="esc">Esc stops this reply; jobs in the background carry on</span>}
-            </>
+            </span>
+          ) : (
+            jobOn && (
+              <span className="working-pill">
+                <ThinkingAvatar title={title} background /> Working in the background
+              </span>
+            )
           )}
         </div>
         {editing && (

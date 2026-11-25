@@ -99,4 +99,14 @@ describe("the composer", () => {
     render(<Composer conversation={{ ...newConversation("s"), state: "working" }} />);
     expect(screen.getByText("Thinking")).toBeInTheDocument();
   });
+
+  it("stays, working in the background, while a job from the chat on screen runs", () => {
+    const chat = { name: "invented-chat", title: "Invented", when: "", jobs: ["job-1"] };
+    useStore.setState({ current: "s", chatOn: "invented-chat", chats: [chat] as never, running: ["job-1"] });
+    const { rerender } = render(<Composer conversation={newConversation("s")} />);
+    expect(screen.getByText("Working in the background")).toBeInTheDocument();
+    useStore.setState({ running: [] });
+    rerender(<Composer conversation={newConversation("s")} />);
+    expect(screen.queryByText("Working in the background")).toBeNull();
+  });
 });

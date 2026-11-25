@@ -32,7 +32,7 @@ export function Lines({ lines, chat = "", busy = false }: { lines: Line[]; chat?
       {lines.map((l, i) =>
         turns[i] ? (
           <div key={l.key} className="turn">
-            <ReplyAvatar id={`${chat}:${l.key}`} seed={l.kind === "lead" || l.kind === "again" ? l.text : l.key} moving={i === newest && !busy} />
+            <ReplyAvatar id={`${chat}:${l.key}`} seed={l.kind === "lead" || l.kind === "again" ? l.text : l.key} moving={i === newest && !busy} quiet={busy} />
             <LineView line={l} />
           </div>
         ) : (

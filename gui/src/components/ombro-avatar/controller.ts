@@ -156,6 +156,24 @@ export class AvatarController {
     }, rand(o.minMs, o.maxMs));
   }
 
+  /** Work going on elsewhere (a job): the effects that aren't faces, one after another for good,
+   * starting at a random one so that several side by side don't move together. */
+  async cycle(effects: string[] = ["spinner", "target", "stars", "fireworks"], gapMs: [number, number] = [400, 1200]) {
+    this.stop();
+    const g = this.gen;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    if (this.reducedMotion || !effects.length) { this.engine.snap(new Array(64).fill(0)); return; }
+    let i = Math.floor(Math.random() * effects.length);
+    while (g === this.gen) {
+      const played = await this.play(effects[i % effects.length]);
+      if (g !== this.gen) return;
+      if (!played) await wait(1000); // an unknown effect: never a busy loop
+      this.engine.show(new Array(64).fill(0), 300);
+      await wait(rand(gapMs[0], gapMs[1]));
+      i++;
+    }
+  }
+
   /** Thinking rule: cycle faces, the spinner and scrolling words until stopped. */
   async think(opts: ThinkOptions = {}) {
     this.stop();
@@ -168,8 +186,9 @@ export class AvatarController {
 
     if (this.reducedMotion) { this.setFace(faces[0]); return; }
 
-    let step = 0;
-    let said = 0;
+    // Each starts at a random point in the cycle and the words, so several side by side differ.
+    let step = Math.floor(Math.random() * SEQUENCE.length);
+    let said = Math.floor(Math.random() * Math.max(1, texts.length));
     let face = this.face;
     while (g === this.gen) {
       const kind = SEQUENCE[step % SEQUENCE.length];

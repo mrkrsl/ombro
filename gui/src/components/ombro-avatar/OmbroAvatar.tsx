@@ -4,7 +4,7 @@ import { PixelEngine } from "./engine";
 import { facesByMood, hasFace, type Mood } from "./frames";
 import { DEFAULT_PALETTE, GEOMETRY, boxHeight, boxWidth, buildRamp, type Palette } from "./theme";
 
-export type AvatarMode = "message" | "thinking" | "static";
+export type AvatarMode = "message" | "thinking" | "static" | "cycle";
 
 export interface OmbroAvatarProps {
   /** Panel size in px. Default 32. */
@@ -13,6 +13,7 @@ export interface OmbroAvatarProps {
    * message: optional intro effect, resolves to a face, then only occasional blinks and winks.
    * thinking: cycles thinking faces, the spinner and scrolling words until the mode changes.
    * static: shows the face with no animation at all.
+   * cycle: no face; the other effects one after another, for work going on (a job).
    */
   mode?: AvatarMode;
   /** A fixed face. If left out, one is picked from `mood` using `seed`. */
@@ -32,6 +33,8 @@ export interface OmbroAvatarProps {
   palette?: Partial<Palette>;
   /** Show the offset shadow tile. Default true. */
   shadow?: boolean;
+  /** Slant the panel. Default true; false draws it square, which reads better very small. */
+  skew?: boolean;
   /** Accessible label. Default "Ombro lead". */
   label?: string;
   className?: string;
@@ -78,6 +81,7 @@ export const OmbroAvatar = forwardRef<OmbroAvatarHandle, OmbroAvatarProps>(funct
     think,
     palette,
     shadow = true,
+    skew: slant = true,
     label = "Ombro lead",
     className,
     style,
@@ -134,6 +138,10 @@ export const OmbroAvatar = forwardRef<OmbroAvatarHandle, OmbroAvatarProps>(funct
       void c.think(think);
       return () => c.stop();
     }
+    if (mode === "cycle") {
+      void c.cycle();
+      return () => c.stop();
+    }
 
     const rng = seeded(seed);
     const moods = Array.isArray(mood) ? mood : [mood];
@@ -172,7 +180,7 @@ export const OmbroAvatar = forwardRef<OmbroAvatarHandle, OmbroAvatarProps>(funct
   );
 
   const g = GEOMETRY;
-  const skew = `skewY(${g.skewY}deg) skewX(${g.skewX}deg)`;
+  const skew = slant ? `skewY(${g.skewY}deg) skewX(${g.skewX}deg)` : "none";
   const tile: CSSProperties = {
     position: "absolute",
     width: size,
