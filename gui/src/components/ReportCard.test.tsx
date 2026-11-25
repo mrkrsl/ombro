@@ -14,13 +14,19 @@ const report = {
 } as unknown as Report;
 
 describe("ReportCard", () => {
-  it("opens a Markdown file it made right here, and only those", () => {
+  it("shows each Markdown file it made in full, in a panel of its own, and says where every file is kept", () => {
     render(<ReportCard report={report} />);
-    expect(screen.getAllByRole("button", { name: "Show here" })).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "Show here" }));
+    const panels = screen.getAllByRole("region");
+    expect(panels).toHaveLength(1);
+    expect(panels[0]).toHaveAccessibleName("The note");
     expect(screen.getByRole("heading", { name: "Invented heading" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
-    expect(screen.queryByRole("heading", { name: "Invented heading" })).toBeNull();
+    expect(screen.getByRole("link", { name: "data.csv" })).toBeInTheDocument();
+    expect(screen.getAllByText(/in the job's folder in Ombro's files/).length).toBeGreaterThan(1);
+  });
+
+  it("in the chat too, the Markdown file it made shows in full", () => {
+    render(<ReportCard report={report} brief />);
+    expect(screen.getByRole("heading", { name: "Invented heading" })).toBeInTheDocument();
   });
 
   it("says what waits for approval", () => {
@@ -60,6 +66,7 @@ describe("ReportCard", () => {
       render(<ReportCard report={report} />);
       fireEvent.click(screen.getByRole("button", { name: /Save to this computer/ }));
       expect(openFolder).toHaveBeenCalledWith("/x/workspace");
+      expect(screen.getAllByText(/on the server, in the job's folder/).length).toBeGreaterThan(0);
       fireEvent.click(screen.getByRole("link", { name: "data.csv" }));
       expect(openPath).toHaveBeenCalledWith("/x/workspace/data.csv", "open");
     });
