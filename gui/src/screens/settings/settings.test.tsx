@@ -167,7 +167,8 @@ describe("Settings › General: thinking", () => {
     const picker = await screen.findByLabelText("Thinking");
     expect([...(picker as HTMLSelectElement).options].map((o) => o.text))
       .toEqual(["No thinking", "Low", "Medium", "High", "Extra high"]);
-    expect((picker as HTMLSelectElement).value).toBe("medium");
+    // The picker shows before the preferences arrive: wait for the one they hold.
+    await waitFor(() => expect((picker as HTMLSelectElement).value).toBe("medium"));
     replies["PUT /preferences"] = { ...prefs, thinking: "low", thinking_set: true };
     await userEvent.selectOptions(picker, "low");
     expect(sent("PUT", "/preferences")).toEqual({ thinking: "low" });

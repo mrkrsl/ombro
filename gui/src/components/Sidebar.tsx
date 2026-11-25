@@ -1,6 +1,7 @@
 // The sidebar: the wordmark, New, the chats, then Jobs, Approvals, Scheduled and Settings.
 
-import { BriefcaseBusiness, CalendarClock, Check, CircleDashed, PanelLeft, Plus, Settings, X } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, Check, PanelLeft, Plus, Settings, X } from "lucide-react";
+import { JobAvatar } from "./Avatar";
 import { useStore } from "../store/store";
 import { Logo } from "./Logo";
 
@@ -47,7 +48,7 @@ export function Sidebar() {
               onClick={() => void openChat(chat.name)}
             >
               {chat.jobs.some((id) => running.includes(id)) && (
-                <CircleDashed className="working" size={15} aria-label="A job from this chat is running" />
+                <JobAvatar title={chat.title} />
               )}
               {chat.title}
             </button>

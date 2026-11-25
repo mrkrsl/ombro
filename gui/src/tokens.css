@@ -18,6 +18,7 @@
   --accent: var(--ombro-500);
   --link: var(--ombro-500); /* every link, read or not */
   --greeting: var(--ombro-500);
+  --working-bg: var(--ombro-100); /* the thinking line's pill */
   --you-bg: #f2f2f2; /* your chat bubbles, the same grey as --panel-bg */
   --you-text: #434343;
   --panel-bg: #f2f2f2; /* panels in a page: code and previews, notes, asks to confirm */
@@ -50,6 +51,7 @@
   --accent: var(--ombro-200);
   --link: var(--ombro-300);
   --greeting: var(--ombro-100);
+  --working-bg: var(--ombro-700);
   --you-bg: #1c4652;
   --you-text: var(--ombro-100);
   --panel-bg: #163842; /* as --hover: dark mode is unchanged */

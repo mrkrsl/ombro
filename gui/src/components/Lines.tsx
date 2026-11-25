@@ -8,13 +8,37 @@ import { useStore } from "../store/store";
 import { whenVisible } from "../platform";
 import { Markdown, MarkdownFile } from "./Markdown";
 import { ReportCard } from "./ReportCard";
+import { ReplyAvatar } from "./Avatar";
 
-export function Lines({ lines }: { lines: Line[] }) {
+/** The Lead's own words: what gets an avatar beside it. */
+const spoken = (l: Line | undefined) => l?.kind === "lead" || l?.kind === "again";
+
+/** The lines of a conversation. `chat` names it (so a reply's avatar knows it has played its intro
+ * when you come back); `busy`: the Lead is working, and the thinking avatar is the one moving. */
+export function Lines({ lines, chat = "", busy = false }: { lines: Line[]; chat?: string; busy?: boolean }) {
+  // One avatar per turn of the Lead's: on the first of its lines in a row.
+  const turns = lines.map((l, i) => spoken(l) && !spoken(lines[i - 1]));
+  // The newest turn may move, unless it came back from a reopened chat's past.
+  let newest = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (turns[i]) {
+      const l = lines[i];
+      newest = l.kind === "lead" && l.past ? -1 : i;
+      break;
+    }
+  }
   return (
     <div className="lines" role="log" aria-live="polite">
-      {lines.map((l) => (
-        <LineView key={l.key} line={l} />
-      ))}
+      {lines.map((l, i) =>
+        turns[i] ? (
+          <div key={l.key} className="turn">
+            <ReplyAvatar id={`${chat}:${l.key}`} seed={l.kind === "lead" || l.kind === "again" ? l.text : l.key} moving={i === newest && !busy} quiet={busy} />
+            <LineView line={l} />
+          </div>
+        ) : (
+          <LineView key={l.key} line={l} />
+        ),
+      )}
     </div>
   );
 }

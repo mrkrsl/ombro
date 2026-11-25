@@ -3,13 +3,14 @@
 // here, as in the terminal; a secret switches the input to hidden.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, CircleDashed, FileText, FolderOpen, Paperclip, X } from "lucide-react";
+import { ArrowUp, FileText, FolderOpen, Paperclip, X } from "lucide-react";
 import type { CommandView } from "../api/types";
 import type { Attachment } from "../api/serve";
 import { listAnswers, quickAnswers, type Conversation } from "../store/conversation";
 import { useStore } from "../store/store";
 import { modelLabel } from "../store/models";
 import { fileManager } from "../platform";
+import { ThinkingAvatar } from "./Avatar";
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -83,9 +84,28 @@ function hasFiles(e: DragEvent): boolean {
   return Array.from(e.dataTransfer?.types ?? []).includes("Files");
 }
 
+/** True once `on` has held for `ms`, false as soon as it stops. Opening a saved chat works for a
+ * moment, as it reads the chat back; that blink of work shows nothing. */
+function useHeld(on: boolean, ms: number): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    setHeld(false);
+    if (!on) return;
+    const t = setTimeout(() => setHeld(true), ms);
+    return () => clearTimeout(t);
+  }, [on, ms]);
+  return on && held;
+}
+
 export function Composer({ conversation }: { conversation: Conversation | null }) {
   const { send, answer, interrupt, setMode, commands, summary, models, doneEditing, say } = useStore();
   const { attached, attaching, attachFiles, unattach } = useStore();
+  const title = useStore((s) => (conversation ? (s.titles[conversation.id] ?? "") : ""));
+  // A job from the chat on screen is running: the thinking line stays, working in the background.
+  const jobOn = useStore((s) => {
+    const chat = s.current === conversation?.id ? s.chats.find((c) => c.name === s.chatOn) : undefined;
+    return !!chat?.jobs.some((id) => s.running.includes(id));
+  });
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement | null>(null);
   const editing = conversation?.editing ?? null;
@@ -98,6 +118,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
   const question = conversation?.question ?? null;
   const secret = question?.field.kind === "secret";
   const working = conversation?.state === "working" && !question && !editing;
+  const thinking = useHeld(working, 400);
   // Esc stops the Lead's reply in an ordinary chat (and a live job it is following), never an
   // interview: set-up, a new crew member or a brief end only when you say so (/quit, /chat).
   const canStop = working && conversation?.kind === "chat" && (conversation?.mode ?? "Chat") === "Chat";
@@ -242,11 +263,17 @@ export function Composer({ conversation }: { conversation: Conversation | null }
     <div className="foot">
       <div className="column">
         <div className="thinking" aria-live="polite">
-          {working && (
-            <>
-              <CircleDashed size={18} aria-hidden="true" /> Thinking
+          {thinking ? (
+            <span className="working-pill">
+              <ThinkingAvatar title={title} /> Thinking
               {canStop && <span className="esc">Esc stops this reply; jobs in the background carry on</span>}
-            </>
+            </span>
+          ) : (
+            jobOn && !working && (
+              <span className="working-pill">
+                <ThinkingAvatar title={title} background /> Working in the background
+              </span>
+            )
           )}
         </div>
         {editing && (
