@@ -579,7 +579,10 @@ class Browser:
                     },
                 )["browserContextId"]
                 self.cdp.send("Browser.setDownloadBehavior", {"behavior": "deny", "browserContextId": self.context})
-                self.identity = _identity(self.cdp, self.context, self.version, min(timeout, START_TIMEOUT))
+                try:  # pages show the browser as it is if this fails, but it is still used
+                    self.identity = _identity(self.cdp, self.context, self.version, min(timeout, START_TIMEOUT))
+                except BrowserError:
+                    self.identity = {}
             except BrowserError as e:
                 self.close()
                 raise BrowserUnavailable(f"the browser started but did not answer: {e}") from None
