@@ -95,9 +95,11 @@ describe("the composer", () => {
     expect(screen.queryByText("Thinking")).toBeNull();
   });
 
-  it("shows Thinking while the session works", () => {
+  it("shows Thinking while the session works", async () => {
     render(<Composer conversation={{ ...newConversation("s"), state: "working" }} />);
-    expect(screen.getByText("Thinking")).toBeInTheDocument();
+    // Not at once: opening a saved chat works for a moment, and that shows nothing.
+    expect(screen.queryByText("Thinking")).toBeNull();
+    expect(await screen.findByText("Thinking")).toBeInTheDocument();
   });
 
   it("stays, working in the background, while a job from the chat on screen runs", () => {

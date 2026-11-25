@@ -84,6 +84,19 @@ function hasFiles(e: DragEvent): boolean {
   return Array.from(e.dataTransfer?.types ?? []).includes("Files");
 }
 
+/** True once `on` has held for `ms`, false as soon as it stops. Opening a saved chat works for a
+ * moment, as it reads the chat back; that blink of work shows nothing. */
+function useHeld(on: boolean, ms: number): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    setHeld(false);
+    if (!on) return;
+    const t = setTimeout(() => setHeld(true), ms);
+    return () => clearTimeout(t);
+  }, [on, ms]);
+  return on && held;
+}
+
 export function Composer({ conversation }: { conversation: Conversation | null }) {
   const { send, answer, interrupt, setMode, commands, summary, models, doneEditing, say } = useStore();
   const { attached, attaching, attachFiles, unattach } = useStore();
@@ -105,6 +118,7 @@ export function Composer({ conversation }: { conversation: Conversation | null }
   const question = conversation?.question ?? null;
   const secret = question?.field.kind === "secret";
   const working = conversation?.state === "working" && !question && !editing;
+  const thinking = useHeld(working, 400);
   // Esc stops the Lead's reply in an ordinary chat (and a live job it is following), never an
   // interview: set-up, a new crew member or a brief end only when you say so (/quit, /chat).
   const canStop = working && conversation?.kind === "chat" && (conversation?.mode ?? "Chat") === "Chat";
@@ -249,13 +263,13 @@ export function Composer({ conversation }: { conversation: Conversation | null }
     <div className="foot">
       <div className="column">
         <div className="thinking" aria-live="polite">
-          {working ? (
+          {thinking ? (
             <span className="working-pill">
               <ThinkingAvatar title={title} /> Thinking
               {canStop && <span className="esc">Esc stops this reply; jobs in the background carry on</span>}
             </span>
           ) : (
-            jobOn && (
+            jobOn && !working && (
               <span className="working-pill">
                 <ThinkingAvatar title={title} background /> Working in the background
               </span>
