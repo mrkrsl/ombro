@@ -198,6 +198,7 @@ export interface ChatRow {
   jobs: string[];
   name: string;
   path: string;
+  pinned: boolean;
   title: string;
   updated_at: string;
   when: string;
@@ -211,6 +212,7 @@ export interface ChatDetail {
   jobs: string[];
   name: string;
   path: string;
+  pinned: boolean;
   title: string;
   turns: ChatTurn[];
   updated_at: string;

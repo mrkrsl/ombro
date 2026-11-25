@@ -593,6 +593,9 @@
         "path": {
           "type": "string"
         },
+        "pinned": {
+          "type": "boolean"
+        },
         "title": {
           "type": "string"
         },
@@ -617,6 +620,7 @@
         "when",
         "id",
         "jobs",
+        "pinned",
         "turns"
       ],
       "title": "ChatDetail",
@@ -700,6 +704,9 @@
         "path": {
           "type": "string"
         },
+        "pinned": {
+          "type": "boolean"
+        },
         "title": {
           "type": "string"
         },
@@ -717,7 +724,8 @@
         "updated_at",
         "when",
         "id",
-        "jobs"
+        "jobs",
+        "pinned"
       ],
       "title": "ChatRow",
       "type": "object"

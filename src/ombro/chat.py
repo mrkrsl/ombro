@@ -136,6 +136,7 @@ FOLDER_TOOLS = {
 }
 EDIT_MAX_CHARS = 2_000  # folders.edit is a correction or a filled-in detail, not new writing
 SKILL_TOOLS = {"skills__read": "skills.read"}
+PIN = "📌 "  # before a pinned chat's title in /chats and `ombro chats`
 # The crew's own tools the Lead uses in chat too, from the registry: the browser and code.run. They work
 # in a folder of the chat's own (Files/chats/<id>/workspace), next to the shared folders.
 NATIVE_TOOLS = {
@@ -164,7 +165,7 @@ It changes a file only after you say yes.
   /live [@crew] <text>      do some work live, here: the crew starts at once and reports in this chat
   /chat                     stop a brief and keep chatting (nothing is written)
   /new                      save this chat and start a fresh one; nothing carries over
-  /chats                    your past chats, newest first; reopen one and carry on
+  /chats                    your past chats, pinned first; reopen one and carry on
   /rename title             give this chat a title of your own
   /remember [@crew] text    add a dated lesson to a crew's notes.md, after you confirm the wording
   /restart <job> [more]     restart a job that ran out of tokens, building on what it did (more: twice the tokens)
@@ -2600,7 +2601,7 @@ class Chat:
         return path
 
     def _pick_chat(self, want: str) -> None:
-        """/chats [part of a title]: past chats, newest first, to reopen one."""
+        """/chats [part of a title]: past chats, pinned ones first (with a pin), then newest first, to reopen one."""
         from ombro import views
 
         past = [c for c in views.chat_list(self.home) if Path(c["path"]) != self.path]
@@ -2613,13 +2614,16 @@ class Chat:
         pick = self.ui.ask(
             Field(
                 "chat",
-                "Which chat would you like to carry on? (newest first)",
+                "Which chat would you like to carry on? (pinned first, then newest)",
                 "choice",
                 default="1",
                 invalid="Please choose one of the numbers shown.",
                 mode="Chat",
                 aside=True,
-                options=[Option(str(i), f"{c['title']}  ({c['when']})") for i, c in enumerate(shown, 1)],
+                options=[
+                    Option(str(i), f"{PIN if c.get('pinned') else ''}{c['title']}  ({c['when']})")
+                    for i, c in enumerate(shown, 1)
+                ],
             )
         )
         self.reopen(Path(shown[int(pick) - 1]["path"]))

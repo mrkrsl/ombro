@@ -126,6 +126,8 @@ type Actions = {
   openChat: (name: string) => Promise<void>;
   /** Delete a chat from the list: the server moves it to the chats folder's Archive/, unchanged. */
   deleteChat: (name: string) => Promise<void>;
+  /** Pin a chat to the top of the list, or unpin it. */
+  pinChat: (name: string, pinned: boolean) => Promise<void>;
   setMode: (mode: "Chat" | "Brief") => Promise<void>;
   toggleSidebar: () => void;
   toggleInspector: () => void;
@@ -898,6 +900,23 @@ export const useStore = create<State & Actions>((set, get) => {
           get().say("");
           set({ screen: "home", current: null, chatOn: null, report: null, opener: null });
         }
+      } catch (e) {
+        void api.get<ChatRow[]>("/chats").then((chats) => set({ chats }), () => undefined);
+        get().say(e instanceof Error ? e.message : String(e), "error");
+      }
+    },
+
+    async pinChat(name, pinned) {
+      const { api } = get();
+      if (!api) return;
+      // At once, pinned ones first; the server's list replaces it when it answers.
+      set((s) => {
+        const chats = s.chats.map((c) => (c.name === name ? { ...c, pinned } : c));
+        return { chats: [...chats.filter((c) => c.pinned), ...chats.filter((c) => !c.pinned)] };
+      });
+      try {
+        const r = await api.put<{ chats: ChatRow[] }>(`/chats/${encodeURIComponent(name)}/pin`, { pinned });
+        set({ chats: r.chats });
       } catch (e) {
         void api.get<ChatRow[]>("/chats").then((chats) => set({ chats }), () => undefined);
         get().say(e instanceof Error ? e.message : String(e), "error");

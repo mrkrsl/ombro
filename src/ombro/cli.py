@@ -890,6 +890,7 @@ def cmd_chat(args) -> int:
 
         want = args.resume.strip().lower()
         past = [c for c in views.chat_list(home) if not want or want in c["title"].lower() or want in c["name"]]
+        past.sort(key=lambda c: (c["updated_at"], c["name"]), reverse=True)  # the newest, pinned or not
         if not past:
             raise CliError(f"No saved chat matches {args.resume!r}. `ombro chats` lists them.")
         chat.reopen(Path(past[0]["path"]))
@@ -907,8 +908,10 @@ def cmd_chats(args) -> int:
     if not rows:
         print("No saved chats yet.")
         return 0
+    from ombro.chat import PIN
+
     for c in rows[:40]:
-        print(f"{c['when']:<16} {c['title']}")
+        print(f"{c['when']:<16} {PIN if c['pinned'] else ''}{c['title']}")
     print("\nCarry one on with `ombro chat --resume <part of its title>`.")
     return 0
 
@@ -1507,7 +1510,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(func=cmd_chat)
 
-    s = sub.add_parser("chats", help="saved chats by title, most recent first")
+    s = sub.add_parser("chats", help="saved chats by title, pinned first, then most recent first")
     s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
     s.set_defaults(func=cmd_chats)
 
@@ -1689,10 +1692,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_approvals)
 
     s = sub.add_parser(
-        "skills", help="the skills library: list, show <name>, edit <name>, give <skill> <crew/role>, add <folder or .zip/.skill>"
+        "skills",
+        help="the skills library: list, show <name>, edit <name>, give <skill> <crew/role>, add <folder or .zip/.skill>",
     )
     s.add_argument("action", nargs="?", choices=["list", "show", "edit", "give", "add"], help="default: list")
-    s.add_argument("name", nargs="?", help="a skill's name; for add, the folder of a skill to import, or its .zip or .skill")
+    s.add_argument(
+        "name", nargs="?", help="a skill's name; for add, the folder of a skill to import, or its .zip or .skill"
+    )
     s.add_argument(
         "--yes", action="store_true", help="for add: do not ask (an interface that has shown it passes this)"
     )

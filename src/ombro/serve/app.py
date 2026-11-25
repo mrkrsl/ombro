@@ -593,6 +593,10 @@ def _action_routes(s: Serve) -> list[Route]:
         moved = views.archive_chat(home, name)
         return {"moved_to": str(moved), "chats": views.chat_list(home)}
 
+    def pin_chat(r: Request, data: dict[str, Any]) -> Any:
+        """Pin a chat to the top of the list ({pinned: true}) or unpin it. Returns the list."""
+        return {"chats": views.pin_chat(home, r.path_params["name"], data.get("pinned") is True)}
+
     def add_crew(r: Request, data: dict[str, Any]) -> Any:
         from ombro.home import ensure_crew
         from ombro.roles import NAME
@@ -723,6 +727,7 @@ def _action_routes(s: Serve) -> list[Route]:
         Route("/schedules/{name}/enable", _handler(schedule(True), after=after), methods=["POST"]),
         Route("/schedules/{name}/disable", _handler(schedule(False), after=after), methods=["POST"]),
         Route("/chats/{name}/archive", _handler(archive_chat), methods=["POST"]),
+        Route("/chats/{name}/pin", _handler(pin_chat, with_body=True), methods=["PUT"]),
         Route("/crews", _handler(add_crew, status=201, with_body=True, after=after), methods=["POST"]),
         Route("/crews/{name}", _handler(retitle_crew, with_body=True), methods=["PUT"]),
         Route("/preferences", _handler(preferences, with_body=True), methods=["PUT"]),

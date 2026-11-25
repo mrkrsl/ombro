@@ -1,11 +1,11 @@
 // The sidebar: the wordmark, New, the chats, then Jobs, Approvals, Scheduled and Settings.
 
-import { BriefcaseBusiness, CalendarClock, Check, CircleDashed, PanelLeft, Plus, Settings, X } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, Check, CircleDashed, PanelLeft, Pin, PinOff, Plus, Settings, X } from "lucide-react";
 import { useStore } from "../store/store";
 import { Logo } from "./Logo";
 
 export function Sidebar() {
-  const { chats, counts, summary, screen, chatOn, current, goHome, openChat, deleteChat, show, toggleSidebar, resumeSetup, running } =
+  const { chats, counts, summary, screen, chatOn, current, goHome, openChat, deleteChat, pinChat, show, toggleSidebar, resumeSetup, running } =
     useStore();
   // Set-up in progress, to come back to from a page (not while its welcome waits on the home screen).
   const setup = useStore((s) =>
@@ -39,7 +39,7 @@ export function Sidebar() {
           </li>
         )}
         {chats.map((chat) => (
-          <li key={chat.name} className="chat-row">
+          <li key={chat.name} className={chat.pinned ? "chat-row pinned" : "chat-row"}>
             <button
               className="chat-link"
               title={`${chat.title} (${chat.when})`}
@@ -49,10 +49,19 @@ export function Sidebar() {
               {chat.jobs.some((id) => running.includes(id)) && (
                 <CircleDashed className="working" size={15} aria-label="A job from this chat is running" />
               )}
+              {chat.pinned && <Pin className="pin-mark" size={13} aria-label="Pinned" />}
               {chat.title}
             </button>
             {/* Shown on hover only, so the title reads in full until then. No confirmation: the chat
                 moves to the chats folder's Archive/, kept as it was. */}
+            <button
+              className="icon-button chat-pin"
+              aria-label={chat.pinned ? "Unpin this chat" : "Pin this chat"}
+              title={chat.pinned ? "Unpin this chat" : "Pin this chat to the top"}
+              onClick={() => void pinChat(chat.name, !chat.pinned)}
+            >
+              {chat.pinned ? <PinOff size={15} /> : <Pin size={15} />}
+            </button>
             <button
               className="icon-button chat-delete"
               aria-label="Delete this chat"

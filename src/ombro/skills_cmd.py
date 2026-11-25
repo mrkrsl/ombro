@@ -197,7 +197,9 @@ def describe_import(imp: skills.Import) -> list[str]:
 def _add(home: Home, args) -> int:
 
     if not args.name:
-        raise skills.SkillError("give the skill's folder or its .zip or .skill, e.g. `ombro skills add ~/Downloads/kettle-survey`")
+        raise skills.SkillError(
+            "give the skill's folder or its .zip or .skill, e.g. `ombro skills add ~/Downloads/kettle-survey`"
+        )
     src = Path(args.name).expanduser()
     if src.suffix.lower() in (".zip", ".skill") and src.is_file():  # unpacked to a folder of its own first
         folder, files, skipped = from_archive(src.read_bytes(), src.name)
