@@ -166,19 +166,11 @@
   background: var(--sidebar, var(--bg));
 }
 
-/* A chat with a job running: the dotted ring before its title. */
-.chat-link .working {
+/* A chat with a job running: a small faceless avatar before its title, cycling its effects
+   (still, for anyone who asks for less motion). */
+.chat-link .job-avatar {
   vertical-align: -3px;
   margin-right: 9px;
-  color: var(--muted);
-  animation: spin 3s linear infinite;
-}
-
-/* The dotted ring turns slowly while a job runs; still for anyone who asks for less motion. */
-@media (prefers-reduced-motion: reduce) {
-  .chat-link .working {
-    animation: none;
-  }
 }
 
 .sidebar-foot .nav + .nav {
@@ -258,13 +250,43 @@
   padding: 28px 0 24px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 30px;
 }
 
 .line {
   font-size: 16px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/* The Lead's turns: its avatar in a gutter on the left, its words beside it. Its further lines in
+   the same turn line up with the words. */
+.lines {
+  --gutter: 45px; /* the 28px avatar and its shadow (33px), and 12px */
+}
+
+.turn {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+/* Raised a little, so the first line of words sits level with the middle of the face. */
+.reply-avatar {
+  display: block;
+  flex: none;
+  margin-top: -3px;
+}
+
+.turn > :last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.lines > .line.lead,
+.lines > .line-with-items,
+.lines > .again {
+  margin-left: var(--gutter);
 }
 
 .line.lead > :first-child {
@@ -480,9 +502,19 @@ a:visited {
   gap: 10px;
   color: var(--muted);
   font-size: 14px;
-  height: 28px;
-  padding-left: 0; /* the spinner lines up with the input box's left edge */
+  height: 44px; /* a 24px avatar with its shadow, and air above and below */
+  padding-left: 0; /* the avatar lines up with the input box's left edge */
   margin-bottom: 4px; /* a little air between it and the input */
+}
+
+/* Set apart from the chat: a pill as long as what it says, its left edge on the input box's. */
+.working-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 18px; /* as much as the curve at each end (36px high), clear of it */
+  border-radius: 18px;
+  background: var(--working-bg);
 }
 
 .thinking .esc {
@@ -502,15 +534,6 @@ a:visited {
   gap: 6px;
 }
 
-.thinking svg {
-  animation: spin 2.4s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 .quick {
   display: flex;
@@ -881,11 +904,11 @@ a:visited {
   padding: 40px 32px 92px;
 }
 
-/* The wordmark sits level with "Working with …": its middle on that line's middle. */
+/* The avatar sits level with "Working with …": its middle on that line's middle. */
 .home-grid {
   display: grid;
   grid-template-columns: auto auto;
-  column-gap: clamp(40px, 8vw, 120px);
+  column-gap: clamp(40px, 6vw, 96px);
   align-items: center;
 }
 
@@ -893,6 +916,11 @@ a:visited {
   grid-column: 1;
   grid-row: 1;
   margin: -40px 0; /* taller than the line: let it overhang rather than push the facts down */
+}
+
+/* Its panel's middle (not its shadow's) on the line's: the shadow hangs 15% below, so down 7.5%. */
+.home-avatar {
+  transform: translateY(13px);
 }
 
 .home .who {

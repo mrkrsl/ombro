@@ -1,4 +1,4 @@
-// The sidebar: a chat with a job running shows the dotted ring; the others show none.
+// The sidebar: a chat with a job running shows the small job avatar; the others show none.
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatRow } from "../api/types";

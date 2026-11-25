@@ -12,7 +12,8 @@ import type {
 } from "../api/types";
 
 export type Line =
-  | { key: string; kind: "lead"; text: string; items?: string[] }
+  // past: from a reopened chat's record, so its avatar shows still, never animating.
+  | { key: string; kind: "lead"; text: string; items?: string[]; past?: boolean }
   | { key: string; kind: "you"; text: string }
   | { key: string; kind: "note"; text: string; items: string[]; level: string }
   | { key: string; kind: "progress"; text: string }
@@ -97,7 +98,7 @@ function eventLines(e: CoreEvent, key: string): Line[] {
     case "lead":
       return [{ key, kind: "lead", text: e.text }];
     case "past":
-      return [{ key, kind: e.who === "you" ? "you" : "lead", text: e.text }];
+      return [e.who === "you" ? { key, kind: "you", text: e.text } : { key, kind: "lead", text: e.text, past: true }];
     case "note":
       if (!e.text && !(e.items ?? []).length) return [];
       // Set-up's own lines are written in the Lead's voice, with what they list beneath (such as

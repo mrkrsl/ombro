@@ -42,7 +42,7 @@ export function Conversation({ conversation }: { conversation: C }) {
   return (
     <div className="page" ref={page}>
       <div className="column">
-        <Lines lines={conversation.lines} />
+        <Lines lines={conversation.lines} chat={conversation.id} busy={conversation.state === "working"} />
         <div ref={end} />
       </div>
     </div>
