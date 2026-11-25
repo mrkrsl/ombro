@@ -1689,10 +1689,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_approvals)
 
     s = sub.add_parser(
-        "skills", help="the skills library: list, show <name>, edit <name>, give <skill> <crew/role>, add <folder>"
+        "skills", help="the skills library: list, show <name>, edit <name>, give <skill> <crew/role>, add <folder or .zip/.skill>"
     )
     s.add_argument("action", nargs="?", choices=["list", "show", "edit", "give", "add"], help="default: list")
-    s.add_argument("name", nargs="?", help="a skill's name; for add, the folder of a skill to import")
+    s.add_argument("name", nargs="?", help="a skill's name; for add, the folder of a skill to import, or its .zip or .skill")
     s.add_argument(
         "--yes", action="store_true", help="for add: do not ask (an interface that has shown it passes this)"
     )

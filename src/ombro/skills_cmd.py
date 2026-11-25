@@ -195,19 +195,31 @@ def describe_import(imp: skills.Import) -> list[str]:
 
 
 def _add(home: Home, args) -> int:
-    from datetime import date
 
     if not args.name:
-        raise skills.SkillError("give the skill's folder, e.g. `ombro skills add ~/Downloads/kettle-survey`")
-    imp = skills.inspect_import(home, args.name)
+        raise skills.SkillError("give the skill's folder or its .zip or .skill, e.g. `ombro skills add ~/Downloads/kettle-survey`")
+    src = Path(args.name).expanduser()
+    if src.suffix.lower() in (".zip", ".skill") and src.is_file():  # unpacked to a folder of its own first
+        folder, files, skipped = from_archive(src.read_bytes(), src.name)
+        with uploaded(folder, files) as root:
+            imp = skills.inspect_import(home, root)
+            return _confirm_add(home, imp, args, skipped=skipped, label=str(src))
+    return _confirm_add(home, skills.inspect_import(home, args.name), args)
+
+
+def _confirm_add(home: Home, imp: skills.Import, args, skipped: list[str] = (), label: str | None = None) -> int:
+    from datetime import date
+
     print("\n".join(describe_import(imp)))
+    if skipped:
+        print(f"Not taken from the file (not text, or too big): {', '.join(skipped)}")
     print()
     if not args.yes and not _cli()._confirm(
         "Add it to your library? Roles that use it will follow it as your own instructions."
     ):
         print("Nothing was added.")
         return 1
-    kept = skills.add(home, imp, date.today().isoformat())
+    kept = skills.add(home, imp, date.today().isoformat(), label=label)
     print(
         f"Added {imp.name} to {home.skills_dir / imp.name}." + (f" The old version is kept in {kept}." if kept else "")
     )
@@ -259,6 +271,53 @@ def uploaded(folder: str, files: dict[str, str]) -> Iterator[Path]:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(str(text), encoding="utf-8")
         yield root
+
+
+ARCHIVE_MAX_BYTES = 10 * 1024 * 1024  # a .zip or .skill as sent
+REFERENCE_MAX = 2 * 1024 * 1024  # one file in it; skills.REFERENCE_MAX_BYTES then holds references to less
+
+
+def from_archive(data: bytes, filename: str = "") -> tuple[str, dict[str, str], list[str]]:
+    """A skill sent as a .zip or .skill (a zip): its folder's name, its text files by path in the
+    folder, and the files not taken (not text, or too many or too big). A zip holding one folder
+    is that folder. Nothing is written: the files go to `uploaded`, which checks each path."""
+    import io
+    import zipfile
+
+    if len(data) > ARCHIVE_MAX_BYTES:
+        raise skills.SkillError("that file is too big to be a skill; a skill is a SKILL.md and a few references")
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+        names = [i for i in z.infolist() if not i.is_dir()]
+    except (zipfile.BadZipFile, ValueError):
+        raise skills.SkillError("that file isn't a skill: it isn't a zip, or it is damaged") from None
+    names = [i for i in names if not any(x.startswith(".") or x == "__MACOSX" for x in i.filename.split("/"))]
+    tops = {i.filename.split("/")[0] for i in names}
+    one = next(iter(tops)) if len(tops) == 1 and all("/" in i.filename for i in names) else None
+    folder = one or PurePosixPath(filename).stem or "skill"
+    files: dict[str, str] = {}
+    skipped: list[str] = []
+    total = 0
+    for i in names:
+        rel = i.filename[len(one) + 1 :] if one else i.filename
+        if len(files) >= UPLOAD_MAX_FILES or i.file_size > REFERENCE_MAX or total + i.file_size > UPLOAD_MAX_CHARS:
+            skipped.append(rel)
+            continue
+        try:
+            with z.open(i) as f:
+                raw = f.read(REFERENCE_MAX + 1)  # never more than it says, whatever it says
+            text = raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError, zipfile.BadZipFile, RuntimeError):
+            skipped.append(rel)
+            continue
+        if len(raw) > REFERENCE_MAX:
+            skipped.append(rel)
+            continue
+        files[rel] = text
+        total += len(raw)
+    if not any(PurePosixPath(k).name.lower() == "skill.md" for k in files):
+        raise skills.SkillError("there's no SKILL.md in that file")
+    return folder, files, sorted(skipped)
 
 
 def import_view(imp: skills.Import, skipped: list[str] | None = None) -> dict[str, Any]:

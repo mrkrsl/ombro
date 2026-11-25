@@ -74,6 +74,60 @@ def test_a_folder_sent_can_only_hold_files_inside_it_and_needs_a_skill_md(serve,
     assert r.status_code == 400, r.text
 
 
+def _zip(entries: dict[str, bytes | str]) -> str:
+    import base64
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, data in entries.items():
+            z.writestr(name, data)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def test_a_skill_sent_as_a_zip_or_skill_file_is_checked_then_added(serve, home):
+    archive = _zip(
+        {
+            "kettle-survey/SKILL.md": SKILL,
+            "kettle-survey/references/models.md": "Invented kettle models.",
+            "kettle-survey/references/photo.png": b"\x89PNG\x00\xff",
+            "__MACOSX/kettle-survey/._SKILL.md": b"\x00",
+        }
+    )
+    body = {"archive": archive, "path": "kettle-survey.skill"}
+    seen = serve.post("/skills/import", body)
+    assert seen["name"] == "kettle-survey" and seen["references"] == ["references/models.md"]
+    assert seen["skipped"] == ["references/photo.png"]
+    assert skills.load(home, "kettle-survey") is None
+    added = serve.post("/skills/import", {**body, "add": True})
+    assert added["added"] == "kettle-survey"
+    assert skills.load(home, "kettle-survey").source == "imported from kettle-survey.skill"
+
+
+def test_the_terminal_adds_a_skill_file_too(home, tmp_path, capsys):
+    import base64
+
+    f = tmp_path / "kettle-survey.skill"
+    f.write_bytes(base64.b64decode(_zip({"kettle-survey/SKILL.md": SKILL})))
+    assert cli.main(["skills", "add", str(f), "--yes"]) == 0
+    assert skills.load(home, "kettle-survey").source == f"imported from {f}"
+
+
+def test_a_pasted_skill_md_is_a_folder_of_one_file(serve, home):
+    seen = serve.post("/skills/import", {"folder": "pasted", "path": "pasted text", "files": {"SKILL.md": SKILL}})
+    assert seen["name"] == "kettle-survey"
+
+
+@pytest.mark.parametrize(
+    "archive",
+    [_zip({"notes.md": "x"}), _zip({"../SKILL.md": SKILL}), "bm90IGEgemlw", "not base64!"],
+)
+def test_an_archive_needs_a_skill_md_inside_it(serve, home, archive):
+    r = serve.http.post("/skills/import", json={"archive": archive, "path": "x.zip"})
+    assert r.status_code == 400, r.text
+
+
 def test_the_terminal_says_which_roles_dont_get_an_added_skill(home, tmp_path, capsys):
     folder = tmp_path / "kettle-survey"
     folder.mkdir()
