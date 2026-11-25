@@ -187,6 +187,14 @@ export async function appVersion(): Promise<string> {
 /** A skill folder chosen with the system's picker, read on this computer (app only): its SKILL.md
  * and references, to send to serve, which may run elsewhere. null when the picker was closed. */
 export type SkillFolder = { folder: string; path: string; files: Record<string, string>; skipped: string[] };
+/** A browser program on this computer, for Settings › General › Browser › Other…: its path, or null. */
+export async function chooseBrowser(): Promise<string | null> {
+  if (!inTauri) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const picked = await open({ directory: false, multiple: false, title: "Choose a Chromium-family browser" });
+  return typeof picked === "string" ? picked : null;
+}
+
 export async function readSkillFolder(): Promise<SkillFolder | null> {
   if (!inTauri) throw new Error("Adding a skill from a folder works in the desktop app.");
   const { open } = await import("@tauri-apps/plugin-dialog");

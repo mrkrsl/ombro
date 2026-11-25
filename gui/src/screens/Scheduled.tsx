@@ -27,7 +27,7 @@ export function cronFor(often: Often, time: string, day: number, cron: string): 
 }
 
 function When({ onSave, onCancel, saveLabel }: { onSave: (cron: string) => void; onCancel: () => void; saveLabel: string }) {
-  const [often, setOften] = useState<Often>("weekdays");
+  const [often, setOften] = useState<Often>("daily");
   const [time, setTime] = useState("06:00");
   const [day, setDay] = useState(1);
   const [cron, setCron] = useState("");

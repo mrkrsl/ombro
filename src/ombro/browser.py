@@ -1,6 +1,7 @@
 """A headless browser for roles: pages that need JavaScript, and simple interaction.
 
-Ombro drives a Chrome, Chromium, Edge or Brave already on the machine, headless, over the
+Ombro drives a Chromium-family browser already on the machine (Chrome, Chromium, Edge, Brave,
+Vivaldi, Helium, or another chosen in Settings › General), headless, over the
 Chrome DevTools Protocol (CDP). Nothing is bundled. Locally the browser is started with a
 pipe (`--remote-debugging-pipe`), so it ends when Ombro does, even if the job is killed; a
 browser elsewhere (a container next to Ombro's) is reached by its address over a websocket.
@@ -14,7 +15,14 @@ What a role can do, and what keeps it safe from untrusted pages:
   dialogs are dismissed. Chrome never looks a name up itself: every connection goes through
   Ombro's own proxy (ombro.proxy), which resolves the name once, checks the address and
   connects to that address, so a name that changes its answer (DNS rebinding) gets nowhere.
-  Service workers can't be registered.
+  Service workers may be registered (a browser without them stands out), but the page's own
+  requests never go to one, so each passes the page's checks; a worker's own requests pass the proxy.
+- An ordinary browser to the sites it visits. Headless Chrome names itself "HeadlessChrome" and
+  says it is automated (navigator.webdriver), which sites use to turn it away. Ombro reads what
+  the browser really is once (its version, platform and client hints) and has every page, frame
+  and worker give that without "Headless", with navigator.webdriver false and a screen larger
+  than the window, as a person's would be. The rest (graphics, fonts, languages) is the real
+  browser's own. It is your software reading pages you asked for; it doesn't solve CAPTCHAs.
 - No data carried out in addresses. An address the role opens may carry no more after its '?'
   than web.fetch allows (fetch_max_query), and text typed into a field is held to the same cap.
   Once the job has read private material (shared folders, memory, anything through an MCP,
@@ -61,12 +69,19 @@ CANDIDATES = (
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+    "/Applications/Helium.app/Contents/MacOS/Helium",
     "google-chrome",
     "google-chrome-stable",
     "chromium",
     "chromium-browser",
     "microsoft-edge",
     "brave-browser",
+    "brave-browser-stable",
+    "vivaldi",
+    "vivaldi-stable",
+    "helium",
+    "helium-browser",
     "chrome-headless-shell",
     "headless_shell",
 )
@@ -87,7 +102,14 @@ FLAGS = (
     "--use-mock-keychain",
     "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
     "--remote-allow-origins=",
+    "--disable-blink-features=AutomationControlled",  # navigator.webdriver is false, as in a person's browser
 )
+# The screen a page sees: larger than the window, as on a laptop (headless reports 800x600, smaller
+# than its own window, which no person's screen is).
+SCREEN = (1512, 982)
+# A page on this address is answered by Ombro itself, never fetched: a secure page on which the
+# browser's real client hints can be read before anything is overridden.
+PROBE_URL = "https://ombro-probe.invalid/"
 START_TIMEOUT = 20.0
 LOAD_TIMEOUT = 20.0  # seconds a page may take to load before what's there is read
 SETTLE = 0.6  # after load, for scripts that fill the page
@@ -192,6 +214,45 @@ def installed() -> list[dict[str, str]]:
     return out
 
 
+def program(path: str) -> str:
+    """The program to start for a path someone typed or chose: ~ expanded, and a macOS app
+    (/Applications/Helium.app) taken to the program inside it (…/Contents/MacOS/Helium)."""
+    p = Path(os.path.expanduser(str(path).strip()))
+    if p.suffix == ".app" and p.is_dir():
+        exe = p.stem
+        try:
+            import plistlib
+
+            with open(p / "Contents" / "Info.plist", "rb") as f:
+                exe = str(plistlib.load(f).get("CFBundleExecutable") or exe)
+        except (OSError, ValueError):
+            pass
+        p = p / "Contents" / "MacOS" / exe
+    return str(p)
+
+
+def check_other(path: str, timeout: float = START_TIMEOUT) -> str:
+    """A browser not in the list, chosen in Settings › General ("Other…"): its program, once it
+    has been started headless and answered as a Chromium-family browser does. Raises BrowserError
+    in words when it isn't one Ombro can drive (Firefox and Safari can't be: they don't speak CDP)."""
+    found = program(path)
+    if not os.path.isabs(found):
+        raise BrowserError(f"{path!r} isn't a full path; give one like /Applications/Helium.app")
+    if not (os.path.isfile(found) and os.access(found, os.X_OK)):
+        raise BrowserError(f"there's no program at {found}")
+    b = Browser({"path": found})
+    try:
+        version = b._start(timeout).send("Browser.getVersion", timeout=timeout)
+    except BrowserError as e:
+        raise BrowserError(
+            f"{_name(found)} didn't start as a headless Chromium browser ({e}). Ombro can drive Chrome, "
+            "Chromium, Edge, Brave, Vivaldi, Helium and others built on Chromium, but not Firefox or Safari."
+        ) from None
+    finally:
+        b.close()
+    return f"{_name(found)} ({version.get('product', 'Chromium')})"
+
+
 def _name(path: str) -> str:
     """ "Google Chrome" for /Applications/Google Chrome.app/..., "chromium" for /usr/bin/chromium."""
     m = re.search(r"/([^/]+)\.app/", path)
@@ -237,7 +298,7 @@ def describe(settings: dict[str, Any] | None = None) -> str:
         return f"no browser answers at {found['endpoint']}"
     if not found:
         return (
-            "no browser found: install Chrome, Chromium, Edge or Brave, or set providers: browser: path: in "
+            "no browser found: install Chrome, Chromium, Edge, Brave, Vivaldi or Helium, or set providers: browser: path: in "
             "tools.md (or endpoint: for one elsewhere)"
         )
     return f"headless, at {found['endpoint']}" if "endpoint" in found else f"headless {_name(found['path'])}"
@@ -462,6 +523,8 @@ class Browser:
         self.profile: str | None = None
         self.context: str | None = None
         self.pages: dict[str, Page] = {}
+        self.version: dict[str, Any] = {}  # Browser.getVersion
+        self.identity: dict[str, Any] = {}  # Network.setUserAgentOverride's params: see _identity
         self._start_lock = threading.Lock()
 
     def _start(self, timeout: float) -> Cdp:
@@ -471,7 +534,7 @@ class Browser:
             found = find_browser(self.settings)
             if not found:
                 raise BrowserUnavailable(
-                    "no browser is installed for Ombro to use (Chrome, Chromium, Edge or Brave)."
+                    "no browser is installed for Ombro to use (Chrome, Chromium, Edge, Brave, Vivaldi or Helium)."
                     " Use web.fetch instead, and say in did_not_do that a browser was needed."
                 )
             from ombro.proxy import Proxy
@@ -503,7 +566,7 @@ class Browser:
             self.cdp = Cdp(transport)
             _open.add(self)
             try:
-                self.cdp.send("Browser.getVersion", timeout=min(timeout, START_TIMEOUT))
+                self.version = self.cdp.send("Browser.getVersion", timeout=min(timeout, START_TIMEOUT))
                 # A context of its own, like a private window: nothing shared with other jobs on the same browser.
                 # Everything it fetches goes through the proxy, which looks each name up once and connects to
                 # the address it checked: Chrome never resolves a name itself.
@@ -516,6 +579,7 @@ class Browser:
                     },
                 )["browserContextId"]
                 self.cdp.send("Browser.setDownloadBehavior", {"behavior": "deny", "browserContextId": self.context})
+                self.identity = _identity(self.cdp, self.context, self.version, min(timeout, START_TIMEOUT))
             except BrowserError as e:
                 self.close()
                 raise BrowserUnavailable(f"the browser started but did not answer: {e}") from None
@@ -560,17 +624,6 @@ class Browser:
             self.profile = None
 
 
-# Run before any of a page's own scripts, in every frame: service workers can't be registered.
-NO_WORKERS_JS = """(() => {
-  try {
-    const sw = navigator.serviceWorker;
-    if (sw) {
-      const no = () => Promise.reject(new DOMException('Service workers are turned off here', 'SecurityError'));
-      Object.defineProperty(sw, 'register', {value: no, configurable: false, writable: false});
-    }
-  } catch (e) {}
-})();"""
-
 PRIVATE_WS = [
     "ws://localhost*",
     "wss://localhost*",
@@ -590,6 +643,86 @@ PRIVATE_WS = [
 ]
 
 
+def _identity(cdp: Cdp, context: str, version: dict[str, Any], timeout: float) -> dict[str, Any]:
+    """What the browser says it is, as a person's copy of it would: its user agent without
+    "Headless", and its own client hints (brands, full versions, platform and its version,
+    architecture), read once from a page Ombro answers itself before anything is overridden.
+    Overriding the user agent alone would empty the hints, which gives a browser away as surely.
+    {} when they can't be read (a page then shows the browser as it is)."""
+    ua = str(version.get("userAgent") or "")
+    if "HeadlessChrome/" not in ua:
+        return {}
+    target = cdp.send("Target.createTarget", {"url": "about:blank", "browserContextId": context})["targetId"]
+    try:
+        s = cdp.send("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
+
+        def answer(method: str, params: dict) -> None:
+            if method != "Fetch.requestPaused":
+                return
+            if params.get("request", {}).get("url") == PROBE_URL:
+                body = base64.b64encode(b"<!doctype html><title></title>").decode()
+                cdp.send(
+                    "Fetch.fulfillRequest",
+                    {
+                        "requestId": params["requestId"],
+                        "responseCode": 200,
+                        "body": body,
+                        "responseHeaders": [{"name": "Content-Type", "value": "text/html"}],
+                    },
+                    s,
+                    wait=False,
+                )
+            else:  # nothing else is fetched from here
+                cdp.send(
+                    "Fetch.failRequest",
+                    {"requestId": params["requestId"], "errorReason": "BlockedByClient"},
+                    s,
+                    wait=False,
+                )
+
+        cdp.on(s, answer)
+        cdp.send("Fetch.enable", {"patterns": [{"urlPattern": "*"}]}, s)
+        cdp.send("Page.navigate", {"url": PROBE_URL}, s, timeout=timeout)
+        hints = (
+            cdp.send(
+                "Runtime.evaluate",
+                {
+                    "expression": "navigator.userAgentData.getHighEntropyValues(['architecture','bitness','model',"
+                    "'platformVersion','fullVersionList','wow64','formFactors'])",
+                    "returnByValue": True,
+                    "awaitPromise": True,
+                },
+                s,
+                timeout=timeout,
+            )
+            .get("result", {})
+            .get("value")
+            or {}
+        )
+    except BrowserError:
+        hints = {}
+    finally:
+        try:
+            cdp.send("Target.closeTarget", {"targetId": target}, timeout=5)
+        except BrowserError:
+            pass
+    out: dict[str, Any] = {"userAgent": ua.replace("HeadlessChrome/", "Chrome/")}
+    if hints.get("brands") and hints.get("platform"):
+        out["userAgentMetadata"] = {
+            "brands": hints["brands"],
+            "fullVersionList": hints.get("fullVersionList") or [],
+            "platform": hints["platform"],
+            "platformVersion": hints.get("platformVersion", ""),
+            "architecture": hints.get("architecture", ""),
+            "model": hints.get("model", ""),
+            "mobile": bool(hints.get("mobile")),
+            "bitness": hints.get("bitness", ""),
+            "wow64": bool(hints.get("wow64")),
+            "formFactors": hints.get("formFactors") or [],
+        }
+    return out
+
+
 class Page:
     def __init__(self, browser: Browser, cdp: Cdp):
         self.browser, self.cdp = browser, cdp
@@ -603,22 +736,40 @@ class Page:
             "targetId"
         ]
         self.session = cdp.send("Target.attachToTarget", {"targetId": self.target, "flatten": True})["sessionId"]
+        self._children: set[str] = set()  # sessions of the page's frames and workers in other processes
         cdp.on(self.session, self._event)
         s = self.session
         cdp.send("Fetch.enable", {"patterns": [{"urlPattern": "*"}]}, s)
         cdp.send("Network.enable", {}, s)
         cdp.send("Network.setBlockedURLs", {"urls": PRIVATE_WS}, s)
-        # No service workers: a worker's requests would not pass this page's checks. The proxy still
-        # checks them, but none is registered, and none already there answers for the page.
+        # The page's requests never go to a service worker, so every one passes the checks here. A
+        # worker may still be registered (a browser that can't stands out); its own requests pass the proxy.
         cdp.send("Network.setBypassServiceWorker", {"bypass": True}, s)
+        if browser.identity:
+            cdp.send("Network.setUserAgentOverride", browser.identity, s)
+        cdp.send(
+            "Emulation.setDeviceMetricsOverride",
+            {
+                "width": 0,
+                "height": 0,
+                "deviceScaleFactor": 0,
+                "mobile": False,
+                "screenWidth": SCREEN[0],
+                "screenHeight": SCREEN[1],
+            },
+            s,
+        )
+        # Frames from other sites and workers run in processes of their own: each is held at its
+        # start until it has the same checks and the same identity as the page (see _attached).
+        cdp.send("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True}, s)
         cdp.send("Page.enable", {}, s)
-        cdp.send("Page.addScriptToEvaluateOnNewDocument", {"source": NO_WORKERS_JS}, s)
         cdp.send("Page.setInterceptFileChooserDialog", {"enabled": True}, s)
-        cdp.send("Runtime.enable", {}, s)
+        # No Runtime.enable: Runtime.evaluate works without it, and a page can tell when it is on.
 
     # -- events (on the reader thread) --------------------------------------
 
-    def _event(self, method: str, params: dict) -> None:
+    def _event(self, method: str, params: dict, session: str | None = None) -> None:
+        session = session or self.session
         if method == "Fetch.requestPaused":
             url = params.get("request", {}).get("url", "")
             problem = self._refusal(url)
@@ -627,11 +778,15 @@ class Page:
                 self.cdp.send(
                     "Fetch.failRequest",
                     {"requestId": params["requestId"], "errorReason": "BlockedByClient"},
-                    self.session,
+                    session,
                     wait=False,
                 )
             else:
-                self.cdp.send("Fetch.continueRequest", {"requestId": params["requestId"]}, self.session, wait=False)
+                self.cdp.send("Fetch.continueRequest", {"requestId": params["requestId"]}, session, wait=False)
+        elif method == "Target.attachedToTarget":
+            self._attached(params)
+        elif session != self.session:
+            return  # a frame's or worker's own page events are not the page's
         elif method == "Page.javascriptDialogOpening":
             self.cdp.send("Page.handleJavaScriptDialog", {"accept": False}, self.session, wait=False)
         elif method in ("Page.loadEventFired", "Page.frameStartedLoading", "Page.frameNavigated"):
@@ -641,6 +796,27 @@ class Page:
                 elif method == "Page.frameStartedLoading":
                     self.started += 1
                 self._changed.notify_all()
+
+    def _attached(self, params: dict) -> None:
+        """A frame from another site, or a worker, started in a process of its own and is held there
+        (waitForDebuggerOnStart): give it the page's checks and identity, then let it run. On the
+        reader thread, so nothing here waits for an answer; the browser takes them in order."""
+        child = params.get("sessionId")
+        kind = (params.get("targetInfo") or {}).get("type", "")
+        if not child:
+            return
+        self._children.add(child)
+        self.cdp.on(child, lambda m, p: self._event(m, p, child))
+        send = lambda method, p=None: self.cdp.send(method, p or {}, child, wait=False)  # noqa: E731
+        if kind in ("iframe", "page"):
+            send("Fetch.enable", {"patterns": [{"urlPattern": "*"}]})
+            send("Network.enable")
+            send("Network.setBlockedURLs", {"urls": PRIVATE_WS})
+            send("Network.setBypassServiceWorker", {"bypass": True})
+        if self.browser.identity and kind in ("iframe", "page", "worker", "shared_worker", "service_worker"):
+            send("Network.setUserAgentOverride", self.browser.identity)
+        send("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True})
+        send("Runtime.runIfWaitingForDebugger")
 
     def _refusal(self, url: str) -> str | None:
         from ombro.providers import NotCalled

@@ -494,7 +494,7 @@ def browser_view(home: Home) -> vt.BrowserView:
     elif found:
         using = browser._name(found["path"])
     else:
-        problem = "No browser found. Install Chrome, Chromium, Edge or Brave, and crews and chat can read web pages."
+        problem = "No browser found. Install Chrome, Chromium, Edge, Brave, Vivaldi or Helium, and crews and chat can read web pages."
     return {
         "choice": choice,
         "using": using,
