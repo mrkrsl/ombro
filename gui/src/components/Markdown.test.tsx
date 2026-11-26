@@ -32,3 +32,12 @@ describe("Markdown headings", () => {
     });
   });
 });
+
+describe("a file's settings", () => {
+  it("joins a list or names under a setting onto its line", async () => {
+    const { settingLines } = await import("./Markdown");
+    expect(settingLines("name: a\ncrews:\n- marketing\n- ops\nfolders:\n  shop-files: read")).toEqual([
+      "name: a", "crews: marketing, ops", "folders: shop-files: read",
+    ]);
+  });
+});

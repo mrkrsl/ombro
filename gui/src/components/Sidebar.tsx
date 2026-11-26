@@ -4,9 +4,10 @@ import { BriefcaseBusiness, CalendarClock, Check, PanelLeft, Pin, PinOff, Plus, 
 import { JobAvatar } from "./Avatar";
 import { useStore } from "../store/store";
 import { Logo } from "./Logo";
+import { clampSidebar, SIDEBAR_DEFAULT, Splitter } from "./Splitter";
 
 export function Sidebar() {
-  const { chats, counts, summary, screen, chatOn, current, goHome, openChat, deleteChat, pinChat, show, toggleSidebar, resumeSetup, running } =
+  const { chats, counts, summary, screen, chatOn, current, goHome, openChat, deleteChat, pinChat, show, toggleSidebar, resumeSetup, running, setSizes } =
     useStore();
   // Set-up in progress, to come back to from a page (not while its welcome waits on the home screen).
   const setup = useStore((s) =>
@@ -20,6 +21,13 @@ export function Sidebar() {
     : null);
   return (
     <nav className="sidebar" aria-label="Ombro">
+      <Splitter
+        side="right"
+        label="Resize the sidebar"
+        onDrag={(x) => setSizes({ sidebar: clampSidebar(x) })}
+        onDone={() => setSizes({}, true)}
+        onReset={() => setSizes({ sidebar: SIDEBAR_DEFAULT }, true)}
+      />
       <div className="sidebar-top" data-tauri-drag-region>
         <button className="icon-button" aria-label="Hide the sidebar" onClick={toggleSidebar}>
           <PanelLeft size={22} />

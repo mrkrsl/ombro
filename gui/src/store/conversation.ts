@@ -7,7 +7,6 @@ import type {
   FileView,
   JobOffer,
   QuestionMessage,
-  Report,
   ServerMessage,
 } from "../api/types";
 
@@ -22,8 +21,7 @@ export type Line =
   | { key: string; kind: "job"; text: string; jobId: string; live: boolean }
   | { key: string; kind: "livereport"; jobId: string; live: boolean }
   | { key: string; kind: "page"; screen: string; args: string; text: string }
-  | { key: string; kind: "again"; text: string; offers: JobOffer[] }
-  | { key: string; kind: "report"; report: Report };
+  | { key: string; kind: "again"; text: string; offers: JobOffer[] };
 
 export type Mode = "Chat" | "Brief";
 export type SessionState = "working" | "waiting" | "idle" | "ended";
@@ -51,38 +49,21 @@ export function addLocal(c: Conversation, kind: "you" | "lead", text: string): C
   return { ...c, local, lines: [...c.lines, { key: `local-${local}`, kind, text }] };
 }
 
-/** A job's report, opened in the conversation. */
-export function addReport(c: Conversation, report: Report): Conversation {
-  const local = c.local + 1;
-  return { ...c, local, lines: [...c.lines, { key: `local-${local}`, kind: "report", report }] };
-}
-
-/** A report's two parts: what you read, and Ombro's record of how the job went. */
+/** A handover's two parts: what you read, and the job's details (Ombro's record of how it went). */
 export function splitReport(text: string): { head: string; record: string } {
-  for (const mark of ["\n---\n# Ombro's record", "\n# Ombro's record"]) {
+  for (const mark of ["\n---\n# Job details", "\n# Job details", "\n---\n# Ombro's record", "\n# Ombro's record"]) {
     const i = text.indexOf(mark);
     if (i >= 0) return { head: text.slice(0, i).trimEnd(), record: text.slice(i).replace(/^\n---\n/, "\n").trim() };
   }
   return { head: text.trimEnd(), record: "" };
 }
 
-/** A report's head without one of its "## " sections (the card lists the job's files itself). */
-export function withoutSection(head: string, title: string): string {
-  const out: string[] = [];
-  let skipping = false;
-  for (const line of head.split("\n")) {
-    if (line.startsWith("## ") || line.startsWith("# ")) skipping = line.trim() === `## ${title}`;
-    if (!skipping) out.push(line);
-  }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
-}
-
-/** A report's Summary: the Lead's short paragraph, what the chat shows when a job ends. "" if it has none. */
+/** A handover's Summary: the Lead's short paragraph, what the chat shows when a job is delivered. "" if it has none. */
 export function reportSummary(head: string): string {
   const m = /^## Summary[ \t]*\n([\s\S]*?)(?=^## |^# |(?![\s\S]))/m.exec(head);
   if (!m) return "";
-  // Ombro's note that it wrote the report itself stays in the report, not in the chat's summary.
-  return m[1].split("\n").filter((l) => !l.startsWith("_This report was written by the harness")).join("\n").trim();
+  // Ombro's note that it wrote the handover itself stays in the file, not in the chat's summary.
+  return m[1].split("\n").filter((l) => !/^_This (report|handover) was written by the harness/.test(l)).join("\n").trim();
 }
 
 /** Labels that only say "your turn": the question's prompt isn't shown as a line for them. */
@@ -118,14 +99,19 @@ function eventLines(e: CoreEvent, key: string): Line[] {
     case "job_progress":
       return [{ key, kind: "job", text: e.text, jobId: e.job_id, live: !!e.live }];
     case "job_ended": {
-      // Every job ends the same way: how it went, then its report, here in the chat.
+      // Every job ends the same way: the way to its handover, here in the chat; before it, how it
+      // went, unless it was simply delivered.
       const waiting = e.waiting ? ` ${e.waiting} ${e.waiting === 1 ? "action waits" : "actions wait"} for your approval.` : "";
       // One that didn't finish: the Lead offers to restart or resume it, with a button for each way.
       const again: Line[] = e.offers?.length
         ? [{ key: `${key}-again`, kind: "again", text: e.again_text ?? "", offers: e.offers }]
         : [];
+      const said: Line[] =
+        e.status === "completed" && !waiting
+          ? []
+          : [{ key, kind: "note", text: e.text + waiting, items: [], level: e.status === "completed" ? "done" : "info" }];
       return [
-        { key, kind: "note", text: e.text + waiting, items: [], level: e.status === "completed" ? "done" : "info" },
+        ...said,
         { key: `${key}-report`, kind: "livereport", jobId: e.job_id, live: !!e.live },
         ...again,
       ];

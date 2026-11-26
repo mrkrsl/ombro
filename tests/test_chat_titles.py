@@ -210,3 +210,43 @@ def test_a_reopened_chat_never_shows_its_reopened_notes(home):
     from ombro.chat import parse_entries
 
     assert all(not e.startswith("**") or "_Reopened" not in e for e in parse_entries(body))
+
+
+def test_a_reopened_chat_shows_a_finished_jobs_report_again(home, job):
+    job(
+        [
+            fake.brief("general-assistant", "Count the invented teapots."),
+            fake.result("Seven."),
+            fake.finish(),
+            fake.say("## Summary\nSeven invented teapots."),
+        ]
+    )
+    job_id = job.job_dir.name
+    first = ChatSession(home)
+    first([fake.say("Hi there.")], ["/rename Teapots", "Hello"])
+    first.chat.jobs += [job_id, "invented-gone-1"]
+    first.chat.transcript.ombro(
+        f"Your job has finished. ('Teapots', job {job_id}; its report is jobs/{job_id}/report.md.)"
+    )
+    first.chat.transcript.ombro(
+        "Your job has finished. ('Gone', job invented-gone-1; its report is jobs/invented-gone-1/report.md.)"
+    )
+    first.chat._save()
+
+    again = ChatSession(home)
+    again([], ["/chats", "1"])
+    assert f"Read the handover: ombro handover {job_id}" in again.output  # the job's ending, with its handover
+    assert "Seven invented teapots." in again.output
+    assert "job invented-gone-1" in again.output  # a job that's gone: the note as it was
+    assert "ombro report invented-gone-1" not in again.output
+
+
+def test_a_reopened_chat_shows_a_proposed_brief_formatted():
+    from ombro.chat import past_proposal
+    from ombro.ui import ProposalShown
+
+    text = "Lead proposed:\n\n`specs/teapots.md`\n\n````markdown\nname: teapots\n\n# Teapots\n\nCount them.\n````"
+    shown = past_proposal(text)
+    assert isinstance(shown, ProposalShown)
+    assert shown.files[0].label == "specs/teapots.md" and shown.files[0].text.endswith("Count them.")
+    assert past_proposal("Here's what I understand.") is None

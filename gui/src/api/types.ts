@@ -486,6 +486,7 @@ export interface Preferences {
   instructions_set: boolean;
   name: string;
   notifications: boolean;
+  open_handover: boolean;
   outward: string;
   theme: string;
   thinking: string;

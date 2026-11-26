@@ -487,7 +487,9 @@ def summary_of(report_text: str) -> str:
         return ""
     # Ombro's note that it wrote the report itself stays in the report, not in the chat's summary.
     return "\n".join(
-        ln for ln in m.group(1).strip().splitlines() if not ln.startswith("_This report was written by the harness")
+        ln
+        for ln in m.group(1).strip().splitlines()
+        if not ln.startswith(("_This report was written by the harness", "_This handover was written by the harness"))
     ).strip()
 
 
@@ -548,7 +550,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
         + [parts.get("Summary") or "No summary was written.", ""]
     )
     if not narrative:
-        out += [f"_This report was written by the harness from the journal{': ' + note if note else ''}._", ""]
+        out += [f"_This handover was written by the harness from the journal{': ' + note if note else ''}._", ""]
 
     out += ["## Deliverables", ""]
     if not f["deliverables"] and not f.get("missing_deliverables"):
@@ -578,7 +580,7 @@ def render(facts: dict[str, Any], narrative: str | None, note: str | None = None
     out += [
         "---",
         "",
-        "# Ombro's record",
+        "# Job details",
         "",
         "What follows is Ombro's own record of the job, from its journal, for checking.",
         "",

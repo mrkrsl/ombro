@@ -2488,6 +2488,9 @@
         "notifications": {
           "type": "boolean"
         },
+        "open_handover": {
+          "type": "boolean"
+        },
         "outward": {
           "type": "string"
         },
@@ -2512,6 +2515,7 @@
         "instructions",
         "background_feed",
         "notifications",
+        "open_handover",
         "thinking",
         "thinking_set",
         "files"

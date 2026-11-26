@@ -1,6 +1,6 @@
 // Jobs: each job as a two-line item, as in Settings: its readable name, and under it
-// its status or when it finished (the brief shows on hover). Every job: View brief. Running: Stop.
-// Finished: View report, Files and Clear (an ×). Cleared jobs are only hidden (their folders stay), and
+// its status or when it finished (the brief shows on hover). Finished: View handover, Job details
+// (the brief and Ombro's record), Files and Clear (an ×). Running: Job details and Stop. Cleared jobs are only hidden (their folders stay), and
 // "Show cleared" lists them again, each with Put back.
 
 import { useState } from "react";
@@ -30,7 +30,7 @@ export function isFinished(j: JobRow): boolean {
 }
 
 export function Jobs() {
-  const { jobs, readReport, readBrief, stopJob, clearJobs, restoreJob, openFolder, remote } = useStore();
+  const { jobs, readHandover, readBrief, stopJob, clearJobs, restoreJob, openFolder, remote } = useStore();
   const [showCleared, setShowCleared] = useState(false);
   const shown = jobs.filter((j) => !j.cleared_at);
   const cleared = jobs.filter((j) => j.cleared_at);
@@ -50,16 +50,18 @@ export function Jobs() {
         details={[statusText(j.status, j.active, j.finished_at)]}
         actions={
           <>
+            {!j.active && (
+              <button className="text-button" onClick={() => void readHandover(j.job_id)}>
+                View handover
+              </button>
+            )}
             <button className="text-button" onClick={() => void readBrief(j.job_id)}>
-              View brief
+              Job details
             </button>
             {j.active ? (
-              <ConfirmButton label="Stop" ask="Stop it? It writes its report first." onConfirm={() => stopJob(j.job_id)} />
+              <ConfirmButton label="Stop" ask="Stop it? It writes its handover first." onConfirm={() => stopJob(j.job_id)} />
             ) : (
               <>
-                <button className="text-button" onClick={() => void readReport(j.job_id, false)}>
-                  View report
-                </button>
                 <button className="text-button" onClick={() => void openFolder(`${j.path}/workspace`)}>
                   {remote ? "Save to this computer" : "Files"}
                 </button>
@@ -72,7 +74,7 @@ export function Jobs() {
                     <button
                       className="text-button"
                       aria-label="Clear"
-                      title="Clear it from this list. Its report and files are kept."
+                      title="Clear it from this list. Its handover and files are kept."
                       onClick={() => void clearJobs(j.job_id)}
                     >
                       <X size={16} />
@@ -95,7 +97,7 @@ export function Jobs() {
           {finished > 0 && (
             <ConfirmButton
               label="Clear all finished"
-              ask={`Clear ${finished} finished job${finished === 1 ? "" : "s"} from this list? Reports and files are kept.`}
+              ask={`Clear ${finished} finished job${finished === 1 ? "" : "s"} from this list? Handovers and files are kept.`}
               onConfirm={() => clearJobs()}
             />
           )}

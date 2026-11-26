@@ -28,7 +28,15 @@ from ombro import __version__, jobs, outbox, views
 from ombro.home import Home
 from ombro.serve import DEV_ORIGIN, HOST
 from ombro.serve.live import Busy, Client, Hub, Sessions
-from ombro.session import JobWatcher, StartError, full_line, record_job_end_in_chat, setup_needed, start_saved_spec
+from ombro.session import (
+    JobWatcher,
+    StartError,
+    for_window,
+    full_line,
+    record_job_end_in_chat,
+    setup_needed,
+    start_saved_spec,
+)
 from ombro.settings import SetupError
 from ombro.ui import JobEnded, JobProgress, Note
 
@@ -219,7 +227,7 @@ class Serve:
             )
             owner = self.owners.get(e.job_id)
             if owner and owner in self.sessions.by_id and not self.sessions.by_id[owner].closed:
-                self.sessions.by_id[owner].emit({"type": "event", "event": e.to_dict()})
+                self.sessions.by_id[owner].emit({"type": "event", "event": for_window(e).to_dict()})
             if isinstance(e, JobEnded):
                 # Its outcome becomes part of the chat that started it: the open one, or its file.
                 open_chats = [live for live in self.sessions.by_id.values() if not live.closed]
@@ -464,6 +472,7 @@ PREFERENCE_KEYS = {
     "editor": str,
     "background_feed": bool,
     "notifications": bool,
+    "open_handover": bool,
     "instructions": str,
     "outward": str,
     "thinking": str,
@@ -491,7 +500,7 @@ def _action_routes(s: Serve) -> list[Route]:
         pid = meta.get("pid")
         if not pid or not jobs.pid_alive(int(pid)):
             jobs.reap_dead_jobs(home)
-            return {"stopping": False, "note": "it had no live process; it is marked failed and its report written"}
+            return {"stopping": False, "note": "it had no live process; it is marked failed and its handover written"}
         os.kill(int(pid), signal.SIGTERM)
         return {"stopping": True}
 

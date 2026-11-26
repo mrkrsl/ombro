@@ -67,10 +67,10 @@ describe("job status", () => {
       ["The researcher searches.", "Your job has finished.", "The researcher carries on."]);
   });
 
-  it("times each line as 10:28 on 19 November", () => {
+  it("times each line as 10:28, 19 Nov", () => {
     vi.setSystemTime(new Date(2026, 10, 19, 10, 28));
     useStore.getState().receive(step("job-1", "The researcher searches."));
-    expect(stamp(useStore.getState().feed[0].at)).toBe("10:28 on 19 November");
-    expect(stamp(new Date(2026, 0, 2, 9, 5).getTime())).toBe("09:05 on 2 January");
+    expect(stamp(useStore.getState().feed[0].at)).toBe("10:28, 19 Nov");
+    expect(stamp(new Date(2026, 0, 2, 9, 5).getTime())).toBe("09:05, 2 Jan");
   });
 });

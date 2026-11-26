@@ -1,7 +1,8 @@
 // The window: sidebar, main column (title bar, page, foot). The page is the home screen, a
 // conversation, or one of the pages to come.
 
-import { useEffect, type ReactElement } from "react";
+import { useEffect, type CSSProperties, type ReactElement } from "react";
+import { panelWidth } from "./components/Splitter";
 import { PanelLeft, PanelRight } from "lucide-react";
 import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
@@ -88,6 +89,11 @@ export default function App() {
     return () => mq.removeEventListener?.("change", follow);
   }, [themeChoice]);
 
+  // Leaving the new chat screen: the side panel there is asked for afresh next time.
+  useEffect(() => {
+    if (screen !== "home" && useStore.getState().homePanel) useStore.setState({ homePanel: false });
+  }, [screen]);
+
   if (status === "choose") {
     return <Connect onReady={() => void s.connectNow()} />;
   }
@@ -123,13 +129,14 @@ export default function App() {
   }
 
   const conversation = current ? conversations[current] ?? null : null;
-  // The inspector is about a chat: on the pages (Jobs, Approvals, Scheduled, Settings, a report)
+  // The side panel is about a chat: on the pages (Jobs, Approvals, Scheduled, Settings, a handover)
   // it and its button are hidden.
   const chatScreen = screen === "home" || screen === "chat";
-  const showInspector = inspector && chatScreen;
+  // On the new chat screen it stays hidden, to keep that screen clear, unless asked for there.
+  const showInspector = inspector && (screen === "chat" || (screen === "home" && s.homePanel));
   const inChat = screen === "chat" && conversation;
   const PAGE_TITLES: Record<string, string> = {
-    jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Report", brief: "Brief",
+    jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Handover", brief: "Job details",
   };
   const title =
     screen === "chat"
@@ -140,7 +147,15 @@ export default function App() {
   };
 
   return (
-    <div className={`window ${isMac ? "mac" : "linux"}`}>
+    <div
+      className={`window ${isMac ? "mac" : "linux"}`}
+      style={
+        {
+          "--sidebar-w": `${s.sizes.sidebar}px`,
+          "--panel-w": panelWidth(s.sizes.panel, sidebar ? s.sizes.sidebar : 0),
+        } as CSSProperties
+      }
+    >
       {sidebar && <Sidebar />}
       <main className="main">
         <div className={`main-top ${sidebar ? "" : "wide"}`} data-tauri-drag-region>
@@ -152,8 +167,8 @@ export default function App() {
           <div className="title" data-tauri-drag-region>
             {title}
           </div>
-          {chatScreen && !inspector && (
-            <button className="icon-button" aria-label="Show the inspector" onClick={s.toggleInspector}>
+          {chatScreen && !showInspector && (
+            <button className="icon-button" aria-label="Show the side panel" onClick={s.toggleInspector}>
               <PanelRight size={22} />
             </button>
           )}
@@ -164,16 +179,7 @@ export default function App() {
         {screen === "home" && <HomeGreeting />}
         {chatScreen && <Composer conversation={inChat || (screen === "home" && s.welcome) ? conversation : null} />}
       </main>
-      {showInspector && (
-        <div className="inspector-wrap">
-          <div className="inspector-top" data-tauri-drag-region>
-            <button className="icon-button" aria-label="Hide the inspector" onClick={s.toggleInspector}>
-              <PanelRight size={22} />
-            </button>
-          </div>
-          <Inspector />
-        </div>
-      )}
+      {showInspector && <Inspector />}
       <Toasts />
       {s.restarting && <Restarting />}
     </div>

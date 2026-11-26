@@ -180,7 +180,7 @@ def test_theme_detection():
 def test_slash_filtering():
     from ombro.tui.app import filter_slash
 
-    assert [c for c, _ in filter_slash("/re")] == ["/rename", "/restart", "/resume", "/report", "/remember"]
+    assert [c for c, _ in filter_slash("/re")] == ["/rename", "/restart", "/resume", "/remember"]
     assert [c for c, _ in filter_slash("/")][0] == "/chat"
     assert filter_slash("/zzz") == []
 
@@ -558,7 +558,7 @@ def test_a_job_ending_posts_a_notice_and_marks_it_seen(home, job):
 
             assert any(f"{job_name(job_id)} · lead briefed" in t for t in texts)  # by its readable name
             notice = next(t for t in texts if "Your job has finished." in t)
-            assert "Here's what it made:" in notice and "The note:" in notice and f"/report {job_id}" in notice
+            assert "Here's what it made:" in notice and "The note:" in notice and f"/handover {job_id}" in notice
 
     drive(go())
     assert jobs_mod.read_job(job.job_dir)[0].get("seen_at")
@@ -896,11 +896,11 @@ def test_the_leads_words_and_reports_render_as_markdown(home, job):
             await command(pilot, app, f"/report {job.job_dir.name}")
             await settle(pilot, app)
             report = [w for w in app.query(MdLine) if "## Summary" in w.source][-1].source
-            assert "Open the full report" in report and "# Ombro's record" not in report
+            assert "Open the full handover" in report and "# Job details" not in report
             assert f"ombro:report/{job.job_dir.name}/full" in report
             await command(pilot, app, f"/report {job.job_dir.name} full")
             await settle(pilot, app)
-            assert "# Ombro's record" in [w for w in app.query(MdLine) if "## Summary" in w.source][-1].source
+            assert "# Job details" in [w for w in app.query(MdLine) if "## Summary" in w.source][-1].source
 
     drive(go())
 
@@ -990,7 +990,7 @@ def test_clicking_read_the_report_opens_it_at_its_top(home, job):
                 for s in text.spans
                 if not isinstance(s.style, str) and s.style.meta.get("@click")
             )
-            assert action == f"app.run_command('/report {job.job_dir.name}')"
+            assert action == f"app.run_command('/handover {job.job_dir.name}')"
             app.add_text(text, "notice")
             await pilot.pause()
             app.action_run_command(f"/report {job.job_dir.name}")

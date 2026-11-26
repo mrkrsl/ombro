@@ -747,6 +747,7 @@ class Preferences:
     outward: Any = None
     background_feed: bool = True  # jobs' progress lines in the conversation
     notifications: bool = True  # the desktop app's system notifications when a job ends
+    open_handover: bool = True  # the desktop app opens its side panel on a job's handover when it's delivered
     thinking: str = ""  # how much models think (ombro.thinking.LEVELS); empty: ombro.thinking.DEFAULT
 
 
@@ -782,6 +783,7 @@ def load_preferences(home: Home) -> Preferences:
         prefs.outward = meta.get("outward")
         prefs.background_feed = meta.get("background_feed") is not False
         prefs.notifications = meta.get("notifications") is not False
+        prefs.open_handover = meta.get("open_handover") is not False
         from ombro.thinking import level_of
 
         prefs.thinking = level_of(meta.get("thinking")) or ""

@@ -19,7 +19,7 @@ There are three ways in, all over one Python core:
   running on a server.
 - **The terminal interface**: `ombro` on its own opens a full-screen chat with
   the Lead.
-- **The command line**: `ombro <command>` (`ombro jobs`, `ombro report`, and
+- **The command line**: `ombro <command>` (`ombro jobs`, `ombro handover`, and
   so on), for quick checks and scripts.
 
 What it does: chats and briefs with the Lead; jobs that run unattended within
@@ -122,7 +122,7 @@ ombro start --spec my-spec.md --detach   # keeps going after the terminal closes
 ombro jobs                             # list jobs
 ombro status [job_id]                  # limits and usage
 ombro journal [job_id] [--follow]      # the event log, readable; --follow shows new events as they come
-ombro report [job]                     # the final report (any part of the job's name; the latest by default)
+ombro handover [job]                   # the job's handover (any part of the job's name; the latest by default)
 ombro chat [--resume [title]]          # talk with the Lead; /brief, /remember, /new, /chats inside
 ombro chats                            # saved chats by title
 ombro summary                          # who you are, the crew, what is running and waiting, and jobs not yet seen
@@ -205,8 +205,8 @@ The `/` commands do what their `ombro` commands do:
   confirmed, it offers to start the spec at once, in the background.
 - `/start [spec]`: start a saved spec again, with no interview (no name: choose
   from the saved specs, newest first).
-- `/jobs`, `/report [job]` (the summary, deliverables and decisions, with every
-  file the job made as a link; `/report <job> full` adds Ombro's record),
+- `/jobs`, `/handover [job]` (the summary, deliverables and decisions, with every
+  file the job made as a link; `/handover <job> full` adds the job details),
   `/stop <job_id>`, `/open [job_id]`.
 - `/approvals`, `/approvals show | approve | decline <ref>...`,
   `/approvals resolve <ref> sent | not-sent`; decisions work while a job is going.
@@ -551,7 +551,7 @@ check; the report says who the spec named and who else was briefed. Without
 
 A job is named for its spec, then when it started:
 `teapot-survey-20261113-1301`. Commands that take a job take any part of its
-name (`ombro report teapot`), or the latest job by default.
+name (`ombro handover teapot`), or the latest job by default.
 
 The report reads as a report: the task's title and a status line in words,
 then a short summary, the deliverables (in the workspace or a shared folder),
@@ -1343,7 +1343,7 @@ is in a visible folder, `~/Ombro`:
 
 ```
 ~/Ombro/
-  Jobs/<job_id>/report.md, workspace/  each job's report and the files it made; also job.md, spec.md,
+  Jobs/<job_id>/report.md, workspace/  each job's handover and the files it made; also job.md, spec.md,
                 interview.md, journal.jsonl, scratch/, outbox/, code/ (scripts and their output),
                 backup/ (clones of writable shared folders)
   Chats/<time>.md                      chat transcripts (never loaded or searched)

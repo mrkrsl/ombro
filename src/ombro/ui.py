@@ -610,7 +610,7 @@ def render(event: Event) -> list[str]:
             [f"\n{event.text}", event.summary or event.brief]
             + [f"  {f.name}: {f.path}" for f in event.files]
             + ([f"{event.waiting} waiting for approval: ombro approvals"] if event.waiting else [])
-            + [f"Read the report: ombro report {event.job_id}"]
+            + [f"Read the handover: ombro handover {event.job_id}"]
             + ([event.again_text] + [f"  {o.label}: {o.command}" for o in event.offers] if event.offers else [])
         )
     return [str(event.to_dict())]

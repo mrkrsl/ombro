@@ -683,6 +683,7 @@ def preferences(home: Home) -> vt.Preferences:
         "instructions": p.instructions,
         "background_feed": p.background_feed,
         "notifications": p.notifications,
+        "open_handover": p.open_handover,
         "thinking": p.thinking or thinking.DEFAULT,
         "thinking_set": bool(p.thinking),
         "files": {"config": str(home.preferences_config), "instructions": str(home.instructions)},

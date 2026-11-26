@@ -40,11 +40,13 @@ from ombro.ui import (
     PastTurn,
     ConsoleUI,
     Failure,
+    FileView,
     Field,
     LeadSaid,
     ModeChanged,
     Note,
     Option,
+    ProposalShown,
     SetAside,
     Usage,
 )
@@ -256,6 +258,23 @@ def _tool_msg(call_id: str, payload: Any, src: str | None = None) -> dict:
 # An entry in a saved chat: your words (in Chat, or answering a brief or role interview held in it),
 # the Lead's (in the chat, or asking in an interview), or Ombro's (a job's outcome, set down for both).
 ENTRY = re.compile(r"^\*\*(You \((Chat|Brief|Role)\)|Lead(?: \((Brief|Role)\))?|Ombro):\*\* ?")
+
+
+# Ombro's note that a job started from a chat has ended names its report: jobs/<id>/report.md.
+PAST_JOB_REPORT = re.compile(r"jobs/([^/\s]+)/report\.md")
+
+
+# A file an interview proposed, as its transcript keeps it: its name, then its text in a fence.
+PROPOSED_FILE = re.compile(r"`([^`\n]+)`\n\n````markdown\n(.*?)\n````", re.DOTALL)
+
+
+def past_proposal(text: str) -> ProposalShown | None:
+    """A brief or file the Lead proposed (or you edited) in an interview, from a reopened chat: shown
+    as it was at the time, formatted, rather than as the Markdown source kept in the file."""
+    if not text.startswith(("Lead proposed:", "You edited it to:")):
+        return None
+    files = [FileView(label, label, body, replaces=False) for label, body in PROPOSED_FILE.findall(text)]
+    return ProposalShown(files) if files else None
 
 
 def _is_note(chunk: str) -> bool:
@@ -592,10 +611,29 @@ class Chat:
         self.ui.show(ChatCleared())
         for who, text in all_turns(entries):
             if who == "ombro":
-                self.ui.show(Note(text, level="done"))
+                self.ui.show(self._past_ombro_note(text))
+            elif who == "lead" and (shown := past_proposal(text)) is not None:
+                if text.startswith("You edited it to:"):
+                    self.ui.show(Note("You edited it to:", level="done"))
+                self.ui.show(shown)
             else:
                 self.ui.show(PastTurn("you" if who == "user" else "lead", text))
         self._save()
+
+    def _past_ombro_note(self, text: str):
+        """One of Ombro's notes in a reopened chat. A job's ending comes back as it was shown at the
+        time, with its report, so long as the job is still there; the offer to restart or resume it
+        isn't made again. Anything else is a plain note."""
+        m = PAST_JOB_REPORT.search(text)
+        if m and m.group(1) in self.jobs:
+            from dataclasses import replace
+
+            from ombro.session import job_ended
+
+            ended = job_ended(self.home, m.group(1))
+            if ended.status != "unknown":
+                return replace(ended, again="", again_text="", offers=[])
+        return Note(text, level="done")
 
     def attach(self, path: Path) -> None:
         """A file you attached (kept under Files/ already): its text goes to the Lead with your next
@@ -703,7 +741,7 @@ class Chat:
         the buttons), which the Lead is told of, so it can make it again if asked."""
         if job_id not in self.jobs:
             return
-        line = f"{text} ('{jobs.job_name(job_id)}', job {job_id}; its report is jobs/{job_id}/report.md.)"
+        line = f"{text} ('{jobs.job_name(job_id)}', job {job_id}; its handover is jobs/{job_id}/report.md.)"
         self.transcript.ombro(line)
         self.pending_note += f"[Ombro note: {line}]\n"
         if again_text:
@@ -2109,9 +2147,9 @@ class Chat:
             JobStarted(job_id, name, f"Live: '{name}' has started. Its steps show here as they happen; Esc stops it.")
         )
         status = livejob.follow(self.home, self.ui, job_dir)
-        self.transcript.ombro(f"The live job '{name}' ended ({status}). Its report is jobs/{job_id}/report.md.")
+        self.transcript.ombro(f"The live job '{name}' ended ({status}). Its handover is jobs/{job_id}/report.md.")
         self.pending_note += (
-            f"[Ombro note: the live job {job_id} ended ({status}); its report is "
+            f"[Ombro note: the live job {job_id} ended ({status}); its handover is "
             f"jobs/{job_id}/report.md and the user has it in the chat.]\n"
         )
         if status not in ("completed", "stopped_by_limit"):

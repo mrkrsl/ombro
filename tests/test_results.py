@@ -108,7 +108,7 @@ def test_the_report_puts_the_reader_first_and_ombros_record_after(job, home):
             "## Summary",
             "## Deliverables",
             "## What was done",
-            "# Ombro's record",
+            "# Job details",
             "## The job",
             "## Briefs (harness record)",
             "## Changes to notes.md",
@@ -119,7 +119,7 @@ def test_the_report_puts_the_reader_first_and_ombros_record_after(job, home):
     assert "## Decisions for you" not in report  # "None." is no decision: the section is left out
     assert report.startswith("# ") and "**Completed.**" in report.split("## Summary")[0]
     assert "Three invented makers found" in report.split("## Deliverables")[0]
-    assert "> " not in report.split("# Ombro's record")[0]  # the spec is not quoted at the top
+    assert "> " not in report.split("# Job details")[0]  # the spec is not quoted at the top
 
 
 def test_a_job_is_named_for_its_spec_then_when_and_found_by_any_part(job, home):

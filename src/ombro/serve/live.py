@@ -28,7 +28,7 @@ from typing import Any, Callable
 from ombro import commands as core_commands
 from ombro.flows import Flows
 from ombro.home import Home
-from ombro.session import Session
+from ombro.session import Session, for_window
 from ombro.ui import UI, Event, Failure, Field, Note, SetAside, parse_answer, sets_aside
 
 LOG_KEEP = 2000  # messages a session keeps for windows that reconnect
@@ -105,7 +105,7 @@ class ServeUI(UI):
 
     def show(self, event: Event) -> None:
         self._check()
-        self.live.emit({"type": "event", "event": event.to_dict()})
+        self.live.emit({"type": "event", "event": for_window(event).to_dict()})
 
     def _wait(self, kind: str, payload: dict[str, Any]) -> Any:
         self._check()

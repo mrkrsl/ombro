@@ -57,6 +57,7 @@ SLASH = [(c.name, c.help) for c in core_commands.COMMANDS]
 TUI_COMMANDS = (
     "/start",
     "/jobs",
+    "/handover",
     "/report",
     "/stop",
     "/open",

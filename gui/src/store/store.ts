@@ -24,7 +24,8 @@ import { isMac, notify, openFile, openLink, revealFile, whenVisible } from "../p
 import { readCopy, saveCopy, saveFolder } from "../copies";
 import { PROTOCOL, startConnection, tooOld, whereNow, type Where } from "../where";
 import { SHORTCUTS, shortcutText } from "../shortcuts";
-import { addLocal, addReport, apply, newConversation, opening, type Conversation } from "./conversation";
+import { keepSizes, keptSizes, type Sizes } from "../components/Splitter";
+import { addLocal, apply, splitReport, newConversation, opening, type Conversation } from "./conversation";
 
 const MAX_ATTACH_BYTES = 25 * 1024 * 1024; // the most serve takes for one file
 
@@ -92,6 +93,14 @@ type State = {
   restarting: boolean; // switching where Ombro runs: the app is about to restart
   chatOn: string | null; // the saved chat on screen, by name
   inspector: boolean;
+  /** The job whose handover the side panel shows, picked from its message in the chat; null: the
+   * chat's latest job. A job of the chat's that is running always shows first. */
+  panelJob: string | null;
+  /** The side panel stays out of the way on the new chat screen, even when it is open (`inspector`)
+   * for chats; this is true while you've asked for it there. Leaving the screen sets it back. */
+  homePanel: boolean;
+  /** The sidebar's width and the side panel's share of the rest, as dragged (kept on this computer). */
+  sizes: Sizes;
   prefs: Preferences | null;
   feed: FeedLine[]; // every job's progress since the window opened, newest last
   jobs: JobRow[];
@@ -100,7 +109,9 @@ type State = {
   scheduler: SchedulerState | null; // whether the scheduler service is there to run them
   specs: SpecRow[];
   report: Report | null; // on the report page
-  brief: Brief | null; // on the brief page: the brief a job ran from
+  brief: Brief | null; // on the job details page: the brief a job ran from
+  record: string | null; // and below it, the job's details: Ombro's record from its handover ("" if none yet)
+  detailsFrom: Screen; // the screen the job details page goes back to
   attached: Attachment[]; // files waiting to go with the next message or answer
   attaching: number; // uploads under way
   opener: string | null; // after New from a chat you'd used: the Lead's line that it was saved, in place of the home screen
@@ -131,13 +142,18 @@ type Actions = {
   setMode: (mode: "Chat" | "Brief") => Promise<void>;
   toggleSidebar: () => void;
   toggleInspector: () => void;
+  /** Open the side panel on a job's handover. */
+  openHandover: (jobId: string) => void;
+  /** Resize the sidebar or the side panel; `keep` saves the sizes (when a drag ends). */
+  setSizes: (sizes: Partial<Sizes>, keep?: boolean) => void;
   setTheme: (theme: Theme, save?: boolean) => void;
   setThemeChoice: (choice: ThemeChoice) => void;
   showSettings: (page: SettingsPage) => void;
   newMember: (crew: string) => Promise<void>;
-  setPref: (key: "background_feed" | "notifications", value: boolean) => Promise<void>;
+  setPref: (key: "background_feed" | "notifications" | "open_handover", value: boolean) => Promise<void>;
   load: (screen?: Screen) => Promise<void>;
-  readReport: (jobId: string, inChat: boolean) => Promise<void>;
+  /** A job's handover as a page of its own (Jobs › View handover). */
+  readHandover: (jobId: string) => Promise<void>;
   readBrief: (jobId: string) => Promise<void>;
   /** Files dropped on the window or chosen with the paperclip: kept by Ombro, shown as chips, sent with the next message. */
   attachFiles: (files: File[]) => Promise<void>;
@@ -157,6 +173,19 @@ type Actions = {
   /** The one notice (a failed send, "That job made no files."): replaces the last; "" clears it. */
   say: (text: string, tone?: Toast["tone"]) => void;
 };
+
+/** The jobs started from the chat on screen: those its record names, and those that name it. */
+export function chatJobIds(s: Pick<State, "chats" | "chatOn" | "jobs">): string[] {
+  const chat = s.chats.find((c) => c.name === s.chatOn);
+  const ids = new Set(chat?.jobs ?? []);
+  // Only this chat's jobs: a new chat (no id yet) must not match the jobs started from no chat.
+  if (chat?.id) for (const j of s.jobs) if (j.chat === chat.id) ids.add(j.job_id);
+  return [...ids];
+}
+
+function chatHasJob(s: Pick<State, "chats" | "chatOn" | "jobs">, jobId: string): boolean {
+  return chatJobIds(s).includes(jobId);
+}
 
 let socket: WebSocket | null = null;
 let started = false;
@@ -277,6 +306,9 @@ export const useStore = create<State & Actions>((set, get) => {
     restarting: false,
     chatOn: null,
     inspector: false,
+    panelJob: null,
+    homePanel: false,
+    sizes: keptSizes(),
     prefs: null,
     feed: [],
     jobs: [],
@@ -286,6 +318,8 @@ export const useStore = create<State & Actions>((set, get) => {
     specs: [],
     report: null,
     brief: null,
+    record: null,
+    detailsFrom: "jobs",
     attached: [],
     attaching: 0,
     opener: null,
@@ -441,6 +475,11 @@ export const useStore = create<State & Actions>((set, get) => {
         }
         if (m.event.type === "job_ended") {
           const e = m.event;
+          // A job of the chat on screen is delivered: the side panel opens on its handover, unless
+          // you'd rather open it yourself (Settings › General).
+          if (get().prefs?.open_handover !== false && get().screen === "chat" && chatHasJob(get(), m.job_id)) {
+            set({ inspector: true, panelJob: m.job_id });
+          }
           // A minute on, the panel lets go of the finished job: its lines up to the ending, unless
           // it is going again by then (carried on under the same id).
           setTimeout(() => {
@@ -520,7 +559,7 @@ export const useStore = create<State & Actions>((set, get) => {
       // A notice belongs to the page it came from (such as "That job made no files." on Jobs).
       if (screen !== get().screen) get().say("");
       set(screen === get().screen ? { screenArgs: args } : { screen, screenArgs: args });
-      if (screen === "report" && args) void get().readReport(args, false);
+      if (screen === "report" && args) void get().readHandover(args);
       else if (screen === "brief" && args) void get().readBrief(args);
       else void get().load(screen);
     },
@@ -562,18 +601,14 @@ export const useStore = create<State & Actions>((set, get) => {
       }
     },
 
-    async readReport(jobId, inChat) {
+    async readHandover(jobId) {
       const api = get().api;
       if (!api) return;
+      if (get().report?.job_id !== jobId) set({ report: null });
       try {
         const report = await api.get<Report>(`/jobs/${encodeURIComponent(jobId)}/report`);
         void api.post(`/jobs/${encodeURIComponent(jobId)}/seen`).catch(() => undefined);
-        const id = get().current;
-        if (inChat && id && get().conversations[id]) {
-          set((s) => ({ conversations: { ...s.conversations, [id]: addReport(s.conversations[id], report) } }));
-        } else {
-          set({ report, screen: "report", screenArgs: jobId });
-        }
+        set({ report, screen: "report", screenArgs: jobId });
       } catch (e) {
         get().say(e instanceof Error ? e.message : String(e), "error");
       }
@@ -614,10 +649,15 @@ export const useStore = create<State & Actions>((set, get) => {
     async readBrief(jobId) {
       const api = get().api;
       if (!api) return;
-      if (get().brief?.job_id !== jobId) set({ brief: null });
+      if (get().brief?.job_id !== jobId) set({ brief: null, record: null });
+      const from = get().screen;
+      if (from !== "brief") set({ detailsFrom: from === "chat" ? "chat" : "jobs" });
       try {
-        const brief = await api.get<Brief>(`/jobs/${encodeURIComponent(jobId)}/brief`);
-        set({ brief, screen: "brief", screenArgs: jobId });
+        const [brief, report] = await Promise.all([
+          api.get<Brief>(`/jobs/${encodeURIComponent(jobId)}/brief`),
+          api.get<Report>(`/jobs/${encodeURIComponent(jobId)}/report`).catch(() => null),
+        ]);
+        set({ brief, record: report?.report ? splitReport(report.report).record : "", screen: "brief", screenArgs: jobId });
       } catch (e) {
         get().say(e instanceof Error ? e.message : String(e), "error");
       }
@@ -939,8 +979,22 @@ export const useStore = create<State & Actions>((set, get) => {
       set((s) => ({ sidebar: !s.sidebar }));
     },
 
+    setSizes(sizes, keep = false) {
+      set((s) => ({ sizes: { ...s.sizes, ...sizes } }));
+      if (keep) keepSizes(get().sizes);
+    },
+
+    openHandover(jobId) {
+      set({ inspector: true, panelJob: jobId });
+      void get().load();
+    },
+
     toggleInspector() {
-      set((s) => ({ inspector: !s.inspector }));
+      const { screen, inspector, homePanel } = get();
+      if (screen === "home") {
+        // On the new chat screen the panel shows only once asked for there; hiding it there hides it.
+        set(inspector && homePanel ? { inspector: false, homePanel: false } : { inspector: true, homePanel: true });
+      } else set({ inspector: !inspector });
       if (get().inspector) void get().load();
     },
 
