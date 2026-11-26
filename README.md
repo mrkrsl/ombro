@@ -1,7 +1,10 @@
 # Ombro
 
-A small, local harness for briefing a crew of AI roles and getting bounded,
-reported work back.
+Ombro is the other you: a crew of AI agents with skills that you brief, that
+works in the background, and that never moves without you. It's free, open
+source, works with any model and runs on your desktop or server.
+
+![The Ombro desktop app: the Lead's home screen](.github/images/screenshot-home.webp)
 
 Ombro assumes models will try to do too much, so it puts deterministic limits
 around them. You brief Ombro Lead, which turns what you want into a spec;
@@ -9,7 +12,7 @@ you start a job from it, walk away, and read a report later. The Lead plans
 the job and briefs the crew's roles. Every job ends in a report, whether it
 finished, hit a limit or failed.
 
-**Status: 0.2.0, the first public release.** Ombro is new and still
+**Status: 0.5.0.** Ombro is new and still
 settling: things may change between releases, and some may not yet work as
 you'd expect. If something doesn't, please open an issue.
 
@@ -243,6 +246,12 @@ and talks only to it. Chats, briefs, jobs, reports, approvals, schedules and
 every setting are there, and a menu bar item shows what waits for you.
 Closing the window keeps it in the menu bar; scheduled jobs run whether the app
 is open or not.
+
+Beside the chat, a side panel follows the job: who is on it, approvals
+waiting, the working folder, models, tools and usage while it runs, what the
+crew is doing in the background, then the handover and the files it made
+(Markdown read in place, other files to open). Chats can be pinned to the top
+of the sidebar, and the Lead's replies come with its animated avatar.
 
 Files dropped on the window, or chosen with the paperclip, go with your next
 message (see Chat, "Attached files"); they are sent to `ombro serve`, so this
@@ -538,12 +547,17 @@ check; the report says who the spec named and who else was briefed. Without
    and three in one brief end it. Where a model's endpoint allows fewer output
    tokens, Ombro learns its maximum from the endpoint, uses it, and the report
    suggests a `max_output_tokens` line for that model in `models.md`. Near a
-   token cap the reply allowance shrinks to what is left.
+   token cap the reply allowance shrinks to what is left. Thinking is low for
+   every model unless you choose otherwise (Settings, or
+   `ombro preferences thinking off|low|medium|high|xhigh`); a reply cut off
+   while it was nearly all thinking is tried once more with thinking off.
 5. The Lead briefs again, searches past reports (`memory.search`), or calls
-   `finish`.
+   `finish`. Once a deliverable exists, the Lead makes the changes it wants
+   itself, with `workspace.edit`, and briefs a role again only for a part that
+   is missing or badly wrong.
 6. On finish, or when any limit is reached, delegation stops. The Lead
-   rewrites its part of the notes of each crew whose roles it briefed, one
-   call per crew, then writes the report
+   changes its part of the notes of each crew whose roles it briefed, lesson
+   by lesson, then writes the report
    in a separate call with no tools. If even that is impossible, the harness
    writes the report from the journal.
 7. The harness adds one line for the job to the `memory/index.md` of each
@@ -572,9 +586,10 @@ it; it grows only with the crews a spec names.
 - **`memory/notes.md`**: standing lessons in two parts. **From you** holds
   your own dated entries (added by hand or with `/remember` in chat); no
   model ever changes or drops them. **From jobs** is the Lead's: at the end
-  of each job that briefed a role, it rewrites this part from what the roles
-  returned, or keeps it as it is. The whole file has a cap of 10,000
-  characters. A rewrite over the cap is refused and the Lead is told how much
+  of each job that briefed a role, it adds, changes or drops lessons in this
+  part from what the roles returned (`memory.edit_notes`), rewrites it whole
+  when it must, or keeps it as it is. The whole file has a cap of 20,000
+  characters. A change over the cap is refused and the Lead is told how much
   room it has; a second refusal leaves the notes as they were. The report's
   "Changes to notes.md" lists what was added and removed, worked out by the
   harness. The old file is kept as `notes.previous.md`.
@@ -628,7 +643,9 @@ when to use it) in the front matter, then the method in Markdown. An optional
 - A skill never adds a tool, and its `scripts/` folder is not run.
 
 - **Importing.** `ombro skills add <folder>` (or `/skills add <folder>`)
-  brings in a skill you found elsewhere. A skill from outside is someone
+  brings in a skill you found elsewhere: a folder, or a `.zip` or `.skill`
+  file. In the app, Settings › Skills also has **Paste a skill** and **Add
+  from a file** (a SKILL.md, `.zip` or `.skill`). A skill from outside is someone
   else's instructions, so Ombro checks its format, shows you the whole text
   (or the diff against yours), lists any signs of injected text and what it
   will not copy, and adds it only after your yes. It copies `SKILL.md` and
@@ -706,6 +723,8 @@ is always shown in the prompt (`[Chat] You:` or `[Brief] You:`).
   conversation is shown again and you carry on where you left off
   (tool results from before are not kept). `ombro chats` and
   `ombro chat --resume <part of a title>` do the same on the command line.
+  Chats pinned in the app's sidebar come first, with 📌 (pins are kept in
+  `preferences/pinned.md`).
 - **`/remember [@crew] <text>`** adds a dated line to a crew's notes.md
   ("From you"); the default crew unless you name one, or `ombro chat --crew
   <name>` sets it for the session. The Lead can offer to remember something
@@ -789,7 +808,8 @@ later reaches every role at once:
 |---|---|
 | `web.search` | Web search through a provider. Returns titles, URLs and snippets. |
 | `web.fetch` | Reads one page, in the browser (after its scripts run) or through Firecrawl. |
-| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the job's `workspace/` and `scratch/` folders, and in folders shared with the job. PDF and Word files are read as their text. |
+| `workspace.read`, `workspace.write`, `workspace.list` | Text files in the job's `workspace/` and `scratch/` folders, and in folders shared with the job. PDF and Word files are read as their text. A file is written whole once in a brief; after that it is changed with `workspace.edit`. |
+| `workspace.edit` | Exact replacements in a file, several in one call, all or none. Like `workspace.write`, it returns the file's word count, each section's, and any em or en dashes by line, so no role counts with code. |
 | `workspace.place` | Copies a workspace file outside the job: at once into a folder shared for writing, waiting for your approval anywhere else. |
 | `code.run` | Runs a Python script the role writes, in the operating system's sandbox. See Code and shared folders. |
 | `browser.open`, `browser.click`, `browser.type`, `browser.screenshot` | A page in a headless browser: read it after its scripts run, click links and ordinary buttons, type into a search box, save a picture of it. See Browser. |
@@ -837,13 +857,20 @@ limits, tool settings are fixed when a job starts and recorded in `job.md`.
 
 Web pages are read in a browser, headless (no window): `web.fetch` and the
 browser tools both use it, so pages that need JavaScript read as a person sees
-them. Ombro drives a Chrome, Chromium, Edge or Brave already on the computer;
-nothing is bundled or downloaded. Settings › General › Browser chooses:
-Automatic (the first found, named), one of those installed, or Don't use a
+them. Ombro drives a Chrome, Chromium, Edge, Brave, Helium or Vivaldi already
+on the computer; nothing is bundled or downloaded. Settings › General › Browser
+chooses: Automatic (the first found, named), one of those installed, **Other…**
+(the path of any other Chromium-family browser, which Ombro starts once to
+check it can drive it; on a server, a path on the server), or Don't use a
 browser, in which case web search still works but pages can't be read (except
 through Firecrawl). In `tools.md` that is `providers: browser:` with `path:`
 or `off: true`; a browser elsewhere is `endpoint:` (or
 `$OMBRO_BROWSER_ENDPOINT`), as in Docker.
+
+Pages see an ordinary browser: the browser's own user agent and client hints
+without "Headless" (in frames and workers too), `navigator.webdriver` false and
+a full-size screen. The browser in the Docker image is `chrome-headless-shell`,
+which more sites can tell apart.
 
 Every crew member that reads the web has the browser (a role with
 `web.fetch` gets the rest), and so does the Lead in chat.
@@ -856,9 +883,10 @@ Every crew member that reads the web has the browser (a role with
   the role asks for, goes through Ombro's own proxy, which looks each name up
   once, checks the address is public and connects to exactly that address. So a
   page can't reach this computer or your network, even with DNS tricks (a name
-  that answers with a public address, then a private one). Service workers are
-  turned off. Downloads are refused, pop-up dialogs are dismissed, and an address
-  a role opens may carry no more than `fetch_max_query` characters after `?`.
+  that answers with a public address, then a private one). Pages may register
+  service workers, but the page's own requests bypass them, and a worker's
+  requests go through the same proxy. Downloads are refused, pop-up dialogs
+  are dismissed, and an address a role opens may carry no more than `fetch_max_query` characters after `?`.
 - **Reading is reading.** Only text a person could see is read (text hidden on
   the page isn't), and it is material, like any page (see Untrusted material).
   Links, ordinary buttons (a tab, "show more", a cookie banner), search boxes
@@ -1442,7 +1470,7 @@ outside (web pages, tool answers) is marked as material in `material.py`.
 `viewtypes.py`, from which the app's TypeScript types are generated.
 
 **Version.** One version for the core and the app, set with
-`python3 scripts/bump_version.py 0.2.0`; `tests/test_version.py` fails if any
+`python3 scripts/bump_version.py 0.5.0`; `tests/test_version.py` fails if any
 copy disagrees.
 
 **Tests.** `uv run pytest` runs the core's tests in `tests/`, with no network
