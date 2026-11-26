@@ -88,6 +88,11 @@ export default function App() {
     return () => mq.removeEventListener?.("change", follow);
   }, [themeChoice]);
 
+  // Leaving the new chat screen: the side panel there is asked for afresh next time.
+  useEffect(() => {
+    if (screen !== "home" && useStore.getState().homePanel) useStore.setState({ homePanel: false });
+  }, [screen]);
+
   if (status === "choose") {
     return <Connect onReady={() => void s.connectNow()} />;
   }
@@ -126,7 +131,8 @@ export default function App() {
   // The side panel is about a chat: on the pages (Jobs, Approvals, Scheduled, Settings, a handover)
   // it and its button are hidden.
   const chatScreen = screen === "home" || screen === "chat";
-  const showInspector = inspector && chatScreen;
+  // On the new chat screen it stays hidden, to keep that screen clear, unless asked for there.
+  const showInspector = inspector && (screen === "chat" || (screen === "home" && s.homePanel));
   const inChat = screen === "chat" && conversation;
   const PAGE_TITLES: Record<string, string> = {
     jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Handover", brief: "Job details",
@@ -152,7 +158,7 @@ export default function App() {
           <div className="title" data-tauri-drag-region>
             {title}
           </div>
-          {chatScreen && !inspector && (
+          {chatScreen && !showInspector && (
             <button className="icon-button" aria-label="Show the side panel" onClick={s.toggleInspector}>
               <PanelRight size={22} />
             </button>

@@ -65,8 +65,15 @@ export function Inspector() {
   const report = useReport(job && !running ? job : undefined);
   const crews = s.summary?.crews ?? [];
   const jobCrews = job ? crews.filter((c) => job.crews.includes(c.name)) : [];
+  // Each model once: the helpers' model is named apart only when it is another model.
   const models = Array.from(
-    new Set(jobCrews.flatMap((c) => c.roles).map((r) => r.model).filter((m): m is string => !!m).map((m) => modelLabel(m, s.models))),
+    new Set(
+      jobCrews
+        .flatMap((c) => c.roles)
+        .map((r) => r.model)
+        .filter((m): m is string => !!m)
+        .map((m) => modelLabel(m, s.models).replace(/ \(helpers\)$/, "")),
+    ),
   );
   const tools = status?.tool_names ?? Array.from(new Set(jobCrews.flatMap((c) => c.roles.flatMap((r) => r.tools ?? [])))).sort();
   const waiting = job ? s.approvals.filter((a) => a.job_id === job.job_id).length || job.waiting : 0;

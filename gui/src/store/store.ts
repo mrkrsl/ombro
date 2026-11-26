@@ -95,6 +95,9 @@ type State = {
   /** The job whose handover the side panel shows, picked from its message in the chat; null: the
    * chat's latest job. A job of the chat's that is running always shows first. */
   panelJob: string | null;
+  /** The side panel stays out of the way on the new chat screen, even when it is open (`inspector`)
+   * for chats; this is true while you've asked for it there. Leaving the screen sets it back. */
+  homePanel: boolean;
   prefs: Preferences | null;
   feed: FeedLine[]; // every job's progress since the window opened, newest last
   jobs: JobRow[];
@@ -299,6 +302,7 @@ export const useStore = create<State & Actions>((set, get) => {
     chatOn: null,
     inspector: false,
     panelJob: null,
+    homePanel: false,
     prefs: null,
     feed: [],
     jobs: [],
@@ -975,7 +979,11 @@ export const useStore = create<State & Actions>((set, get) => {
     },
 
     toggleInspector() {
-      set((s) => ({ inspector: !s.inspector }));
+      const { screen, inspector, homePanel } = get();
+      if (screen === "home") {
+        // On the new chat screen the panel shows only once asked for there; hiding it there hides it.
+        set(inspector && homePanel ? { inspector: false, homePanel: false } : { inspector: true, homePanel: true });
+      } else set({ inspector: !inspector });
       if (get().inspector) void get().load();
     },
 

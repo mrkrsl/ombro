@@ -90,3 +90,16 @@ describe("the handover's parts", () => {
     expect(panelJob([old, now], ["a"], null)?.job_id).toBe("a");
   });
 });
+
+describe("the side panel on the new chat screen", () => {
+  it("stays hidden there until asked for, and comes back with a chat", () => {
+    useStore.setState({ screen: "home", inspector: true, homePanel: false });
+    useStore.getState().toggleInspector(); // "Show the side panel", on the new chat screen
+    expect(useStore.getState()).toMatchObject({ inspector: true, homePanel: true });
+    useStore.getState().toggleInspector(); // and hiding it there
+    expect(useStore.getState()).toMatchObject({ inspector: false, homePanel: false });
+    useStore.setState({ screen: "chat", inspector: true });
+    useStore.getState().toggleInspector();
+    expect(useStore.getState().inspector).toBe(false);
+  });
+});

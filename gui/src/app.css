@@ -513,12 +513,14 @@ a:visited {
   padding: 8px 0 18px;
 }
 
+/* "Thinking", "Working in the background": Ombro's own, but about the Lead at work, so in its voice. */
 .thinking {
+  font-family: var(--voice);
+  font-size: 15px;
   display: flex;
   align-items: center;
   gap: 10px;
   color: var(--muted);
-  font-size: 14px;
   height: 44px; /* a 24px avatar with its shadow, and air above and below */
   padding-left: 0; /* the avatar lines up with the input box's left edge */
   margin-bottom: 4px; /* a little air between it and the input */
