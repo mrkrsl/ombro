@@ -222,7 +222,7 @@ def follow(home: Home, ui, job_dir: Path, *, sleep: Callable[[float], None] = ti
             stopping = True
             stop(job_dir)
             try:
-                ui.show(Note("Stopping: the crew finishes its current step, then writes the report."))
+                ui.show(Note("Stopping: the crew finishes its current step, then writes the handover."))
             except KeyboardInterrupt:
                 pass
 

@@ -19,23 +19,28 @@ if TYPE_CHECKING:  # pragma: no cover
     from ombro.tui.app import OmbroApp
 
 
-RECORD_MARK = "\n# Ombro's record"
+RECORD_MARKS = ("\n# Job details", "\n# Ombro's record")
 
 
 def report_markdown(r: dict[str, Any], full: bool = False) -> str:
-    """A report as the terminal shows it: the part you read (summary, deliverables, decisions,
+    """A handover as the terminal shows it: the part you read (summary, deliverables, decisions,
     what was and was not done), then every file the job made as a link, and links to the full
-    report and to Ombro's record. `full` adds the record itself."""
+    handover and to the job's details. `full` adds the details themselves."""
     from urllib.parse import quote
 
     text = r["report"].rstrip()
-    head, _, record = text.partition("\n---\n" + RECORD_MARK.lstrip("\n"))
-    if not record:
-        head, _, record = text.partition(RECORD_MARK)
+    head, record = text, ""
+    for mark in RECORD_MARKS:
+        for sep in ("\n---\n" + mark.lstrip("\n"), mark):
+            if sep in text:
+                head, _, record = text.partition(sep)
+                break
+        if record:
+            break
     out = [head.rstrip()]
     made = [d for d in r["deliverables"] if d["kind"] != "other"]
     if made:
-        out += ["", "**Open what the job made:**", ""]
+        out += ["", "**Open the deliverables:**", ""]
         for d in made:
             label = d["name"] + ("" if d["kind"] == "deliverable" else f" ({d['kind']} in a shared folder)")
             out.append(f"- [{label}]({d['url']})" + ("" if d["exists"] else " (no longer there)"))
@@ -43,11 +48,11 @@ def report_markdown(r: dict[str, Any], full: bool = False) -> str:
     rid = quote(str(r["job_id"]))
     out += [
         "",
-        f"[Open the full report]({report_url}) · "
-        + (f"[Show Ombro's record](ombro:report/{rid}/full)" if not full else "Ombro's record is below."),
+        f"[Open the full handover]({report_url}) · "
+        + (f"[Show the job details](ombro:report/{rid}/full)" if not full else "The job details are below."),
     ]
     if full and record:
-        out += ["", "---", "", "# Ombro's record" + record]
+        out += ["", "---", "", "# Job details" + record]
     return "\n".join(out) + "\n"
 
 
@@ -140,7 +145,7 @@ class Commands(Flows):
                 f"{r['job_id']}  {r['status']:<18} {r['total_tokens']:>9,} tokens{waiting}{unseen}\n", style=p.text
             )
             out.append(f"    {r['brief'][:90]}\n", style=p.muted)
-        out.append("See one with /report <job_id>.", style=p.muted)
+        out.append("See one's handover with /handover <job_id>.", style=p.muted)
         self.rich(out)
 
     def cmd_report(self, words: list[str], rest: str) -> None:
@@ -152,10 +157,12 @@ class Commands(Flows):
             return
         r = views.report(self.home, job_dir)
         if r["report"] is None:
-            self.say(f"Job {job_dir.name} has no report yet (status {r['status']}).")
+            self.say(f"Job {job_dir.name} has no handover yet (status {r['status']}).")
             return
         self.app.call_from_thread(self.app.add_markdown, report_markdown(r, full), "report")
         jobs.mark_seen(job_dir)
+
+    cmd_handover = cmd_report  # /report is its old name, kept as an alias
 
     def report_text(self, r: dict[str, Any]) -> Text:
         p = self.app.colours
@@ -221,10 +228,12 @@ def render_notice(e: JobEnded, app: "OmbroApp") -> Text:
         n = e.waiting
         out.append(f"{_n(n, 'action')} {'is' if n == 1 else 'are'} waiting for approval: /approvals\n", style=p.text)
     out.append(
-        "Read the report",
-        Style(color=p.text, underline=True, bold=True, meta={"@click": f"app.run_command({'/report ' + e.job_id!r})"}),
+        "Read the handover",
+        Style(
+            color=p.text, underline=True, bold=True, meta={"@click": f"app.run_command({'/handover ' + e.job_id!r})"}
+        ),
     )
-    out.append(f"  (or type /report {e.job_id})", style=p.muted)
+    out.append(f"  (or type /handover {e.job_id})", style=p.muted)
     if e.offers:  # one that didn't finish: the Lead's offer, and a click for each way to carry on
         out.append(f"\n{e.again_text}\n", style=p.text)
         for i, o in enumerate(e.offers):

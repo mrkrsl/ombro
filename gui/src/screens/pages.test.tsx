@@ -142,7 +142,7 @@ describe("the Jobs page", () => {
     finished_at: null, seen_at: null };
   const gone: JobRow = { ...job, job_id: "old-20261116-0800", name: "Old", cleared_at: "2026-11-17T10:00:00Z" };
 
-  it("offers View brief for running jobs too, and Clear only for finished ones", async () => {
+  it("offers Job details for running jobs too, and the handover and Clear only for finished ones", async () => {
     const briefs: string[] = [];
     const cleared: (string | undefined)[] = [];
     useStore.setState({
@@ -153,10 +153,10 @@ describe("the Jobs page", () => {
     render(<Jobs />);
     const busy = screen.getByText("Busy").closest(".item") as HTMLElement;
     expect(within(busy).queryByRole("button", { name: "Clear" })).toBeNull();
-    await userEvent.click(within(busy).getByRole("button", { name: "View brief" }));
+    await userEvent.click(within(busy).getByRole("button", { name: "Job details" }));
     const done = screen.getByText("Invented").closest(".item") as HTMLElement;
     const names = within(done).getAllByRole("button").map((b) => b.getAttribute("aria-label") ?? b.textContent);
-    expect(names).toEqual(["View brief", "View report", "Files", "Clear"]);
+    expect(names).toEqual(["View handover", "Job details", "Files", "Clear"]);
     await userEvent.click(within(done).getByRole("button", { name: "Clear" }));
     expect(briefs).toEqual(["busy-20261117-0930"]);
     expect(cleared).toEqual(["invented-20261117-0900"]);

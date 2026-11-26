@@ -703,7 +703,7 @@ class Chat:
         the buttons), which the Lead is told of, so it can make it again if asked."""
         if job_id not in self.jobs:
             return
-        line = f"{text} ('{jobs.job_name(job_id)}', job {job_id}; its report is jobs/{job_id}/report.md.)"
+        line = f"{text} ('{jobs.job_name(job_id)}', job {job_id}; its handover is jobs/{job_id}/report.md.)"
         self.transcript.ombro(line)
         self.pending_note += f"[Ombro note: {line}]\n"
         if again_text:
@@ -2109,9 +2109,9 @@ class Chat:
             JobStarted(job_id, name, f"Live: '{name}' has started. Its steps show here as they happen; Esc stops it.")
         )
         status = livejob.follow(self.home, self.ui, job_dir)
-        self.transcript.ombro(f"The live job '{name}' ended ({status}). Its report is jobs/{job_id}/report.md.")
+        self.transcript.ombro(f"The live job '{name}' ended ({status}). Its handover is jobs/{job_id}/report.md.")
         self.pending_note += (
-            f"[Ombro note: the live job {job_id} ended ({status}); its report is "
+            f"[Ombro note: the live job {job_id} ended ({status}); its handover is "
             f"jobs/{job_id}/report.md and the user has it in the chat.]\n"
         )
         if status not in ("completed", "stopped_by_limit"):

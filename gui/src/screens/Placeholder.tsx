@@ -2,7 +2,7 @@
 
 const PAGES: Record<string, [string, string]> = {
   jobs: ["Jobs", "Every job, running and finished, comes here next."],
-  report: ["Report", "A job's report, as a page of its own, comes here next."],
+  report: ["Handover", "A job's handover, as a page of its own, comes here next."],
   approvals: ["Approvals", "What waits for your yes comes here next. Until then, `ombro approvals` in a terminal shows it."],
   scheduled: ["Scheduled work", "Your scheduled jobs come here next."],
 };

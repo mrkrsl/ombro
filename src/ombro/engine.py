@@ -30,6 +30,11 @@ LAST_CALL_TOOLS = ("workspace.write", "workspace.edit", "workspace.place")
 TOOL_RESULT_CAP = 64_000  # room for one workspace.read of READ_MAX_CHARS, with its fencing
 
 
+# How much of a step the journal keeps as its note, for the app's side panel, which shows it whole
+# (the terminal's chat shows a line of it). The full text is kept beside it in the entry.
+STEP_NOTE_CHARS = 1000
+
+
 def _short(text: str, n: int = 160) -> str:
     text = " ".join(str(text or "").split())
     return text if len(text) <= n else text[: n - 1] + "…"
@@ -831,7 +836,7 @@ class Engine:
             if outcome not in ("done", "cannot_proceed"):
                 outcome = "done"
             summary = str(tc.arguments.get("summary") or "").strip()
-            self.journal.write("lead", "finish", _short(summary), outcome=outcome, summary=summary)
+            self.journal.write("lead", "finish", _short(summary, STEP_NOTE_CHARS), outcome=outcome, summary=summary)
             self.finished = True
             return {"ok": True}
         self.journal.write("lead", "tool_refused", f"unknown tool {tc.name!r}")
@@ -944,7 +949,13 @@ class Engine:
         self.gate.check_round()
         n = self.gate.record_round()
         self.journal.write(
-            "lead", "briefed", f"{name}: {_short(task)}", target=name, crew=role.crew, task=task, round=n
+            "lead",
+            "briefed",
+            f"{name}: {_short(task, STEP_NOTE_CHARS)}",
+            target=name,
+            crew=role.crew,
+            task=task,
+            round=n,
         )
         outcome = self._run_role(role, task)
         assert self.lead is not None
@@ -1086,7 +1097,9 @@ class Engine:
                 result, errors = contract.validate_value(tc.arguments)
                 if result is not None:
                     messages.append(_tool_message(tc.id, {"ok": True}))
-                    self.journal.write(role.name, "returned", _short(result["summary"]), status="ok", result=result)
+                    self.journal.write(
+                        role.name, "returned", _short(result["summary"], STEP_NOTE_CHARS), status="ok", result=result
+                    )
                     if result.get("journal_note"):
                         self.journal.write(role.name, "note", _short(result["journal_note"], 300))
                     return {"status": "ok", "result": result}
@@ -1139,7 +1152,9 @@ class Engine:
                 continue
             result, errors = contract.validate_text(reply.content)
             if result is not None:
-                self.journal.write(role.name, "returned", _short(result["summary"]), status="ok", result=result)
+                self.journal.write(
+                    role.name, "returned", _short(result["summary"], STEP_NOTE_CHARS), status="ok", result=result
+                )
                 if result.get("journal_note"):
                     self.journal.write(role.name, "note", _short(result["journal_note"], 300))
                 return {"status": "ok", "result": result}

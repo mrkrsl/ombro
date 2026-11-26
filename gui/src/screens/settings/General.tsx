@@ -444,7 +444,8 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
   const prefs = useView<Preferences>("/preferences");
   const limits = useView<{ allowance: string }>("/limits");
   const browser = useView<BrowserView>("/browser");
-  const { themeChoice, setThemeChoice, remote } = useStore();
+  const { themeChoice, setThemeChoice, remote, setPref } = useStore();
+  const openHandover = useStore((s) => s.prefs?.open_handover !== false);
   const [other, setOther] = useState<string | null>(null); // "Other…": the path being typed
   const [checking, setChecking] = useState(false);
   const [saved, setSaved] = useState<Record<string, number>>({});
@@ -627,6 +628,17 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
             ))}
           </select>
         </span>
+      </Setting>
+      <Setting hint="When a job from the chat you're in is delivered, the side panel opens on its handover.">
+        <label className="switch">
+          <span>Open the handover when a job is delivered</span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={openHandover}
+            onChange={(e) => void setPref("open_handover", e.target.checked)}
+          />
+        </label>
       </Setting>
       {other === null && <Problem text={problem} />}
     </section>

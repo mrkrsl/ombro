@@ -123,13 +123,13 @@ export default function App() {
   }
 
   const conversation = current ? conversations[current] ?? null : null;
-  // The inspector is about a chat: on the pages (Jobs, Approvals, Scheduled, Settings, a report)
+  // The side panel is about a chat: on the pages (Jobs, Approvals, Scheduled, Settings, a handover)
   // it and its button are hidden.
   const chatScreen = screen === "home" || screen === "chat";
   const showInspector = inspector && chatScreen;
   const inChat = screen === "chat" && conversation;
   const PAGE_TITLES: Record<string, string> = {
-    jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Report", brief: "Brief",
+    jobs: "Jobs", approvals: "Approvals", scheduled: "Scheduled work", settings: "Settings", report: "Handover", brief: "Job details",
   };
   const title =
     screen === "chat"
@@ -153,7 +153,7 @@ export default function App() {
             {title}
           </div>
           {chatScreen && !inspector && (
-            <button className="icon-button" aria-label="Show the inspector" onClick={s.toggleInspector}>
+            <button className="icon-button" aria-label="Show the side panel" onClick={s.toggleInspector}>
               <PanelRight size={22} />
             </button>
           )}
@@ -164,16 +164,7 @@ export default function App() {
         {screen === "home" && <HomeGreeting />}
         {chatScreen && <Composer conversation={inChat || (screen === "home" && s.welcome) ? conversation : null} />}
       </main>
-      {showInspector && (
-        <div className="inspector-wrap">
-          <div className="inspector-top" data-tauri-drag-region>
-            <button className="icon-button" aria-label="Hide the inspector" onClick={s.toggleInspector}>
-              <PanelRight size={22} />
-            </button>
-          </div>
-          <Inspector />
-        </div>
-      )}
+      {showInspector && <Inspector />}
       <Toasts />
       {s.restarting && <Restarting />}
     </div>

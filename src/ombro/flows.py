@@ -190,13 +190,13 @@ class Flows:
         pid = meta.get("pid")
         if not pid or not jobs.pid_alive(int(pid)):
             jobs.reap_dead_jobs(self.home)
-            self.say(f"Job {job_dir.name} had no live process; it is marked failed and its report written.")
+            self.say(f"Job {job_dir.name} had no live process; it is marked failed and its handover written.")
             return
-        if not self.ui.yes("stop", f"Stop job {job_dir.name}? It finishes its current call, then writes its report."):
+        if not self.ui.yes("stop", f"Stop job {job_dir.name}? It finishes its current call, then writes its handover."):
             self.say("Nothing changed.")
             return
         os.kill(int(pid), signal.SIGTERM)
-        self.say(f"Asked job {job_dir.name} to stop. Its notice appears here when it has written its report.")
+        self.say(f"Asked job {job_dir.name} to stop. Its notice appears here when it has written its handover.")
 
     def cmd_start(self, words: list[str], rest: str) -> None:
         """/start [spec]: start a saved spec again, as `ombro start --spec <spec> --detach` does."""

@@ -20,7 +20,7 @@ type Call = [string, string, unknown?];
 const prefs: Preferences = {
   name: "Ada", theme: "auto", default_crew: "default", default_crew_title: "Default Crew", editor: "",
   outward: "balanced", instructions_set: true, instructions: "I run an invented bakery.", background_feed: true,
-  notifications: true, thinking: "medium", thinking_set: false, files: {},
+  notifications: true, open_handover: true, thinking: "medium", thinking_set: false, files: {},
 };
 const models: ModelList = {
   default: "invented-chat",

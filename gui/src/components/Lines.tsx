@@ -1,13 +1,14 @@
-// The conversation's lines: the Lead's words, yours, Ombro's notes, progress and job cards.
+// The conversation's lines: the Lead's words, yours, Ombro's notes, progress, and the way to each
+// delivered job's handover.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowRight } from "lucide-react";
 import type { JobOffer, Report } from "../api/types";
-import type { Line } from "../store/conversation";
+import { reportSummary, splitReport, type Line } from "../store/conversation";
 import type { Screen } from "../store/store";
 import { useStore } from "../store/store";
 import { whenVisible } from "../platform";
 import { Markdown, MarkdownFile } from "./Markdown";
-import { ReportCard } from "./ReportCard";
 import { ReplyAvatar } from "./Avatar";
 
 /** The Lead's own words: what gets an avatar beside it. */
@@ -75,10 +76,8 @@ function LineView({ line }: { line: Line }) {
           <b>{line.live ? "Live:" : "Background:"}</b> {line.text}
         </div>
       ) : null;
-    case "report":
-      return <ReportCard report={line.report} />;
     case "livereport":
-      return <LiveReport jobId={line.jobId} scroll={line.live} />;
+      return <Delivered jobId={line.jobId} scroll={line.live} />;
     case "page":
       return (
         <div className="line note done">
@@ -200,9 +199,11 @@ function AgainOffer({ text, offers }: { text: string; offers: JobOffer[] }) {
   );
 }
 
-/** A job's report, fetched when its end arrives, so it sits in the chat where the job ended. */
-function LiveReport({ jobId, scroll }: { jobId: string; scroll: boolean }) {
+/** A job delivered: the Lead's summary of it and the way to its handover in the side panel. Its
+ * report is fetched when its end arrives, so it sits in the chat where the job ended. */
+function Delivered({ jobId, scroll }: { jobId: string; scroll: boolean }) {
   const api = useStore((s) => s.api);
+  const openHandover = useStore((s) => s.openHandover);
   const [report, setReport] = useState<Report | null>(null);
   const [problem, setProblem] = useState("");
   useEffect(() => {
@@ -216,18 +217,34 @@ function LiveReport({ jobId, scroll }: { jobId: string; scroll: boolean }) {
       })
       .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
   }, [api, jobId]);
-  // A live job's arrives after the chat has scrolled to its end: bring its top into view, to read
-  // from there. A background job's waits where it is, so as not to pull you from what you're doing.
+  // A live job's arrives after the chat has scrolled to its end: bring it into view. A background
+  // job's waits where it is, so as not to pull you from what you're doing.
   const top = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (report && scroll) top.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    if (report && scroll) top.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
   }, [report, scroll]);
-  if (problem) return <div className="line error">The report could not be opened: {problem}</div>;
-  return report ? (
-    <div ref={top}>
-      <ReportCard report={report} brief />
+  if (problem) return <div className="line error">The handover could not be opened: {problem}</div>;
+  if (!report) return <div className="line progress">Opening the handover…</div>;
+  const summary = report.report ? reportSummary(splitReport(report.report).head) : "";
+  const open = () => openHandover(jobId);
+  return (
+    <div
+      ref={top}
+      className="delivered-callout"
+      role="button"
+      tabIndex={0}
+      aria-label={`See the handover for ${report.name}`}
+      onClick={open}
+      onKeyDown={(e: KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      }}
+    >
+      <ReplyAvatar id={`delivered:${jobId}`} seed={jobId} moving={false} />
+      <Markdown className="line lead" text={`${summary || `${report.name} has ended.`} See the handover.`} />
+      <ArrowRight className="arrow" size={22} aria-hidden />
     </div>
-  ) : (
-    <div className="line progress">Opening the report…</div>
   );
 }

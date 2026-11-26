@@ -12,6 +12,7 @@ scheduler or the command line: call `poll()` every couple of seconds.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -295,7 +296,7 @@ PROGRESS = {
     "outward_done": "did an outward action",
     "limit_reached": "hit a limit",
     "finish": "finished the work",
-    "report_written": "wrote the report",
+    "report_written": "wrote the handover",
     "failed": "failed",
     "asked": "asked you",
     "answered": "answered",
@@ -303,8 +304,8 @@ PROGRESS = {
 }
 
 
-# How much of a step's note the conversation shows; the app's side panel shows it whole (the
-# journal keeps notes to about 180 characters).
+# How much of a step's note the terminal's conversation shows; the app shows it whole in its side
+# panel and cuts it to one line in its chat (the journal keeps notes to engine.STEP_NOTE_CHARS).
 CHAT_NOTE_CHARS = 80
 
 
@@ -321,6 +322,12 @@ def progress_line(job_id: str, ev: dict, cut: int | None = CHAT_NOTE_CHARS) -> s
 def full_line(e: JobProgress) -> str:
     """A step as the side panel shows it: the whole note."""
     return progress_line(e.job_id, {"action": e.action, "role": e.role, "note": e.note}, cut=None) or e.text
+
+
+def for_window(event: Event) -> Event:
+    """An event as the desktop app gets it: a step's whole line, which its chat cuts to one line
+    itself, at the column's edge (the terminal's chat cuts the note to CHAT_NOTE_CHARS)."""
+    return replace(event, text=full_line(event)) if isinstance(event, JobProgress) else event
 
 
 def job_progress(job_id: str, ev: dict) -> JobProgress | None:
@@ -646,7 +653,7 @@ def record_job_end_in_chat(home: Home, e: JobEnded) -> bool:
         if e.job_id not in [str(j) for j in meta.get("jobs") or []]:
             continue
         line = (
-            f"**Ombro:** {e.text} ('{jobs.job_name(e.job_id)}', job {e.job_id}; its report is "
+            f"**Ombro:** {e.text} ('{jobs.job_name(e.job_id)}', job {e.job_id}; its handover is "
             f"jobs/{e.job_id}/report.md.)"
             + (f" It can be {AGAIN_DONE[e.again]} with /{e.again} {e.job_id}." if e.again else "")
         )

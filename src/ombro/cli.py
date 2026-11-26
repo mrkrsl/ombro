@@ -63,7 +63,9 @@ def _resolve_job(home: Home, job_id: str | None, crew: str | None) -> Path:
 
 def _reap(home: Home) -> None:
     for job_dir in jobs.reap_dead_jobs(home):
-        print(f"Job {job_dir.name} had stopped without finishing; marked failed and wrote its report.", file=sys.stderr)
+        print(
+            f"Job {job_dir.name} had stopped without finishing; marked failed and wrote its handover.", file=sys.stderr
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +105,7 @@ def _install_stop_handlers(engine) -> None:
     def on_int(signum, frame):
         if engine.gate.stop_requested:
             raise KeyboardInterrupt
-        print("\nStopping after the current call; the report will be written. Ctrl-C again to abandon.", flush=True)
+        print("\nStopping after the current call; the handover will be written. Ctrl-C again to abandon.", flush=True)
         engine.request_stop("stopped with Ctrl-C")
 
     signal.signal(signal.SIGTERM, on_term)
@@ -241,7 +243,7 @@ def cmd_start(args) -> int:
 
     print(
         f"Job {job_id} (crew{'s' if len(crews) > 1 else ''} {', '.join(crews)}). "
-        "Ctrl-C stops it and still writes the report.\n"
+        "Ctrl-C stops it and still writes the handover.\n"
     )
     status = _execute(home, job_dir, echo=_echo)
     print(f"\nRun {job_id} ended: {status}\n")
@@ -343,7 +345,7 @@ def cmd_status(args) -> int:
     )
     if meta.get("outward"):
         print(f"Outward   {outward.describe(meta['outward'])}")
-    print(f"\n{int(reserve * 100)}% of the token limit is held back for the report.")
+    print(f"\n{int(reserve * 100)}% of the token limit is held back for the handover.")
     return 0
 
 
@@ -361,7 +363,7 @@ def cmd_report(args) -> int:
         return _print_json(data)
     if not path.is_file():
         meta, _ = jobs.read_job(job_dir)
-        print(f"Job {job_dir.name} has no report yet (status {meta.get('status')}).")
+        print(f"Job {job_dir.name} has no handover yet (status {meta.get('status')}).")
         return 1
     print(path.read_text(encoding="utf-8"), end="")
     jobs.mark_seen(job_dir)
@@ -456,7 +458,7 @@ def cmd_summary(args) -> int:
         print(
             "\nFinished, and not yet looked at: "
             + ", ".join(r["job_id"] for r in s["unseen"])
-            + ". See one with `ombro report <job_id>`."
+            + ". See one's handover with `ombro handover <job_id>`."
         )
     return 0
 
@@ -521,14 +523,14 @@ def cmd_stop(args) -> int:
         return 1
     if not pid or not jobs.pid_alive(int(pid)):
         jobs.reap_dead_jobs(home)
-        print(f"Job {job_dir.name} had no live process; marked failed and wrote its report.")
+        print(f"Job {job_dir.name} had no live process; marked failed and wrote its handover.")
         return 0
     os.kill(int(pid), signal.SIGTERM)
-    print(f"Asked job {job_dir.name} to stop. It finishes its current call, then writes its report.")
+    print(f"Asked job {job_dir.name} to stop. It finishes its current call, then writes its handover.")
     deadline = time.time() + args.wait
     while time.time() < deadline:
         if jobs.read_job(job_dir)[0].get("status") != "running":
-            print(f"Stopped. Report: {job_dir / 'report.md'}")
+            print(f"Stopped. Handover: {job_dir / 'report.md'}")
             return 0
         time.sleep(0.25)
     print("Still finishing. Check with `ombro status`.")
@@ -1560,10 +1562,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, func, helptext in (
         ("status", cmd_status, "limits and usage for a job"),
-        ("report", cmd_report, "show a job's report"),
+        ("handover", cmd_report, "show a job's handover"),
         ("journal", cmd_journal, "show a job's journal"),
     ):
-        s = sub.add_parser(name, help=helptext)
+        # `ombro report`, the handover's old name, still works.
+        s = sub.add_parser(name, help=helptext, aliases=["report"] if name == "handover" else [])
         s.add_argument("job_id", nargs="?", help="job ID or a unique prefix (default: latest)")
         s.add_argument("--crew")
         s.add_argument("--json", action="store_true", help="print JSON, for interfaces")
@@ -1572,7 +1575,7 @@ def build_parser() -> argparse.ArgumentParser:
             s.add_argument("--follow", "-f", action="store_true", help="keep showing new events until the job ends")
         s.set_defaults(func=func)
 
-    s = sub.add_parser("stop", help="stop a job; it writes its report first")
+    s = sub.add_parser("stop", help="stop a job; it writes its handover first")
     s.add_argument("job_id")
     s.add_argument("--wait", type=float, default=15.0, help=argparse.SUPPRESS)
     s.set_defaults(func=cmd_stop)

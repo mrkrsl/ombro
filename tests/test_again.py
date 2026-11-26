@@ -106,7 +106,7 @@ def test_a_restart_follows_the_same_brief_and_builds_on_what_was_done(job, home,
     client = ScriptedClient([fake.finish("Finished the list."), fake.keep_notes(), LEAD_REPORT])
     Engine(home, new, client_factory=lambda spec: client).execute()
     assert "Carrying on from an earlier run" in str(client.calls[0]["messages"])
-    narrative = [c for c in client.calls if "writing the parts of the final report" in str(c["messages"])][0]
+    narrative = [c for c in client.calls if "writing the parts of the handover" in str(c["messages"])][0]
     assert f"carried on from the earlier job {earlier.name}" in str(narrative["messages"])
 
 

@@ -41,8 +41,8 @@ COMMANDS = [
     Command("/restart", "restart a job that ran out of tokens, building on what it did", "chat"),
     Command("/resume", "resume a job that stopped or failed, from where it got to", "chat"),
     Command("/jobs", "jobs and their status", "screen", "jobs"),
-    Command("/report", "a job's report and its deliverables", "screen", "report"),
-    Command("/stop", "stop a job; it writes its report first", "session"),
+    Command("/handover", "a job's handover and its deliverables", "screen", "report"),
+    Command("/stop", "stop a job; it writes its handover first", "session"),
     Command("/open", "open a job's workspace folder", "screen", "open"),
     Command("/approvals", "what waits for your approval", "screen", "approvals"),
     Command("/schedule", "scheduled jobs", "screen", "scheduled"),
@@ -63,7 +63,7 @@ COMMANDS = [
 ]
 
 # Typed but not listed: other names for listed commands, and /setup.
-ALIASES = {"/folders": "/folder", "/q": "/quit", "/exit": "/quit"}
+ALIASES = {"/folders": "/folder", "/q": "/quit", "/exit": "/quit", "/report": "/handover"}
 UNLISTED = [Command("/setup", "set Ombro up again", "flow")]
 
 _BY_NAME = {c.name: c for c in COMMANDS + UNLISTED}
