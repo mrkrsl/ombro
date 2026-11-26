@@ -235,7 +235,7 @@ def test_a_reopened_chat_shows_a_finished_jobs_report_again(home, job):
 
     again = ChatSession(home)
     again([], ["/chats", "1"])
-    assert f"Read the report: ombro report {job_id}" in again.output  # the job's ending, with its report
+    assert f"Read the handover: ombro handover {job_id}" in again.output  # the job's ending, with its handover
     assert "Seven invented teapots." in again.output
     assert "job invented-gone-1" in again.output  # a job that's gone: the note as it was
     assert "ombro report invented-gone-1" not in again.output
