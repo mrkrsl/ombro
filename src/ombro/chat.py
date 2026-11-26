@@ -40,11 +40,13 @@ from ombro.ui import (
     PastTurn,
     ConsoleUI,
     Failure,
+    FileView,
     Field,
     LeadSaid,
     ModeChanged,
     Note,
     Option,
+    ProposalShown,
     SetAside,
     Usage,
 )
@@ -260,6 +262,19 @@ ENTRY = re.compile(r"^\*\*(You \((Chat|Brief|Role)\)|Lead(?: \((Brief|Role)\))?|
 
 # Ombro's note that a job started from a chat has ended names its report: jobs/<id>/report.md.
 PAST_JOB_REPORT = re.compile(r"jobs/([^/\s]+)/report\.md")
+
+
+# A file an interview proposed, as its transcript keeps it: its name, then its text in a fence.
+PROPOSED_FILE = re.compile(r"`([^`\n]+)`\n\n````markdown\n(.*?)\n````", re.DOTALL)
+
+
+def past_proposal(text: str) -> ProposalShown | None:
+    """A brief or file the Lead proposed (or you edited) in an interview, from a reopened chat: shown
+    as it was at the time, formatted, rather than as the Markdown source kept in the file."""
+    if not text.startswith(("Lead proposed:", "You edited it to:")):
+        return None
+    files = [FileView(label, label, body, replaces=False) for label, body in PROPOSED_FILE.findall(text)]
+    return ProposalShown(files) if files else None
 
 
 def _is_note(chunk: str) -> bool:
@@ -597,6 +612,10 @@ class Chat:
         for who, text in all_turns(entries):
             if who == "ombro":
                 self.ui.show(self._past_ombro_note(text))
+            elif who == "lead" and (shown := past_proposal(text)) is not None:
+                if text.startswith("You edited it to:"):
+                    self.ui.show(Note("You edited it to:", level="done"))
+                self.ui.show(shown)
             else:
                 self.ui.show(PastTurn("you" if who == "user" else "lead", text))
         self._save()

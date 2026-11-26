@@ -35,11 +35,25 @@ export function splitFrontMatter(text: string): { settings: string; body: string
   return m ? { settings: m[1].trim(), body: text.slice(m[0].length).trim() } : { settings: "", body: text };
 }
 
+/** A file's settings, one to a line: a list under a name ("crews:" then "- marketing"), or names
+ * under it ("folders:" then "  shop-files: read"), joined onto its line ("crews: marketing"). */
+export function settingLines(settings: string): string[] {
+  const out: string[] = [];
+  for (const line of settings.split(/\r?\n/)) {
+    const item = /^\s*-\s+(.*)$/.exec(line) ?? /^\s+(\S.*)$/.exec(line);
+    if (item && out.length) {
+      const last = out[out.length - 1];
+      out[out.length - 1] = /:\s*$/.test(last) ? `${last.trimEnd()} ${item[1]}` : `${last}, ${item[1]}`;
+    } else out.push(line);
+  }
+  return out;
+}
+
 /** A whole Markdown file, as a brief or a crew member's file: its settings as a short list
  * of names and values (or as written, when they are more than that), then the body formatted. */
 export function MarkdownFile({ text }: { text: string }) {
   const { settings, body } = splitFrontMatter(text);
-  const lines = settings ? settings.split(/\r?\n/) : [];
+  const lines = settings ? settingLines(settings) : [];
   const simple = lines.every((l) => /^[\w.-]+:\s*\S/.test(l));
   return (
     <div className="markdown-file">

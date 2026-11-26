@@ -4,7 +4,7 @@
 // delivered; Jobs › View handover shows the same.
 
 import { useState, type MouseEvent } from "react";
-import { Copy, ExternalLink, FileText } from "lucide-react";
+import { Copy, ExternalLink, FileText, NotebookText } from "lucide-react";
 import type { Deliverable, Report } from "../api/types";
 import { splitReport } from "../store/conversation";
 import { useStore } from "../store/store";
@@ -51,12 +51,19 @@ export function fileKind(path: string): string {
   return KINDS[ext] ?? (ext ? `${ext.toUpperCase()} file` : "File");
 }
 
-/** The Lead's part of the handover: its title (the chat's name), then each section it wrote. */
+/** The Lead's part of the handover: its title (the chat's name) with the way to the job's details
+ * beside it, then each section it wrote. */
 export function HandoverText({ report, title }: { report: Report; title: string }) {
+  const readBrief = useStore((s) => s.readBrief);
   const sections = report.report ? handoverSections(report.report) : [];
   return (
     <section className="handover" aria-label="Handover">
-      <h2 className="handover-title">{title}</h2>
+      <div className="handover-head">
+        <h2 className="handover-title">{title}</h2>
+        <button className="text-button" onClick={() => void readBrief(report.job_id)}>
+          <NotebookText size={16} /> Job details
+        </button>
+      </div>
       {!report.report && <p className="muted">This job has no handover yet.</p>}
       {sections.map((s) => (
         <div key={s.title} className="handover-section">
@@ -68,13 +75,15 @@ export function HandoverText({ report, title }: { report: Report; title: string 
   );
 }
 
-/** The files a job made: a line naming them, then each one, Markdown open to read, others to open. */
+/** The files a job made: a line naming them, then each one, Markdown open to read, others to open.
+ * Nothing at all when it made none. */
 export function Deliverables({ report }: { report: Report }) {
   const made = report.deliverables.filter((d) => d.kind !== "other");
+  if (!made.length) return null;
   return (
     <section className="deliverables" aria-label="Deliverables">
       <p className="deliverables-line">
-        <b>Deliverables:</b> {made.length ? made.map((d) => d.name).join("; ") : "None"}
+        <b>Deliverables:</b> {made.map((d) => d.name).join("; ")}
       </p>
       {made.map((d) => (
         <DeliverableCard key={d.path} d={d} />

@@ -6,7 +6,7 @@ import { Deliverables, HandoverText } from "../components/Handover";
 import { useStore } from "../store/store";
 
 export function ReportPage() {
-  const { report, show, readBrief, chats } = useStore();
+  const { report, show, chats } = useStore();
   const chat = report?.chat ? chats.find((c) => c.id === report.chat) : undefined;
   return (
     <div className="page report-page handover-page">
@@ -19,11 +19,6 @@ export function ReportPage() {
         {report ? (
           <>
             <HandoverText report={report} title={chat?.title || report.name} />
-            <p className="job-details-link">
-              <button className="link-button" onClick={() => void readBrief(report.job_id)}>
-                Job details
-              </button>
-            </p>
             <Deliverables report={report} />
           </>
         ) : (

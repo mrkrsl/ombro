@@ -32,7 +32,7 @@
   --feed-text: var(--ombro-600); /* background work in the side panel: a shade softer than text */
   --input-border: #286e80; /* the design's input stroke */
   --report-bg: var(--bg); /* the report card */
-  --deliver-bg: var(--ombro-100); /* under the deliverables, and the delivered message in the chat */
+  --deliver-bg: #f4f9fa; /* under the deliverables, and the delivered message in the chat: a breath of blue */
   --deliver-card: #ffffff; /* a deliverable, standing off that */
   --pill: var(--ombro-400);
   --sidebar-glass: rgb(250 250 250 / 0.6); /* the panels let the arc show through */
@@ -70,8 +70,8 @@
   --feed-text: var(--ombro-200);
   --input-border: #2f6b7a;
   --report-bg: var(--ombro-700); /* the report card: as dark as the blues go */
-  --deliver-bg: var(--ombro-700); /* as dark as the blues go */
-  --deliver-card: var(--bg);
+  --deliver-bg: #12303a; /* a breath lighter than the page */
+  --deliver-card: #163842;
   --pill: var(--ombro-200);
   --sidebar-glass: rgb(11 31 36 / 0.6);
   --panel-glass: rgb(15 42 49 / 0.45);

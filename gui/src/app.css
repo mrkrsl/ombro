@@ -943,7 +943,8 @@ a:visited {
 .home .who {
   grid-column: 2;
   grid-row: 1;
-  font-size: 18px;
+  font-family: var(--voice); /* the Lead's own words: its voice, a size up to match Geist's */
+  font-size: 21px;
   margin: 0;
   font-weight: 600;
   color: var(--strong);
@@ -1189,11 +1190,26 @@ a:visited {
 /* -- the handover and the deliverables ---------------------------------------------- */
 
 .handover {
-  padding: 22px 22px 6px;
+  padding: 22px 22px 24px;
+}
+
+.handover-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+}
+
+.handover-head .text-button {
+  flex: none;
+  gap: 6px;
+  font-size: 14px;
+  align-self: center;
 }
 
 .handover-title {
-  margin: 0 0 18px;
+  margin: 0;
   font-size: 17px;
   font-weight: 500;
   color: var(--strong);
@@ -1219,12 +1235,6 @@ a:visited {
 
 .markdown.voice > :last-child {
   margin-bottom: 0;
-}
-
-.job-details-link {
-  margin: 0;
-  padding: 14px 22px 22px;
-  font-size: 14px;
 }
 
 /* The deliverables sit on a tint of their own, to the foot of the panel; each one stands off it a
@@ -1338,11 +1348,7 @@ a:visited {
 
 /* A handover as a page of its own (Jobs › View handover): the same parts, in one column. */
 .handover-page .handover {
-  padding: 0 0 6px;
-}
-
-.handover-page .job-details-link {
-  padding: 14px 0 22px;
+  padding: 0 0 24px;
 }
 
 .handover-page .deliverables {

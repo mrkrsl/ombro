@@ -239,3 +239,14 @@ def test_a_reopened_chat_shows_a_finished_jobs_report_again(home, job):
     assert "Seven invented teapots." in again.output
     assert "job invented-gone-1" in again.output  # a job that's gone: the note as it was
     assert "ombro report invented-gone-1" not in again.output
+
+
+def test_a_reopened_chat_shows_a_proposed_brief_formatted():
+    from ombro.chat import past_proposal
+    from ombro.ui import ProposalShown
+
+    text = "Lead proposed:\n\n`specs/teapots.md`\n\n````markdown\nname: teapots\n\n# Teapots\n\nCount them.\n````"
+    shown = past_proposal(text)
+    assert isinstance(shown, ProposalShown)
+    assert shown.files[0].label == "specs/teapots.md" and shown.files[0].text.endswith("Count them.")
+    assert past_proposal("Here's what I understand.") is None

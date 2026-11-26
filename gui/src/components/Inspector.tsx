@@ -144,11 +144,6 @@ export function Inspector() {
             report ? (
               <>
                 <HandoverText report={report} title={chatTitle || job.name} />
-                <p className="job-details-link">
-                  <button className="link-button" onClick={() => void s.readBrief(job.job_id)}>
-                    Job details
-                  </button>
-                </p>
                 <Deliverables report={report} />
               </>
             ) : (
