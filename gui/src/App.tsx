@@ -1,7 +1,8 @@
 // The window: sidebar, main column (title bar, page, foot). The page is the home screen, a
 // conversation, or one of the pages to come.
 
-import { useEffect, type ReactElement } from "react";
+import { useEffect, type CSSProperties, type ReactElement } from "react";
+import { panelWidth } from "./components/Splitter";
 import { PanelLeft, PanelRight } from "lucide-react";
 import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
@@ -146,7 +147,15 @@ export default function App() {
   };
 
   return (
-    <div className={`window ${isMac ? "mac" : "linux"}`}>
+    <div
+      className={`window ${isMac ? "mac" : "linux"}`}
+      style={
+        {
+          "--sidebar-w": `${s.sizes.sidebar}px`,
+          "--panel-w": panelWidth(s.sizes.panel, sidebar ? s.sizes.sidebar : 0),
+        } as CSSProperties
+      }
+    >
       {sidebar && <Sidebar />}
       <main className="main">
         <div className={`main-top ${sidebar ? "" : "wide"}`} data-tauri-drag-region>

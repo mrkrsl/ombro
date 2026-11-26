@@ -24,6 +24,7 @@ import { isMac, notify, openFile, openLink, revealFile, whenVisible } from "../p
 import { readCopy, saveCopy, saveFolder } from "../copies";
 import { PROTOCOL, startConnection, tooOld, whereNow, type Where } from "../where";
 import { SHORTCUTS, shortcutText } from "../shortcuts";
+import { keepSizes, keptSizes, type Sizes } from "../components/Splitter";
 import { addLocal, apply, splitReport, newConversation, opening, type Conversation } from "./conversation";
 
 const MAX_ATTACH_BYTES = 25 * 1024 * 1024; // the most serve takes for one file
@@ -98,6 +99,8 @@ type State = {
   /** The side panel stays out of the way on the new chat screen, even when it is open (`inspector`)
    * for chats; this is true while you've asked for it there. Leaving the screen sets it back. */
   homePanel: boolean;
+  /** The sidebar's width and the side panel's share of the rest, as dragged (kept on this computer). */
+  sizes: Sizes;
   prefs: Preferences | null;
   feed: FeedLine[]; // every job's progress since the window opened, newest last
   jobs: JobRow[];
@@ -141,6 +144,8 @@ type Actions = {
   toggleInspector: () => void;
   /** Open the side panel on a job's handover. */
   openHandover: (jobId: string) => void;
+  /** Resize the sidebar or the side panel; `keep` saves the sizes (when a drag ends). */
+  setSizes: (sizes: Partial<Sizes>, keep?: boolean) => void;
   setTheme: (theme: Theme, save?: boolean) => void;
   setThemeChoice: (choice: ThemeChoice) => void;
   showSettings: (page: SettingsPage) => void;
@@ -303,6 +308,7 @@ export const useStore = create<State & Actions>((set, get) => {
     inspector: false,
     panelJob: null,
     homePanel: false,
+    sizes: keptSizes(),
     prefs: null,
     feed: [],
     jobs: [],
@@ -971,6 +977,11 @@ export const useStore = create<State & Actions>((set, get) => {
 
     toggleSidebar() {
       set((s) => ({ sidebar: !s.sidebar }));
+    },
+
+    setSizes(sizes, keep = false) {
+      set((s) => ({ sizes: { ...s.sizes, ...sizes } }));
+      if (keep) keepSizes(get().sizes);
     },
 
     openHandover(jobId) {

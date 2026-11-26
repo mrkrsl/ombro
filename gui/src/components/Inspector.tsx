@@ -13,6 +13,7 @@ import { usageText } from "../store/conversation";
 import { modelLabel } from "../store/models";
 import { chatJobIds, useStore } from "../store/store";
 import { Deliverables, HandoverText } from "./Handover";
+import { PANEL_DEFAULT, panelShare, Splitter } from "./Splitter";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -96,6 +97,16 @@ export function Inspector() {
 
   return (
     <aside className="inspector-wrap" aria-label="Side panel">
+      <Splitter
+        side="left"
+        label="Resize the side panel"
+        onDrag={(x) => {
+          const room = window.innerWidth - (s.sidebar ? s.sizes.sidebar : 0);
+          s.setSizes({ panel: panelShare(window.innerWidth - x, room) });
+        }}
+        onDone={() => s.setSizes({}, true)}
+        onReset={() => s.setSizes({ panel: PANEL_DEFAULT }, true)}
+      />
       <div className="inspector-top" data-tauri-drag-region>
         <div className="title" data-tauri-drag-region>
           {s.screen === "chat" ? title : ""}
