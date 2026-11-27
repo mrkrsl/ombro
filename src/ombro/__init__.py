@@ -6,4 +6,4 @@ version 3 only (AGPL-3.0-only).
 
 # The one version for the core, the server and the app. gui/package.json, gui/src-tauri/Cargo.toml
 # and gui/src-tauri/tauri.conf.json carry copies, which tests/test_version.py keeps in step.
-__version__ = "0.5.0"
+__version__ = "0.5.1-rc1"
