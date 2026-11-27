@@ -6,7 +6,7 @@ import type { BrowserView, Connection, ModelList, Preferences, ProviderPreset } 
 import { useStore, type ThemeChoice } from "../../store/store";
 import { Field, Item, Problem, RemovePanel, useAction, useRemoval, useView, type Check } from "./common";
 import { ServerForm } from "../Connect";
-import { describe, useThisComputer } from "../../where";
+import { describe, forgotten, useKept, useThisComputer } from "../../where";
 import { appVersion, catchSignIn, chooseBrowser, openLink } from "../../platform";
 import { inTauri } from "../../api/serve";
 import { autoCheck, checkForUpdate, setAutoCheck } from "../../updates";
@@ -648,13 +648,51 @@ function Choices({ models, onChange }: { models: ModelList; onChange: (m: ModelL
 
 /** Where Ombro runs: this computer or a server. A switch restarts the app on the other one; each
  * has its own settings, crews and jobs, and nothing is copied between them. App only. */
-function WhereItRuns() {
+export function WhereItRuns() {
   const where = useStore((s) => s.where);
   const connectNow = useStore((s) => s.connectNow);
   const [form, setForm] = useState(false);
+  const [notice, setNotice] = useState("");
   const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
   if (!where) return null;
   const local = where.mode === "local";
+  const previous = local ? where.previous : null;
+  const previousName = previous ? describe({ ...where, ...previous }) : "";
+
+  // Back to the server used before, with the key kept for it: no code, unless it has forgotten
+  // this computer.
+  async function reconnect() {
+    if (!previous) return;
+    setBusy(true);
+    setProblem("");
+    try {
+      const kept = await useKept(
+        previous.mode === "ssh"
+          ? { host: previous.host ?? "", port: previous.port ?? undefined }
+          : { address: previous.address ?? "" },
+      );
+      if (kept === "known") {
+        await connectNow();
+        return;
+      }
+      // Pair again: over SSH that needs no code; by address it does.
+      setNotice(
+        kept === "forgotten"
+          ? previous.mode === "ssh"
+            ? `${previousName} no longer knows this computer. Connect to pair again.`
+            : forgotten(previousName)
+          : `This computer has no key for ${previousName} any more. Connect to pair again.`,
+      );
+      setForm(true);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="settings-section">
       <h2>Where Ombro runs</h2>
@@ -663,13 +701,20 @@ function WhereItRuns() {
         {!local && " Jobs run there, and can't reach this computer's files."}
       </p>
       {form ? (
-        <ServerForm onConnected={() => void connectNow()} onCancel={() => setForm(false)} />
+        <ServerForm
+          notice={notice}
+          onConnected={() => void connectNow()}
+          onCancel={() => {
+            setForm(false);
+            setNotice("");
+          }}
+        />
       ) : asking ? (
         <div className="inline-form">
           <p>
             Ombro on this computer has its own settings, crews and jobs; nothing is copied from the server.{" "}
             {where.local_home ? "What you set up here before is still here." : "You'll set it up afresh."} Ombro restarts to
-            switch.
+            switch. You can go back to the server here without pairing again.
           </p>
           <div className="form-actions">
             <button
@@ -688,8 +733,13 @@ function WhereItRuns() {
         </div>
       ) : (
         <div className="form-actions">
-          <button className="secondary" onClick={() => setForm(true)}>
-            {local ? "Connect to a server" : "Connect to a different server"}
+          {previous && (
+            <button className="primary" disabled={busy} onClick={() => void reconnect()}>
+              {busy ? "Connecting…" : `Reconnect to ${previousName}`}
+            </button>
+          )}
+          <button className="secondary" disabled={busy} onClick={() => setForm(true)}>
+            {local ? (previous ? "Connect to another server" : "Connect to a server") : "Connect to a different server"}
           </button>
           {!local && (
             <button className="secondary" onClick={() => setAsking(true)}>
@@ -697,6 +747,11 @@ function WhereItRuns() {
             </button>
           )}
         </div>
+      )}
+      {problem && !form && (
+        <p className="problem" role="alert">
+          {problem}
+        </p>
       )}
       {local && !form && (
         <p className="muted">

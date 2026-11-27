@@ -138,8 +138,9 @@ fn begin(app: &tauri::AppHandle, conn: Connection) -> Result<(), String> {
 #[tauri::command]
 fn connection_state(app: tauri::AppHandle, serve: tauri::State<'_, Serve>) -> connection::State {
     let started = serve.started.lock().unwrap().clone();
-    let conn = started.clone().or_else(|| connection::load(&app));
-    connection::state(conn.as_ref(), started.is_some())
+    let saved = connection::load_saved(&app);
+    let conn = started.clone().or_else(|| saved.as_ref().map(|s| s.conn.clone()));
+    connection::state(conn.as_ref(), saved.as_ref().and_then(|s| s.previous.as_ref()), started.is_some())
 }
 
 #[tauri::command]
@@ -151,6 +152,31 @@ fn device_name() -> String {
 #[tauri::command]
 fn use_this_computer(app: tauri::AppHandle) -> Result<(), String> {
     connection::save(&app, &Connection::Local)
+}
+
+/// Use a server this computer was paired with before, with the key kept for it, if the server
+/// still knows it: then it's kept as the connection (not started). "known", "forgotten" (the
+/// server no longer knows this computer: pair again) or "none" (no key kept for it here).
+#[tauri::command]
+async fn use_kept(
+    app: tauri::AppHandle,
+    host: Option<String>,
+    port: Option<u16>,
+    address: Option<String>,
+) -> Result<connection::Kept, String> {
+    let conn = match (host, address) {
+        (Some(host), _) => Connection::Ssh {
+            host: connection::check_host(&host)?,
+            port: port.unwrap_or(connection::DEFAULT_PORT),
+        },
+        (None, Some(address)) => Connection::Direct { address: connection::check_address(&address)? },
+        (None, None) => return Err("no server given".into()),
+    };
+    let found = connection::check_kept(&app, &conn).await?;
+    if found == connection::Kept::Known {
+        connection::save(&app, &conn)?;
+    }
+    Ok(found)
 }
 
 /// Pair with a server over SSH and keep it as the connection. Doesn't start it.
@@ -332,6 +358,7 @@ pub fn run() {
             connection_state,
             device_name,
             use_this_computer,
+            use_kept,
             pair_over_ssh,
             reach_over_ssh,
             keep_ssh,

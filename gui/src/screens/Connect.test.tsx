@@ -8,13 +8,22 @@ const where = vi.hoisted(() => ({
   useThisComputer: vi.fn(async () => undefined),
   pairOverSsh: vi.fn(async () => undefined),
   pairByAddress: vi.fn(async () => undefined),
+  useKept: vi.fn(async (): Promise<"known" | "forgotten" | "none"> => "none"),
 }));
 vi.mock("../where", async (real) => ({ ...(await real<typeof import("../where")>()), ...where }));
 
 import { useStore } from "../store/store";
 import { Connect } from "./Connect";
+import { WhereItRuns } from "./settings/General";
+import type { Where } from "../where";
 
 beforeEach(() => Object.values(where).forEach((f) => f.mockClear()));
+
+const onMini: Where = { mode: "direct", host: null, port: null, address: "100.64.0.9:8765", local_home: true, started: true };
+const localAfterMini: Where = {
+  mode: "local", host: null, port: null, address: null, local_home: true, started: true,
+  previous: { mode: "direct", host: null, port: null, address: "100.64.0.9:8765" },
+};
 
 describe("Connect", () => {
   it("asks where Ombro should run, and this computer needs nothing more", async () => {
@@ -34,8 +43,48 @@ describe("Connect", () => {
     expect(connect).toBeDisabled();
     await userEvent.type(screen.getByLabelText("Server"), "ada@box.invalid");
     await userEvent.click(connect);
+    expect(where.useKept).toHaveBeenCalledWith({ host: "ada@box.invalid", port: undefined });
     expect(where.pairOverSsh).toHaveBeenCalledWith("ada@box.invalid", undefined, undefined);
     expect(onReady).toHaveBeenCalled();
+  });
+
+  it("over SSH, uses the key kept from before and doesn't pair again", async () => {
+    where.useKept.mockResolvedValueOnce("known");
+    const onReady = vi.fn();
+    render(<Connect onReady={onReady} />);
+    await userEvent.click(screen.getByRole("button", { name: /On a server/ }));
+    await userEvent.type(screen.getByLabelText("Server"), "ada@box.invalid");
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    expect(where.pairOverSsh).not.toHaveBeenCalled();
+    expect(onReady).toHaveBeenCalled();
+  });
+
+  it("by address, a server this computer paired with before needs no code", async () => {
+    where.useKept.mockResolvedValueOnce("known");
+    const onReady = vi.fn();
+    render(<Connect onReady={onReady} />);
+    await userEvent.click(screen.getByRole("button", { name: /On a server/ }));
+    await userEvent.click(screen.getByRole("button", { name: "By address" }));
+    await userEvent.type(screen.getByLabelText("Address"), "100.64.0.9");
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    expect(where.useKept).toHaveBeenCalledWith({ address: "100.64.0.9" });
+    expect(where.pairByAddress).not.toHaveBeenCalled();
+    expect(onReady).toHaveBeenCalled();
+  });
+
+  it("by address with no code, asks for one when there's no key or the server forgot it", async () => {
+    const onReady = vi.fn();
+    render(<Connect onReady={onReady} />);
+    await userEvent.click(screen.getByRole("button", { name: /On a server/ }));
+    await userEvent.click(screen.getByRole("button", { name: "By address" }));
+    await userEvent.type(screen.getByLabelText("Address"), "100.64.0.9");
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("hasn't paired with 100.64.0.9 yet"));
+    where.useKept.mockResolvedValueOnce("forgotten");
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("no longer knows this computer"));
+    expect(where.pairByAddress).not.toHaveBeenCalled();
+    expect(onReady).not.toHaveBeenCalled();
   });
 
   it("pairs over SSH with Docker's port and code when given", async () => {
@@ -81,6 +130,41 @@ describe("reconnecting", () => {
     render(<Connect problem="The server has forgotten its connection with this computer." onReady={vi.fn()} />);
     expect(screen.getByRole("button", { name: "By address", pressed: true })).toBeInTheDocument();
     expect(screen.getByLabelText("Address")).toHaveValue("127.0.0.1:8799");
+    useStore.setState({ where: null });
+  });
+});
+
+describe("Settings › Where Ombro runs", () => {
+  it("on this computer, offers the server used before, and reconnects with no code", async () => {
+    const connectNow = vi.fn(async () => undefined);
+    useStore.setState({ where: localAfterMini, connectNow });
+    where.useKept.mockResolvedValueOnce("known");
+    render(<WhereItRuns />);
+    await userEvent.click(screen.getByRole("button", { name: "Reconnect to 100.64.0.9:8765" }));
+    expect(where.useKept).toHaveBeenCalledWith({ address: "100.64.0.9:8765" });
+    await waitFor(() => expect(connectNow).toHaveBeenCalled());
+    expect(where.pairByAddress).not.toHaveBeenCalled();
+    useStore.setState({ where: null });
+  });
+
+  it("when the server has forgotten this computer, asks for a code there", async () => {
+    const connectNow = vi.fn(async () => undefined);
+    useStore.setState({ where: localAfterMini, connectNow });
+    where.useKept.mockResolvedValueOnce("forgotten");
+    render(<WhereItRuns />);
+    await userEvent.click(screen.getByRole("button", { name: "Reconnect to 100.64.0.9:8765" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("100.64.0.9:8765 no longer knows this computer"));
+    expect(screen.getByLabelText("Address")).toHaveValue("100.64.0.9:8765");
+    expect(screen.getByLabelText("Pairing code")).toBeInTheDocument();
+    expect(connectNow).not.toHaveBeenCalled();
+    useStore.setState({ where: null });
+  });
+
+  it("on a server, there's nothing to reconnect to", () => {
+    useStore.setState({ where: onMini });
+    render(<WhereItRuns />);
+    expect(screen.queryByRole("button", { name: /Reconnect/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use this computer instead" })).toBeInTheDocument();
     useStore.setState({ where: null });
   });
 });
