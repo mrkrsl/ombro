@@ -1,7 +1,7 @@
 {
   "name": "ombro-gui",
   "private": true,
-  "version": "0.5.1-rc1",
+  "version": "0.5.1",
   "license": "AGPL-3.0-only",
   "author": "Heliotrope Atelier Ltd",
   "type": "module",
