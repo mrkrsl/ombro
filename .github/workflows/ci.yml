@@ -1,18 +1,16 @@
 # Tests, lint, audits and a secret scan, on every push and pull request.
 #
 # Actions are pinned to a commit (the version is in the comment); Dependabot keeps them current.
-# While the repository is private, macOS minutes count ten times against the plan, so the macOS
-# tests run only on a tag, by hand, or once the repository is public.
 name: CI
 
 on:
-  # Pushes to main and tags only: a pull request's branch is tested by pull_request, once per
-  # commit. Both would start two macOS jobs per commit, and GitHub often has too few macOS
-  # runners: a job that waits 15 minutes for one is cancelled, which blocks the merge.
+  # Pushes to main only: a pull request's branch is tested by pull_request, once per commit.
+  # Both would start two macOS jobs per commit, and GitHub often has too few macOS runners: a
+  # job that waits 15 minutes for one is cancelled, which blocks the merge. Not on a tag either:
+  # a tag goes on a commit main has just tested, and the Release workflow builds it all again.
   # Run a branch with no pull request by hand (workflow_dispatch).
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
   schedule:
@@ -57,9 +55,6 @@ jobs:
   python-macos:
     name: python (macOS, 3.14)
     runs-on: macos-15
-    if: >-
-      github.event.repository.visibility == 'public' || startsWith(github.ref, 'refs/tags/')
-      || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
