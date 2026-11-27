@@ -20,7 +20,8 @@ unless --host says otherwise, and keeps running until stopped. Every request the
 device's token (pairing.py); the one exception is `POST /pair`, which swaps a pairing code for
 one. While no device is paired, the first code is printed at each start. With --tick it also
 starts scheduled jobs each minute, for a machine with no cron (a Docker container).
-`ombro serve install` sets it up to start on its own (service.py).
+When Ombro is updated under it, a service stops so launchd or systemd starts the new version
+(updated.py). `ombro serve install` sets it up to start on its own (service.py).
 """
 
 from __future__ import annotations
@@ -192,8 +193,29 @@ def run_service(port: int = SERVICE_PORT, host: str = HOST, allow: list[str] | N
         print(line, flush=True)
     app = build_app(None, home=home, devices=devices, hosts=service_hosts(host, allow or []), tick=tick)
     config = uvicorn.Config(app, log_level="warning", loop="asyncio", http="h11", ws="websockets-sansio", lifespan="on")
-    uvicorn.Server(config).run(sockets=socks)
-    return 0
+    server = uvicorn.Server(config)
+    updated = threading.Event()
+    watch_for_update(server, updated)
+    server.run(sockets=socks)
+    from ombro.serve.updated import EXIT_UPDATED
+
+    return EXIT_UPDATED if updated.is_set() else 0
+
+
+def watch_for_update(server, updated: threading.Event) -> None:
+    """When Ombro is updated under the service, stop it so launchd or systemd starts the new
+    version (updated.py); run by hand, only say so."""
+    from ombro.serve.updated import supervised, watch
+
+    def on_updated() -> None:
+        if supervised():
+            print("Ombro was updated: stopping, to start again as the new version.", flush=True)
+            updated.set()
+            server.should_exit = True
+        else:
+            print("Ombro was updated: stop this server and start it again to use the new version.", flush=True)
+
+    watch(on_updated)
 
 
 def listen(port: int, host: str) -> list[socket.socket]:
