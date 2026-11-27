@@ -236,10 +236,58 @@ fn start_connection(app: tauri::AppHandle) -> Result<(), String> {
     match begin(&app, conn) {
         Err(e) if e == "already started" => {
             connection::stop(&app);
-            app.restart();
+            relaunch(&app)
         }
         other => other,
     }
+}
+
+/// Quit and start again: after a switch between this computer and a server, and after an update.
+///
+/// macOS: Tauri's `restart` runs `open -n` while this copy is still running, so Launch Services
+/// sees a second copy and gives it a Dock tile of its own at the end, away from the one kept in the
+/// Dock. Instead a detached shell waits for this process to go, then opens the bundle plainly, so
+/// it comes back on the kept tile. Outside an .app bundle (a dev build) Tauri's restart is fine.
+pub(crate) fn relaunch(app: &tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    if let Some(bundle) = app_bundle() {
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        // Up to 15 seconds for this copy to finish quitting (the window state is saved on the way).
+        const SCRIPT: &str = "i=0; while kill -0 \"$1\" 2>/dev/null && [ $i -lt 150 ]; do sleep 0.1; i=$((i+1)); done; exec /usr/bin/open \"$2\"";
+        let started = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(SCRIPT)
+            .arg("sh")
+            .arg(std::process::id().to_string())
+            .arg(&bundle)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn();
+        match started {
+            Ok(_) => {
+                app.exit(0);
+                return Ok(());
+            }
+            Err(e) => eprintln!("ombro: couldn't relaunch through Launch Services: {e}"),
+        }
+    }
+    app.restart()
+}
+
+/// The .app this binary runs from (…/Ombro.app/Contents/MacOS/ombro-gui), if it is in one.
+#[cfg(target_os = "macos")]
+fn app_bundle() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let macos = exe.parent()?;
+    let contents = macos.parent()?;
+    let bundle = contents.parent()?;
+    let is = |p: &std::path::Path, name: &str| p.file_name().is_some_and(|n| n == name);
+    (is(macos, "MacOS") && is(contents, "Contents") && bundle.extension().is_some_and(|e| e == "app"))
+        .then(|| bundle.to_path_buf())
 }
 
 /// Quit Ombro: Ctrl+Q on Linux, where there's no app menu to carry it (macOS's Cmd+Q is in the menu).
