@@ -476,6 +476,27 @@ describe("Settings › Folders, Tools and Skills", () => {
       provider: "custom", key: "sk-INVENTED", endpoint: "https://api.invented.invalid/s?q={query}", send_key: "header:X-Key", max_calls: undefined }));
   });
 
+  it("reads pages through a service, with a key only where it needs one", async () => {
+    useStore.setState({ settingsPage: "tools" });
+    replies["PUT /tools/web.fetch"] = tools;
+    replies["/keys"] = { keys: [{ name: "TAVILY_API_KEY", set: true, source: null, used_by: [] }], sign_ins: [], file: "/x" };
+    render(<Settings />);
+    await screen.findByText(/Built in, using DuckDuckGo/);
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[1]);
+    const provider = screen.getByLabelText("Provider");
+    expect(within(provider).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "In the browser (free)", "Tavily (needs a key)", "Exa (needs a key)", "Serper (needs a key)",
+      "Jina Reader (free, a key optional)", "Firecrawl (paid, needs a key)",
+    ]);
+    await userEvent.selectOptions(provider, "exa");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.selectOptions(provider, "jina");
+    expect(screen.getByLabelText(/^Key/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(); // works without a key
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("PUT", "/tools/web.fetch")).toEqual({ provider: "jina", key: undefined, max_calls: undefined }));
+  });
+
   it("adds a program, then shows what its tools claim and keeps your yes", async () => {
     useStore.setState({ settingsPage: "tools" });
     const sheets: ServerRow = { server: "sheets", url: null, command: "uvx", args: ["invented-sheets==1.0.0"], secrets: [],

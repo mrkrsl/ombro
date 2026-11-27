@@ -293,6 +293,9 @@ def settings_routes(s: Serve) -> list[Route]:
                 send_key=data.get("send_key"),
                 uses_key=uses_key,
             )
+        if tool == "web.fetch" and provider in OPTIONAL_KEYS and key_value:  # Jina Reader's, for a higher limit
+            keys.set_key(home, OPTIONAL_KEYS[provider], key_value)
+            tool_cmd.use_key(home, provider)
         tool_cmd.set_tool(home, tool, provider=provider, max_calls=max_calls)
         return tools_view()
 

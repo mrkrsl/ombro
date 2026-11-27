@@ -374,11 +374,13 @@ Tools:
   send_key: if it needs a key) or `fake`.
 - web.fetch: providers `browser` (no key; the page in a headless browser on
   this machine, after its scripts run, refusing local and private network
-  addresses), `firecrawl` (needs a key) or `fake`.
+  addresses), `tavily`, `exa`, `serper` or `firecrawl` (each needs a key),
+  `jina` (Jina Reader: no key needed, or providers: jina: key: for a higher
+  rate limit) or `fake`.
 - Calls a job may make, unless max_calls says otherwise: web.search 20 with
   a service that needs a key (each call is billed), 40 in the browser, or 60
-  with duckduckgo or searxng; web.fetch 30 with firecrawl or 100 with the
-  browser.
+  with duckduckgo or searxng; web.fetch 30 through a service or 100 with
+  the browser.
 - providers: browser: which browser (see Settings › General): `path:` for one
   on this machine, `endpoint:` for one elsewhere, or `off: true` for none.
   `search_engine:` is duckduckgo (the default), bing, ecosia, startpage, kagi

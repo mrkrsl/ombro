@@ -429,7 +429,7 @@ PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
         ("browser", "duckduckgo", "searxng", "brave", "tavily", "exa", "serper", "firecrawl", "custom", "fake"),
         "duckduckgo",
     ),
-    "web.fetch": (("firecrawl", "browser", "fake"), "browser"),
+    "web.fetch": (("browser", "tavily", "exa", "serper", "jina", "firecrawl", "fake"), "browser"),
 }
 # The key each provider must have, by its usual name (tools.md `providers: <name>: key:` renames it).
 PROVIDER_KEYS = {
@@ -439,9 +439,10 @@ PROVIDER_KEYS = {
     "exa": "EXA_API_KEY",
     "serper": "SERPER_API_KEY",
 }
-# Keys a provider may have but can work without: another search API's, and Kagi's session token
-# for searching Kagi in the browser.
-OPTIONAL_KEYS = {"custom": "SEARCH_API_KEY", "searxng": "SEARXNG_API_KEY"}
+# Keys a provider may have but can work without (used once tools.md names them): another search
+# API's, a SearXNG's, and Jina Reader's for a higher rate limit. And Kagi's session token, for
+# searching Kagi in the browser.
+OPTIONAL_KEYS = {"custom": "SEARCH_API_KEY", "searxng": "SEARXNG_API_KEY", "jina": "JINA_API_KEY"}
 KAGI_KEY = "KAGI_SESSION_TOKEN"
 # web.search in the browser: the engines offered, each by its results address ({query} is the
 # words). `providers: browser: search_engine:` is one of these names, or another engine's home page
@@ -469,6 +470,10 @@ PROVIDER_CALLS = {
     ("web.search", "exa"): 20,
     ("web.search", "serper"): 20,
     ("web.search", "custom"): 20,
+    ("web.fetch", "tavily"): 30,
+    ("web.fetch", "exa"): 30,
+    ("web.fetch", "serper"): 30,
+    ("web.fetch", "jina"): 30,
     ("web.fetch", "browser"): 100,
     ("web.search", "fake"): 20,
     ("web.fetch", "fake"): 30,

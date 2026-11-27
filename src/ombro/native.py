@@ -924,7 +924,7 @@ def native_registry(
     from ombro.coderun import code_tool
 
     # Web pages are read in the browser: with none (not installed, turned off, or its container not
-    # running), web.fetch is offered only through a provider that needs none (Firecrawl).
+    # running), web.fetch is offered only through a service (Firecrawl, Tavily, Jina Reader…).
     # catalogue: every tool a role may name (the role interview), whether or not a browser is here now.
     have_browser = catalogue or (with_browser and browser_mod.available(settings.providers.get("browser")) is not None)
     tools = [*workspace_tools(), web_search_tool(provider("web.search")), code_tool()]

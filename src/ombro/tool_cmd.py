@@ -34,6 +34,7 @@ ABOUT = {
     "exa": "Exa: needs a key",
     "serper": "Serper (Google results): needs a key",
     "custom": "another search API, by its address, with a key if it needs one",
+    "jina": "Jina Reader: free, a key optional (for a higher rate limit); reads pages as Markdown",
     "direct": "direct: free, no key; downloads the page itself (refuses local and private addresses)",
     "browser": "browser: free, no key; opens the page in a headless browser on this machine, for pages that need "
     "JavaScript (refuses local and private addresses)",
@@ -49,7 +50,28 @@ ENGINES = {
     "qwant": "Qwant",
     "google": "Google (may not work: it often turns away an automated browser)",
 }
-LABELS = {"firecrawl": "Firecrawl", "brave": "Brave Search", "tavily": "Tavily", "exa": "Exa", "serper": "Serper"}
+LABELS = {
+    "firecrawl": "Firecrawl",
+    "brave": "Brave Search",
+    "tavily": "Tavily",
+    "exa": "Exa",
+    "serper": "Serper",
+    "jina": "Jina Reader",
+}
+
+
+def use_key(home: Home, provider: str) -> None:
+    """Name a provider's optional key in tools.md (providers: <name>: key:), so it is sent."""
+    from ombro.settings import OPTIONAL_KEYS
+
+    meta, body = mdfile.read(home.tools) if home.tools.is_file() else ({}, "")
+    providers = meta.get("providers") if isinstance(meta.get("providers"), dict) else {}
+    entry = dict(providers.get(provider) or {})
+    entry["key"] = OPTIONAL_KEYS[provider]
+    providers[provider] = entry
+    meta["providers"] = providers
+    mdfile.write(home.tools, meta, body)
+    load_tool_settings(home)
 
 
 def kagi_token(text: str) -> str:
@@ -132,7 +154,7 @@ def describe(home: Home, tool: str) -> list[str]:
     if tool in PROVIDER_TOOLS:
         p = settings.provider_for(tool)
         lines.append(f"provider: {ABOUT.get(p, p)}")
-        key = settings.key_name(p) if p in PROVIDER_KEYS or p in ("searxng", "custom") else None
+        key = settings.key_name(p) if p in PROVIDER_KEYS or p in ("searxng", "custom", "jina") else None
         if key:
             lines.append(f"key {key}: {'set' if keys.get_key(home, key) else 'NOT SET'}")
         if tool == "web.search" and p == "browser":

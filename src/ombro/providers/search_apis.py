@@ -1,7 +1,8 @@
 """Search services reached by their own API: Brave Search, Tavily, Exa, Serper, a SearXNG of your
 own, and any other search API given by its address (tools.md `web.search: provider: <name>`).
+Tavily, Exa and Serper read pages too, as does Jina Reader (`web.fetch: provider: <name>`).
 
-Each takes the standard search arguments and gives the standard results (ombro.providers). Keys
+Each takes the standard search or fetch arguments and gives the standard results (ombro.providers). Keys
 are read from secrets/keys.env at every call, so a key set while a job runs is used from the next
 call on. No automatic retries: a call may be billed, so a failure goes back to the role.
 """
@@ -14,7 +15,7 @@ from urllib.parse import quote_plus
 
 import httpx
 
-from ombro.providers import KeyGetter, NotCalled, ProviderError, http_client, scrub
+from ombro.providers import KeyGetter, NotCalled, ProviderError, clip, http_client, scrub
 
 _TAGS = re.compile(r"<[^>]+>")
 
@@ -73,18 +74,26 @@ class ApiSearch:
     def _error(self, status: int, data: Any, key: str | None) -> str:
         detail = ""
         if isinstance(data, dict):
-            d = data.get("error") or data.get("message") or data.get("detail") or ""
+            d = data.get("error") or data.get("readableMessage") or data.get("message") or data.get("detail") or ""
             detail = scrub(_text(d.get("message") if isinstance(d, dict) else d, 300), key)
         meaning = {
             401: f"the {self.label} key was refused",
             403: f"the {self.label} key was refused",
             402: f"the {self.label} account is out of credits",
             432: f"the {self.label} account is out of credits",
+            433: f"the {self.label} account is out of credits",
             429: f"{self.label}'s rate limit was reached; try fewer searches",
         }.get(status, f"{self.label} returned HTTP {status}")
         if status == 200:
             meaning = f"{self.label} did not answer with results"
         return meaning + (f": {detail}" if detail else "")
+
+    @staticmethod
+    def _page(url: str, title: Any, content: Any, max_chars: int) -> dict[str, Any]:
+        text, truncated = clip(str(content or ""), max_chars)
+        if not text.strip():
+            raise ProviderError("the page had no text to read")
+        return {"url": url, "title": _text(title, 300), "content": text, "truncated": truncated}
 
     @staticmethod
     def _results(items: Any, url: str, title: str, snippet: str, limit: int) -> list[dict[str, str]]:
@@ -130,6 +139,26 @@ class Tavily(ApiSearch):
         )
         return self._results(data.get("results") if isinstance(data, dict) else None, "url", "title", "content", limit)
 
+    def fetch(self, url: str, max_chars: int, timeout: float) -> dict[str, Any]:
+        """POST /extract: the page as Markdown (raw_content); Tavily gives no title."""
+        key = self._key()
+        data = self._call(
+            "POST",
+            self.endpoint + "/extract",
+            timeout,
+            key,
+            json={"urls": [url], "format": "markdown", "timeout": min(max(timeout, 1.0), 60.0)},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        results = data.get("results") if isinstance(data, dict) else None
+        if not results:
+            failed = (data.get("failed_results") or [{}])[0] if isinstance(data, dict) else {}
+            raise ProviderError(
+                f"Tavily could not read the page: {_text(failed.get('error'), 200) or 'no reason given'}"
+            )
+        page = results[0]
+        return self._page(str(page.get("url") or url), "", page.get("raw_content"), max_chars)
+
 
 class Exa(ApiSearch):
     name, label, endpoint = "exa", "Exa", "https://api.exa.ai"
@@ -150,6 +179,32 @@ class Exa(ApiSearch):
                 item["text"] = item["highlights"]
         return self._results(items, "url", "title", "text", limit)
 
+    def fetch(self, url: str, max_chars: int, timeout: float) -> dict[str, Any]:
+        """POST /contents: the page's text, read live rather than from Exa's store."""
+        key = self._key()
+        data = self._call(
+            "POST",
+            self.endpoint + "/contents",
+            timeout,
+            key,
+            json={
+                "urls": [url],
+                "text": {"maxCharacters": max_chars + 1},
+                "maxAgeHours": 0,
+                "livecrawlTimeout": int(min(max(timeout, 1.0), 60.0) * 1000),
+            },
+            headers={"x-api-key": key or ""},
+        )
+        statuses = data.get("statuses") if isinstance(data, dict) else None
+        failed = next((st for st in statuses or [] if isinstance(st, dict) and st.get("status") == "error"), None)
+        results = data.get("results") if isinstance(data, dict) else None
+        if failed or not results:
+            tag = (failed or {}).get("error") or {}
+            why = tag.get("tag") if isinstance(tag, dict) else tag
+            raise ProviderError(f"Exa could not read the page: {_text(why, 200) or 'no reason given'}")
+        page = results[0]
+        return self._page(str(page.get("url") or url), page.get("title"), page.get("text"), max_chars)
+
 
 class Serper(ApiSearch):
     name, label, endpoint = "serper", "Serper", "https://google.serper.dev"
@@ -165,6 +220,28 @@ class Serper(ApiSearch):
             headers={"X-API-KEY": key or ""},
         )
         return self._results(data.get("organic") if isinstance(data, dict) else None, "link", "title", "snippet", limit)
+
+    SCRAPE = "https://scrape.serper.dev"
+
+    def fetch(self, url: str, max_chars: int, timeout: float) -> dict[str, Any]:
+        """Serper's scrape service: the page as Markdown, or as text where none comes back."""
+        key = self._key()
+        data = self._call(
+            "POST",
+            self.SCRAPE,
+            timeout,
+            key,
+            json={"url": url, "includeMarkdown": True},
+            headers={"X-API-KEY": key or ""},
+        )
+        data = data if isinstance(data, dict) else {}
+        meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        return self._page(
+            url,
+            meta.get("title") or meta.get("og:title") or data.get("title"),
+            data.get("markdown") or data.get("text"),
+            max_chars,
+        )
 
 
 class SearXNG(ApiSearch):
@@ -238,6 +315,30 @@ class CustomSearch(ApiSearch):
         return self._results(items, field, "title", snippet, limit)
 
 
+class JinaReader(ApiSearch):
+    """Jina Reader: a page as Markdown (GET r.jina.ai/<address>). Works without a key, at a low rate
+    limit; a key (JINA_API_KEY, named in tools.md) is sent when there is one, for a higher one."""
+
+    name, label, endpoint = "jina", "Jina Reader", "https://r.jina.ai"
+
+    def fetch(self, url: str, max_chars: int, timeout: float) -> dict[str, Any]:
+        key = self._key(required=False)
+        headers = {
+            "Accept": "application/json",
+            "X-Respond-With": "markdown",
+            "X-Timeout": str(int(min(max(timeout, 1.0), 180.0))),
+        }
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        data = self._call("GET", f"{self.endpoint}/{url}", timeout, key, headers=headers)
+        page = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(page, dict):
+            raise ProviderError(
+                f"Jina Reader could not read the page: {_text(data.get('message') if isinstance(data, dict) else '', 200) or 'no reason given'}"
+            )
+        return self._page(str(page.get("url") or url), page.get("title"), page.get("content"), max_chars)
+
+
 def find_results(data: Any, depth: int = 0) -> list[Any] | None:
     """The first list of items with an address, wherever it is in the answer (breadth first)."""
     if depth > 4:
@@ -261,4 +362,6 @@ def find_results(data: Any, depth: int = 0) -> list[Any] | None:
     return None
 
 
-SERVICES: dict[str, type[ApiSearch]] = {c.name: c for c in (BraveSearch, Tavily, Exa, Serper, SearXNG, CustomSearch)}
+SERVICES: dict[str, type[ApiSearch]] = {
+    c.name: c for c in (BraveSearch, Tavily, Exa, Serper, SearXNG, CustomSearch, JinaReader)
+}

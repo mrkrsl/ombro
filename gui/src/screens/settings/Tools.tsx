@@ -22,12 +22,21 @@ export const PROVIDERS: Record<string, string> = {
   serper: "Serper (needs a key)",
   firecrawl: "Firecrawl (paid, needs a key)",
   custom: "Another search service",
+  jina: "Jina Reader (free, a key optional)",
 };
+// Reading pages: the browser, or a service that reads them (search-only services can't).
 const CHOICES: Record<string, string[]> = {
   "web.search": ["duckduckgo", "firecrawl"],
-  "web.fetch": ["browser", "firecrawl"],
+  "web.fetch": ["browser", "tavily", "exa", "serper", "jina", "firecrawl"],
 };
-const NEEDS_KEY: Record<string, string> = { firecrawl: "FIRECRAWL_API_KEY" };
+const NEEDS_KEY: Record<string, string> = {
+  firecrawl: "FIRECRAWL_API_KEY",
+  tavily: "TAVILY_API_KEY",
+  exa: "EXA_API_KEY",
+  serper: "SERPER_API_KEY",
+  brave: "BRAVE_SEARCH_API_KEY",
+};
+const OPTIONAL_KEY: Record<string, string> = { jina: "JINA_API_KEY" };
 
 // Web search: in the browser, on a search engine's own page; or a search service by its API.
 export const ENGINES: [string, string][] = [
@@ -57,6 +66,7 @@ const KEY_SITES: Record<string, string> = {
   exa: "https://dashboard.exa.ai",
   serper: "https://serper.dev",
   firecrawl: "https://www.firecrawl.dev",
+  jina: "https://jina.ai/reader",
 };
 
 /** How the row names web search's provider: "Bing in the browser", "Tavily". */
@@ -100,7 +110,7 @@ function SearchForm({ now, picker, browserFound, onDone, onCancel }: {
   const [param, setParam] = useState(sendKey(s?.send_key ?? "bearer")[1]);
   const [calls, setCalls] = useState(String(now?.calls ?? ""));
   const keySet = !!s?.keys[mode === "browser" ? "kagi" : service];
-  const needsKey = mode === "service" && service in KEY_SITES;
+  const needsKey = mode === "service" && service in NEEDS_KEY;
   const byAddress = mode === "service" && (service === "searxng" || service === "custom");
   const pickService = (v: string) => {
     setService(v);
@@ -640,7 +650,8 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
     setProvider(t?.provider ?? CHOICES[which][0]);
     setCalls(String(t?.calls ?? ""));
   }, [which, tools]);
-  const keyName = NEEDS_KEY[provider];
+  const keyName = NEEDS_KEY[provider] ?? OPTIONAL_KEY[provider];
+  const optional = provider in OPTIONAL_KEY;
   const keySet = !!keyName && !!keyList.data?.keys.find((k) => k.name === keyName && k.set);
   const picker = !tool && (
     <Field label="Tool">
@@ -672,8 +683,27 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
         </span>
       </Field>
       {keyName && (
-        <Field label="Key" hint={keySet ? "A key is set. Leave this empty to keep it." : `It's kept on ${here} and only sent to the provider.`}>
-          <input className="text-input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
+        <Field
+          label={optional ? "Key (optional)" : "Key"}
+          hint={
+            <>
+              {keySet
+                ? "A key is set. Leave this empty to keep it."
+                : optional
+                  ? `It works without one, at a low rate limit; a key gives a higher one. It's kept on ${here}.`
+                  : `It's kept on ${here} and only sent to the provider.`}
+              {KEY_SITES[provider] && (
+                <>
+                  {" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); void openLink(KEY_SITES[provider]); }}>
+                    Get a key
+                  </a>
+                </>
+              )}
+            </>
+          }
+        >
+          <input className="text-input" type="password" autoComplete="off" aria-label="Key" value={key} onChange={(e) => setKey(e.target.value)} />
         </Field>
       )}
       <Field label="Calls a job may make">
@@ -689,7 +719,7 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
       <div className="form-actions">
         <button
           className="primary"
-          disabled={busy || (!!keyName && !keySet && !key)}
+          disabled={busy || (!!keyName && !optional && !keySet && !key)}
           onClick={async () => {
             const n = Number(calls);
             const t = await run((api) =>

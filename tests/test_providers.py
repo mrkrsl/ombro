@@ -362,3 +362,93 @@ def test_the_registry_backs_web_search_with_the_chosen_service(home):
     assert make_provider("custom", home, custom).key_getter is None  # no key named, none sent
     with pytest.raises(Exception, match="search_engine"):
         ToolSettings.from_dict({"providers": {"browser": {"search_engine": "altavista"}}})
+
+
+# -- reading pages through a service (web.fetch) ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name, body, where, header, title",
+    [
+        (
+            "tavily",
+            {
+                "results": [{"url": "https://ada-pots.invalid/", "raw_content": "# Ada Pots\nInvented teapots."}],
+                "failed_results": [],
+            },
+            "https://api.tavily.com/extract",
+            ("Authorization", "Bearer sk-INVENTED-search"),
+            "",
+        ),
+        (
+            "exa",
+            {
+                "results": [
+                    {"url": "https://ada-pots.invalid/", "title": "Ada Pots", "text": "# Ada Pots\nInvented teapots."}
+                ],
+                "statuses": [{"id": "https://ada-pots.invalid/", "status": "success"}],
+            },
+            "https://api.exa.ai/contents",
+            ("x-api-key", "sk-INVENTED-search"),
+            "Ada Pots",
+        ),
+        (
+            "serper",
+            {"markdown": "# Ada Pots\nInvented teapots.", "text": "Ada Pots", "metadata": {"title": "Ada Pots"}},
+            "https://scrape.serper.dev",
+            ("X-API-KEY", "sk-INVENTED-search"),
+            "Ada Pots",
+        ),
+        (
+            "jina",
+            {
+                "code": 200,
+                "data": {
+                    "title": "Ada Pots",
+                    "url": "https://ada-pots.invalid/",
+                    "content": "# Ada Pots\nInvented teapots.",
+                },
+            },
+            "https://r.jina.ai/https://ada-pots.invalid/",
+            ("Authorization", "Bearer sk-INVENTED-search"),
+            "Ada Pots",
+        ),
+    ],
+)
+def test_reading_a_page_through_a_service(name, body, where, header, title):
+    p, seen = service(name, lambda r: httpx.Response(200, json=body))
+    page = p.fetch("https://ada-pots.invalid/", 20, 10)
+    assert page == {
+        "url": "https://ada-pots.invalid/",
+        "title": title,
+        "content": "# Ada Pots\nInvented ",
+        "truncated": True,
+    }
+    assert str(seen[0].url) == where and seen[0].headers[header[0]] == header[1]
+
+
+def test_reading_says_plainly_when_a_service_could_not():
+    p, _ = service(
+        "tavily",
+        lambda r: httpx.Response(
+            200, json={"results": [], "failed_results": [{"url": "x", "error": "blocked by site"}]}
+        ),
+    )
+    with pytest.raises(ProviderError, match="Tavily could not read the page: blocked by site"):
+        p.fetch("https://ada-pots.invalid/", 100, 10)
+    exa = {
+        "results": [],
+        "statuses": [{"id": "x", "status": "error", "error": {"tag": "CRAWL_NOT_FOUND", "httpStatusCode": 404}}],
+    }
+    p, _ = service("exa", lambda r: httpx.Response(200, json=exa))
+    with pytest.raises(ProviderError, match="CRAWL_NOT_FOUND"):
+        p.fetch("https://ada-pots.invalid/", 100, 10)
+    p, _ = service(
+        "jina",
+        lambda r: httpx.Response(403, json={"data": None, "code": 403, "readableMessage": "Anonymous access blocked"}),
+    )
+    with pytest.raises(ProviderError, match="Jina Reader key was refused: Anonymous access blocked"):
+        p.fetch("https://ada-pots.invalid/", 100, 10)
+    p, seen = service("jina", lambda r: httpx.Response(200, json={"data": {"title": "", "content": "Text"}}), key=None)
+    assert p.fetch("https://ada-pots.invalid/", 100, 10)["content"] == "Text"
+    assert "Authorization" not in seen[0].headers  # no key: none sent
