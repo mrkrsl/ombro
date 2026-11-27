@@ -1558,15 +1558,232 @@ def profiles_dir(home: Any) -> Path:
     return Path(home.files) / ".browser"
 
 
+# web.search in the browser: the results a search engine's page shows, read as a person would see
+# them. A result is a link to another site with a heading in or around it (most engines), or failing
+# that any link to another site with text enough to be a title. An engine's own links are left
+# out, and its redirects (DuckDuckGo's uddg=, Bing's u=a1…) are followed to where they lead. A
+# redirect sealed against reading (Brave's and Google's, to an automated browser) gives the site
+# the result shows instead, without its page. One result per site box: sitelinks are left out.
+RESULTS_JS = r"""
+(limit) => {
+  const base = (h) => (h || '').toLowerCase().replace(/^www\./, '').split('.').slice(-2).join('.');
+  const own = base(location.hostname);
+  const sisters = { 'bing.com': ['microsoft.com', 'msn.com', 'live.com'], 'google.com': ['gstatic.com', 'googleusercontent.com'],
+    'qwant.com': [], 'ecosia.org': [], 'startpage.com': [], 'brave.com': [], 'kagi.com': [], 'duckduckgo.com': [] };
+  const ownSite = (u) => base(u.hostname) === own || (sisters[own] || []).includes(base(u.hostname));
+  const unwrap = (href) => {
+    let u; try { u = new URL(href, location.href); } catch (e) { return null; }
+    if (!/^https?:$/.test(u.protocol)) return null;
+    if (!ownSite(u)) return u.href;
+    for (const k of ['uddg', 'u', 'url', 'q', 'target', 'dest']) {
+      let v = u.searchParams.get(k); if (!v) continue;
+      if (k === 'u' && v.startsWith('a1')) { try { v = atob(v.slice(2).replace(/-/g, '+').replace(/_/g, '/')); } catch (e) { continue; } }
+      try { const t = new URL(v); if (/^https?:$/.test(t.protocol) && !ownSite(t)) return t.href; } catch (e) {}
+    }
+    return null;
+  };
+  const seen = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden'; };
+  const clean = (t) => (t || '').replace(/\s+/g, ' ').trim();
+  // An address as engines show it ("https://example.com › teapots"), and only its site: the part
+  // after › is words, not the path. Used where the link itself is an engine's sealed redirect.
+  const shown = /(https?:\/\/[^\s›/]+)(\/[^\s›]*)?/;
+  const tidy = (t) => clean(t.replace(/https?:\/\/\S+(\s*›\s*[^\s›]+)*/g, ' ').replace(/\s›\s/g, ' '));
+  const BOX = 'li.b_algo, div.result, div.g, .snippet[data-type], [data-testid="result"], article';
+  const HEAD = 'h1, h2, h3, h4, [class*="title"]';
+  const links = [...document.querySelectorAll('a[href]')].filter((a) => !a.closest('nav, header, footer, [role=navigation], [aria-hidden=true]'));
+  const pick = (headed) => {
+    const out = [], urls = new Set(), boxes = new Set();
+    for (const a of links) {
+      const h = a.querySelector(HEAD) || a.closest('h1, h2, h3, h4');
+      if (headed && !h) continue;
+      const title = clean((h && a.contains(h) ? h : a).innerText);
+      if (title.length < (headed ? 3 : 15) || !seen(a)) continue;
+      const box = a.closest(BOX);
+      if (box && boxes.has(box)) continue; // a site's further links in the same result
+      let url = unwrap(a.getAttribute('href'));
+      let near = box;
+      for (let up = a, i = 0; !near && i < 5 && up.parentElement; i++) { up = up.parentElement; if (up.querySelector('cite')) near = up; }
+      if (!url && near) {
+        const cite = near.querySelector('cite');
+        const m = shown.exec(cite ? cite.innerText.replace(/\s+/g, '') : near.innerText);
+        if (m) { try { const u = new URL(m[1]); if (!ownSite(u)) url = u.origin + '/'; } catch (e) {} }
+      }
+      if (!url) continue;
+      const key = url.split('#')[0];
+      if (urls.has(key)) continue;
+      urls.add(key);
+      if (box) boxes.add(box);
+      let snippet = '';
+      if (box) {
+        snippet = clean(box.innerText).replace(title, '');
+      } else {
+        let up = a;
+        for (let i = 0; i < 6 && up.parentElement; i++) {
+          up = up.parentElement;
+          const text = clean(up.innerText);
+          const others = [...up.querySelectorAll('a[href]')].filter((x) => x !== a && (x.querySelector('h1,h2,h3,h4') || x.closest('h1,h2,h3,h4')) && unwrap(x.getAttribute('href')) && unwrap(x.getAttribute('href')).split('#')[0] !== key);
+          if (others.length) break;
+          if (text.length > title.length + 40) { snippet = text.replace(title, ''); break; }
+        }
+      }
+      out.push({ title: title.slice(0, 200), url, snippet: tidy(snippet).slice(0, 300) });
+      if (out.length >= limit) break;
+    }
+    return out;
+  };
+  let results = pick(true);
+  if (results.length < Math.min(3, limit)) { const more = pick(false); if (more.length > results.length) results = more; }
+  const words = clean(document.body ? document.body.innerText : '').toLowerCase().slice(0, 4000);
+  const check = /captcha|unusual traffic|are you a robot|not a robot|verify you are (a )?human|confirm you're human|bot check|automated (queries|requests)|temporarily unavailable/.test(words);
+  return { results, check, url: location.href, signin: /sign in|log in/.test(words) && !results.length };
+}
+"""
+
+# web.search on another engine given by its home page: its search box's form, and the address it
+# would go to with the words in it (or "post" when the form posts, so it is filled in and sent).
+SEARCH_FORM_JS = r"""
+(query) => {
+  const boxes = [...document.querySelectorAll('input[type=search], input[name=q], input[name=query], input[name=search], input[name=s], input[type=text], textarea[name=q]')]
+    .filter((el) => el.form && el.getBoundingClientRect().width > 0);
+  const box = boxes[0];
+  if (!box) return { error: 'no search box' };
+  const form = box.form;
+  if ((form.method || 'get').toLowerCase() !== 'get') {
+    box.value = query; box.dispatchEvent(new Event('input', { bubbles: true }));
+    (form.requestSubmit ? form.requestSubmit() : form.submit());
+    return { post: true };
+  }
+  const data = new FormData(form); data.set(box.name || 'q', query);
+  const url = new URL(form.getAttribute('action') || location.href, location.href);
+  url.search = '';
+  for (const [k, v] of data.entries()) if (typeof v === 'string') url.searchParams.append(k, v);
+  return { url: url.href };
+}
+"""
+SEARCH_WAIT = 6.0  # seconds an engine's page may take to show its results once it has loaded
+# A cookie wall in front of the results (Google's "Before you continue"): every job's profile is
+# new, so it shows every time. Its "Reject all" is pressed, the choice that shares least.
+REJECT_JS = r"""
+(() => {
+  const b = [...document.querySelectorAll('button, [role=button], input[type=submit]')]
+    .find((el) => /^(reject all|decline all|refuse all|tout refuser|alle ablehnen)$/i.test((el.innerText || el.value || '').trim()));
+  if (b) { b.click(); return true; }
+  return false;
+})()
+"""
+
+
+def engine_label(engine: str) -> str:
+    from ombro.settings import SEARCH_ENGINES
+
+    names = {
+        "duckduckgo": "DuckDuckGo",
+        "bing": "Bing",
+        "ecosia": "Ecosia",
+        "startpage": "Startpage",
+        "kagi": "Kagi",
+        "brave": "Brave Search",
+        "qwant": "Qwant",
+        "google": "Google",
+    }
+    if engine in SEARCH_ENGINES:
+        return names.get(engine, engine)
+    return urlsplit(engine).hostname or engine
+
+
 class BrowserFetch:
     """web.fetch through the browser (tools.md `web.fetch: provider: browser`): the page as a person
-    sees it, after its scripts have run. Standard fetch results, as ombro.providers describes."""
+    sees it, after its scripts have run. Standard fetch results, as ombro.providers describes.
+
+    And web.search through the browser (`web.search: provider: browser`): the chosen search engine's
+    results page (`providers: browser: search_engine:`), read as above, in its own page of the job's
+    browser. Kagi needs its session token (Kagi's session link), kept as a key."""
 
     name = "browser"
 
-    def __init__(self, browser: Browser):
+    def __init__(self, browser: Browser, *, engine: str = "duckduckgo", kagi_token: Callable[[], Any] | None = None):
         self.browser = browser
+        self.engine = engine
+        self.kagi_token = kagi_token
         self._lock = threading.Lock()  # one page for every web.fetch: one at a time
+        self._search_lock = threading.Lock()
+
+    def results_address(self, query: str) -> str | None:
+        """Where the engine shows results for `query`, or None for a home page whose form decides."""
+        from urllib.parse import quote_plus
+
+        from ombro.settings import KAGI_KEY, SEARCH_ENGINES
+
+        template = SEARCH_ENGINES.get(self.engine) or self.engine
+        if self.engine == "kagi":
+            token = self.kagi_token() if self.kagi_token else None
+            if not token:
+                from ombro.providers import NotCalled
+
+                raise NotCalled(
+                    f"Kagi needs you signed in: its session link is not set ({KAGI_KEY}). The user can "
+                    "paste it in Settings › Tools, or choose another search engine."
+                )
+            template += "&token=" + quote_plus(str(token))
+        if "{query}" in template or "%s" in template:
+            return template.replace("{query}", quote_plus(query)).replace("%s", quote_plus(query))
+        return None
+
+    def search(self, query: str, limit: int, timeout: float) -> list[dict[str, str]]:
+        from ombro.providers import ProviderError
+
+        label = engine_label(self.engine)
+        with self._search_lock:
+            p = self.browser.page("web.search", timeout)
+            address = self.results_address(query)
+            if address is None:  # another engine's home page: use its search box
+                p.open(self.engine, timeout)
+                before = (p.loads, p.started)
+                form = p.eval(f"({SEARCH_FORM_JS})({json.dumps(query)})")
+                if not isinstance(form, dict) or form.get("error"):
+                    raise ProviderError(
+                        f"{label}'s page has no search box Ombro could find. Check the address in Settings › Tools."
+                    )
+                if form.get("post"):
+                    p._wait_load(*before, timeout=timeout, expect=False)
+                else:
+                    p.open(str(form["url"]), timeout)
+            else:
+                p.open(address, timeout)
+            end = time.monotonic() + min(SEARCH_WAIT, max(timeout, 1.0))
+            rejected, count = False, -1
+            while True:
+                try:
+                    found = p.eval(f"({RESULTS_JS})({int(limit)})")
+                except BrowserError:  # the page is between two addresses (after Reject all)
+                    found = None
+                if not isinstance(found, dict) and (not rejected or time.monotonic() > end):
+                    raise ProviderError(f"{label}'s results could not be read")
+                if isinstance(found, dict):
+                    # Done when the page has all asked for, or as many as a moment ago (results come in as
+                    # the page fills), or says it won't answer, or there's no more time.
+                    n = len(found.get("results") or [])
+                    if n >= limit or (n and n == count) or found.get("check") or time.monotonic() > end:
+                        break
+                    count = n
+                if not rejected and p.eval(REJECT_JS):
+                    rejected = True  # its results follow: read them as they come
+                    end = time.monotonic() + min(SEARCH_WAIT, max(timeout, 1.0))
+                time.sleep(0.5)
+        results = [r for r in found.get("results") or [] if isinstance(r, dict)][:limit]
+        if not results and found.get("check"):
+            raise ProviderError(
+                f"{label} showed a bot check to the automated browser, so it gave no results. Try "
+                "again later, or ask the user to choose another search engine in Settings › Tools."
+            )
+        if not results and self.engine == "kagi" and found.get("signin"):
+            raise ProviderError(
+                "Kagi asked to sign in: its session link may have expired. The user can paste a new one in Settings › Tools."
+            )
+        return [
+            {"title": str(r.get("title") or ""), "url": str(r.get("url") or ""), "snippet": str(r.get("snippet") or "")}
+            for r in results
+        ]
 
     def fetch(self, url: str, max_chars: int, timeout: float) -> dict[str, Any]:
         with self._lock:

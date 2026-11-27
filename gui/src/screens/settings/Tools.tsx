@@ -4,7 +4,7 @@
 // The forms ask what the core needs. Secrets are written, never read back: an edit shows
 // their names, and a value left empty keeps the one stored.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ApiRow, ComposioAccount, KeyList, NativeTool, ServerRow, ToolList } from "../../api/types";
 import { inTauri } from "../../api/serve";
 import { catchSignIn, openLink } from "../../platform";
@@ -15,13 +15,273 @@ export const NATIVE: Record<string, string> = { "web.search": "Web search", "web
 export const PROVIDERS: Record<string, string> = {
   duckduckgo: "DuckDuckGo (free)",
   browser: "In the browser (free)",
+  searxng: "SearXNG (your own, free)",
+  brave: "Brave Search (needs a key)",
+  tavily: "Tavily (needs a key)",
+  exa: "Exa (needs a key)",
+  serper: "Serper (needs a key)",
   firecrawl: "Firecrawl (paid, needs a key)",
+  custom: "Another search service",
+  jina: "Jina Reader (free, a key optional)",
 };
+// Reading pages: the browser, or a service that reads them (search-only services can't).
 const CHOICES: Record<string, string[]> = {
   "web.search": ["duckduckgo", "firecrawl"],
-  "web.fetch": ["browser", "firecrawl"],
+  "web.fetch": ["browser", "tavily", "exa", "serper", "jina", "firecrawl"],
 };
-const NEEDS_KEY: Record<string, string> = { firecrawl: "FIRECRAWL_API_KEY" };
+const NEEDS_KEY: Record<string, string> = {
+  firecrawl: "FIRECRAWL_API_KEY",
+  tavily: "TAVILY_API_KEY",
+  exa: "EXA_API_KEY",
+  serper: "SERPER_API_KEY",
+  brave: "BRAVE_SEARCH_API_KEY",
+};
+const OPTIONAL_KEY: Record<string, string> = { jina: "JINA_API_KEY" };
+
+// Web search: in the browser, on a search engine's own page; or a search service by its API.
+export const ENGINES: [string, string][] = [
+  ["duckduckgo", "DuckDuckGo"],
+  ["bing", "Bing"],
+  ["ecosia", "Ecosia"],
+  ["startpage", "Startpage"],
+  ["kagi", "Kagi"],
+  ["brave", "Brave Search"],
+  ["qwant", "Qwant"],
+  ["google", "Google"],
+  ["other", "Other…"],
+];
+export const SERVICES: [string, string][] = [
+  ["duckduckgo", "DuckDuckGo (free, no key)"],
+  ["searxng", "SearXNG (your own, free)"],
+  ["brave", "Brave Search (needs a key)"],
+  ["tavily", "Tavily (needs a key)"],
+  ["exa", "Exa (needs a key)"],
+  ["serper", "Serper (needs a key)"],
+  ["firecrawl", "Firecrawl (needs a key)"],
+  ["custom", "Other…"],
+];
+const KEY_SITES: Record<string, string> = {
+  brave: "https://api-dashboard.search.brave.com",
+  tavily: "https://app.tavily.com",
+  exa: "https://dashboard.exa.ai",
+  serper: "https://serper.dev",
+  firecrawl: "https://www.firecrawl.dev",
+  jina: "https://jina.ai/reader",
+};
+
+/** How the row names web search's provider: "Bing in the browser", "Tavily". */
+export function searchUsing(n: NativeTool): string {
+  if (n.provider === "browser") {
+    const e = n.search?.engine ?? "duckduckgo";
+    const name = ENGINES.find(([v]) => v === e)?.[1] ?? hostOf(e);
+    return `${name} in the browser`;
+  }
+  if (n.provider === "custom") return n.search?.custom ? hostOf(n.search.custom) : "another search service";
+  return (PROVIDERS[n.provider ?? ""] ?? n.provider ?? "").replace(/ \(.*\)$/, "");
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url.replace("{query}", "q").replace("%s", "q")).hostname;
+  } catch {
+    return url;
+  }
+}
+
+function SearchForm({ now, picker, browserFound, onDone, onCancel }: {
+  now: NativeTool | undefined;
+  picker: ReactNode;
+  browserFound: boolean;
+  onDone: (t: ToolList) => void;
+  onCancel: () => void;
+}) {
+  const { run, problem, busy } = useAction();
+  const here = useStore((st) => (st.remote ? "the server" : "this computer"));
+  const s = now?.search;
+  const known = (e: string) => ENGINES.some(([v]) => v === e && v !== "other");
+  const [mode, setMode] = useState<"browser" | "service">(now?.provider === "browser" ? "browser" : "service");
+  const [engine, setEngine] = useState(s && !known(s.engine) ? "other" : s?.engine ?? "duckduckgo");
+  const [otherEngine, setOtherEngine] = useState(s && !known(s.engine) ? s.engine : "");
+  const [kagi, setKagi] = useState("");
+  const [service, setService] = useState(now?.provider && now.provider !== "browser" ? now.provider : "duckduckgo");
+  const [endpoint, setEndpoint] = useState(service === "searxng" ? s?.searxng ?? "" : s?.custom ?? "");
+  const [key, setKey] = useState("");
+  const [how, setHow] = useState(sendKey(s?.send_key ?? "bearer")[0]);
+  const [param, setParam] = useState(sendKey(s?.send_key ?? "bearer")[1]);
+  const [calls, setCalls] = useState(String(now?.calls ?? ""));
+  const keySet = !!s?.keys[mode === "browser" ? "kagi" : service];
+  const needsKey = mode === "service" && service in NEEDS_KEY;
+  const byAddress = mode === "service" && (service === "searxng" || service === "custom");
+  const pickService = (v: string) => {
+    setService(v);
+    setKey("");
+    setEndpoint(v === "searxng" ? s?.searxng ?? "" : v === "custom" ? s?.custom ?? "" : "");
+  };
+  const ready =
+    mode === "browser"
+      ? (engine !== "other" || otherEngine.trim() !== "") && (engine !== "kagi" || keySet || kagi.trim() !== "")
+      : (!needsKey || keySet || key.trim() !== "") && (!byAddress || endpoint.trim() !== "");
+  async function save() {
+    const n = Number(calls);
+    const body =
+      mode === "browser"
+        ? { provider: "browser", engine: engine === "other" ? otherEngine.trim() : engine, kagi: engine === "kagi" && kagi.trim() ? kagi.trim() : undefined }
+        : {
+            provider: service,
+            key: key.trim() || undefined,
+            endpoint: byAddress ? endpoint.trim() : undefined,
+            send_key: service === "custom" ? (how === "bearer" ? "bearer" : `${how}:${param.trim()}`) : undefined,
+          };
+    const t = await run((api) =>
+      api.put<ToolList>("/tools/web.search", { ...body, max_calls: Number.isInteger(n) && n > 0 && n !== now?.calls ? n : undefined }),
+    );
+    if (t) onDone(t);
+  }
+  return (
+    <div className="inline-form search-form">
+      <h3>{picker ? "Choose how crews search the web" : "Edit Web search"}</h3>
+      {picker}
+      <div className="modes" role="group" aria-label="How to search">
+        <button aria-pressed={mode === "browser"} onClick={() => setMode("browser")}>
+          In the browser
+        </button>
+        <button aria-pressed={mode === "service"} onClick={() => setMode("service")}>
+          A search service
+        </button>
+      </div>
+      {mode === "browser" ? (
+        <>
+          <Field
+            label="Search engine"
+            hint={
+              engine === "google"
+                ? "Google often turns away a browser that's automated, so searches may fail. Another engine is more reliable."
+                : engine === "qwant"
+                  ? "Qwant sometimes turns away a browser that's automated, so a search may not always work."
+                  : engine === "brave"
+                    ? "Brave Search sometimes turns away a browser that's automated, and it gives each result's site rather than the page."
+                    : browserFound
+                  ? "Crews search on the engine's own page, in the browser, as you would."
+                  : "No browser is set up yet, so this won't work until one is: choose one in Settings › General."
+            }
+          >
+            <span className="form-row tight">
+              <select aria-label="Search engine" value={engine} onChange={(e) => setEngine(e.target.value)}>
+                {ENGINES.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {v === "duckduckgo" ? `${l} (default)` : l}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </Field>
+          {engine === "other" && (
+            <Field label="Search engine's address" hint="Its home page: Ombro uses its search box. Or its results address, with %s where the words go.">
+              <input className="text-input" placeholder="e.g. https://search.example.com" value={otherEngine} onChange={(e) => setOtherEngine(e.target.value)} />
+            </Field>
+          )}
+          {engine === "kagi" && (
+            <Field
+              label="Your Kagi session link"
+              hint={
+                keySet
+                  ? "A session link is kept. Leave this empty to keep it."
+                  : `Kagi needs you signed in. In Kagi, open Settings › Account and copy your session link here. It's kept on ${here}.`
+              }
+            >
+              <input className="text-input" type="password" autoComplete="off" aria-label="Your Kagi session link" value={kagi} onChange={(e) => setKagi(e.target.value)} />
+            </Field>
+          )}
+        </>
+      ) : (
+        <>
+          <Field
+            label="Service"
+            hint={service === "duckduckgo" ? "Free and needs no browser, but unofficial and rate-limited, so best effort." : undefined}
+          >
+            <span className="form-row tight">
+              <select aria-label="Service" value={service} onChange={(e) => pickService(e.target.value)}>
+                {SERVICES.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </Field>
+          {byAddress && (
+            <Field
+              label="Address"
+              hint={
+                service === "searxng"
+                  ? "Your SearXNG's address. Its JSON output must be on: json under search: formats: in its settings.yml."
+                  : "The search API's address. Put {query} where the words go, or they're sent as ?q=. Results are found in its answer by their url or link."
+              }
+            >
+              <input
+                className="text-input"
+                placeholder={service === "searxng" ? "e.g. http://192.168.1.20:8888" : "e.g. https://api.example.com/search?q={query}"}
+                value={endpoint}
+                onChange={(e) => setEndpoint(e.target.value)}
+              />
+            </Field>
+          )}
+          {(needsKey || service === "custom") && (
+            <Field
+              label={service === "custom" ? "Key (optional)" : "Key"}
+              hint={
+                <>
+                  {keySet ? "A key is kept. Leave this empty to keep it." : `It's kept on ${here} and only sent to the service.`}
+                  {KEY_SITES[service] && (
+                    <>
+                      {" "}
+                      <a href="#" onClick={(e) => { e.preventDefault(); void openLink(KEY_SITES[service]); }}>
+                        Get a key
+                      </a>
+                    </>
+                  )}
+                </>
+              }
+            >
+              <input className="text-input" type="password" autoComplete="off" aria-label="Key" value={key} onChange={(e) => setKey(e.target.value)} />
+            </Field>
+          )}
+          {service === "custom" && (
+            <Field label="How the key is sent" hint="The service's docs say which. Most use a bearer token.">
+              <span className="form-row tight">
+                <select aria-label="How the key is sent" value={how} onChange={(e) => setHow(e.target.value)}>
+                  <option value="bearer">As a bearer token</option>
+                  <option value="header">In a header</option>
+                  <option value="query">In the address</option>
+                </select>
+                {how !== "bearer" && (
+                  <input
+                    aria-label={how === "header" ? "Header name" : "Name in the address"}
+                    placeholder={how === "header" ? "X-API-Key" : "api_key"}
+                    value={param}
+                    onChange={(e) => setParam(e.target.value)}
+                  />
+                )}
+              </span>
+            </Field>
+          )}
+        </>
+      )}
+      <Field label="Calls a job may make">
+        <input className="text-input number" type="number" min={1} aria-label="Calls a job may make" value={calls} onChange={(e) => setCalls(e.target.value)} />
+      </Field>
+      <div className="form-actions">
+        <button className="primary" disabled={busy || !ready || (how !== "bearer" && service === "custom" && mode === "service" && !param.trim())} onClick={() => void save()}>
+          Save
+        </button>
+        <button className="secondary" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      <Problem text={problem} />
+    </div>
+  );
+}
 
 type Kind = "remote" | "local" | "api" | "builtin";
 
@@ -390,24 +650,27 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
     setProvider(t?.provider ?? CHOICES[which][0]);
     setCalls(String(t?.calls ?? ""));
   }, [which, tools]);
-  const keyName = NEEDS_KEY[provider];
+  const keyName = NEEDS_KEY[provider] ?? OPTIONAL_KEY[provider];
+  const optional = provider in OPTIONAL_KEY;
   const keySet = !!keyName && !!keyList.data?.keys.find((k) => k.name === keyName && k.set);
+  const picker = !tool && (
+    <Field label="Tool">
+      <span className="form-row tight">
+        <select aria-label="Tool" value={which} onChange={(e) => setWhich(e.target.value)}>
+          {Object.entries(NATIVE).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </span>
+    </Field>
+  );
+  if (which === "web.search") return <SearchForm key={which} now={now} picker={picker} browserFound={!!tools.browser} onDone={onDone} onCancel={onCancel} />;
   return (
     <div className="inline-form">
       <h3>{tool ? `Edit ${NATIVE[tool.tool]}` : "Choose the service crews use to search and read the web"}</h3>
-      {!tool && (
-        <Field label="Tool">
-          <span className="form-row tight">
-            <select aria-label="Tool" value={which} onChange={(e) => setWhich(e.target.value)}>
-              {Object.entries(NATIVE).map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </span>
-        </Field>
-      )}
+      {picker}
       <Field label="Provider">
         <span className="form-row tight">
           <select aria-label="Provider" value={provider} onChange={(e) => setProvider(e.target.value)}>
@@ -420,8 +683,27 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
         </span>
       </Field>
       {keyName && (
-        <Field label="Key" hint={keySet ? "A key is set. Leave this empty to keep it." : `It's kept on ${here} and only sent to the provider.`}>
-          <input className="text-input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
+        <Field
+          label={optional ? "Key (optional)" : "Key"}
+          hint={
+            <>
+              {keySet
+                ? "A key is set. Leave this empty to keep it."
+                : optional
+                  ? `It works without one, at a low rate limit; a key gives a higher one. It's kept on ${here}.`
+                  : `It's kept on ${here} and only sent to the provider.`}
+              {KEY_SITES[provider] && (
+                <>
+                  {" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); void openLink(KEY_SITES[provider]); }}>
+                    Get a key
+                  </a>
+                </>
+              )}
+            </>
+          }
+        >
+          <input className="text-input" type="password" autoComplete="off" aria-label="Key" value={key} onChange={(e) => setKey(e.target.value)} />
         </Field>
       )}
       <Field label="Calls a job may make">
@@ -437,7 +719,7 @@ function BuiltinForm({ tool, tools, onDone, onCancel }: {
       <div className="form-actions">
         <button
           className="primary"
-          disabled={busy || (!!keyName && !keySet && !key)}
+          disabled={busy || (!!keyName && !optional && !keySet && !key)}
           onClick={async () => {
             const n = Number(calls);
             const t = await run((api) =>
@@ -541,7 +823,7 @@ export function Tools() {
                 <Item
                   name={NATIVE[n.tool]}
                   details={[
-                    `Built in, using ${(PROVIDERS[n.provider ?? ""] ?? n.provider ?? "").replace(/ \(.*\)$/, "")}`,
+                    `Built in, using ${n.tool === "web.search" ? searchUsing(n) : (PROVIDERS[n.provider ?? ""] ?? n.provider ?? "").replace(/ \(.*\)$/, "")}`,
                     n.calls ? `Up to ${n.calls} calls a job` : null,
                   ]}
                   actions={

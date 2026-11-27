@@ -2305,6 +2305,16 @@
             }
           ]
         },
+        "search": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SearchSettings"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "tool": {
           "type": "string"
         }
@@ -2313,7 +2323,8 @@
         "tool",
         "provider",
         "max_calls",
-        "calls"
+        "calls",
+        "search"
       ],
       "title": "NativeTool",
       "type": "object"
@@ -3044,6 +3055,52 @@
         "can_install"
       ],
       "title": "SchedulerState",
+      "type": "object"
+    },
+    "SearchSettings": {
+      "description": "web.search's own settings: the browser's search engine (a name, or another engine's address),\nthe addresses of a SearXNG and of another search API, how that API is sent its key, and which\nproviders have their key set (by provider name; \"kagi\" for Kagi's session link).",
+      "properties": {
+        "custom": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engine": {
+          "type": "string"
+        },
+        "keys": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object"
+        },
+        "searxng": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "send_key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "searxng",
+        "custom",
+        "send_key",
+        "keys"
+      ],
+      "title": "SearchSettings",
       "type": "object"
     },
     "ServerMessage": {

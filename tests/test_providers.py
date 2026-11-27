@@ -231,3 +231,224 @@ def test_duckduckgo_only_trusts_its_own_host():
     from ombro.providers.duckduckgo import _is_ddg
 
     assert _is_ddg("https://html.duckduckgo.com/x") and not _is_ddg("https://notduckduckgo.com/x")
+
+
+# -- search APIs (ombro.providers.search_apis) -------------------------------------
+
+from ombro.providers.search_apis import SERVICES, find_results  # noqa: E402
+
+
+def service(name, handler, key="sk-INVENTED-search", **kw):
+    seen = []
+
+    def wrapped(request: httpx.Request):
+        seen.append(request)
+        return handler(request)
+
+    p = SERVICES[name](lambda: key, f"{name.upper()}_KEY", transport=httpx.MockTransport(wrapped), **kw)
+    return p, seen
+
+
+TEAPOT = {"title": "Ada <b>Pots</b>", "url": "https://ada-pots.invalid/"}
+
+
+@pytest.mark.parametrize(
+    "name, body, where, header",
+    [
+        (
+            "brave",
+            {"web": {"results": [{**TEAPOT, "description": "Invented <strong>teapots</strong>."}]}},
+            "https://api.search.brave.com/res/v1/web/search?q=teapots&count=3",
+            ("X-Subscription-Token", "sk-INVENTED-search"),
+        ),
+        (
+            "tavily",
+            {"results": [{**TEAPOT, "content": "Invented teapots."}]},
+            "https://api.tavily.com/search",
+            ("Authorization", "Bearer sk-INVENTED-search"),
+        ),
+        (
+            "exa",
+            {"results": [{**TEAPOT, "highlights": ["Invented teapots."]}]},
+            "https://api.exa.ai/search",
+            ("x-api-key", "sk-INVENTED-search"),
+        ),
+        (
+            "serper",
+            {
+                "organic": [
+                    {"title": "Ada <b>Pots</b>", "link": "https://ada-pots.invalid/", "snippet": "Invented teapots."}
+                ]
+            },
+            "https://google.serper.dev/search",
+            ("X-API-KEY", "sk-INVENTED-search"),
+        ),
+    ],
+)
+def test_search_apis(name, body, where, header):
+    p, seen = service(name, lambda r: httpx.Response(200, json=body))
+    assert p.search("teapots", 3, 10) == [
+        {"title": "Ada Pots", "url": "https://ada-pots.invalid/", "snippet": "Invented teapots."}
+    ]
+    assert str(seen[0].url) == where and seen[0].headers[header[0]] == header[1]
+
+
+def test_search_apis_say_plainly_what_went_wrong():
+    p, _ = service("tavily", lambda r: httpx.Response(401, json={"detail": {"error": "bad sk-INVENTED-search"}}))
+    with pytest.raises(ProviderError, match="Tavily key was refused") as e:
+        p.search("teapots", 3, 10)
+    assert "sk-INVENTED" not in str(e.value)
+    p, seen = service("brave", lambda r: httpx.Response(200, json={}), key=None)
+    with pytest.raises(NotCalled, match="BRAVE_KEY is not set"):
+        p.search("teapots", 3, 10)
+    assert not seen
+
+
+def test_searxng_and_another_search_api_by_address():
+    body = {"results": [{**TEAPOT, "content": "Invented teapots."}]}
+    p, seen = service(
+        "searxng", lambda r: httpx.Response(200, json=body), key=None, endpoint="http://192.168.1.9:8888/"
+    )
+    assert p.search("teapots", 3, 10)[0]["url"] == "https://ada-pots.invalid/"
+    assert str(seen[0].url) == "http://192.168.1.9:8888/search?q=teapots&format=json"
+    p, _ = service("searxng", lambda r: httpx.Response(403, text="Forbidden"), key=None, endpoint="http://s.invalid")
+    with pytest.raises(ProviderError, match="json under search: formats"):
+        p.search("teapots", 3, 10)
+
+    nested = {
+        "data": {
+            "items": [{"name": "x"}],
+            "hits": [{"title": "Ada", "link": "https://ada-pots.invalid/", "description": "Invented."}],
+        }
+    }
+    p, seen = service(
+        "custom",
+        lambda r: httpx.Response(200, json=nested),
+        endpoint="https://s.invalid/v1?term={query}",
+        send_key="query:api_key",
+    )
+    assert p.search("tea pots", 3, 10) == [{"title": "Ada", "url": "https://ada-pots.invalid/", "snippet": "Invented."}]
+    assert str(seen[0].url) == "https://s.invalid/v1?term=tea+pots&api_key=sk-INVENTED-search"
+    p, seen = service(
+        "custom",
+        lambda r: httpx.Response(200, json=[TEAPOT]),
+        endpoint="https://s.invalid/find",
+        send_key="header:X-Key",
+    )
+    assert p.search("teapots", 3, 10)[0]["title"] == "Ada Pots"
+    assert str(seen[0].url) == "https://s.invalid/find?q=teapots" and seen[0].headers["X-Key"] == "sk-INVENTED-search"
+    p, _ = service("custom", lambda r: httpx.Response(200, json={"answer": "none"}), endpoint="https://s.invalid/")
+    with pytest.raises(ProviderError, match="no list of results"):
+        p.search("teapots", 3, 10)
+    assert find_results({"a": {"b": {"c": [{"url": "https://x.invalid"}]}}}) == [{"url": "https://x.invalid"}]
+
+
+def test_the_registry_backs_web_search_with_the_chosen_service(home):
+    keys.set_key(home, "SERPER_API_KEY", "sk-INVENTED-serper")
+    seen = []
+
+    def handler(r):
+        seen.append(r)
+        return httpx.Response(200, json={"organic": [{"title": "Ada", "link": "https://ada-pots.invalid/"}]})
+
+    settings = ToolSettings.from_dict({"tools": {"web.search": {"provider": "serper"}}})
+    assert native_registry(home, settings, transport=httpx.MockTransport(handler), with_browser=False).get("web.search")
+    from ombro.native import make_provider
+
+    p = make_provider("serper", home, settings, transport=httpx.MockTransport(handler))
+    assert p.search("teapots", 2, 10)[0]["url"] == "https://ada-pots.invalid/"
+    assert seen[0].headers["X-API-KEY"] == "sk-INVENTED-serper"
+    custom = ToolSettings.from_dict({"providers": {"custom": {"endpoint": "https://s.invalid/"}}})
+    assert make_provider("custom", home, custom).key_getter is None  # no key named, none sent
+    with pytest.raises(Exception, match="search_engine"):
+        ToolSettings.from_dict({"providers": {"browser": {"search_engine": "altavista"}}})
+
+
+# -- reading pages through a service (web.fetch) ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name, body, where, header, title",
+    [
+        (
+            "tavily",
+            {
+                "results": [{"url": "https://ada-pots.invalid/", "raw_content": "# Ada Pots\nInvented teapots."}],
+                "failed_results": [],
+            },
+            "https://api.tavily.com/extract",
+            ("Authorization", "Bearer sk-INVENTED-search"),
+            "",
+        ),
+        (
+            "exa",
+            {
+                "results": [
+                    {"url": "https://ada-pots.invalid/", "title": "Ada Pots", "text": "# Ada Pots\nInvented teapots."}
+                ],
+                "statuses": [{"id": "https://ada-pots.invalid/", "status": "success"}],
+            },
+            "https://api.exa.ai/contents",
+            ("x-api-key", "sk-INVENTED-search"),
+            "Ada Pots",
+        ),
+        (
+            "serper",
+            {"markdown": "# Ada Pots\nInvented teapots.", "text": "Ada Pots", "metadata": {"title": "Ada Pots"}},
+            "https://scrape.serper.dev",
+            ("X-API-KEY", "sk-INVENTED-search"),
+            "Ada Pots",
+        ),
+        (
+            "jina",
+            {
+                "code": 200,
+                "data": {
+                    "title": "Ada Pots",
+                    "url": "https://ada-pots.invalid/",
+                    "content": "# Ada Pots\nInvented teapots.",
+                },
+            },
+            "https://r.jina.ai/https://ada-pots.invalid/",
+            ("Authorization", "Bearer sk-INVENTED-search"),
+            "Ada Pots",
+        ),
+    ],
+)
+def test_reading_a_page_through_a_service(name, body, where, header, title):
+    p, seen = service(name, lambda r: httpx.Response(200, json=body))
+    page = p.fetch("https://ada-pots.invalid/", 20, 10)
+    assert page == {
+        "url": "https://ada-pots.invalid/",
+        "title": title,
+        "content": "# Ada Pots\nInvented ",
+        "truncated": True,
+    }
+    assert str(seen[0].url) == where and seen[0].headers[header[0]] == header[1]
+
+
+def test_reading_says_plainly_when_a_service_could_not():
+    p, _ = service(
+        "tavily",
+        lambda r: httpx.Response(
+            200, json={"results": [], "failed_results": [{"url": "x", "error": "blocked by site"}]}
+        ),
+    )
+    with pytest.raises(ProviderError, match="Tavily could not read the page: blocked by site"):
+        p.fetch("https://ada-pots.invalid/", 100, 10)
+    exa = {
+        "results": [],
+        "statuses": [{"id": "x", "status": "error", "error": {"tag": "CRAWL_NOT_FOUND", "httpStatusCode": 404}}],
+    }
+    p, _ = service("exa", lambda r: httpx.Response(200, json=exa))
+    with pytest.raises(ProviderError, match="CRAWL_NOT_FOUND"):
+        p.fetch("https://ada-pots.invalid/", 100, 10)
+    p, _ = service(
+        "jina",
+        lambda r: httpx.Response(403, json={"data": None, "code": 403, "readableMessage": "Anonymous access blocked"}),
+    )
+    with pytest.raises(ProviderError, match="Jina Reader key was refused: Anonymous access blocked"):
+        p.fetch("https://ada-pots.invalid/", 100, 10)
+    p, seen = service("jina", lambda r: httpx.Response(200, json={"data": {"title": "", "content": "Text"}}), key=None)
+    assert p.fetch("https://ada-pots.invalid/", 100, 10)["content"] == "Text"
+    assert "Authorization" not in seen[0].headers  # no key: none sent

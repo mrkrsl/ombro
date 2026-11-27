@@ -24,7 +24,8 @@ from ombro.providers.addresses import Resolver
 from ombro.providers.duckduckgo import DuckDuckGoProvider
 from ombro.providers.fake import FakeProvider
 from ombro.providers.firecrawl import DEFAULT_ENDPOINT, FirecrawlProvider
-from ombro.settings import ToolSettings
+from ombro.providers.search_apis import SERVICES
+from ombro.settings import KAGI_KEY, ToolSettings
 from ombro.tools import (
     NotGranted,
     Tool,
@@ -869,9 +870,22 @@ def make_provider(
         return FirecrawlProvider(lambda: keys.get_key(home, key_name), key_name, endpoint=endpoint, transport=transport)
     if name == "duckduckgo":
         return DuckDuckGoProvider(transport=transport)
+    if name in SERVICES:
+        cfg = settings.providers.get(name, {})
+        key_name = settings.key_name(name)  # SearXNG's and another API's only when tools.md names one
+        extra = {"send_key": str(cfg.get("send_key") or "bearer")} if name == "custom" else {}
+        return SERVICES[name](
+            (lambda: keys.get_key(home, key_name)) if key_name else None,
+            key_name,
+            endpoint=cfg.get("endpoint") or None,
+            transport=transport,
+            **extra,
+        )
     if name == "browser":
         return browser_mod.BrowserFetch(
-            browser or browser_mod.Browser(settings.providers.get("browser"), resolver=resolver)
+            browser or browser_mod.Browser(settings.providers.get("browser"), resolver=resolver),
+            engine=settings.search_engine(),
+            kagi_token=lambda: keys.get_key(home, KAGI_KEY),
         )
     raise ValueError(f"unknown provider {name!r}")
 
@@ -910,7 +924,7 @@ def native_registry(
     from ombro.coderun import code_tool
 
     # Web pages are read in the browser: with none (not installed, turned off, or its container not
-    # running), web.fetch is offered only through a provider that needs none (Firecrawl).
+    # running), web.fetch is offered only through a service (Firecrawl, Tavily, Jina Reader…).
     # catalogue: every tool a role may name (the role interview), whether or not a browser is here now.
     have_browser = catalogue or (with_browser and browser_mod.available(settings.providers.get("browser")) is not None)
     tools = [*workspace_tools(), web_search_tool(provider("web.search")), code_tool()]

@@ -275,11 +275,24 @@ class BrowserView(TypedDict):
     problem: str | None  # why there is none now, in words
 
 
+class SearchSettings(TypedDict):
+    """web.search's own settings: the browser's search engine (a name, or another engine's address),
+    the addresses of a SearXNG and of another search API, how that API is sent its key, and which
+    providers have their key set (by provider name; "kagi" for Kagi's session link)."""
+
+    engine: str
+    searxng: str | None
+    custom: str | None
+    send_key: str
+    keys: dict[str, bool]
+
+
 class NativeTool(TypedDict):
     tool: str
     provider: str | None
     max_calls: int | None  # as set in tools.md
     calls: int | None  # the calls a job may make, set or not
+    search: SearchSettings | None  # web.search only
 
 
 class ServerRow(TypedDict):

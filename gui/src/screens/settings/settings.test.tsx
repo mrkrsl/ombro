@@ -42,7 +42,7 @@ const crews: CrewsView = {
   lead: { name: "lead", title: "Lead", model: "default", path: "/x" },
   default_crew: "default",
   crews: [
-    { name: "legal", title: "Legal Crew", description: "", default: false, roles: [
+    { name: "legal", title: "Legal Crew", description: "The default crew.", default: false, roles: [
       { name: "counsel", title: "Legal Researcher", kind: "specialist", model: "default" },
       { name: "assistant", title: "Legal Assistant", kind: "helper", model: "local-model" },
     ] },
@@ -55,8 +55,9 @@ const folders: FolderList = {
 const remote: ServerRow = { server: "notion", url: "https://mcp.invented.invalid", command: null, args: [], secrets: [],
   sign_in: "not signed in", signing_in: false, problem: null };
 const tools: ToolList = {
-  native: [{ tool: "web.search", provider: "duckduckgo", max_calls: null, calls: 60 },
-    { tool: "web.fetch", provider: "browser", max_calls: null, calls: 100 }],
+  native: [{ tool: "web.search", provider: "duckduckgo", max_calls: null, calls: 60,
+    search: { engine: "duckduckgo", searxng: null, custom: null, send_key: "bearer", keys: { tavily: true, brave: false, kagi: false } } },
+    { tool: "web.fetch", provider: "browser", max_calls: null, calls: 100, search: null }],
   servers: [remote], sandbox: null, folders: [], composio: null, browser: "Google Chrome",
   apis: [{ name: "podcasts", url: "https://api.podcasts.invalid/v2", about: "Invented list.", how_to: "",
     access: "read-only", get_looks_up: true, send_key: "bearer", key: "PODCASTS_API_KEY", key_set: true, calls: 30 }],
@@ -289,6 +290,8 @@ describe("Settings › Crews", () => {
     const row = (await screen.findByText("Legal Assistant")).closest(".item") as HTMLElement;
     expect(within(row).getByText("Helper")).toBeInTheDocument();
     expect(within(row).getByText("Model: local-model")).toBeInTheDocument();
+    expect(screen.getByText("Model: invented-chat (the default)")).toBeInTheDocument();
+    expect(screen.queryByText("The default crew.")).not.toBeInTheDocument(); // a crew's description isn't shown
     expect(screen.queryByText(/Ombro Lead/)).not.toBeInTheDocument(); // the Lead isn't a crew member
     await userEvent.click(screen.getByRole("button", { name: "Rename" }));
     const title = screen.getByLabelText("New title");
@@ -321,7 +324,7 @@ describe("Settings › Crews", () => {
     await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
     const model = await screen.findByLabelText("Model");
     const options = within(model).getAllByRole("option").map((o) => o.textContent);
-    expect(options).toEqual(["The default model", "invented-chat (Invented)", "local-model (Local)"]);
+    expect(options).toEqual(["Use default model (invented-chat)", "invented-chat (Invented)", "local-model (Local)"]);
     const save = screen.getByRole("button", { name: "Save" });
     const cancel = screen.getByRole("button", { name: "Cancel" });
     expect(save).toBeDisabled();
@@ -341,6 +344,13 @@ describe("Settings › Crews", () => {
     expect(sent("PUT", "/roles/legal/counsel")).toEqual({ model: "local-model" });
     expect(await screen.findByText("Saved")).toBeInTheDocument();
     expect(save).toBeDisabled();
+    // A member on a model of its own can go back to following the default.
+    replies["PUT /roles/legal/counsel"] = counsel;
+    expect(within(model).getAllByRole("option")[0]).toHaveTextContent("Use default model (invented-chat)");
+    await userEvent.selectOptions(model, "default");
+    await userEvent.click(save);
+    const puts = calls.filter(([m, p]) => m === "PUT" && p === "/roles/legal/counsel");
+    expect(puts.at(-1)?.[2]).toEqual({ model: "default" });
   });
 
   it("renames a member and makes them a helper in one save, then follows the new name", async () => {
@@ -419,6 +429,72 @@ describe("Settings › Folders, Tools and Skills", () => {
     expect(sent("POST", "/tools/servers")).toEqual({ name: "sheets", url: "https://mcp.sheets.invalid", command: undefined,
       secrets: { Authorization: "sk-INVENTED" }, keep: [] });
     opened.mockRestore();
+  });
+
+  it("chooses web search in the browser, warns about Google, and asks Kagi for its session link", async () => {
+    useStore.setState({ settingsPage: "tools" });
+    replies["PUT /tools/web.search"] = tools;
+    render(<Settings />);
+    expect(await screen.findByText(/Built in, using DuckDuckGo/)).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    await userEvent.click(screen.getByRole("button", { name: "In the browser" }));
+    const engine = screen.getByLabelText("Search engine");
+    expect(within(engine).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "DuckDuckGo (default)", "Bing", "Ecosia", "Startpage", "Kagi", "Brave Search", "Qwant", "Google", "Other…",
+    ]);
+    await userEvent.selectOptions(engine, "google");
+    expect(screen.getByText(/Google often turns away a browser that's automated/)).toBeInTheDocument();
+    await userEvent.selectOptions(engine, "qwant");
+    expect(screen.getByText(/Qwant sometimes turns away a browser that's automated/)).toBeInTheDocument();
+    await userEvent.selectOptions(engine, "kagi");
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    await userEvent.type(screen.getByLabelText("Your Kagi session link"), "https://kagi.com/search?token=INVENTED");
+    await userEvent.click(save);
+    await waitFor(() => expect(sent("PUT", "/tools/web.search")).toEqual({
+      provider: "browser", engine: "kagi", kagi: "https://kagi.com/search?token=INVENTED", max_calls: undefined }));
+  });
+
+  it("chooses a search service: a key where it needs one, an address for another", async () => {
+    useStore.setState({ settingsPage: "tools" });
+    replies["PUT /tools/web.search"] = tools;
+    render(<Settings />);
+    await screen.findByText(/Built in, using DuckDuckGo/);
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    const service = screen.getByLabelText("Service");
+    await userEvent.selectOptions(service, "brave");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled(); // no Brave key yet
+    await userEvent.selectOptions(service, "tavily");
+    expect(screen.getByText(/A key is kept/)).toBeInTheDocument();
+    await userEvent.selectOptions(service, "custom");
+    await userEvent.type(screen.getByLabelText(/^Address/), "https://api.invented.invalid/s?q={{query}");
+    await userEvent.selectOptions(screen.getByLabelText("How the key is sent"), "header");
+    await userEvent.type(screen.getByLabelText("Header name"), "X-Key");
+    await userEvent.type(screen.getByLabelText(/^Key/), "sk-INVENTED");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("PUT", "/tools/web.search")).toEqual({
+      provider: "custom", key: "sk-INVENTED", endpoint: "https://api.invented.invalid/s?q={query}", send_key: "header:X-Key", max_calls: undefined }));
+  });
+
+  it("reads pages through a service, with a key only where it needs one", async () => {
+    useStore.setState({ settingsPage: "tools" });
+    replies["PUT /tools/web.fetch"] = tools;
+    replies["/keys"] = { keys: [{ name: "TAVILY_API_KEY", set: true, source: null, used_by: [] }], sign_ins: [], file: "/x" };
+    render(<Settings />);
+    await screen.findByText(/Built in, using DuckDuckGo/);
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[1]);
+    const provider = screen.getByLabelText("Provider");
+    expect(within(provider).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "In the browser (free)", "Tavily (needs a key)", "Exa (needs a key)", "Serper (needs a key)",
+      "Jina Reader (free, a key optional)", "Firecrawl (paid, needs a key)",
+    ]);
+    await userEvent.selectOptions(provider, "exa");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.selectOptions(provider, "jina");
+    expect(screen.getByLabelText(/^Key/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(); // works without a key
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("PUT", "/tools/web.fetch")).toEqual({ provider: "jina", key: undefined, max_calls: undefined }));
   });
 
   it("adds a program, then shows what its tools claim and keeps your yes", async () => {

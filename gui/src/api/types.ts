@@ -1091,7 +1091,25 @@ export interface NativeTool {
   calls: number | null;
   max_calls: number | null;
   provider: string | null;
+  search: SearchSettings | null;
   tool: string;
+}
+/**
+ * web.search's own settings: the browser's search engine (a name, or another engine's address),
+ * the addresses of a SearXNG and of another search API, how that API is sent its key, and which
+ * providers have their key set (by provider name; "kagi" for Kagi's session link).
+ *
+ * This interface was referenced by `OmbroApi`'s JSON-Schema
+ * via the `definition` "SearchSettings".
+ */
+export interface SearchSettings {
+  custom: string | null;
+  engine: string;
+  keys: {
+    [k: string]: boolean;
+  };
+  searxng: string | null;
+  send_key: string;
 }
 /**
  * This interface was referenced by `OmbroApi`'s JSON-Schema

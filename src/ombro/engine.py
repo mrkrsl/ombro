@@ -525,13 +525,13 @@ class Engine:
 
     def _warn_missing_keys(self, role: Role) -> None:
         from ombro import keys
-        from ombro.settings import PROVIDER_TOOLS
+        from ombro.settings import PROVIDER_KEYS, PROVIDER_TOOLS
 
         for tool in role.tools:
             if tool not in PROVIDER_TOOLS or self.registry.get(tool) is None:
                 continue
             provider = self.tool_settings.provider_for(tool)
-            key_name = self.tool_settings.key_name(provider) if provider == "firecrawl" else None
+            key_name = self.tool_settings.key_name(provider) if provider in PROVIDER_KEYS else None
             if key_name and not keys.get_key(self.home, key_name):
                 self.journal.write(
                     "harness",

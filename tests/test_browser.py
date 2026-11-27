@@ -16,6 +16,7 @@ import pytest
 
 from ombro import browser as browser_mod
 from ombro import fake, mdfile, outbox
+from ombro.providers import ProviderError
 from ombro.tools import ToolContext, ToolInputError
 
 pytestmark = pytest.mark.skipif(not browser_mod.installed(), reason="no browser installed")
@@ -65,6 +66,18 @@ def page(port: int) -> str:
 </body></html>"""
 
 
+# An invented search engine's results page: results with headings, one through the engine's own
+# redirect, the engine's own links (left out), and a footer (left out).
+RESULTS = """<html><body><header><a href="/account">Sign in to Invented Search</a></header>
+<div class="r"><a href="https://ada-pots.invalid/teapots"><h3>Ada Pots: invented teapots</h3></a>
+<p>Hand-thrown invented teapots from a small studio, glazed in blue and fired twice.</p></div>
+<div class="r"><h2><a href="/l/?uddg=https%3A%2F%2Fbrin.invalid%2F">Brin Ware</a></h2>
+<span>Brin makes invented stoneware: mugs, jugs and teapots for everyday use at home.</span></div>
+<div class="r"><h3><a href="/settings">Search settings</a></h3></div>
+<footer><a href="https://privacy.invalid/"><h4>Privacy policy</h4></a></footer>
+</body></html>"""
+
+
 class Site:
     def __init__(self):
         self.requests: list[tuple[str, str, str]] = []
@@ -90,6 +103,15 @@ class Site:
                     )
                 elif self.path == "/":
                     self._send(page(site.port))
+                elif self.path.startswith("/search"):
+                    self._send(RESULTS)
+                elif self.path.startswith("/find"):
+                    self._send(
+                        '<html><body><form action="/search" method="get"><input type="hidden" name="lang" value="en">'
+                        '<input name="query" type="text"><button>Go</button></form></body></html>'
+                    )
+                elif self.path.startswith("/checked"):
+                    self._send("<html><body><p>Please confirm you are not a robot to continue.</p></body></html>")
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -296,6 +318,35 @@ def test_web_fetch_can_use_the_browser(site):
     finally:
         b.close()
     assert "Made by script" in page["content"] and page["title"] == "Lowtown Bakery"
+
+
+def test_web_search_can_use_a_search_engine_in_the_browser(site):
+    b = browser_mod.Browser(site.settings, resolver=resolver)
+    try:
+        by_address = browser_mod.BrowserFetch(b, engine=site.url + "search?q=%s").search("invented teapots", 5, 20)
+        by_home_page = browser_mod.BrowserFetch(b, engine=site.url + "find").search("invented teapots", 5, 20)
+        with pytest.raises(ProviderError, match="bot check"):
+            browser_mod.BrowserFetch(b, engine=site.url + "checked?q={query}").search("invented teapots", 5, 20)
+    finally:
+        b.close()
+    assert [r["url"] for r in by_address] == ["https://ada-pots.invalid/teapots", "https://brin.invalid/"]
+    assert by_address[0]["title"] == "Ada Pots: invented teapots" and "fired twice" in by_address[0]["snippet"]
+    assert "everyday use" in by_address[1]["snippet"]
+    assert by_home_page == by_address
+    assert ("GET", "/search?lang=en&query=invented+teapots", "") in site.requests  # the form's own fields
+    assert ("GET", "/search?q=invented+teapots", "") in site.requests
+
+
+def test_kagi_in_the_browser_needs_its_session_token():
+    from ombro.providers import NotCalled
+
+    f = browser_mod.BrowserFetch(None, engine="kagi", kagi_token=lambda: None)  # type: ignore[arg-type]
+    with pytest.raises(NotCalled, match="session link"):
+        f.results_address("x")
+    f = browser_mod.BrowserFetch(None, engine="kagi", kagi_token=lambda: "tok/1")  # type: ignore[arg-type]
+    assert f.results_address("tea pots") == "https://kagi.com/search?q=tea+pots&token=tok%2F1"
+    assert browser_mod.BrowserFetch(None, engine="bing").results_address("a&b") == "https://www.bing.com/search?q=a%26b"  # type: ignore[arg-type]
+    assert browser_mod.BrowserFetch(None, engine="https://x.invalid/").results_address("a") is None  # type: ignore[arg-type]
 
 
 # -- in a job, and on approval --------------------------------------------------

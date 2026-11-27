@@ -424,6 +424,7 @@ def tool_list(home: Home, settings=None, signing: dict | None = None, fresh: boo
                 "provider": settings.provider_for(name) if name in PROVIDER_TOOLS else None,
                 "max_calls": cfg.get("max_calls") or (10 if name == "code.run" else None),
                 "calls": limits.max_calls_for(name) if limits else None,
+                "search": _search_settings(home, settings) if name == "web.search" else None,
             }
         )
     from ombro import oauth
@@ -478,6 +479,23 @@ def tool_list(home: Home, settings=None, signing: dict | None = None, fresh: boo
         "sandbox": sandbox.unavailable_reason(),
         "folders": folders.granted_names(home),
         "browser": _browser_name(settings),
+    }
+
+
+def _search_settings(home: Home, settings: Any) -> vt.SearchSettings:
+    from ombro.settings import KAGI_KEY, OPTIONAL_KEYS, PROVIDER_KEYS
+
+    have = {}
+    for p in [*PROVIDER_KEYS, *OPTIONAL_KEYS]:
+        name = settings.key_name(p) or OPTIONAL_KEYS.get(p)
+        have[p] = bool(name and keys.get_key(home, name))
+    have["kagi"] = bool(keys.get_key(home, KAGI_KEY))
+    return {
+        "engine": settings.search_engine(),
+        "searxng": settings.providers.get("searxng", {}).get("endpoint"),
+        "custom": settings.providers.get("custom", {}).get("endpoint"),
+        "send_key": str(settings.providers.get("custom", {}).get("send_key") or "bearer"),
+        "keys": have,
     }
 
 

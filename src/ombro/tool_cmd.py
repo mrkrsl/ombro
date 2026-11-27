@@ -27,11 +27,121 @@ NATIVE = (
 )
 ABOUT = {
     "firecrawl": "Firecrawl: a paid service, needs a key; good results, billed in credits",
-    "duckduckgo": "DuckDuckGo: free, no key; unofficial and rate-limited, so best effort",
+    "duckduckgo": "DuckDuckGo: free, no key or browser; unofficial and rate-limited, so best effort",
+    "searxng": "SearXNG: free, a SearXNG of your own, by its address (its JSON output turned on)",
+    "brave": "Brave Search API: needs a key",
+    "tavily": "Tavily: needs a key",
+    "exa": "Exa: needs a key",
+    "serper": "Serper (Google results): needs a key",
+    "custom": "another search API, by its address, with a key if it needs one",
+    "jina": "Jina Reader: free, a key optional (for a higher rate limit); reads pages as Markdown",
     "direct": "direct: free, no key; downloads the page itself (refuses local and private addresses)",
     "browser": "browser: free, no key; opens the page in a headless browser on this machine, for pages that need "
     "JavaScript (refuses local and private addresses)",
 }
+# web.search in the browser: about each engine. Google often turns an automated browser away.
+ENGINES = {
+    "duckduckgo": "DuckDuckGo",
+    "bing": "Bing",
+    "ecosia": "Ecosia",
+    "startpage": "Startpage",
+    "kagi": "Kagi (needs your session link)",
+    "brave": "Brave Search",
+    "qwant": "Qwant",
+    "google": "Google (may not work: it often turns away an automated browser)",
+}
+LABELS = {
+    "firecrawl": "Firecrawl",
+    "brave": "Brave Search",
+    "tavily": "Tavily",
+    "exa": "Exa",
+    "serper": "Serper",
+    "jina": "Jina Reader",
+}
+
+
+def use_key(home: Home, provider: str) -> None:
+    """Name a provider's optional key in tools.md (providers: <name>: key:), so it is sent."""
+    from ombro.settings import OPTIONAL_KEYS
+
+    meta, body = mdfile.read(home.tools) if home.tools.is_file() else ({}, "")
+    providers = meta.get("providers") if isinstance(meta.get("providers"), dict) else {}
+    entry = dict(providers.get(provider) or {})
+    entry["key"] = OPTIONAL_KEYS[provider]
+    providers[provider] = entry
+    meta["providers"] = providers
+    mdfile.write(home.tools, meta, body)
+    load_tool_settings(home)
+
+
+def kagi_token(text: str) -> str:
+    """Kagi's session token, from its session link (https://kagi.com/search?token=…) or as it is."""
+    from urllib.parse import parse_qs, urlsplit
+
+    text = str(text or "").strip()
+    if text.startswith(("http://", "https://")):
+        token = (parse_qs(urlsplit(text).query).get("token") or [""])[0]
+        if not token:
+            raise SetupError("that link has no token in it: copy the session link from Kagi's settings")
+        return token
+    return text
+
+
+def set_search(
+    home: Home,
+    provider: str,
+    *,
+    engine: str | None = None,
+    endpoint: str | None = None,
+    send_key: str | None = None,
+    uses_key: bool | None = None,
+) -> None:
+    """web.search's own settings in tools.md, for its provider: the browser's search engine (a name
+    in SEARCH_ENGINES, or another engine's address), the address of a SearXNG or another search API,
+    and how that API is sent its key. Keeps the rest of tools.md; the provider is set by set_tool."""
+    from ombro.settings import OPTIONAL_KEYS, SEARCH_ENGINES
+
+    meta, body = mdfile.read(home.tools) if home.tools.is_file() else ({}, "")
+    providers = meta.get("providers") if isinstance(meta.get("providers"), dict) else {}
+    if provider == "browser" and engine is not None:
+        engine = engine.strip()
+        if engine not in SEARCH_ENGINES:
+            if not engine.startswith(("http://", "https://")):
+                raise SetupError("give the search engine's address, starting https://")
+            if not urlsplit_host(engine):
+                raise SetupError("that address has no site in it")
+        entry = dict(providers.get("browser") or {})
+        entry["search_engine"] = engine
+        providers["browser"] = entry
+    if provider in ("searxng", "custom") and endpoint is not None:
+        endpoint = endpoint.strip().rstrip("/") if provider == "searxng" else endpoint.strip()
+        if not endpoint.startswith(("http://", "https://")) or not urlsplit_host(endpoint):
+            raise SetupError("give the address, starting https:// (or http:// on your own network)")
+        entry = dict(providers.get(provider) or {})
+        entry["endpoint"] = endpoint
+        if provider == "custom" and send_key is not None:
+            if send_key != "bearer" and not (
+                send_key.partition(":")[0] in ("header", "query") and send_key.partition(":")[2].strip()
+            ):
+                raise SetupError("the key is sent as bearer, header:<Name> or query:<param>")
+            entry["send_key"] = send_key
+        if uses_key is True:
+            entry["key"] = OPTIONAL_KEYS[provider]
+        elif uses_key is False:
+            entry.pop("key", None)
+        providers[provider] = entry
+    meta["providers"] = providers
+    mdfile.write(home.tools, meta, body)
+    load_tool_settings(home)
+
+
+def urlsplit_host(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    try:
+        return urlsplit(url).hostname or ""
+    except ValueError:
+        return ""
 
 
 def is_native(name: str) -> bool:
@@ -44,9 +154,14 @@ def describe(home: Home, tool: str) -> list[str]:
     if tool in PROVIDER_TOOLS:
         p = settings.provider_for(tool)
         lines.append(f"provider: {ABOUT.get(p, p)}")
-        key = PROVIDER_KEYS.get(p)
+        key = settings.key_name(p) if p in PROVIDER_KEYS or p in ("searxng", "custom", "jina") else None
         if key:
             lines.append(f"key {key}: {'set' if keys.get_key(home, key) else 'NOT SET'}")
+        if tool == "web.search" and p == "browser":
+            engine = settings.search_engine()
+            lines.append(f"search engine: {ENGINES.get(engine, engine)}")
+        if tool == "web.search" and p in ("searxng", "custom"):
+            lines.append(f"address: {settings.providers.get(p, {}).get('endpoint') or 'NOT SET'}")
     if tool.startswith("browser."):
         from ombro import browser
 
@@ -131,6 +246,9 @@ def flow(home: Home, ui: UI, tool: str, provider: str | None = None, max_calls: 
             )
         )
         provider = choices[int(pick) - 1]
+    if tool == "web.search" and provider in ("browser", "searxng", "custom") and asked:
+        if not _ask_search(home, ui, provider):
+            return 1
     if provider and PROVIDER_KEYS.get(provider) and not keys.get_key(home, PROVIDER_KEYS[provider]):
         name = PROVIDER_KEYS[provider]
         value = str(
@@ -168,6 +286,59 @@ def flow(home: Home, ui: UI, tool: str, provider: str | None = None, max_calls: 
         return 1
     ui.say(f"Saved. {tool} now:", items=describe(home, tool), level="done")
     return 0
+
+
+def _ask_search(home: Home, ui: UI, provider: str) -> bool:
+    """The terminal's way to web.search's own settings: the browser's engine, or an address."""
+    from ombro.settings import KAGI_KEY, SEARCH_ENGINES
+
+    settings = load_tool_settings(home)
+    try:
+        if provider == "browser":
+            names = [*SEARCH_ENGINES, "other"]
+            current = settings.search_engine()
+            pick = ui.ask(
+                Field(
+                    "engine",
+                    "Which search engine should the browser use?",
+                    "choice",
+                    default=str(names.index(current) + 1) if current in names else str(len(names)),
+                    options=[Option(str(i), ENGINES.get(n, "Another, by its address")) for i, n in enumerate(names, 1)],
+                    invalid="Please choose one of the numbers shown.",
+                )
+            )
+            engine = names[int(pick) - 1]
+            if engine == "other":
+                engine = str(ui.ask(Field("address", "The search engine's home page (https://…)")) or "").strip()
+            if engine == "kagi" and not keys.get_key(home, KAGI_KEY):
+                link = str(
+                    ui.ask(
+                        Field(
+                            "key",
+                            "Kagi needs your session link (Kagi › Settings › Account). Paste it (hidden)",
+                            "secret",
+                        )
+                    )
+                    or ""
+                )
+                if not link.strip():
+                    ui.say("Nothing changed: Kagi needs your session link.")
+                    return False
+                keys.set_key(home, KAGI_KEY, kagi_token(link))
+            set_search(home, "browser", engine=engine)
+        else:
+            what = (
+                "your SearXNG's address"
+                if provider == "searxng"
+                else "the search API's address ({query} where the words go)"
+            )
+            now = settings.providers.get(provider, {}).get("endpoint") or ""
+            endpoint = str(ui.ask(Field("address", f"What is {what}?", default=now)) or "").strip()
+            set_search(home, provider, endpoint=endpoint)
+    except SetupError as e:
+        ui.say(str(e))
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------

@@ -152,7 +152,15 @@ def still_used(home: Home, names: Iterable[str], leaving: str) -> tuple[list[str
 
 def key_uses(home: Home) -> dict[str, list[str]]:
     """Key names the settings files refer to, and what uses each."""
-    from ombro.settings import PROVIDER_TOOLS, SetupError, load_models, load_tool_settings
+    from ombro.settings import (
+        KAGI_KEY,
+        OPTIONAL_KEYS,
+        PROVIDER_KEYS,
+        PROVIDER_TOOLS,
+        SetupError,
+        load_models,
+        load_tool_settings,
+    )
 
     uses: dict[str, list[str]] = {}
     try:
@@ -171,9 +179,12 @@ def key_uses(home: Home) -> dict[str, list[str]]:
             name = tools.key_name(provider)
             if name:
                 uses.setdefault(name, []).append(f"{tool} ({provider})")
-        firecrawl = tools.key_name("firecrawl")
-        if firecrawl:
-            uses.setdefault(firecrawl, [])
+        # A search service's key is kept when another is chosen, so switching back needs no new key.
+        for provider in (*PROVIDER_KEYS, *OPTIONAL_KEYS):
+            name = tools.key_name(provider) or OPTIONAL_KEYS.get(provider)
+            if name:
+                uses.setdefault(name, [])
+        uses.setdefault(KAGI_KEY, [])
         from ombro.mcp import ServerConfig
 
         for server, cfg in tools.servers.items():

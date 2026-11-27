@@ -248,7 +248,7 @@ def settings_routes(s: Serve) -> list[Route]:
 
     def set_native(r: Request, data: dict[str, Any]) -> Any:
         from ombro import tool_cmd
-        from ombro.settings import PROVIDER_KEYS
+        from ombro.settings import KAGI_KEY, OPTIONAL_KEYS, PROVIDER_KEYS, PROVIDER_TOOLS
 
         tool = r.path_params["tool"]
         provider = data.get("provider")
@@ -257,12 +257,45 @@ def settings_routes(s: Serve) -> list[Route]:
             raise HttpError(400, "`provider` is a name")
         if max_calls is not None and (isinstance(max_calls, bool) or not isinstance(max_calls, int)):
             raise HttpError(400, "`max_calls` is a whole number")
+        for f in ("engine", "endpoint", "send_key", "kagi"):
+            if data.get(f) is not None and not isinstance(data.get(f), str):
+                raise HttpError(400, f"`{f}` is text")
         key_value = str(data.get("key") or "").strip()
         key = PROVIDER_KEYS.get(provider or "")
+        if provider and tool not in PROVIDER_TOOLS:
+            raise HttpError(400, f"{tool} has no provider to choose")
         if key and key_value:
             keys.set_key(home, key, key_value)
         elif key and not keys.get_key(home, key):
-            raise HttpError(400, f"{provider.title()} needs a key. Paste it in, and it's kept on this computer.")
+            label = tool_cmd.LABELS.get(provider or "", str(provider))
+            raise HttpError(400, f"{label} needs a key. Paste it in, and it's kept where Ombro runs.")
+        if tool == "web.search" and provider:
+            # The search's own settings: the browser's engine (and Kagi's session link), or the
+            # address of a SearXNG or another search API, with its key if it has one.
+            engine = data.get("engine")
+            if provider == "browser" and engine == "kagi":
+                link = str(data.get("kagi") or "").strip()
+                if link:
+                    keys.set_key(home, KAGI_KEY, tool_cmd.kagi_token(link))
+                elif not keys.get_key(home, KAGI_KEY):
+                    raise HttpError(400, "Kagi needs your session link. Paste it in, and it's kept where Ombro runs.")
+            uses_key = None
+            if provider in OPTIONAL_KEYS and key_value:
+                keys.set_key(home, OPTIONAL_KEYS[provider], key_value)
+                uses_key = True
+            if provider in ("searxng", "custom") and not data.get("endpoint"):
+                raise HttpError(400, "Give its address.")
+            tool_cmd.set_search(
+                home,
+                provider,
+                engine=engine,
+                endpoint=data.get("endpoint"),
+                send_key=data.get("send_key"),
+                uses_key=uses_key,
+            )
+        if tool == "web.fetch" and provider in OPTIONAL_KEYS and key_value:  # Jina Reader's, for a higher limit
+            keys.set_key(home, OPTIONAL_KEYS[provider], key_value)
+            tool_cmd.use_key(home, provider)
         tool_cmd.set_tool(home, tool, provider=provider, max_calls=max_calls)
         return tools_view()
 

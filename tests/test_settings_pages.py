@@ -231,9 +231,66 @@ def test_tools_over_http_never_show_a_secret(serve, home):
     )
     assert native.status_code == 200 and "fc-INVENTED" not in native.text
     search = next(t for t in native.json()["native"] if t["tool"] == "web.search")
-    assert search == {"tool": "web.search", "provider": "firecrawl", "max_calls": 12, "calls": 12}
+    assert {k: search[k] for k in ("tool", "provider", "max_calls", "calls")} == {
+        "tool": "web.search",
+        "provider": "firecrawl",
+        "max_calls": 12,
+        "calls": 12,
+    }
+    assert search["search"]["keys"]["firecrawl"] is True and search["search"]["keys"]["tavily"] is False
     assert serve.http.delete("/tools/servers/files").status_code == 200
     assert "files" not in load_tool_settings(home).servers
+
+
+def test_web_search_settings_over_http(serve, home):
+    """The two kinds of search: the browser with an engine, or a service by its address and key."""
+    put = lambda body: serve.http.put("/tools/web.search", json=body)  # noqa: E731
+    r = put({"provider": "browser", "engine": "bing"})
+    assert r.status_code == 200, r.text
+    settings = load_tool_settings(home)
+    assert settings.provider_for("web.search") == "browser" and settings.search_engine() == "bing"
+    assert put({"provider": "browser", "engine": "kagi"}).status_code == 400  # no session link yet
+    r = put({"provider": "browser", "engine": "kagi", "kagi": "https://kagi.com/search?token=INVENTED.tok"})
+    assert r.status_code == 200 and "INVENTED.tok" not in r.text
+    assert keys.get_key(home, "KAGI_SESSION_TOKEN") == "INVENTED.tok"
+    assert put({"provider": "browser", "engine": "https://search.invented.invalid/"}).status_code == 200
+    assert put({"provider": "browser", "engine": "not an address"}).status_code == 400
+    assert put({"provider": "searxng"}).status_code == 400  # no address
+    r = put({"provider": "searxng", "endpoint": "http://192.168.1.9:8888/"})
+    assert r.status_code == 200
+    search = next(t for t in r.json()["native"] if t["tool"] == "web.search")["search"]
+    assert search["searxng"] == "http://192.168.1.9:8888" and search["engine"] == "https://search.invented.invalid/"
+    r = put(
+        {
+            "provider": "custom",
+            "endpoint": "https://api.invented.invalid/s?term={query}",
+            "key": "sk-INVENTED-s",
+            "send_key": "header:X-Key",
+        }
+    )
+    assert r.status_code == 200 and "sk-INVENTED" not in r.text
+    cfg = load_tool_settings(home).providers["custom"]
+    assert cfg == {
+        "endpoint": "https://api.invented.invalid/s?term={query}",
+        "send_key": "header:X-Key",
+        "key": "SEARCH_API_KEY",
+    }
+    assert put({"provider": "custom", "endpoint": "https://x.invalid", "send_key": "header:"}).status_code == 400
+    assert put({"provider": "tavily"}).status_code == 400  # needs a key
+    assert put({"provider": "tavily", "key": "tvly-INVENTED"}).status_code == 200
+    assert load_tool_settings(home).provider_for("web.search") == "tavily"
+    assert put({"provider": "nope"}).status_code == 400
+    # Reading pages: a service that reads, and Jina Reader with or without its key.
+    read = lambda body: serve.http.put("/tools/web.fetch", json=body)  # noqa: E731
+    assert read({"provider": "exa"}).status_code == 400  # needs a key
+    assert read({"provider": "tavily"}).status_code == 200  # the key given for search
+    assert read({"provider": "brave"}).status_code == 400  # Brave Search can't read pages
+    assert read({"provider": "jina"}).status_code == 200
+    assert "key" not in load_tool_settings(home).providers.get("jina", {})
+    r = read({"provider": "jina", "key": "jina_INVENTED"})
+    assert r.status_code == 200 and "jina_INVENTED" not in r.text
+    assert load_tool_settings(home).providers["jina"] == {"key": "JINA_API_KEY"}
+    assert keys.get_key(home, "JINA_API_KEY") == "jina_INVENTED"
 
 
 def test_skills_over_http(serve, home):

@@ -2123,11 +2123,6 @@ input[type="checkbox"]:not([role="switch"]) {
   margin: 0;
 }
 
-.crew-about {
-  margin: 4px 0 0;
-  font-size: 14px;
-}
-
 .crew-block .form-actions {
   margin-top: 12px;
 }
@@ -2251,7 +2246,8 @@ input[type="checkbox"]:not([role="switch"]) {
   font-size: 14px;
 }
 
-.connect-form .modes {
+.connect-form .modes,
+.search-form .modes {
   margin-bottom: 18px;
 }
 
