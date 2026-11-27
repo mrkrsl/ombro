@@ -364,16 +364,26 @@ a one-line edit and no role changes. Settings are fixed when a job starts and
 recorded in its job.md.
 
 Tools:
-- web.search: providers `firecrawl` (needs a key), `duckduckgo` (no key;
-  unofficial and rate-limited, so best effort) or `fake`.
+- web.search: in the browser, `browser` (no key; a search engine's own
+  results page, the engine set in providers: browser: search_engine:); or a
+  search service: `duckduckgo` (no key or browser; unofficial and
+  rate-limited, so best effort), `searxng` (a SearXNG of your own: providers:
+  searxng: endpoint:, its JSON output turned on), `brave`, `tavily`, `exa`,
+  `serper` or `firecrawl` (each needs a key), `custom` (another search API:
+  providers: custom: endpoint:, with {query} where the words go, and key: and
+  send_key: if it needs a key) or `fake`.
 - web.fetch: providers `browser` (no key; the page in a headless browser on
   this machine, after its scripts run, refusing local and private network
   addresses), `firecrawl` (needs a key) or `fake`.
 - Calls a job may make, unless max_calls says otherwise: web.search 20 with
-  firecrawl (each call is billed) or 60 with duckduckgo; web.fetch 30 with
-  firecrawl or 100 with the browser.
+  a service that needs a key (each call is billed), 40 in the browser, or 60
+  with duckduckgo or searxng; web.fetch 30 with firecrawl or 100 with the
+  browser.
 - providers: browser: which browser (see Settings › General): `path:` for one
   on this machine, `endpoint:` for one elsewhere, or `off: true` for none.
+  `search_engine:` is duckduckgo (the default), bing, ecosia, startpage, kagi
+  (needs your session link, KAGI_SESSION_TOKEN), brave, qwant, google (often
+  turns an automated browser away), or another engine's home page address.
 - workspace.read, workspace.write, workspace.list: files in the job's
   workspace/ and scratch/ folders, and in shared folders the job was given
   (folders.md). No provider.

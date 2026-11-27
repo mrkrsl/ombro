@@ -17,7 +17,7 @@ from ombro.providers import ProviderError, http_client
 ENDPOINT = "https://html.duckduckgo.com/html/"
 REFUSED = (
     "DuckDuckGo refused the search (a rate limit or bot check). Try again later with fewer searches, "
-    "or ask the user to switch web.search to Firecrawl in tools.md."
+    "or ask the user to choose another search in Settings › Tools (in the browser, or a search service)."
 )
 
 

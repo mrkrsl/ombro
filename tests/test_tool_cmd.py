@@ -29,6 +29,22 @@ def test_switching_back_to_duckduckgo_and_keeping_the_calls(home):
     assert load_limits(home, None, load_tool_settings(home)).max_calls_for("web.search") == 12
 
 
+def test_searching_in_the_browser_asks_which_engine_and_kagi_asks_for_its_link(home):
+    pick = lambda start: lambda f: next(o.key for o in f.options if o.label.startswith(start))  # noqa: E731
+    ui = ScriptedUI([pick("browser"), pick("Kagi"), "https://kagi.com/search?token=INVENTED-tok", ""])
+    assert tool_cmd.flow(home, ui, "web.search") == 0
+    settings = load_tool_settings(home)
+    assert settings.provider_for("web.search") == "browser" and settings.search_engine() == "kagi"
+    assert keys.get_key(home, "KAGI_SESSION_TOKEN") == "INVENTED-tok"
+    assert "search engine: Kagi (needs your session link)" in tool_cmd.describe(home, "web.search")
+    ui = ScriptedUI([pick("SearXNG"), "http://192.168.1.9:8888/", ""])
+    assert tool_cmd.flow(home, ui, "web.search") == 0
+    assert load_tool_settings(home).providers["searxng"]["endpoint"] == "http://192.168.1.9:8888"
+    assert "address: http://192.168.1.9:8888" in tool_cmd.describe(home, "web.search")
+    with pytest.raises(SetupError, match="no token"):
+        tool_cmd.kagi_token("https://kagi.com/search?q=x")
+
+
 def test_given_settings_change_without_questions_and_bad_ones_are_refused(home):
     ui = ScriptedUI([])
     assert tool_cmd.flow(home, ui, "code.run", max_calls=4) == 0 and not ui.fields

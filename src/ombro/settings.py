@@ -123,7 +123,7 @@ CODE_DEFAULT_CALLS = 10  # code.job's max_calls when neither limits.md nor tools
 # A bigger allowance gives more calls to the tools a research job leans on
 # (a generous job ran out of searches, fetches and code runs). Values set by hand still win.
 TOOL_SCALE = {"generous": 2, "unlimited": 3}  # web.search and web.fetch, times their provider's default
-FREE_PROVIDERS = {"duckduckgo", "browser"}  # only these are scaled: one that bills per call is not
+FREE_PROVIDERS = {"duckduckgo", "browser", "searxng"}  # only these are scaled: one that bills per call is not
 CODE_CALLS = {"generous": 100, "unlimited": 200}  # code.run (30 and 50 until 17 Nov 2026)
 # The job's own files cost nothing but tokens, which the token limit bounds: a call cap only stopped real work
 # (17 Nov 2026: a job's 20 reads ran out halfway through writing one document). Values set by hand still win.
@@ -422,16 +422,53 @@ def load_limits(
 # Tools (tools.md)
 
 # The native tools that use a provider, the providers each may use, and the default.
+# web.search: in the browser (a search engine's own page), DuckDuckGo without a browser, a SearXNG
+# of your own, the search APIs that need a key (ombro.providers.search_apis), or another by address.
 PROVIDER_TOOLS: dict[str, tuple[tuple[str, ...], str]] = {
-    "web.search": (("firecrawl", "duckduckgo", "fake"), "duckduckgo"),
+    "web.search": (
+        ("browser", "duckduckgo", "searxng", "brave", "tavily", "exa", "serper", "firecrawl", "custom", "fake"),
+        "duckduckgo",
+    ),
     "web.fetch": (("firecrawl", "browser", "fake"), "browser"),
 }
-PROVIDER_KEYS = {"firecrawl": "FIRECRAWL_API_KEY"}
+# The key each provider must have, by its usual name (tools.md `providers: <name>: key:` renames it).
+PROVIDER_KEYS = {
+    "firecrawl": "FIRECRAWL_API_KEY",
+    "brave": "BRAVE_SEARCH_API_KEY",
+    "tavily": "TAVILY_API_KEY",
+    "exa": "EXA_API_KEY",
+    "serper": "SERPER_API_KEY",
+}
+# Keys a provider may have but can work without: another search API's, and Kagi's session token
+# for searching Kagi in the browser.
+OPTIONAL_KEYS = {"custom": "SEARCH_API_KEY", "searxng": "SEARXNG_API_KEY"}
+KAGI_KEY = "KAGI_SESSION_TOKEN"
+# web.search in the browser: the engines offered, each by its results address ({query} is the
+# words). `providers: browser: search_engine:` is one of these names, or another engine's home page
+# (or results address with %s or {query}). DuckDuckGo's plain page needs no scripts.
+SEARCH_ENGINES = {
+    "duckduckgo": "https://html.duckduckgo.com/html/?q={query}",
+    "bing": "https://www.bing.com/search?q={query}",
+    "ecosia": "https://www.ecosia.org/search?q={query}",
+    "startpage": "https://www.startpage.com/sp/search?query={query}",
+    "kagi": "https://kagi.com/search?q={query}",
+    "brave": "https://search.brave.com/search?q={query}",
+    "qwant": "https://www.qwant.com/?q={query}",
+    "google": "https://www.google.com/search?q={query}",
+}
+DEFAULT_ENGINE = "duckduckgo"
 # Calls a job may make, by tool and provider, unless tools.md says: fewer where each call is billed.
 PROVIDER_CALLS = {
     ("web.search", "firecrawl"): 20,
     ("web.fetch", "firecrawl"): 30,
     ("web.search", "duckduckgo"): 60,
+    ("web.search", "browser"): 40,
+    ("web.search", "searxng"): 60,
+    ("web.search", "brave"): 20,
+    ("web.search", "tavily"): 20,
+    ("web.search", "exa"): 20,
+    ("web.search", "serper"): 20,
+    ("web.search", "custom"): 20,
     ("web.fetch", "browser"): 100,
     ("web.search", "fake"): 20,
     ("web.fetch", "fake"): 30,
@@ -549,6 +586,16 @@ class ToolSettings:
             if not isinstance(cfg, dict):
                 raise SetupError(f"{where}: settings for provider {name} must be a mapping")
             providers[str(name)] = dict(cfg)
+        engine = (providers.get("browser") or {}).get("search_engine")
+        if (
+            engine is not None
+            and str(engine) not in SEARCH_ENGINES
+            and not str(engine).startswith(("http://", "https://"))
+        ):
+            raise SetupError(
+                f"{where}: providers: browser: search_engine is one of {', '.join(SEARCH_ENGINES)}, "
+                "or a search engine's address (https://…)"
+            )
         servers: dict[str, dict[str, Any]] = {}
         for name, cfg in raw_servers.items():
             name = str(name)
@@ -634,6 +681,10 @@ class ToolSettings:
     def key_name(self, provider: str) -> str | None:
         name = self.providers.get(provider, {}).get("key") or PROVIDER_KEYS.get(provider)
         return str(name) if name else None
+
+    def search_engine(self) -> str:
+        """web.search in the browser: an engine's name (SEARCH_ENGINES) or another's address."""
+        return str((self.providers.get("browser") or {}).get("search_engine") or DEFAULT_ENGINE)
 
 
 def load_tool_settings(home: Home) -> ToolSettings:

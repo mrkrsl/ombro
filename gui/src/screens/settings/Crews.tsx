@@ -30,6 +30,12 @@ function profileOf(r: RoleDetail): Profile {
   return { title: r.title, kind: r.kind, model: r.model, soul: r.soul };
 }
 
+/** The model choice that follows the default: "Use default model (claude-opus-5-5)". */
+export function defaultChoiceText(models: ModelList | null): string {
+  const def = models?.connections.flatMap((c) => c.models).find((m) => m.default);
+  return def ? `Use default model (${def.model})` : "Use default model";
+}
+
 /** The member's page: name, kind, model and soul, saved together. Save and Cancel wake up on any
  * change; a new name renames them (their folder too, so the reply may come under a new name). */
 function MemberEditor({ who, crewTitle, onBack, onRenamed }: {
@@ -80,8 +86,11 @@ function MemberEditor({ who, crewTitle, onBack, onRenamed }: {
         <Field label="Model">
           <span className="form-row tight">
             <select aria-label="Model" value={now.model} onChange={(e) => edit("model", e.target.value)}>
-              {!all.some((m) => m.name === now.model) && (
-                <option value={now.model}>{now.model === "cheap" ? "The helpers' model" : "The default model"}</option>
+              {/* "default" follows the default model when it changes; a model picked below stays. */}
+              <option value="default">{defaultChoiceText(models.data)}</option>
+              {now.model === "cheap" && <option value="cheap">The helpers' model</option>}
+              {now.model !== "default" && now.model !== "cheap" && !all.some((m) => m.name === now.model) && (
+                <option value={now.model}>{now.model}</option>
               )}
               <ModelOptions models={models.data} />
             </select>
@@ -141,7 +150,11 @@ function Member({ crew, role, models, onEdit, removal, onRemoved }: {
         name={role.title}
         details={[
           role.problem ? <span className="problem-inline">Has a problem</span> : KINDS[role.kind ?? ""] ?? role.kind,
-          role.problem ? <span title={role.problem}>{role.problem}</span> : `Model: ${modelLabel(role.model, models)}`,
+          role.problem ? (
+            <span title={role.problem}>{role.problem}</span>
+          ) : (
+            `Model: ${modelLabel(role.model, models)}${role.model === "default" ? " (the default)" : ""}`
+          ),
         ]}
         actions={
           <>
@@ -249,7 +262,6 @@ function Crew({ crew, models, onEdit, onChange }: {
           </span>
         )}
       </div>
-      {crew.description && <p className="muted crew-about">{crew.description}</p>}
       {crewRemoval.target === crew.name && (
         <RemovePanel
           removal={crewRemoval}
