@@ -346,13 +346,15 @@ def installer(home, tmp_path, platform="linux", **kw):
         home,
         platform=platform,
         run=run,
-        python="/opt/ombro/bin/python",
+        python=kw.pop("python", "/opt/ombro/bin/python"),
         uid=501,
         units_dir=tmp_path / "units",
         agents_dir=tmp_path / "agents",
         user="mark",
         has_systemd=kw.pop("has_systemd", True),
         sleep=lambda s: None,
+        frozen=kw.pop("frozen", False),
+        appimage=kw.pop("appimage", None),
         **kw,
     ), run
 
@@ -415,6 +417,52 @@ def test_launch_agent_keeps_serve_alive(home, tmp_path):
         ["launchctl", "bootout", "gui/501/local.ombro.serve"],
         ["launchctl", "bootstrap", "gui/501", str(plan.path)],
     ]
+
+
+def test_the_app_runs_its_own_binary_with_no_dash_m(home, tmp_path, monkeypatch):
+    """From the desktop app (frozen), sys.executable is ombro-serve, which takes `serve` itself:
+    `ombro-serve -m ombro serve` would be refused. And the result still counts as ticking."""
+    from ombro import service
+
+    exe = "/Applications/Ombro.app/Contents/MacOS/ombro-serve"
+    inst, _ = installer(home, tmp_path, platform="darwin", python=exe, frozen=True)
+    argv = inst.program(8765, "127.0.0.1", ["mini.ts.net"])
+    assert argv == [exe, "serve", "--tick", "--port", "8765", "--host", "127.0.0.1", "--allow-host", "mini.ts.net"]
+    plan = inst.plan(8765, "127.0.0.1", [])
+    data = plistlib.loads(plan.text.encode())
+    assert data["ProgramArguments"][:3] == [exe, "serve", "--tick"]
+    assert data["EnvironmentVariables"]["PATH"].startswith("/Applications/Ombro.app/Contents/MacOS:")
+    inst.install(plan)
+    monkeypatch.setattr(
+        service.Path, "exists", lambda self: False if str(self) == "/.dockerenv" else os.path.exists(self)
+    )
+    monkeypatch.setattr(service, "make_installer", lambda h: inst)
+    assert "service" in (service.serve_ticks(home) or "")
+
+
+def test_an_appimage_service_runs_the_appimage_file(home, tmp_path):
+    """The binary is in the AppImage's mount, which goes when the app quits, so the service runs
+    the .AppImage file with --ombro, which hands the rest to the sidecar."""
+    inst, _ = installer(
+        home,
+        tmp_path,
+        python="/tmp/.mount_OmbroX/usr/bin/ombro-serve",
+        frozen=True,
+        appimage="/home/mark/Apps/Ombro.AppImage",
+    )
+    assert inst.program(8765, "127.0.0.1", []) == [
+        "/home/mark/Apps/Ombro.AppImage",
+        "--ombro",
+        "serve",
+        "--tick",
+        "--port",
+        "8765",
+        "--host",
+        "127.0.0.1",
+    ]
+    text = inst.plan(8765, "127.0.0.1", []).text
+    assert 'ExecStart="/home/mark/Apps/Ombro.AppImage" "--ombro" "serve" "--tick"' in text
+    assert '"PATH=/home/mark/Apps:' in text and ".mount_" not in text
 
 
 # -- ombro sandbox ------------------------------------------------------------------------------

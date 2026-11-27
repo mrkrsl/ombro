@@ -59,8 +59,12 @@ class ServiceInstaller:
         user: str | None = None,
         has_systemd: bool | None = None,
         sleep: Callable[[float], None] | None = None,
+        frozen: bool | None = None,
+        appimage: str | None = "",
     ):
         import time
+
+        from ombro import appimage as appimage_mod
 
         self.home = home
         self.sleep = sleep or time.sleep
@@ -72,6 +76,11 @@ class ServiceInstaller:
         self.agents_dir = agents_dir or Path.home() / "Library" / "LaunchAgents"
         self.user = user or os.environ.get("USER") or ""
         self.has_systemd = (shutil.which("systemctl") is not None) if has_systemd is None else has_systemd
+        # The desktop app's binary (ombro-serve) is the whole command line; it has no -m.
+        self.frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+        # Run from an AppImage, the service runs the .AppImage file: the binary is in its mount,
+        # which goes when the app quits. "" means look ($APPIMAGE); None means not one.
+        self.appimage = appimage_mod.path() if appimage == "" else appimage
 
     @property
     def path(self) -> Path:
@@ -82,13 +91,24 @@ class ServiceInstaller:
         return self.home.scheduler_dir / "serve.log"
 
     def program(self, port: int, host: str, allow: list[str]) -> list[str]:
-        argv = [self.python, "-m", "ombro", "serve", "--tick", "--port", str(port), "--host", host]
+        from ombro.appimage import FLAG
+
+        if self.appimage:
+            start = [self.appimage, FLAG]
+        elif self.frozen:
+            start = [self.python]
+        else:
+            start = [self.python, "-m", "ombro"]
+        argv = [*start, "serve", "--tick", "--port", str(port), "--host", host]
         for name in allow:
             argv += ["--allow-host", name]
         return argv
 
     def env(self) -> dict[str, str]:
-        return {**self.home.process_env(), "PATH": f"{Path(self.python).parent}:/usr/local/bin:/usr/bin:/bin"}
+        # The folder of what it runs first (the app's binaries, or a virtualenv's bin). Not an
+        # AppImage's mount, which goes when the app quits.
+        first = Path(self.appimage or self.python).parent
+        return {**self.home.process_env(), "PATH": f"{first}:/usr/local/bin:/usr/bin:/bin"}
 
     def unit(self, argv: list[str]) -> str:
         """The systemd unit. Values are quoted the way systemd reads them."""
