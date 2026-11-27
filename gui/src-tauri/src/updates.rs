@@ -38,5 +38,5 @@ pub async fn install_update(app: tauri::AppHandle, pending: tauri::State<'_, Pen
     let update = pending.0.lock().unwrap().take().ok_or("no update is waiting: check again")?;
     update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
     crate::stop_ombro(&app);
-    app.restart();
+    crate::relaunch(&app)
 }
