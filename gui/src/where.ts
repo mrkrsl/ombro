@@ -10,7 +10,12 @@ export type Where = {
   address: string | null;
   local_home: boolean; // this computer has an Ombro home of its own
   started: boolean;
+  /** While on this computer: the server used before, whose key is still kept here. */
+  previous?: Server | null;
 };
+
+/** A server, as connection.rs describes one. */
+export type Server = { mode: "ssh" | "direct"; host: string | null; port: number | null; address: string | null };
 
 /** The protocol this app speaks (serve's PROTOCOL, in /hello). */
 export const PROTOCOL = 1;
@@ -32,6 +37,24 @@ export function describe(w: Where | null): string {
 }
 
 export const useThisComputer = () => call<void>("use_this_computer");
+
+/** What a key kept from pairing before gets from a server: it still knows this computer (and is
+ *  now the connection, ready to start), it has forgotten it, or no key is kept for it here. */
+export type Kept = "known" | "forgotten" | "none";
+
+/** Use a server paired with before, with the key kept for it: no code. */
+export function useKept(server: { host?: string; port?: number; address?: string }): Promise<Kept> {
+  return call<Kept>("use_kept", {
+    host: server.host ?? null,
+    port: server.port ?? null,
+    address: server.address ?? null,
+  });
+}
+
+/** Why a kept key no longer works, and what to do. */
+export function forgotten(name: string): string {
+  return `${name} no longer knows this computer, so it needs pairing again. Type the pairing code the server shows (run ombro pair there for a new one).`;
+}
 export const startConnection = () => call<void>("start_connection");
 
 /** Pair over SSH: the app signs in with your SSH key and asks the server for a key of its own.

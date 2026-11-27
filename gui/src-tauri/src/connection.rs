@@ -55,6 +55,31 @@ pub struct State {
     /// Whether this computer has an Ombro home of its own already.
     pub local_home: bool,
     pub started: bool,
+    /// While on this computer: the server used before, whose key is kept.
+    pub previous: Option<Server>,
+}
+
+/// A server, as the web view is told about it.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct Server {
+    pub mode: String,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub address: Option<String>,
+}
+
+impl Server {
+    fn of(conn: &Connection) -> Option<Server> {
+        match conn {
+            Connection::Local => None,
+            Connection::Ssh { host, port } => {
+                Some(Server { mode: "ssh".into(), host: Some(host.clone()), port: Some(*port), address: None })
+            }
+            Connection::Direct { address } => {
+                Some(Server { mode: "direct".into(), host: None, port: None, address: Some(address.clone()) })
+            }
+        }
+    }
 }
 
 /// The tunnel or forwarder in use, kept so it can be stopped on the way out.
@@ -78,9 +103,36 @@ fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("connection.json"))
 }
 
-pub fn load(app: &tauri::AppHandle) -> Option<Connection> {
+/// connection.json: the connection, and while it's this computer, the server used before, so
+/// going back to it needs no new pairing code (its key is still in the keychain).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Saved {
+    #[serde(flatten)]
+    pub conn: Connection,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous: Option<Connection>,
+}
+
+impl Saved {
+    /// What to keep when `conn` replaces this: switching to this computer remembers the server
+    /// left (or the one remembered already); a server needs nothing remembered.
+    pub fn then(old: Option<&Saved>, conn: Connection) -> Saved {
+        let previous = match (&conn, old) {
+            (Connection::Local, Some(old)) if old.conn != Connection::Local => Some(old.conn.clone()),
+            (Connection::Local, Some(old)) => old.previous.clone(),
+            _ => None,
+        };
+        Saved { conn, previous }
+    }
+}
+
+pub fn load_saved(app: &tauri::AppHandle) -> Option<Saved> {
     let text = std::fs::read_to_string(config_path(app).ok()?).ok()?;
     serde_json::from_str(&text).ok()
+}
+
+pub fn load(app: &tauri::AppHandle) -> Option<Connection> {
+    load_saved(app).map(|s| s.conn)
 }
 
 pub fn save(app: &tauri::AppHandle, conn: &Connection) -> Result<(), String> {
@@ -88,7 +140,8 @@ pub fn save(app: &tauri::AppHandle, conn: &Connection) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let text = serde_json::to_string_pretty(conn).map_err(|e| e.to_string())?;
+    let saved = Saved::then(load_saved(app).as_ref(), conn.clone());
+    let text = serde_json::to_string_pretty(&saved).map_err(|e| e.to_string())?;
     std::fs::write(&path, text).map_err(|e| format!("couldn't save {}: {e}", path.display()))
 }
 
@@ -121,19 +174,25 @@ pub fn at_start(app: &tauri::AppHandle) -> Option<Connection> {
     None
 }
 
-pub fn state(conn: Option<&Connection>, started: bool) -> State {
-    let mut s = State { mode: "unset".into(), host: None, port: None, address: None, local_home: local_home_exists(), started };
+pub fn state(conn: Option<&Connection>, previous: Option<&Connection>, started: bool) -> State {
+    let mut s = State {
+        mode: "unset".into(),
+        host: None,
+        port: None,
+        address: None,
+        local_home: local_home_exists(),
+        started,
+        previous: None,
+    };
     match conn {
         None => {}
-        Some(Connection::Local) => s.mode = "local".into(),
-        Some(Connection::Ssh { host, port }) => {
-            s.mode = "ssh".into();
-            s.host = Some(host.clone());
-            s.port = Some(*port);
+        Some(Connection::Local) => {
+            s.mode = "local".into();
+            s.previous = previous.and_then(Server::of);
         }
-        Some(Connection::Direct { address }) => {
-            s.mode = "direct".into();
-            s.address = Some(address.clone());
+        Some(c) => {
+            let server = Server::of(c).unwrap();
+            (s.mode, s.host, s.port, s.address) = (server.mode, server.host, server.port, server.address);
         }
     }
     s
@@ -153,6 +212,65 @@ pub fn token(conn: &Connection) -> Result<Option<String>, String> {
 pub fn keep_token(conn: &Connection, token: &str) -> Result<(), String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, &conn.account()).map_err(|e| e.to_string())?;
     entry.set_password(token).map_err(|e| format!("the keychain couldn't keep the server's key: {e}"))
+}
+
+/// What a kept key gets from a server: it still knows this computer, it has forgotten it, or
+/// there's no key kept for it here.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Kept {
+    Known,
+    Forgotten,
+    None,
+}
+
+/// Ask the server at 127.0.0.1:<port> (or an address) whether it knows this token: GET /hello,
+/// which needs the token. 200 is yes, 403 no; anything else, or no answer, is an error.
+pub async fn check_token(target: &str, token: &str, shown: &str) -> Result<Kept, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let unreachable = || format!("Nothing answered at {shown}. Check that the Ombro server is running there.");
+    let ask = async {
+        let mut stream = TcpStream::connect(target).await.map_err(|_| unreachable())?;
+        let host = target.rsplit_once(':').map(|(h, _)| h).unwrap_or(target);
+        let request = format!(
+            "GET /hello HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+        );
+        stream.write_all(request.as_bytes()).await.map_err(|_| unreachable())?;
+        let mut head = Vec::new();
+        let mut buf = [0u8; 512];
+        while !head.contains(&b'\n') && head.len() < 4096 {
+            let n = stream.read(&mut buf).await.map_err(|_| unreachable())?;
+            if n == 0 {
+                break;
+            }
+            head.extend_from_slice(&buf[..n]);
+        }
+        Ok::<Vec<u8>, String>(head)
+    };
+    let head = tokio::time::timeout(Duration::from_secs(15), ask).await.map_err(|_| unreachable())??;
+    let line = String::from_utf8_lossy(&head);
+    match line.split_whitespace().nth(1) {
+        Some("200") => Ok(Kept::Known),
+        Some("403") | Some("401") => Ok(Kept::Forgotten),
+        Some(code) => Err(format!("{shown} answered, but not as an Ombro server does ({code}).")),
+        None => Err(unreachable()),
+    }
+}
+
+/// Whether the key kept for this server still works there. Over SSH, through a short-lived tunnel.
+pub async fn check_kept(app: &tauri::AppHandle, conn: &Connection) -> Result<Kept, String> {
+    let Some(token) = token(conn)? else { return Ok(Kept::None) };
+    match conn {
+        Connection::Direct { address } => check_token(address, &token, address).await,
+        Connection::Ssh { host, port } => {
+            let local = pairing_tunnel(app, host, *port).await?;
+            let found = check_token(&format!("127.0.0.1:{local}"), &token, host).await;
+            end_pairing_tunnel(app);
+            found
+        }
+        Connection::Local => Ok(Kept::None),
+    }
 }
 
 // -- names and checks ---------------------------------------------------------------
@@ -439,6 +557,54 @@ mod tests {
         assert_eq!(serde_json::from_str::<Connection>(&text).unwrap(), c);
         assert_eq!(c.account(), "ssh:mark@box:8765");
         assert_eq!(serde_json::to_string(&Connection::Local).unwrap(), r#"{"mode":"local"}"#);
+    }
+
+    #[test]
+    fn going_local_remembers_the_server() {
+        let server = Connection::Direct { address: "100.64.0.5:8765".into() };
+        let on_server = Saved::then(None, server.clone());
+        assert_eq!(serde_json::to_string(&on_server).unwrap(), r#"{"mode":"direct","address":"100.64.0.5:8765"}"#);
+        let local = Saved::then(Some(&on_server), Connection::Local);
+        assert_eq!(local.previous, Some(server.clone()));
+        let text = serde_json::to_string(&local).unwrap();
+        assert_eq!(text, r#"{"mode":"local","previous":{"mode":"direct","address":"100.64.0.5:8765"}}"#);
+        assert_eq!(serde_json::from_str::<Saved>(&text).unwrap(), local);
+        // Choosing this computer again keeps it; choosing a server needs nothing remembered.
+        assert_eq!(Saved::then(Some(&local), Connection::Local).previous, Some(server.clone()));
+        assert_eq!(Saved::then(Some(&local), server.clone()).previous, None);
+        // A file from before reads as it did.
+        let old: Saved = serde_json::from_str(r#"{"mode":"local"}"#).unwrap();
+        assert_eq!(old, Saved { conn: Connection::Local, previous: None });
+        let s = state(Some(&Connection::Local), Some(&server), false);
+        assert_eq!(s.previous.unwrap().address.as_deref(), Some("100.64.0.5:8765"));
+        assert!(state(Some(&server), Some(&server), false).previous.is_none());
+    }
+
+    async fn answer_with(status: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut s, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 1024];
+            let n = s.read(&mut buf).await.unwrap();
+            let got = String::from_utf8_lossy(&buf[..n]).to_string();
+            let reply = if got.contains("Authorization: Bearer the-key") { status } else { "400 Bad Request" };
+            let _ = s.write_all(format!("HTTP/1.1 {reply}\r\ncontent-length: 0\r\n\r\n").as_bytes()).await;
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn a_kept_key_is_checked_with_the_server() {
+        let known = answer_with("200 OK").await;
+        assert_eq!(check_token(&known, "the-key", "box").await.unwrap(), Kept::Known);
+        let forgotten = answer_with("403 Forbidden").await;
+        assert_eq!(check_token(&forgotten, "the-key", "box").await.unwrap(), Kept::Forgotten);
+        let odd = answer_with("500 Internal Server Error").await;
+        assert!(check_token(&odd, "the-key", "box").await.unwrap_err().contains("not as an Ombro server"));
+        let port = free_port().unwrap();
+        assert!(check_token(&format!("127.0.0.1:{port}"), "the-key", "box").await.unwrap_err().contains("Nothing answered at box"));
     }
 
     #[test]

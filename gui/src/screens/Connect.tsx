@@ -7,20 +7,30 @@
 import { useState } from "react";
 import { Laptop, Server } from "lucide-react";
 import { useStore } from "../store/store";
-import { pairByAddress, pairOverSsh, useThisComputer } from "../where";
+import { forgotten, pairByAddress, pairOverSsh, useKept, useThisComputer } from "../where";
 
 type How = "ssh" | "address";
 
-export function ServerForm({ onConnected, onCancel }: { onConnected: () => void; onCancel?: () => void }) {
+export function ServerForm({
+  onConnected,
+  onCancel,
+  notice = "",
+}: {
+  onConnected: () => void;
+  onCancel?: () => void;
+  notice?: string;
+}) {
   // Start from the server used last, if there was one: reconnecting is usually to the same one.
-  const last = useStore((s) => s.where);
+  // On this computer, that's the one used before.
+  const where = useStore((s) => s.where);
+  const last = where?.mode === "local" ? where.previous : where;
   const [how, setHowNow] = useState<How>(last?.mode === "direct" ? "address" : "ssh");
   const [host, setHost] = useState(last?.mode === "ssh" ? last.host ?? "" : "");
   const [port, setPort] = useState(last?.mode === "ssh" && last.port && last.port !== 8765 ? String(last.port) : "");
   const [address, setAddress] = useState(last?.mode === "direct" ? last.address ?? "" : "");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useState(notice);
   const setHow = (h: How) => {
     setHowNow(h);
     setProblem("");
@@ -30,7 +40,23 @@ export function ServerForm({ onConnected, onCancel }: { onConnected: () => void;
     setBusy(true);
     setProblem("");
     try {
-      if (how === "ssh") await pairOverSsh(host, port.trim() ? Number(port) : undefined, code.trim() || undefined);
+      const p = port.trim() ? Number(port) : undefined;
+      // With no code, a key kept from pairing before is used, if the server still knows it.
+      if (!code.trim()) {
+        const kept = await useKept(how === "ssh" ? { host, port: p } : { address });
+        if (kept === "known") return onConnected();
+        if (how === "address") {
+          const name = address.trim();
+          setProblem(
+            kept === "forgotten"
+              ? forgotten(name)
+              : `This computer hasn't paired with ${name} yet. Type the pairing code the server shows.`,
+          );
+          return;
+        }
+        // Over SSH, pairing again needs no code.
+      }
+      if (how === "ssh") await pairOverSsh(host, p, code.trim() || undefined);
       else await pairByAddress(address, code);
       onConnected();
     } catch (e) {
@@ -40,7 +66,7 @@ export function ServerForm({ onConnected, onCancel }: { onConnected: () => void;
     }
   }
 
-  const ready = how === "ssh" ? host.trim() !== "" && (!port.trim() || Number(port) > 0) : address.trim() !== "" && code.trim() !== "";
+  const ready = how === "ssh" ? host.trim() !== "" && (!port.trim() || Number(port) > 0) : address.trim() !== "";
   return (
     <div className="inline-form connect-form">
       <h3>Connect to a server</h3>
@@ -135,7 +161,7 @@ export function ServerForm({ onConnected, onCancel }: { onConnected: () => void;
             />
             <span className="field-hint">
               The server shows it when it starts (for Docker, in the container's logs). For a new one, run ombro pair
-              there.
+              there. Not needed for a server this computer has connected to before.
             </span>
           </label>
         </>
